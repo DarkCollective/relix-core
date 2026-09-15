@@ -163,8 +163,6 @@ final class PushdownAgreement {
                         + "to be testing — otherwise every dialect-specific expectation "
                         + "below is asserted against the wrong renderer")
                 .containsOnly(dialect);
-        DataSourceConnector connector = new JdbcDataSourceConnector(model);
-
         assertThat(foldedWholly(model))
                 .as("on %s the planner was expected to %s this expression as a whole.%n"
                         + "The plan it produced was:%n%s",
@@ -181,8 +179,12 @@ final class PushdownAgreement {
             Assumptions.abort(knownDivergence);
         }
 
-        Run pushed = run(model, connector);
-        Run inEngine = run(unpushed, connector);
+        Run pushed;
+        Run inEngine;
+        try (DataSourceConnector connector = new JdbcDataSourceConnector(model)) {
+            pushed = run(model, connector);
+            inEngine = run(unpushed, connector);
+        }
 
         // Raising is an answer too, and for some expressions it is the whole claim: a
         // function relix rejects for an argument outside its domain must not come back
@@ -236,11 +238,14 @@ final class PushdownAgreement {
         if (!foldedWholly(model)) {
             return false;
         }
-        DataSourceConnector connector = new JdbcDataSourceConnector(model);
         SemanticModel unpushed = withoutConnections(model);
 
-        Run pushed = run(model, connector);
-        Run inEngine = run(unpushed, connector);
+        Run pushed;
+        Run inEngine;
+        try (DataSourceConnector connector = new JdbcDataSourceConnector(model)) {
+            pushed = run(model, connector);
+            inEngine = run(unpushed, connector);
+        }
 
         assertThat(pushed.failure())
                 .as("one plan raised and the other did not, on %s: %s%n  pushed:    %s%n"
@@ -289,6 +294,23 @@ final class PushdownAgreement {
         new QueryExecutor().explain(model, (label, planText) -> rendered.append(planText));
         return rendered.toString();
     }
+
+    /*
+     * Why both runs sit inside a try-with-resources.
+     *
+     * `new JdbcDataSourceConnector(model)` creates a connector that OWNS a ConnectionPool
+     * — its javadoc says "closed by close()" — and the pool keeps up to DEFAULT_MAX_IDLE
+     * (8) idle connections per config. One connector per case, never closed, is one pool
+     * per case left holding open connections, and Postgres allows 100 clients by default.
+     *
+     * The suite passed for as long as it was only ever run on machines where the leak
+     * stayed under that bound. On a hosted runner it did not: forty cases failed at once
+     * with `FATAL: sorry, too many clients already`, and the forty were the ones that
+     * happened to run after the limit was reached rather than the ones at fault.
+     *
+     * The connector is needed for the two runs and nothing else — every assertion below
+     * reads the Run values — so this is where it ends.
+     */
 
     /** True when the expression establishes an order the comparison must respect. */
     private static boolean ordered(String expression) {
