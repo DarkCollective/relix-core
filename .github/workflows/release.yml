@@ -37,6 +37,10 @@
 # pre-release rule stops being something a condition here has to remember.
 #
 # ── Secrets ────────────────────────────────────────────────────────────────────
+# All four are **environment secrets on the `release` environment**, which the `central`
+# job declares. They must be Secrets rather than Variables: a variable is stored in
+# clear, shown in the settings UI, and not masked in logs.
+#
 #   CENTRAL_TOKEN_USERNAME  |  the user token generated at central.sonatype.com
 #   CENTRAL_TOKEN_PASSWORD  |  (Account → Generate User Token — not the password)
 #   GPG_PRIVATE_KEY         |  ASCII-armoured private key; its public half must be on
@@ -269,6 +273,17 @@ jobs:
     name: Publish to Maven Central
     needs: [resolve, build, release]
     runs-on: ubuntu-latest
+    # The four secrets below live in the `release` **environment**, and an environment's
+    # secrets are invisible to a job that does not name it — `secrets.GPG_PRIVATE_KEY`
+    # resolves to the empty string rather than failing, which is why a missing
+    # declaration looks like a missing secret.
+    #
+    # Naming it is also the right scoping. This is the only job that needs any of them,
+    # and an environment is where a protection rule would go if the private key in CI
+    # ever wants a human in front of it: required reviewers on `release` would hold this
+    # job — after the tag and the GitHub release, before anything reaches Central, which
+    # is exactly where the irreversible step is.
+    environment: release
     env:
       VERSION: ${{ needs.resolve.outputs.version }}
       PUBLISHING_TYPE: ${{ needs.resolve.outputs.publishingType }}
