@@ -1,6 +1,7 @@
 # Relix
 
 > A relational algebra engine you can embed in a Java program.
+
 [![CI](https://github.com/DarkCollective/relix-core/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkCollective/relix-core/actions/workflows/ci.yml)
 
 Relix takes a query written in **relational algebra** — filter, project, join,
