@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -113,7 +114,20 @@ final class PostgresPushdownAgreementTest {
      */
     @Container
     private static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16");
+            new PostgreSQLContainer<>("postgres:16")
+                    // Twenty, where the server's own default is a hundred, so that a
+                    // connection this suite fails to release is a failure here rather
+                    // than only on a busier machine. The leak this guards against —
+                    // a connector per case owning a pool that was never closed — passed
+                    // locally for as long as it was only run where a hundred was enough,
+                    // and announced itself on a hosted runner as forty unrelated-looking
+                    // assertion failures. Under twenty it reproduces in one run: 121
+                    // failures with the fix reverted, none with it in place.
+                    //
+                    // It is deliberately close to what the suite honestly needs. If a
+                    // legitimate change ever wants more, the message says exactly that
+                    // and the number is one line.
+                    .withCommand("postgres", "-c", "max_connections=20");
 
     private static PushdownAgreement agreement;
 
@@ -158,10 +172,16 @@ final class PostgresPushdownAgreementTest {
     @Test
     @DisplayName("a pooled connection is at UTC, though the client JVM is not")
     void sessionIsPinnedToUtc() throws SQLException {
-        assertThat(TimeZone.getDefault().getID())
-                .as("this machine is at UTC, so nothing here distinguishes a pinned session "
-                        + "from an unpinned one — run it somewhere else to check the pin")
-                .isNotEqualTo("UTC");
+        // An assumption, not an assertion. The javadoc above already says this case is
+        // "skipped rather than passing vacuously" on a machine at UTC — but it was written
+        // as an assertion, so on such a machine it *failed* instead, which is the one
+        // outcome neither reading wants. Hosted runners are at UTC; developer laptops
+        // mostly are not, which is why this stood.
+        Assumptions.assumeFalse(
+                TimeZone.getDefault().getID().equalsIgnoreCase("UTC")
+                        || TimeZone.getDefault().getID().equalsIgnoreCase("Etc/UTC"),
+                "this machine is at UTC, so nothing here distinguishes a pinned session "
+                        + "from an unpinned one — run it somewhere else to check the pin");
 
         // What the driver would have given us, and what the engine gives us instead.
         assertThat(rawSessionZone()).isNotEqualToIgnoringCase("UTC");
