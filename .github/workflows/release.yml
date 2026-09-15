@@ -1,0 +1,365 @@
+# The public engine's release.
+#
+# It does three separable things, in the order that makes the reversible ones first:
+# it verifies, it tags and publishes a GitHub release, and only then it pushes the
+# artifact to Maven Central. That order is the whole of the design — a tag can be
+# deleted and a GitHub release can be unpublished, while **a version PUBLISHED to Maven
+# Central is permanent**: it cannot be changed, withdrawn, or released again.
+#
+# The word doing the work there is *published*. A deployment that fails validation, or
+# one that is dropped while it sits at VALIDATED, frees its version number to be used
+# again — which is what makes `USER_MANAGED` a genuine rehearsal rather than a
+# commitment: the upload proves the signature, the key lookup, the POM and the
+# checksums, and dropping it costs the version nothing. Only the release click is
+# irreversible, and nothing before it in this workflow is.
+#
+# What it releases is not what the private repository releases. There the assets are
+# the jlink platform archives, which are `relix-cli` — a module this tree does not
+# carry. Here they are the published artifact and the two manuals:
+#
+#   relix-<v>.jar / -sources.jar / -javadoc.jar / .pom   the coordinate
+#   reference.pdf, guide.pdf                              both manuals, sealed to the tag
+#   relix-mongo-connector-<v>.jar                         the out-of-tree plugin
+#   relix-connectors.json                                 the hosted connector catalog
+#   checksums.txt
+#
+# The connector is here rather than there because the catalog `ConnectorProvisioner`
+# fetches at run time is served from this repository. The private pipeline was writing
+# its own copy, which nothing reads; releasing the jar and publishing the catalog
+# together needs no cross-repository token and cannot leave the two disagreeing.
+#
+# **The catalog is an asset, not a commit.** `/releases/latest/download/` resolves to
+# the newest release that is not a pre-release, which is exactly the rule the catalog
+# needs — every user fetches that file at run time, so a candidate that may be dropped
+# must never be what they got. Getting it from the branch instead would mean a release
+# writing back to `main`, which needs either a ruleset bypass letting every workflow
+# push to `main` or permission to open a pull request; the asset needs neither, and the
+# pre-release rule stops being something a condition here has to remember.
+#
+# ── Secrets ────────────────────────────────────────────────────────────────────
+#   CENTRAL_TOKEN_USERNAME  |  the user token generated at central.sonatype.com
+#   CENTRAL_TOKEN_PASSWORD  |  (Account → Generate User Token — not the password)
+#   GPG_PRIVATE_KEY         |  ASCII-armoured private key; its public half must be on
+#                           |  a keyserver, or Central cannot verify the signatures
+#   GPG_PASSPHRASE          |  for that key
+#
+# Without them the `central` job fails and the rest still works, which is the useful
+# failure mode while the account side is being set up.
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 1.0.0, without the v prefix)'
+        required: true
+      compatBaseline:
+        description: >-
+          Released version to check API compatibility against. Leave empty for the
+          first release, or to skip the gate deliberately.
+        required: false
+        default: ''
+      publishingType:
+        description: >-
+          USER_MANAGED holds the deployment at Central for you to release or drop by
+          hand; AUTOMATIC publishes it as soon as it validates, irreversibly.
+        required: false
+        default: USER_MANAGED
+        type: choice
+        options: [USER_MANAGED, AUTOMATIC]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      publishingType: ${{ steps.ver.outputs.publishingType }}
+    steps:
+      - name: Determine version from trigger
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            # A tag push carries no inputs, and the default is the one that can be
+            # backed out of.
+            echo "publishingType=USER_MANAGED" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "publishingType=${{ inputs.publishingType }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Verify and stage
+    needs: resolve
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      BASELINE: ${{ inputs.compatBaseline }}
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 24
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 24
+          cache: gradle
+
+      # The gate, run at the release version rather than at the default. Version is not
+      # decoration here: it is stamped into every module descriptor, every jar manifest
+      # and the `version.properties` `relix.version` reads back, so a build at
+      # 1.0-SNAPSHOT verifies something other than what is about to ship.
+      - name: Build
+        run: ./gradlew --no-daemon clean build -PrelixVersion="$VERSION"
+
+      # The only check that reads the POM and resolves the coordinate the way a stranger
+      # would. It is deliberately not in `check` — it publishes to ~/.m2 and runs a
+      # second Gradle build — which is exactly why a release has to ask for it by name.
+      - name: Consume the published artifact from a standalone build
+        run: ./gradlew --no-daemon :relix-dist:consumerSmokeTest -PrelixVersion="$VERSION"
+
+      # Explicit, never inferred from "the latest release". The build's own note on this
+      # gate is that guessing is how it silently compares against the wrong thing — so an
+      # empty baseline skips it and says so, rather than picking one.
+      - name: API compatibility against the previous release
+        if: inputs.compatBaseline != ''
+        run: |
+          repo="$RUNNER_TEMP/baseline-repo"
+          dir="$repo/com/darkcollective/relix/relix/$BASELINE"
+          mkdir -p "$dir"
+          curl --fail-with-body -sSL -o "$dir/relix-$BASELINE.jar" \
+            "https://repo1.maven.org/maven2/com/darkcollective/relix/relix/$BASELINE/relix-$BASELINE.jar"
+          ./gradlew --no-daemon apiCompatibility \
+            -PrelixVersion="$VERSION" \
+            -PcompatBaseline="$BASELINE" \
+            -PcompatBaselineRepo="$repo"
+
+      - name: Note a skipped compatibility gate
+        if: inputs.compatBaseline == ''
+        run: echo "::notice::No compatBaseline given — the API compatibility gate did not run."
+
+      # Into a directory in Maven repository layout, which is both what the Central
+      # Portal takes as a bundle and what carries the .md5/.sha1 files it requires.
+      - name: Stage the Maven artifacts
+        run: ./gradlew --no-daemon :relix-dist:publishRelixPublicationToStagingRepository -PrelixVersion="$VERSION"
+
+      # The plugin, and its catalog entry. The entry names the URL the jar will be
+      # served from, which is a release asset of the tag this run is producing — so it
+      # is written now and resolves once the release job has published.
+      - name: Build the connector plugin and its catalog entry
+        run: |
+          ./gradlew --no-daemon :relix-mongo-connector:connectorCatalogEntry \
+            -PrelixVersion="$VERSION" \
+            -PpluginUrl="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/relix-mongo-connector-${VERSION}.jar"
+
+      # Sealed to the tag. In CI these are run artifacts that expire; a release is the
+      # one place a rendered manual is worth keeping, because it is the manual for a
+      # version someone can still depend on.
+      - name: Render both manuals
+        run: ./gradlew --no-daemon pdfs
+
+      # The hosted connector catalog, assembled rather than committed. The file in the
+      # repository is the *base* — which connectors exist — and this merges in the entry
+      # for the build just made, whose URL and hash are facts about this release alone.
+      #
+      # It ships as a release asset because `ConnectorProvisioner` fetches it from
+      # `/releases/latest/download/`, which GitHub resolves to the newest release that is
+      # **not** a pre-release. So a candidate publishes a catalog under its own tag and
+      # serves it to nobody, and a release writes nothing back to any branch — which is
+      # why nothing here needs permission to push to main, or to open a pull request
+      # asking someone else to.
+      - name: Gather the release assets
+        run: |
+          mkdir -p assets
+          cp relix-dist/build/staging-deploy/com/darkcollective/relix/relix/"$VERSION"/*.jar assets/
+          cp relix-dist/build/staging-deploy/com/darkcollective/relix/relix/"$VERSION"/*.pom assets/
+          cp relix-mongo-connector/build/libs/relix-mongo-connector-"$VERSION".jar assets/
+          cp relix-mongo-connector/build/connector-catalog-entry.json assets/
+          cp connectors/relix-connectors.json assets/relix-connectors.json
+          python3 packaging/scripts/update_connector_catalog.py \
+            assets/relix-connectors.json \
+            assets/connector-catalog-entry.json
+          cp build/docs/reference.pdf assets/relix-language-reference-"$VERSION".pdf
+          cp build/docs/guide.pdf assets/relix-programming-guide-"$VERSION".pdf
+          ( cd assets && sha256sum -- *.jar *.pom *.pdf *.json > checksums.txt )
+          cat assets/checksums.txt
+
+      - name: Upload the release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: assets/
+          retention-days: 7
+
+      # Separately, because this one is not a release asset: it is the bundle the
+      # Central job signs, and it must keep its directory layout.
+      - name: Upload the staging tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-deploy
+          path: relix-dist/build/staging-deploy/
+          retention-days: 7
+
+  release:
+    name: Tag and publish the GitHub release
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    # The only job that writes anything to this repository, and all it writes is a tag
+    # and a release. Nothing here touches a branch: the connector catalog that used to
+    # be committed to main is published as a release asset instead, so main's ruleset
+    # needs no bypass and this job needs no permission to open a pull request.
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Only now. A tag created before the gate ran would name a commit that had not
+      # been verified at the version it claims, and deleting a pushed tag is the kind
+      # of correction that confuses everyone who fetched in between.
+      - name: Create and push the tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${VERSION}" -m "Release v${VERSION}"
+          git push origin "v${VERSION}"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: assets/
+
+      # A hyphen is what separates 1.0.0-rc1 from 1.0.0 in every version-ordering
+      # scheme this artifact is subject to — Maven's and Gradle's both sort a
+      # qualified version below the release it qualifies — so it is also the honest
+      # signal to GitHub. Without `--prerelease` an RC is shown as "Latest", which is
+      # the one thing a release candidate must not claim to be.
+      - name: Create the GitHub release
+        run: |
+          case "$VERSION" in
+            *-*) prerelease=--prerelease ;;
+            *)   prerelease= ;;
+          esac
+          gh release create "v${VERSION}" \
+            --title "Relix v${VERSION}" \
+            --generate-notes \
+            ${prerelease} \
+            assets/*
+
+
+  central:
+    name: Publish to Maven Central
+    needs: [resolve, build, release]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      PUBLISHING_TYPE: ${{ needs.resolve.outputs.publishingType }}
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: staging-deploy
+          path: staging/
+
+      # Signing happens here rather than through Gradle's `signing` plugin, so that the
+      # build stays hermetic: a developer's `./gradlew build` needs no key, no
+      # passphrase and no conditional configuration, and the one place a key is required
+      # is the one job that cannot run without secrets anyway.
+      - name: Import the signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "::error::GPG_PRIVATE_KEY is not set — Central rejects unsigned artifacts."
+            exit 1
+          fi
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          gpg --list-secret-keys --keyid-format=long
+
+      # Every artifact, and nothing else: the checksums are not signed, and a signature
+      # is not checksummed. Central wants a .asc beside each jar and the .pom.
+      - name: Sign the artifacts
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          find staging -type f \( -name '*.jar' -o -name '*.pom' \) -print0 \
+            | xargs -0 -n1 gpg --batch --yes --quiet --pinentry-mode loopback \
+                --passphrase "$GPG_PASSPHRASE" --armor --detach-sign
+          find staging -name '*.asc' | sort
+
+      # maven-metadata.xml is a repository's own index rather than part of a
+      # deployment, and the Portal's validator does not expect it in a bundle.
+      - name: Assemble the bundle
+        run: |
+          ( cd staging && zip -qr ../bundle.zip . -x '*maven-metadata*' )
+          unzip -l bundle.zip
+
+      - name: Upload to the Central Portal
+        id: upload
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          if [ -z "$CENTRAL_TOKEN_USERNAME" ] || [ -z "$CENTRAL_TOKEN_PASSWORD" ]; then
+            echo "::error::CENTRAL_TOKEN_USERNAME/PASSWORD are not set — generate a user token at central.sonatype.com."
+            exit 1
+          fi
+          auth=$(printf '%s:%s' "$CENTRAL_TOKEN_USERNAME" "$CENTRAL_TOKEN_PASSWORD" | base64 -w0)
+          id=$(curl --fail-with-body -sS -X POST \
+                 -H "Authorization: Bearer ${auth}" \
+                 -F "bundle=@bundle.zip" \
+                 "https://central.sonatype.com/api/v1/publisher/upload?name=relix-${VERSION}&publishingType=${PUBLISHING_TYPE}")
+          echo "deployment=${id}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Central deployment ${id} (${PUBLISHING_TYPE})"
+
+      # Without this the job is green the moment the upload is accepted, which says only
+      # that the zip arrived. Validation is where a missing signature, an unverified key
+      # or a rejected POM is reported, and that is minutes later and on a web page
+      # nobody is watching.
+      - name: Wait for validation
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          DEPLOYMENT: ${{ steps.upload.outputs.deployment }}
+        run: |
+          auth=$(printf '%s:%s' "$CENTRAL_TOKEN_USERNAME" "$CENTRAL_TOKEN_PASSWORD" | base64 -w0)
+          for _ in $(seq 1 60); do
+            body=$(curl --fail-with-body -sS -X POST \
+                     -H "Authorization: Bearer ${auth}" \
+                     "https://central.sonatype.com/api/v1/publisher/status?id=${DEPLOYMENT}")
+            state=$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("deploymentState",""))')
+            echo "deploymentState=${state}"
+            case "$state" in
+              VALIDATED|PUBLISHED)
+                echo "::notice::Deployment ${DEPLOYMENT} is ${state}."
+                if [ "$state" = "VALIDATED" ]; then
+                  echo "::notice::Release or drop it at https://central.sonatype.com/publishing/deployments"
+                fi
+                exit 0 ;;
+              FAILED)
+                printf '%s\n' "$body"
+                echo "::error::Central rejected deployment ${DEPLOYMENT}."
+                exit 1 ;;
+            esac
+            sleep 20
+          done
+          echo "::error::Deployment ${DEPLOYMENT} did not reach a terminal state in 20 minutes."
+          exit 1

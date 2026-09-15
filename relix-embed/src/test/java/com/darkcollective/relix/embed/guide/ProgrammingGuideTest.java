@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.embed.guide;
 
+import com.darkcollective.relix.embed.Relix;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -431,8 +432,46 @@ final class ProgrammingGuideTest {
      * Trailing whitespace and surrounding blank lines are the only differences forgiven.
      * Leading spaces are load-bearing — they are a rendered table's left margin.
      */
+    /**
+     * The build's own version, replaced by a placeholder wherever it is printed.
+     *
+     * <p>The one value on these pages that no page can state. {@code relix.version}
+     * reports the version the engine was <em>built</em> at, so an example printing it
+     * prints {@code 1.0-SNAPSHOT} here, a release number under
+     * {@code -PrelixVersion=1.0.0}, and whatever the reader installed for the reader —
+     * three different correct answers to one query. Pasting any of them makes the page
+     * wrong for everybody else, and pinning one fails the release build, which is how
+     * this was found: the first {@code build -PrelixVersion=} of the release workflow
+     * reported two pages as printing the wrong thing when both were right.
+     *
+     * <p>So the placeholder is what the pages show and the substitution is made here,
+     * once, rather than each page working around it. It is narrow deliberately: the
+     * literal running version and nothing else, skipped entirely when the build is
+     * unstamped — {@code unknown} is a real value that rows legitimately carry, and
+     * masking it would hide a component that failed to report.
+     */
+    private static final String VERSION_PLACEHOLDER = "<version>";
+
+    private static final String BUILD_VERSION = buildVersion();
+
+    private static String buildVersion() {
+        try (Relix relix = Relix.open()) {
+            return relix.relation("π version (σ kind = 'engine' (relix.version))")
+                    .toList().stream()
+                    .findFirst()
+                    .map(row -> row.string("version"))
+                    .orElse("");
+        }
+    }
+
+    private static String versionless(String text) {
+        return BUILD_VERSION.isBlank() || "unknown".equals(BUILD_VERSION)
+                ? text
+                : text.replace(BUILD_VERSION, VERSION_PLACEHOLDER);
+    }
+
     private static String normalise(String text) {
-        List<String> lines = new ArrayList<>(Stream.of(text.split("\n", -1))
+        List<String> lines = new ArrayList<>(Stream.of(versionless(text).split("\n", -1))
                 .map(String::stripTrailing)
                 .toList());
         while (!lines.isEmpty() && lines.getFirst().isEmpty()) {
