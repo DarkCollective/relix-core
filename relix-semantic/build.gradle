@@ -87,6 +87,12 @@ tasks.named('test') {
 // The engine's own version, readable at runtime: relix.version reports it, and a
 // process that cannot say which build it is running is one nobody can support.
 processResources {
+    // The version is an input, without which it is not one: `expand` reads it at
+    // execution time, so a workspace built at one version and then at another leaves
+    // this task UP-TO-DATE and the stamp stale — the resource still names the version
+    // the tree happened to be built at first. That is invisible everywhere except in
+    // what `relix.version` reports, which is the one thing it exists to answer.
+    inputs.property('relixVersion', project.version)
     filesMatching('**/version.properties') {
         expand(version: project.version)
     }

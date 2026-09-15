@@ -138,19 +138,37 @@ publishing {
             artifact tasks.named('jar')
             artifact sourcesJar
             artifact javadocJar
+            // Maven Central will not accept a POM missing any of name, description, url,
+            // licenses, scm or developers, and it says so at upload time — the one moment
+            // when the version number is already tagged and the mistake is expensive.
+            // `validatePom` below asks the same questions during `check`.
+            //
+            // The repository named here is the **public** one. A consumer who follows
+            // `url` or clones `scm` has only the coordinate to go on, and the monorepo
+            // these modules are assembled in is private: pointing them there publishes a
+            // 404 to everyone who is not us. relix-core is what the artifact's source
+            // actually is, and it is what releases it.
             pom {
                 name = 'relix'
                 description = project.description
-                url = 'https://github.com/DarkCollective/relix'
+                url = 'https://github.com/DarkCollective/relix-core'
                 licenses {
                     license {
                         name = 'The Apache License, Version 2.0'
                         url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
                     }
                 }
+                developers {
+                    developer {
+                        name = 'David Tooke'
+                        organization = 'DarkCollective'
+                        organizationUrl = 'https://github.com/DarkCollective'
+                    }
+                }
                 scm {
-                    connection = 'scm:git:https://github.com/DarkCollective/relix.git'
-                    url = 'https://github.com/DarkCollective/relix'
+                    connection = 'scm:git:https://github.com/DarkCollective/relix-core.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/DarkCollective/relix-core.git'
+                    url = 'https://github.com/DarkCollective/relix-core'
                 }
                 withXml {
                     // The one dependency that is not merged.
@@ -164,7 +182,77 @@ publishing {
             }
         }
     }
+
+    // A directory, not a server. The release job publishes here, signs what lands,
+    // zips it and hands the zip to the Central Portal — which takes a bundle in
+    // exactly this layout and validates it as a unit.
+    //
+    // Publishing to a repository is also what produces the `.md5`/`.sha1` files
+    // Central requires beside every artifact; `publishToMavenLocal` does not write
+    // them, so a bundle assembled by copying out of `~/.m2` is rejected for checksums
+    // it never had. The staging directory is the shape that has them by construction.
+    repositories {
+        maven {
+            name = 'staging'
+            url = layout.buildDirectory.dir('staging-deploy')
+        }
+    }
 }
+
+// ---------------------------------------------------------------------------
+// The POM, checked here rather than at the Portal.
+//
+// Maven Central rejects a POM missing name, description, url, licenses, developers
+// or scm. That rejection arrives after the version is tagged, the GitHub release is
+// published and the artifacts are built — the most expensive moment available for
+// learning that a field is absent, and a release number on Central cannot be reused
+// even after a failed upload is dropped.
+//
+// So the questions are asked during `check`, where the answer costs nothing. It reads
+// the POM Gradle actually generates rather than the DSL above, which is the only
+// version that can be wrong in a way inspection would miss.
+// ---------------------------------------------------------------------------
+def validatePom = tasks.register('validatePom') {
+    group = 'verification'
+    description = 'Checks the generated POM carries everything Maven Central requires.'
+
+    def pomTask = tasks.named('generatePomFileForRelixPublication')
+    dependsOn pomTask
+    def pomFile = pomTask.map { it.destination }
+    inputs.file(pomFile)
+
+    doLast {
+        def pom = new XmlSlurper().parse(pomFile.get())
+        // Each entry is a required element and the evidence that it is filled in — a
+        // present-but-empty `<developers/>` satisfies Central's schema and not its
+        // validator, so the check is for content rather than for the tag.
+        def required = [
+                'name'        : pom.name.text(),
+                'description' : pom.description.text(),
+                'url'         : pom.url.text(),
+                'licenses'    : pom.licenses.license.name.text(),
+                'developers'  : pom.developers.developer.collect {
+                    it.name.text() + it.organization.text() + it.email.text()
+                }.join(),
+                'scm/url'     : pom.scm.url.text(),
+                'scm/conn'    : pom.scm.connection.text(),
+        ]
+        def missing = required.findAll { !it.value?.trim() }.keySet()
+        if (missing) {
+            throw new GradleException("the published POM would be rejected by Maven "
+                    + "Central: nothing in ${missing.join(', ')} (${pomFile.get()})")
+        }
+        // A SNAPSHOT is publishable to a snapshot repository and to nowhere else, so
+        // this is a warning rather than a failure: every ordinary `./gradlew build`
+        // runs at the default version and must not be told it is doing something wrong.
+        if (pom.version.text().endsWith('SNAPSHOT')) {
+            logger.info('validatePom: {} is a snapshot; a Central release needs '
+                    + '-PrelixVersion=<release version>', pom.version.text())
+        }
+    }
+}
+
+tasks.named('check') { dependsOn validatePom }
 
 // ---------------------------------------------------------------------------
 // The consumer smoke test — the published artifact, used the way a stranger would.
