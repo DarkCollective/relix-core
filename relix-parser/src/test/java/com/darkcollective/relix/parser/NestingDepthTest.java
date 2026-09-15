@@ -24,9 +24,10 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 /**
  * A deeply nested expression is refused, rather than taking the stack with it.
  *
- * <p>This is recursive descent, so nesting depth is stack depth, and measured on a default
- * stack the parser survived two thousand levels of parentheses and overflowed at three
- * thousand. The overflow is the problem rather than the depth: a {@link StackOverflowError}
+ * <p>This is recursive descent, so nesting depth is stack depth, and the depth at which the
+ * stack runs out depends on how much of one the host gave the thread — on 1 MB, the JVM
+ * default on Linux and Windows, parsing overflows around 900 levels. The overflow is the
+ * problem rather than the depth: a {@link StackOverflowError}
  * is an {@code Error} and not the {@code ParseException} this API documents, so it escaped
  * {@code Relix.validate} — the one method whose whole purpose is to report a bad query
  * instead of raising on one, and the one meant for text the program did not write.
@@ -41,15 +42,15 @@ final class NestingDepthTest extends ParserTestSupport {
     @Test
     @DisplayName("an ordinary depth still parses")
     void shallowNestingIsUnaffected() {
-        assertThatCode(() -> parse(nested(100))).doesNotThrowAnyException();
-        assertThatCode(() -> parse(nested(900))).doesNotThrowAnyException();
+        assertThatCode(() -> parse(nested(50))).doesNotThrowAnyException();
+        assertThatCode(() -> parse(nested(200))).doesNotThrowAnyException();
     }
 
     @Test
     @DisplayName("past the limit it is a parse error, naming the limit")
     void deepNestingIsRefused() {
-        assertParseError(nested(1_500))
-                .hasMessageContaining("nests more than 1000 levels deep");
+        assertParseError(nested(400))
+                .hasMessageContaining("nests more than 250 levels deep");
     }
 
     /**
@@ -64,7 +65,7 @@ final class NestingDepthTest extends ParserTestSupport {
                 () -> parse(nested(5_000)));
 
         assertThat(thrown)
-                .as("5000 levels overflowed the stack before this limit existed")
+                .as("a depth that overflows the stack on any host this runs on")
                 .isInstanceOf(ParseException.class);
     }
 }

@@ -273,17 +273,35 @@ public final class RelAlgebraParser {
     /**
      * How deeply one expression may nest before the parser refuses it.
      *
-     * <p>This is recursive descent, so nesting depth is stack depth: measured on a default
-     * stack it survives two thousand levels of parentheses and overflows at three. A
+     * <p>This is recursive descent, so nesting depth is stack depth. A
      * {@link StackOverflowError} is not a {@link ParseException} — it is an {@code Error},
      * which {@code Relix.validate} does not catch, so it escaped the one method whose whole
      * purpose is to report a bad query rather than raise on one.
      *
-     * <p>A thousand leaves the measured cliff twice over, for hosts that run a smaller
-     * stack than this was measured on, and is a depth no hand-written query reaches: a
-     * thousand nested operators is not a query anyone wrote.
+     * <p>The limit therefore has to fire <em>before</em> the stack runs out, and how deep
+     * that is depends on the stack the host gives the thread. Measured, on nested
+     * parentheses — the cheapest construct, so the most levels per frame:
+     *
+     * <table border="1">
+     * <caption>Depth at which parsing overflows, by thread stack size</caption>
+     * <tr><th>Stack</th><th>Outcome</th></tr>
+     * <tr><td>512 KB</td><td>overflows at 700</td></tr>
+     * <tr><td>1 MB</td><td>overflows at 900</td></tr>
+     * <tr><td>2 MB</td><td>reaches this limit; no overflow</td></tr>
+     * <tr><td>8 MB</td><td>reaches this limit; no overflow</td></tr>
+     * </table>
+     *
+     * <p>1 MB is the JVM's default thread stack on Linux and Windows, so a limit above
+     * about 800 is not a limit at all on the most ordinary host there is — which is what a
+     * thousand was, and it took a hosted CI runner to say so, every machine that had run
+     * the suite until then giving the thread 2 MB.
+     *
+     * <p>250 clears the 512 KB measurement by better than a factor of two, on the
+     * construct that nests most cheaply. It costs nothing worth having: 250 nested
+     * operators is not a query anyone wrote, and an expression assembled by a program
+     * does not come through this parser.
      */
-    private static final int MAX_NESTING_DEPTH = 1_000;
+    private static final int MAX_NESTING_DEPTH = 250;
 
     /** Current nesting depth; see {@link #MAX_NESTING_DEPTH}. */
     private int depth;
