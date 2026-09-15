@@ -1,0 +1,39 @@
+// relix-plan — physical query planning.
+// Translates an optimised logical RelNode tree into an executable PhysicalNode
+// plan, fixing join algorithm, build side, and per-node output schemas.
+
+plugins {
+    // Publishes PlanAssertions/PlanAssert (src/testFixtures) — plan-shape assertions
+    // whose failures print the plan through PhysicalPlanPrinter.
+    id 'java-test-fixtures'
+}
+
+dependencies {
+    testImplementation testFixtures(project(':relix-semantic'))  // shared analyze()/model() helpers
+    testImplementation testFixtures(project(':relix-ast'))       // AstBuilders — hand-built trees for structural tests
+    api project(':relix-ast')       // RelNode input; Predicate/ProjectedAttribute in PhysicalNode
+    api project(':relix-symbol')    // Schema / RelationSymbol in PhysicalNode's public API
+    api project(':relix-semantic')  // SchemaAnnotations in the Planner's public API
+    api project(':relix-events')    // QueryEventListener in the Planner's public API
+    api project(':relix-json')      // JsonWriter — in PhysicalPlanJson.write(...) signature
+    api project(':relix-cost')  // CostEstimator + BoundednessSource (in the Planner's public ctor) — join algorithm / build-side / boundedness
+    api project(':relix-function')  // FunctionCatalog — in the Planner's public ctor; the source of every pushdown spelling
+    // SolverCatalog — in Planner.withSolvers, and what tells the planner whether
+    // OPTIMIZE / COVER EXACT can run at all. The SPI only; never a provider.
+    api project(':relix-solver')
+
+    // A solver on the TEST runtime path: planning OPTIMIZE / COVER EXACT now
+    // requires one to be installed, and most of this suite plans rather than
+    // solves. The absence path is asserted deliberately, via Planner.withSolvers.
+    testRuntimeOnly project(':relix-solver-ojalgo')
+
+    // PlanAssertions extends SemanticAssertions (and so, transitively, the symbol and
+    // AST entry points), so one import at this layer reaches every assert below it.
+    testFixturesApi testFixtures(project(':relix-semantic'))
+
+    // PhysicalNodeCorpus builds one PhysicalNode of every kind, so it names the AST
+    // and cost types their components are made of.
+    testFixturesApi project(':relix-ast')
+    testFixturesApi project(':relix-cost')
+    testFixturesApi project(':relix-symbol')
+}

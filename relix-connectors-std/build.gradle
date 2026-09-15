@@ -1,0 +1,71 @@
+// relix-connectors-std — the standard source connectors (ADR-0026 S12, #594).
+//
+// CSV, JSON-file, HTTP/JSON and JDBC sources, plus the JDBC driver provisioning
+// they need, behind the RelixConnector / DataSourceConnector seams the engine
+// publishes. It is a PROVIDER, discovered at runtime: the engine requires it
+// nowhere, which is what lets relix-processor drop `java.sql` and
+// `java.net.http`. The application modules (relix-cli, relix-repl, relix-console)
+// carry the edge so the provider is in the resolved module graph and jlink keeps
+// it (ADR-0026 Decision 9).
+
+dependencies {
+    // The connector SPI + Row/DataSourceConnector/Fetcher, and the model a
+    // connector reads its transport configuration from. `api` because a
+    // connector's public signatures are stated in those types.
+    api project(':relix-processor')
+    api project(':relix-semantic')
+    api project(':relix-lang-ast')
+    api project(':relix-symbol')
+    api project(':relix-value')
+    implementation project(':relix-ast')   // TemporalLiterals — parsing a temporal column
+    implementation project(':relix-json')  // JsonReader — the JDBC driver manifest
+
+    // relix-processor `requires transitive` these, so they must be on the module
+    // path for its descriptor to resolve, even though nothing here names them.
+    implementation project(':relix-plan')
+    implementation project(':relix-events')
+    implementation project(':relix-provenance')
+    implementation project(':relix-function')
+
+    // The shared value/schema/row factories the connector tests build fixtures with.
+    testImplementation testFixtures(project(':relix-processor'))
+    testImplementation testFixtures(project(':relix-semantic'))  // analyze()/model()
+    testImplementation 'com.h2database:h2:2.2.224'  // in-memory JDBC database for connector tests
+
+    // The `integration` tier: the pushdown-agreement corpus against a real MySQL
+    // (#794 S1) and a real Postgres (#816). The gate's copy runs over H2, which
+    // resolves to the GENERIC dialect, so every named dialect's arm of `Dialect` is
+    // otherwise asserted only against itself — and Postgres has four arms no other
+    // dialect renders at all. Skipped automatically when Docker is unavailable
+    // (disabledWithoutDocker).
+    testImplementation 'org.testcontainers:mysql:1.21.3'
+    testImplementation 'org.testcontainers:postgresql:1.21.3'
+    testImplementation 'org.testcontainers:junit-jupiter:1.21.3'
+    testRuntimeOnly 'com.mysql:mysql-connector-j:8.4.0'
+    testRuntimeOnly 'org.postgresql:postgresql:42.7.4'
+    // A logging binding, so Testcontainers' progress is visible rather than a silent wait.
+    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.13'
+}
+
+// `integrationTest` (Docker-backed Testcontainers, @Tag("integration")) is registered
+// for every subproject by the root build; these two settings are what this module's
+// containers need, and are the same pair relix-mongo-connector already carries.
+//
+//   api.version — docker-java probes with Docker API v1.32, which Docker Engine 25+
+//   rejects (minimum 1.44). Override via $DOCKER_API_VERSION for an older daemon.
+//
+//   DOCKER_CONFIG — a developer's ~/.docker/config.json commonly sets
+//   `"credsStore": "desktop"`, so every image lookup shells out to a credential
+//   helper that asks macOS for Full Disk Access. The images here are public and need
+//   no credentials, so an empty config keeps the helper out of the loop entirely.
+def dockerConfigDir = layout.buildDirectory.dir('docker-config')
+
+tasks.named('integrationTest') {
+    systemProperty 'api.version', System.getenv('DOCKER_API_VERSION') ?: '1.44'
+    environment 'DOCKER_CONFIG', dockerConfigDir.map { it.asFile.absolutePath }.get()
+    doFirst {
+        def dir = dockerConfigDir.get().asFile
+        dir.mkdirs()
+        new File(dir, 'config.json').text = '{}\n'
+    }
+}

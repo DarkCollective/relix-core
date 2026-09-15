@@ -1,0 +1,106 @@
+# Direct AST record construction in test sources — a ratchet, not a register.
+#
+# Each row is a file's remaining budget of `new <AstRecord>(…)` calls. The published
+# builders (AstBuilders/Expr/ScriptBuilders) are how a test should build a node; these
+# are what predates them. AstConstructionRatchetTest holds every file to its row:
+#
+#   * a file with no row must have NO direct construction — this is what stops new ones;
+#   * a file with a row must not exceed it — this is what stops the old ones spreading;
+#   * a file BELOW its row fails, asking for the row to be tightened — which is what
+#     makes "migrate what you touch" a thing the build records rather than a thing
+#     people remember. A budget that only ever ratchets down cannot drift back up.
+#
+# So: migrate the file you are already editing, then lower or delete its row in the
+# same commit. Deleting the last row is the end of the migration.
+#
+# The deliberate effort to spend these budgets down — what is mechanical, where it
+# stops, and in what order — is defined in issue #780. Nothing obliges anyone to
+# start it: the ratchet already guarantees the number cannot grow.
+#
+# Some rows will never reach zero, and that is correct: a test whose subject IS the
+# record — its canonical constructor, its validation, its location component — has to
+# call the constructor. The builders default SourceLocation to UNKNOWN and none takes
+# one, so a test asserting on positions cannot use them either.
+#
+# The exemption attaches to the RECORD, not to the file, and six files are where the
+# migration has deliberately stopped short. In each, the named record's own constructor
+# is what is being asserted on — its guards, its accessors, its defensive copying — so
+# a factory in front of it would test the factory:
+#
+#   AstNodeUnaryTest          LimitNode          (its asc/desc fixtures are migrated)
+#   AstNodeRelationTest       the relation and join nodes
+#   AstValidationTest         every constructor it guards
+#   AstPredicateOperandTest   ElementOfPredicate, SortSpecification
+#   SessionizeNodeTest        SessionizeNode
+#   TreeNodeTest              TreeNode           (its asc/desc fixtures are migrated)
+#   ClosureNodeTest, ClusterNodeTest, PathNodeTest, CoverNodeTest, FixpointNodeTest,
+#     TraceNodeTest, WhyNodeTest, WindowNodeTest, OuterUnionNodeTest,
+#     EmptyRelationNodeTest, TruthRelationNodeTest, ConditionalJoinNodeTest — each its
+#     own node
+#   ProduceBoundTest          ProduceBound
+#   RelationFunctionCallTest  RelationFunctionCall
+#   AggregateFunctionTest     AggregateFunction
+#   LangAstSourceTest         InlineTableBody
+#   LangAstScriptTest         ImportStatement, DefStatement
+#   LangAstValidationTest     DefRelationStatement, JsonFileSourceConfig, RelateStatement
+#
+# Three more stay for reasons of their own:
+#
+#   AstLocations (testFixtures) rebuilds every record with a stripped location — it is
+#     constructor code by construction, and no factory takes a location.
+#   ScriptCorpus / ScriptCorpusTest / ScriptCorpusRoundTripTest hold one instance of each
+#     statement kind. Built through the factories, the corpus would assert the factories.
+#   TypeTest builds StructType.Field, which lives in relix-symbol — below the builders in
+#     the module graph, so no factory can reach it.
+#   FunctionCatalogContractTest builds `new FunctionCall(name, args)` from two variables.
+#     `func` is varargs, and a List that arrives as a variable cannot be spliced into one.
+#
+# With those recorded, every remaining row is one of the above. The rules that got here
+# are in tools/ast-builders/literal_rewrite.py; `--rule all` re-runs them, and a row that
+# drops is a row the tool will tighten for you.
+#
+# A SortSpecification inside a TreeNode test is fixture data and was migrated; the
+# TreeNode around it was not. `literal_rewrite.py --except <Kind>` is how that line is
+# drawn on a re-run.
+#
+# count	file
+1	relix-semantic/src/test/java/com/darkcollective/relix/semantic/SemanticValidationTest.java
+26	relix-ast/src/test/java/com/darkcollective/relix/ast/AstEquivalenceTest.java
+7	relix-ast/src/test/java/com/darkcollective/relix/ast/RelNodeOperandsTest.java
+15	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/ColumnPruningPassTest.java
+76	relix-ast/src/test/java/com/darkcollective/relix/ast/AstNodeUnaryTest.java
+79	relix-ast/src/testFixtures/java/com/darkcollective/relix/ast/AstLocations.java
+58	relix-ast/src/test/java/com/darkcollective/relix/ast/AstNodeRelationTest.java
+1	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/ExpressionSimplificationPassTest.java
+50	relix-ast/src/test/java/com/darkcollective/relix/ast/AstValidationTest.java
+44	relix-ast/src/test/java/com/darkcollective/relix/ast/AstPredicateOperandTest.java
+33	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstScriptTest.java
+27	relix-ast/src/test/java/com/darkcollective/relix/ast/CoverNodeTest.java
+23	relix-ast/src/test/java/com/darkcollective/relix/ast/FixpointNodeTest.java
+16	relix-ast/src/test/java/com/darkcollective/relix/ast/TreeNodeTest.java
+19	relix-ast/src/test/java/com/darkcollective/relix/ast/EmptyRelationNodeTest.java
+18	relix-ast/src/test/java/com/darkcollective/relix/ast/SourceLocationTest.java
+16	relix-ast/src/test/java/com/darkcollective/relix/ast/ClosureNodeTest.java
+16	relix-ast/src/test/java/com/darkcollective/relix/ast/SessionizeNodeTest.java
+16	relix-symbol/src/test/java/com/darkcollective/relix/symbol/TypeTest.java
+15	relix-ast/src/test/java/com/darkcollective/relix/ast/ConditionalJoinNodeTest.java
+15	relix-ast/src/test/java/com/darkcollective/relix/ast/PathNodeTest.java
+13	relix-ast/src/test/java/com/darkcollective/relix/ast/ClusterNodeTest.java
+13	relix-ast/src/test/java/com/darkcollective/relix/ast/OuterUnionNodeTest.java
+13	relix-ast/src/test/java/com/darkcollective/relix/ast/WhyNodeTest.java
+12	relix-ast/src/test/java/com/darkcollective/relix/ast/ProduceBoundTest.java
+9	relix-ast/src/test/java/com/darkcollective/relix/ast/WindowNodeTest.java
+10	relix-ast/src/test/java/com/darkcollective/relix/ast/AstLocationsTest.java
+10	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstValidationTest.java
+9	relix-ast/src/test/java/com/darkcollective/relix/ast/RelationFunctionCallTest.java
+7	relix-ast/src/test/java/com/darkcollective/relix/ast/TraceNodeTest.java
+4	relix-ast/src/test/java/com/darkcollective/relix/ast/RelNodeAssertTest.java
+5	relix-ast/src/test/java/com/darkcollective/relix/ast/TruthRelationNodeTest.java
+3	relix-ast/src/test/java/com/darkcollective/relix/ast/AggregateFunctionTest.java
+3	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstSourceTest.java
+2	relix-lang/src/test/java/com/darkcollective/relix/lang/ScriptCorpusRoundTripTest.java
+2	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/ScriptCorpusTest.java
+1	relix-processor/src/test/java/com/darkcollective/relix/processor/eval/FunctionCatalogContractTest.java
+1	relix-ast/src/test/java/com/darkcollective/relix/ast/ExprTest.java
+1	relix-ast/src/test/java/com/darkcollective/relix/ast/RelNodeMapChildrenTest.java
+1	relix-function/src/test/java/com/darkcollective/relix/function/AggregateFunctionTest.java

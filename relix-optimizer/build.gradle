@@ -1,0 +1,23 @@
+// relix-optimizer — Query optimization passes for .relix scripts.
+// Receives a SemanticModel, rewrites RelNode trees to equivalent but more
+// efficient forms, and produces an audit trail of every transformation applied.
+
+plugins {
+    // Publishes OptimizerAssertions/OptimizationContextAssert (src/testFixtures) — a
+    // failing `fired(code)` names the rules that did fire, which in a pipeline test is
+    // the diagnosis rather than a hint towards one.
+    id 'java-test-fixtures'
+}
+
+dependencies {
+    testImplementation testFixtures(project(':relix-semantic'))  // shared analyze()/model() helpers
+    api project(':relix-ast')       // RelNode, Predicate, Operand, SourceLocation in public API
+    api project(':relix-semantic')  // SemanticModel, SchemaAnnotations in public API
+    api project(':relix-events')    // QueryEventListener in the optimize() public API
+    api project(':relix-cost')  // CostEstimator/CostTier (join reordering) + DistinctnessSource (optimize() public API)
+    implementation project(':relix-function')  // AggregateProperty — DIST-002 asks the aggregate, not a name list
+
+    // OptimizerAssertions extends SemanticAssertions, so one import at this layer
+    // reaches the RelNode, Schema and SemanticResult asserts too.
+    testFixturesApi testFixtures(project(':relix-semantic'))
+}

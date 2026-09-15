@@ -1,0 +1,56 @@
+### IntelliJ IDEA ###
+.idea/
+*.iml
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+.kotlin
+
+### Eclipse ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+### Gradle ###
+.gradle/
+build/
+
+### Java ###
+*.class
+.claude/worktrees/
+
+### Python (docs/llm, docs/pdf generators) ###
+__pycache__/
+*.pyc
+
+### relix-ask teacher-LLM response caches ###
+# Stray/local caches stay ignored, but the canonical docs/llm cache IS
+# committed: the checked-in query-pair.schemas.json is generated from it, so
+# committing it makes corpus regeneration byte-for-byte reproducible and
+# token-free (no API key needed) on any machine/CI.
+*.teacher-cache.json
+!docs/llm/.teacher-cache.json
+
+### relix-ask :ask failure log (issue #470) — local debugging artifact, never committed
+ask-log.jsonl
+ask-log.jsonl.*
