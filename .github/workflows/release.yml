@@ -238,9 +238,31 @@ jobs:
       # Only now. A tag created before the gate ran would name a commit that had not
       # been verified at the version it claims, and deleting a pushed tag is the kind
       # of correction that confuses everyone who fetched in between.
+      #
+      # A release is often re-attempted — a later job fails, or a GitHub release is
+      # deleted and the version tried again — and **deleting a release does not delete
+      # its tag**, so the second attempt met `fatal: tag already exists` and stopped
+      # with nothing said about what to do. The two cases are not the same thing, and
+      # the difference is which commit the tag names:
+      #
+      #   * the tag is already on THIS commit — a resumed release, so carry on;
+      #   * the tag is on another commit — the artifacts just built are not the ones
+      #     the tag names, so publishing under it would be a lie. Refuse, and say
+      #     exactly what to delete.
+      #
+      # Never `--force`: a tag that has been pushed has been fetched.
       - name: Create and push the tag
         if: github.event_name == 'workflow_dispatch'
         run: |
+          if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+            at=$(git rev-parse "refs/tags/v${VERSION}^{commit}")
+            if [ "$at" != "$GITHUB_SHA" ]; then
+              echo "::error::tag v${VERSION} already exists and names ${at}, but this run built ${GITHUB_SHA}. Publishing under it would ship artifacts the tag does not describe. Delete it and dispatch again: git push origin :refs/tags/v${VERSION}"
+              exit 1
+            fi
+            echo "::notice::tag v${VERSION} is already on this commit — resuming the release"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "v${VERSION}" -m "Release v${VERSION}"
@@ -251,22 +273,38 @@ jobs:
           name: release-assets
           path: assets/
 
-      # A hyphen is what separates 1.0.0-rc1 from 1.0.0 in every version-ordering
-      # scheme this artifact is subject to — Maven's and Gradle's both sort a
-      # qualified version below the release it qualifies — so it is also the honest
-      # signal to GitHub. Without `--prerelease` an RC is shown as "Latest", which is
-      # the one thing a release candidate must not claim to be.
+      # Only a bare X.Y.Z is a full release; everything else is marked as a pre-release.
+      # The rule was the other way round — a hyphen meant pre-release — and `1.0.0.rc1`
+      # went straight through it, publishing a candidate as "Latest" and making its
+      # assets the ones `/releases/latest/download/` serves. A rule that enumerates the
+      # forms a *qualifier* can take has to be complete to be right; one that recognises
+      # the single form of a *release* fails in the safe direction, so a mistyped version
+      # is shown as a candidate rather than as the newest stable version there is.
+      #
+      # An existing release is updated rather than refused, for the same reason the tag
+      # step above resumes: this job gets re-attempted, and `gh release create` against
+      # an existing tag stops the run dead.
       - name: Create the GitHub release
         run: |
-          case "$VERSION" in
-            *-*) prerelease=--prerelease ;;
-            *)   prerelease= ;;
-          esac
-          gh release create "v${VERSION}" \
-            --title "Relix v${VERSION}" \
-            --generate-notes \
-            ${prerelease} \
-            assets/*
+          # A regex, not a glob: a glob's `*` matches dots as happily as digits, so
+          # `[0-9]*.[0-9]*.[0-9]` accepts `1.0.0-alpha.1` — the exact class of version
+          # this rule exists to catch. Found by trying the rule on the versions it would
+          # actually see rather than on the one it was written for.
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            prerelease=
+          else
+            prerelease=--prerelease
+          fi
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "::notice::release v${VERSION} already exists — replacing its assets"
+            gh release upload "v${VERSION}" assets/* --clobber
+          else
+            gh release create "v${VERSION}" \
+              --title "Relix v${VERSION}" \
+              --generate-notes \
+              ${prerelease} \
+              assets/*
+          fi
 
 
   central:
