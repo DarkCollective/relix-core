@@ -1,0 +1,5 @@
+// relix-json — a minimal, dependency-free JSON writer.
+//
+// A tiny leaf module (no relix dependencies) so any producer of machine-readable
+// output — the IR/plan/optimizer serializers and the CLI's JSON bundle — can
+// share one correct JSON-emitting primitive without coupling to each other.

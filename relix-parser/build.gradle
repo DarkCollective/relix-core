@@ -1,0 +1,19 @@
+// relix-parser — Lexer, parser, and ParseException.
+// Depends on relix-ast for the AST node types it produces.
+// (java-library plugin and test deps inherited from root subprojects block)
+
+// SyntaxSpellingTableTest reads docs/reference/language/spellings.md — the
+// Unicode↔ASCII contract — and holds every row it declares to the parser. It reads the
+// repository rather than this module, so Gradle is told about it; see the same
+// declaration in relix-lang for why. Without it, editing the page leaves the test
+// UP-TO-DATE: passing because it never ran, which is the one failure mode a
+// completeness guard must not have.
+tasks.named('test') {
+    inputs.file("$rootDir/docs/reference/language/spellings.md")
+            .withPropertyName('spellingTable')
+}
+
+dependencies {
+    api project(':relix-ast')
+    testImplementation testFixtures(project(':relix-ast'))
+}

@@ -1,0 +1,5 @@
+// relix-events — neutral, display-oriented query events and the listener seam.
+//
+// A tiny leaf module (no relix dependencies) so the optimizer, planner, and any
+// consumer (CLI, future UI) can share one event vocabulary without coupling to
+// each other's internal types.

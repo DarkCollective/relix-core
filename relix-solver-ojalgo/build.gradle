@@ -1,0 +1,11 @@
+// relix-solver-ojalgo — the shipped MathProgrammingSolver (ADR-0026 S13, #595).
+//
+// The one module in the build that names ojalgo. It is a PROVIDER, discovered at
+// runtime: no engine module requires it, which is what lets relix-processor drop
+// the dependency. The application modules carry the edge so it stays in the
+// resolved module graph and jlink keeps it (ADR-0026 Decision 9).
+
+dependencies {
+    api project(':relix-solver')   // the SPI it implements, and its only relix edge
+    implementation 'org.ojalgo:ojalgo:56.2.1'  // pure-Java MIP/LP branch-and-bound
+}

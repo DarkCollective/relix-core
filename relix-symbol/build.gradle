@@ -1,0 +1,18 @@
+// relix-symbol — Symbol table, type system, and relation/function symbol hierarchy.
+// Depends on relix-ast for Operand and RelNode used in symbol bodies.
+// (java-library plugin and test deps inherited from root subprojects block)
+
+plugins {
+    // Publishes SymbolAssertions/SchemaAssert (src/testFixtures) — the shared
+    // heading assertions, so every module asserting on a Schema fails the same way.
+    id 'java-test-fixtures'
+}
+
+dependencies {
+    api project(':relix-ast')
+    testImplementation testFixtures(project(':relix-ast'))
+
+    // SymbolAssertions extends AstAssertions, so a consumer importing it reaches the
+    // RelNode assert too — hence `api`, not `implementation`.
+    testFixturesApi testFixtures(project(':relix-ast'))
+}

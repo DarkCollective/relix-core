@@ -1,0 +1,264 @@
+-- The language reference's shared vocabulary.
+--
+-- Every `# Examples:` block in docs/reference is analysed with this file prepended
+-- (ReferenceExampleAnalysisTest, relix-semantic), so an example can name these
+-- relations without declaring them and still be checked against a real schema.
+--
+-- They are declared as sources rather than inline tables because a source carries
+-- its column *types*, which an inline table infers as STRING or NUMBER only — and a
+-- manual that documents temporal functions needs a TIMESTAMP to document them
+-- against. Nothing reads the files: analysis resolves names and types, and stops
+-- short of touching data.
+--
+-- Adding a column here is the normal way to make an example analysable. Inventing a
+-- new relation is not: an example that needs a table appearing nowhere else in the
+-- manual is asking the reader to imagine one, and it is nearly always better to move
+-- it onto a relation the reader has already met.
+
+-- ── the running dataset: customers, their orders, and what was ordered ──────────
+
+source Customers from csv("customers.csv") {
+    schema: { customer_id: NUMBER, name: STRING, city: STRING, region: STRING,
+              email: STRING, phone: STRING, active: STRING, signup_date: DATE, country: STRING }
+};
+
+source Orders from csv("orders.csv") {
+    schema: { order_id: NUMBER, customer_id: NUMBER, customer: STRING, amount: NUMBER,
+              tax: NUMBER, total: NUMBER, qty: NUMBER, status: STRING, region: STRING,
+              code: STRING, order_date: DATE, placed_at: TIMESTAMP,
+              shipped_at: TIMESTAMP, items: ANY, tags: ANY, attributes: ANY,
+              item_count: NUMBER, user_id: NUMBER, active: STRING }
+};
+
+-- A natural join needs both sides to *declare* their columns, so a page whose
+-- example joins on a shared key has to name its relations here.
+source LineItems from csv("line_items.csv") {
+    schema: { order_id: NUMBER, line_no: NUMBER, product_id: NUMBER, qty: NUMBER,
+              price: NUMBER, store: STRING }
+};
+
+source OrderItems from csv("order_items.csv") {
+    schema: { order_id: NUMBER, line_no: NUMBER, sku: STRING, qty: NUMBER, price: NUMBER }
+};
+
+source Products from csv("products.csv") {
+    schema: { sku: STRING, name: STRING, category: STRING, category_id: NUMBER,
+              price: NUMBER, tax: NUMBER, units_sold: NUMBER, code: STRING, description: STRING,
+              active: STRING, id: NUMBER, product_id: NUMBER }
+};
+
+-- ── people ─────────────────────────────────────────────────────────────────────
+
+source Users from csv("users.csv") {
+    schema: { id: NUMBER, user_id: NUMBER, name: STRING, first_name: STRING,
+              last_name: STRING, email: STRING, phone: STRING, age: NUMBER,
+              dept: STRING, active: STRING, created_at: TIMESTAMP, status: STRING, nickname: STRING, display_name: STRING, username: STRING }
+};
+
+-- Five columns, and the count matters: the positional form of ρ names every column
+-- of its input, so a rename example is only checkable against a fixed arity.
+source Employees from csv("employees.csv") {
+    schema: { emp_id: NUMBER, name: STRING, dept: STRING, manager_id: NUMBER,
+              salary: NUMBER }
+};
+
+source Salaries from csv("salaries.csv") {
+    schema: { dept_id: NUMBER, name: STRING, salary: NUMBER }
+};
+
+-- ── time series and events ─────────────────────────────────────────────────────
+
+source Events from csv("events.csv") {
+    schema: { event_id: NUMBER, user_id: NUMBER, event_time: TIMESTAMP,
+              occurred_at: TIMESTAMP, ts: TIMESTAMP, action: STRING, kind: STRING,
+              region: STRING, amount: NUMBER, score: NUMBER, host: STRING,
+              cpu: NUMBER, day: DATE, logged: STRING, id: NUMBER, created_at: TIMESTAMP }
+};
+
+source ClickEvents from csv("click_events.csv") {
+    schema: { user_id: NUMBER, event_time: TIMESTAMP, url: STRING }
+};
+
+source Readings from csv("readings.csv") {
+    schema: { sensor: NUMBER, station: STRING, at: TIMESTAMP, delta: NUMBER,
+              error: NUMBER, cpu: NUMBER, direction_rad: NUMBER, speed: NUMBER,
+              angle_rad: NUMBER, value: NUMBER, sensor_id: NUMBER, seq: NUMBER, ts: TIMESTAMP, reading_time: TIMESTAMP }
+};
+
+source Trades from csv("trades.csv") {
+    schema: { trade_id: NUMBER, ticker: STRING, trade_time: TIMESTAMP,
+              price: NUMBER, qty: NUMBER, session_id: NUMBER }
+};
+
+-- ── sales reporting ────────────────────────────────────────────────────────────
+
+source Sales from csv("sales.csv") {
+    schema: { region: STRING, rep: STRING, amount: NUMBER, bonus: NUMBER,
+              month: NUMBER, ytd_revenue: NUMBER, product: STRING, product_id: NUMBER, price: NUMBER, qty: NUMBER,
+              sold_at: TIMESTAMP, revenue: NUMBER, units: NUMBER }
+};
+
+source MonthlyRevenue from csv("monthly_revenue.csv") {
+    schema: { region: STRING, month: NUMBER, revenue: NUMBER }
+};
+
+source QuarterlySales from csv("quarterly_sales.csv") {
+    schema: { region: STRING, q1: NUMBER, q2: NUMBER, q3: NUMBER, q4: NUMBER }
+};
+
+-- ── graphs, sets and the solver ────────────────────────────────────────────────
+
+source Edges from csv("edges.csv") {
+    schema: { src: STRING, dst: STRING, weight: NUMBER, cost: NUMBER, label: STRING }
+};
+
+source Candidates from csv("candidates.csv") {
+    schema: { id: NUMBER, name: STRING, value: NUMBER, weight: NUMBER, cost: NUMBER,
+              region: STRING, priority: NUMBER, a: STRING, b: STRING }
+};
+
+source Plans from csv("plans.csv") {
+    schema: { plan_id: NUMBER, name: STRING, cost: NUMBER, benefit: NUMBER,
+              coverage: NUMBER }
+};
+
+source Assets from csv("assets.csv") {
+    schema: { asset_id: NUMBER, name: STRING, value: NUMBER, risk: NUMBER,
+              ret: NUMBER, sector: STRING, class: STRING }
+};
+
+source Enrolments from csv("enrolments.csv") {
+    schema: { student_id: NUMBER, course_id: NUMBER }
+};
+
+source RequiredCourses from csv("required_courses.csv") {
+    schema: { course_id: NUMBER }
+};
+
+-- ── configuration-shaped inputs (COVER) ────────────────────────────────────────
+
+source Networks from csv("networks.csv") {
+    schema: { network: STRING }
+};
+
+source Locales from csv("locales.csv") {
+    schema: { locale: STRING }
+};
+
+source Sessions from csv("sessions.csv") {
+    schema: { session_id: NUMBER, device: STRING, network: STRING, locale: STRING, id: NUMBER, opened: TIMESTAMP, closed: TIMESTAMP, started: TIMESTAMP,
+              seq: NUMBER, visitor: STRING }
+};
+
+source Results from csv("results.csv") {
+    schema: { student_id: NUMBER, subject: STRING, score: NUMBER, name: STRING, student_name: STRING, class: STRING }
+};
+
+-- ── joins across two relations that share a column name ────────────────────────
+
+source devices from csv("devices.csv") {
+    schema: { device_id: NUMBER, name: STRING, room_id: NUMBER }
+};
+
+source rooms from csv("rooms.csv") {
+    schema: { room_id: NUMBER, name: STRING, floor: NUMBER }
+};
+
+source A from csv("a.csv") { schema: { x: NUMBER, y: NUMBER, id: NUMBER, active: STRING } };
+source B from csv("b.csv") { schema: { x: NUMBER, z: NUMBER, id: NUMBER } };
+
+-- ── awkward names, which the manual documents on purpose ───────────────────────
+
+-- A schema cannot spell a reserved word as a column name (a delimited identifier is
+-- not accepted there), so the page that documents backticks declares its own
+-- relations and is checked against those.
+source RawOrders from csv("raw_orders.csv") {
+    schema: { id: NUMBER, amount: NUMBER, total: NUMBER, status: STRING,
+              logged: STRING }
+};
+
+-- No table-valued functions are declared here on purpose. A `def` body reads a
+-- relation, and an example that declares its own relation of that name shadows the
+-- fixture's — which would leave the *fixture's* function analysing against the
+-- example's table and failing for reasons the example's author cannot see. A page
+-- that calls a TVF declares it, which is clearer on the page anyway.
+
+-- ── relations whose page needs *declared* columns ───────────────────────────────
+--
+-- An open (schema-on-read) stand-in cannot serve these. An open schema answers ANY
+-- to "is there a column called x?" and *nothing* to "what columns are there?", so
+-- the operators that enumerate a heading — ∘ and ÷ (which columns are shared),
+-- COVER (the coverage universe), and the ones that append a column — either reject
+-- an open input or misjudge it (#649). Their pages therefore declare here.
+
+source Manages from csv("manages.csv") {
+    schema: { manager: STRING, employee: STRING }
+};
+
+source Supplies from csv("supplies.csv") {
+    schema: { supplier: STRING, part: STRING }
+};
+
+source NeededParts from csv("needed_parts.csv") {
+    schema: { part: STRING }
+};
+
+source Graph from csv("graph.csv") {
+    schema: { src: STRING, dst: STRING, cost: NUMBER, weight: NUMBER, score: NUMBER }
+};
+
+source Clicks from csv("clicks.csv") {
+    schema: { user_id: NUMBER, ts: TIMESTAMP, url: STRING, seq: NUMBER, id: NUMBER, region: STRING }
+};
+
+source Profiles from csv("profiles.csv") {
+    schema: { user_id: NUMBER, bio: STRING, avatar: STRING }
+};
+
+source MonthlyLogins from csv("monthly_logins.csv") {
+    schema: { user_id: NUMBER, month: NUMBER, logins: NUMBER }
+};
+
+source Tiers from csv("tiers.csv") {
+    schema: { tier: STRING, min: NUMBER, max: NUMBER }
+};
+
+source Type from csv("type.csv")   { schema: { type: STRING } };
+source Format from csv("format.csv") { schema: { format: STRING } };
+source Size from csv("size.csv")   { schema: { size: STRING } };
+
+source Departments from csv("departments.csv") {
+    schema: { dept: STRING, dept_name: STRING, floor: NUMBER, spent: NUMBER, budget: NUMBER }
+};
+
+source Reviews from csv("reviews.csv") {
+    schema: { review_id: NUMBER, product_id: NUMBER, rating: NUMBER, id: NUMBER }
+};
+
+source Friends from csv("friends.csv") { schema: { person: STRING, friend: STRING } };
+source LivesIn from csv("lives_in.csv") { schema: { person: STRING, city: STRING } };
+source CityCountry from csv("city_country.csv") { schema: { city: STRING, country: STRING } };
+
+source UserPermissions from csv("user_permissions.csv") {
+    schema: { user_id: NUMBER, permission: STRING }
+};
+source RequiredPermissions from csv("required_permissions.csv") {
+    schema: { permission: STRING }
+};
+
+source PageViews from csv("page_views.csv") {
+    schema: { user_id: NUMBER, at: TIMESTAMP, url: STRING }
+};
+
+source Flights from csv("flights.csv") {
+    schema: { origin: STRING, dest: STRING, cost: NUMBER, duration: NUMBER }
+};
+
+-- A full outer join needs declared headings on both sides: over documents an
+-- unmatched right row cannot be named consistently with a matched one.
+source LedgerA from csv("ledger_a.csv") {
+    schema: { ref: STRING, amount: NUMBER, booked_on: DATE }
+};
+source LedgerB from csv("ledger_b.csv") {
+    schema: { ref: STRING, amount: NUMBER, booked_on: DATE }
+};

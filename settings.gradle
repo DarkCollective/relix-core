@@ -1,0 +1,28 @@
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.9.0'
+}
+
+rootProject.name = 'relix'
+
+include 'relix-ast'
+include 'relix-value'
+include 'relix-symbol'
+include 'relix-function'
+include 'relix-lang-ast'
+include 'relix-events'
+include 'relix-json'
+include 'relix-provenance'
+include 'relix-solver'
+include 'relix-semantic'
+include 'relix-cost'
+include 'relix-plan'
+include 'relix-optimizer'
+include 'relix-processor'
+include 'relix-parser'
+include 'relix-lang'
+include 'relix-embed'
+include 'relix-function-builtin'
+include 'relix-connectors-std'
+include 'relix-solver-ojalgo'
+include 'relix-mongo-connector'
+include 'relix-dist'

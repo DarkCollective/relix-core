@@ -1,0 +1,12 @@
+// relix-ast — AST nodes and visitor infrastructure.
+// No parser dependency; safe to use standalone.
+// (java-library plugin and test deps inherited from root subprojects block)
+
+plugins {
+    id 'java-test-fixtures'
+}
+
+dependencies {
+    // Expose AssertJ to consumers of the test fixtures (e.g. relix-parser tests)
+    testFixturesApi 'org.assertj:assertj-core:3.24.2'
+}

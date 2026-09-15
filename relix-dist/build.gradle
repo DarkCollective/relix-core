@@ -1,0 +1,219 @@
+// relix-dist — the one published artifact.
+//
+// A client writes `com.darkcollective.relix:relix` and gets the engine, the grammar,
+// the runtime and the shipped providers. The modules this is assembled from are not
+// published: their boundaries are claims *this* build enforces, and publishing them
+// would turn nineteen internals into coordinates a client can name, pin, and be broken
+// by — a far larger promise than we would defend.
+//
+// The jar is assembled rather than compiled. Each bundled module's own
+// `module-info.class` is dropped and replaced by this project's, which exports exactly
+// the packages a caller may reach; `META-INF/services` files are concatenated, because
+// three modules declare providers under names that would otherwise overwrite each other.
+apply plugin: 'maven-publish'
+
+description = 'Relix — a relational algebra engine for the JVM.'
+
+def bundled = rootProject.ext.bundledModules.collect { project(it) }
+
+dependencies {
+    // Not merged, deliberately: shading a third-party library hides it from a client's
+    // dependency report and from their vulnerability scanning. It stays a normal
+    // transitive dependency.
+    api 'org.ojalgo:ojalgo:56.2.1'
+}
+
+// The merged service declarations. Concatenated rather than copied, because
+// `META-INF/services/...RelixConnector` exists in more than one module and the last
+// copy would otherwise be the only one — a discovery failure that shows up as a
+// missing connector at runtime and nowhere earlier.
+def servicesDir = layout.buildDirectory.dir('merged/services')
+
+def mergeServices = tasks.register('mergeServices') {
+    description = 'Concatenates the bundled modules\' META-INF/services declarations.'
+    dependsOn bundled.collect { it.tasks.named('processResources') }
+    bundled.each { inputs.files(it.sourceSets.main.output.resourcesDir).withPropertyName(it.name).optional() }
+    outputs.dir(servicesDir)
+    doLast {
+        def out = servicesDir.get().asFile
+        out.deleteDir()
+        def merged = [:].withDefault { [] as Set }
+        bundled.each { p ->
+            def dir = new File(p.sourceSets.main.output.resourcesDir, 'META-INF/services')
+            if (dir.isDirectory()) {
+                dir.eachFile { f -> merged[f.name].addAll(f.readLines().findAll { it.trim() }) }
+            }
+        }
+        def target = new File(out, 'META-INF/services')
+        target.mkdirs()
+        merged.each { name, providers ->
+            new File(target, name).text = providers.join('\n') + '\n'
+        }
+    }
+}
+
+// The classes, gathered into one tree. Each module's own descriptor is dropped — this
+// project's replaces it — and the service files are superseded by the merged copies.
+def mergedClasses = layout.buildDirectory.dir('merged/classes')
+
+def mergeClasses = tasks.register('mergeClasses', Sync) {
+    description = 'Gathers the bundled modules\' classes into one tree.'
+    into mergedClasses
+    bundled.each { p ->
+        from(p.sourceSets.main.output) {
+            exclude 'module-info.class'
+            exclude 'META-INF/services/**'
+        }
+    }
+    duplicatesStrategy = DuplicatesStrategy.FAIL   // a package collision must not pass quietly
+}
+
+// The descriptor is compiled *against the gathered classes*, patched into the module
+// being declared. That is the only way a module-info can export packages whose classes
+// were compiled elsewhere — and it is what makes the export list enforceable rather
+// than decorative: a package named here that is not in the tree fails the build.
+def compileModuleInfo = tasks.register('compileModuleInfo', JavaCompile) {
+    dependsOn mergeClasses
+    source = files('src/main/java/module-info.java')
+    classpath = files()
+    destinationDirectory = layout.buildDirectory.dir('merged/descriptor')
+    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(24) }
+    doFirst {
+        options.compilerArgs += [
+                '--module-path', configurations.compileClasspath.asPath,
+                '--patch-module', "com.darkcollective.relix=${mergedClasses.get().asFile}",
+                '--module-version', project.version.toString(),
+        ]
+    }
+}
+
+// Nothing of this project's own is compiled or documented the ordinary way: the one
+// source file is a module descriptor that only resolves against the gathered classes,
+// and the published javadoc is the aggregate run over the modules themselves.
+compileJava {
+    enabled = false
+}
+
+javadoc {
+    enabled = false
+}
+
+jar {
+    archiveBaseName = 'relix'
+    dependsOn mergeServices, compileModuleInfo
+    from mergedClasses
+    from servicesDir
+    from compileModuleInfo.map { it.destinationDirectory }
+    // Apache-2.0 section 4(a)/(d): a recipient of the artifact gets the licence it is
+    // under, and the NOTICE that travels with it, without having to find the repository.
+    from(rootProject.file('LICENSE.txt')) { into 'META-INF' }
+    from(rootProject.file('NOTICE')) { into 'META-INF' }
+    manifest {
+        attributes(
+                'Implementation-Title': 'relix',
+                'Implementation-Version': project.version)
+    }
+}
+
+// Sources and javadoc for the assembled artifact come from the same set the classes do,
+// so what a client steps into is what they are running.
+def sourcesJar = tasks.register('relixSourcesJar', Jar) {
+    archiveBaseName = 'relix'
+    archiveClassifier = 'sources'
+    bundled.each { p -> from p.sourceSets.main.allSource }
+    from 'src/main/java'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+def javadocJar = tasks.register('relixJavadocJar', Jar) {
+    archiveBaseName = 'relix'
+    archiveClassifier = 'javadoc'
+    from rootProject.tasks.named('javadocAll')
+}
+
+publishing {
+    publications {
+        relix(MavenPublication) {
+            artifactId = 'relix'
+            artifact tasks.named('jar')
+            artifact sourcesJar
+            artifact javadocJar
+            pom {
+                name = 'relix'
+                description = project.description
+                url = 'https://github.com/DarkCollective/relix'
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:https://github.com/DarkCollective/relix.git'
+                    url = 'https://github.com/DarkCollective/relix'
+                }
+                withXml {
+                    // The one dependency that is not merged.
+                    def deps = asNode().appendNode('dependencies')
+                    def dep = deps.appendNode('dependency')
+                    dep.appendNode('groupId', 'org.ojalgo')
+                    dep.appendNode('artifactId', 'ojalgo')
+                    dep.appendNode('version', '56.2.1')
+                    dep.appendNode('scope', 'runtime')
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The consumer smoke test — the published artifact, used the way a stranger would.
+//
+// Every other test here resolves *projects*. That is what hides a packaging mistake: a
+// class left out of the merge, a service file overwritten, a package missing from the
+// module descriptor — each compiles and passes everything, then fails for the first
+// person to depend on the release.
+//
+// It is a *separate build*, which is the only shape that proves anything: inside this
+// one, Gradle prefers a project over an external module of the same coordinates, so the
+// POM would never be read at all.
+//
+//   ./gradlew :relix-dist:consumerSmokeTest
+// ---------------------------------------------------------------------------
+def consumerProject = layout.buildDirectory.dir('consumerSmoke/project')
+
+def writeConsumerProject = tasks.register('writeConsumerProject') {
+    description = 'Generates the standalone build that consumes the published artifact.'
+    inputs.dir('src/consumerSmoke/java')
+    inputs.property('version', project.version)
+    outputs.dir(consumerProject)
+    doLast {
+        def root = consumerProject.get().asFile
+        root.deleteDir()
+        new File(root, 'src/main/java').mkdirs()
+        new File(root, 'settings.gradle').text = "rootProject.name = 'relix-consumer'\n"
+        new File(root, 'build.gradle').text = """\
+            plugins { id 'application' }
+            repositories { mavenLocal(); mavenCentral() }
+            java { toolchain { languageVersion = JavaLanguageVersion.of(24) } }
+            dependencies {
+                implementation 'com.darkcollective.relix:relix:${project.version}'
+            }
+            application { mainClass = 'ConsumerSmoke' }
+            """.stripIndent()
+        copy {
+            from 'src/consumerSmoke/java'
+            into new File(root, 'src/main/java')
+        }
+    }
+}
+
+tasks.register('consumerSmokeTest', GradleBuild) {
+    group = 'verification'
+    description = 'Runs a standalone consumer of the published relix artifact, from ~/.m2.'
+    dir = consumerProject
+    // `tasks` is GradleBuild's own property here, which shadows the project's task
+    // container — hence the qualified name on the line below.
+    tasks = ['run']
+    dependsOn writeConsumerProject, project.tasks.named('publishToMavenLocal')
+}

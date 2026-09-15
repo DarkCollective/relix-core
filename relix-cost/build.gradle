@@ -1,0 +1,12 @@
+// relix-cost — cost estimation over relational algebra trees.
+// Maps a RelNode (given a SymbolTable) to a CostTier, shared by the optimizer
+// (join reordering) and the processor (hash-join build-side selection).
+
+dependencies {
+    api project(':relix-ast')     // RelNode in the public API of CostEstimator
+    api project(':relix-symbol')  // SymbolTable / RelationSymbol in the public API
+
+    // RelNodeCorpus — one instance of every RelNode kind, so the derivations here are
+    // exercised for all of them rather than for the handful anyone wrote down.
+    testImplementation testFixtures(project(':relix-ast'))
+}

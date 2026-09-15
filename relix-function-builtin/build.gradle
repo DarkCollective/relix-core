@@ -1,0 +1,30 @@
+// relix-function-builtin — the default function library.
+//
+// One dependency, and that is the point of the design (ADR-0026 D2): the shipped
+// library compiles against the published SPI and nothing else, so anything it can
+// do a third party can do. FunctionBoundaryTest asserts it against the compiled
+// module-info, so a convenience `implementation project(':relix-processor')` added
+// in a hurry fails the build rather than quietly turning the seam into a
+// description of how the builtins happen to be written.
+
+// The reference pages for these functions, bundled so the library can serve its own
+// documentation (ADR-0026 S10). Copied from the repository tree rather than moved out
+// of it: docsPdf, extractManual and generatePairs all read docs/reference from source,
+// so the page has one home and this is a build-time copy of it.
+// BuiltinFunctionLibraryTest asserts that every installed signature has a page under
+// docs/reference. processResources copies the function pages in, so a change to one
+// already re-runs this; the whole tree is what the test looks in, and naming it is what
+// keeps that true if the copy is ever narrowed.
+tasks.named('test') {
+    inputs.dir("$rootDir/docs/reference").withPropertyName('referenceDocs')
+}
+
+processResources {
+    from("${rootProject.projectDir}/docs/reference/functions") {
+        into 'docs/reference/functions'
+    }
+}
+
+dependencies {
+    api project(':relix-function')   // the SPI every definition here implements
+}
