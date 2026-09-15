@@ -101,16 +101,18 @@ final class CatalogReachabilityLiveTest {
     @Test
     @DisplayName("the connector catalog URL is at least HTTPS and well-formed")
     void connectorCatalogUrlIsWellFormed() {
-        // Still deliberately NOT a reachability check, and the reason has changed rather
-        // than gone away. The URL now names `relix-core`, the repository the engine is
-        // being split out into, so it will resolve — but only once that repository exists
-        // and is public, and until then it 404s for the same reason it always did (issue
-        // #686). A permanently-red test in an opt-in tier is a broken window: people learn
-        // to ignore the tier, and then it stops reporting the failures it exists for.
+        // Still deliberately NOT a reachability check, and the event it waits on has moved
+        // once more — closer, and to something exactly datable. relix-core exists and is
+        // public, so the old blocker (#686) is gone; but the URL is now a release asset
+        // rather than a file on a branch, and `/releases/latest/download/` resolves only
+        // once there is a release that is not a pre-release. So it 404s until the first
+        // real release, and a release candidate will not change that — which is the whole
+        // point of serving it from there.
         //
-        // What it is waiting on is now a single event rather than a design question, so
-        // the assertion goes in with the commit that publishes relix-core, and the tier
-        // starts verifying it the day it becomes verifiable.
+        // A permanently-red test in an opt-in tier is a broken window: people learn to
+        // ignore the tier, and then it stops reporting the failures it exists for. So the
+        // assertion goes in with the first non-prerelease release, and the tier starts
+        // verifying it the day it becomes verifiable.
         assertThat(ConnectorProvisioner.DEFAULT_CATALOG_URL)
                 .as("a catalog fetched over plaintext could be swapped in transit")
                 .startsWith("https://");

@@ -249,7 +249,7 @@ relix.relation("π component, version (σ kind = 'solver' (relix.version))")
 ```
 
 ```
-(component=ojAlgo, version=1.0-SNAPSHOT)
+(component=ojAlgo, version=<version>)
 ```
 
 With none installed, that query returns nothing, and `OPTIMIZE` raises **before any input
