@@ -1,0 +1,7 @@
+// relix-provenance — the provenance-semiring algebra (ADR-0004 / K-relations).
+//
+// A tiny leaf module (no relix dependencies) holding the pluggable `Semiring<K>`
+// extension point and the cheap built-in semirings (boolean / ℕ / tropical /
+// security lattice). It sits at the bottom of the module graph so the processor
+// can later thread annotations through the operators without introducing a cycle,
+// and so the plain (un-annotated) evaluation path never depends on it.

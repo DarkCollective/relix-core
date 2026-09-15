@@ -1,0 +1,45 @@
+// relix-processor — Query execution engine for relix.
+// Evaluates SemanticModel query trees against in-memory and external data sources,
+// producing streams of typed rows.
+//
+// The connectors that read those external sources are NOT here (ADR-0026 S12):
+// they live in relix-connectors-std behind the SPI this module publishes, which is
+// what keeps java.sql and java.net.http off the engine.
+
+plugins {
+    // Publishes ProcessorTestSupport (src/testFixtures) — the value/schema/row
+    // factories this module's tests and the connector providers' tests both build
+    // fixtures with — and ProcessorAssertions, the assertion surface that reads the
+    // rows back.
+    id 'java-test-fixtures'
+}
+
+dependencies {
+    testImplementation testFixtures(project(':relix-semantic'))  // shared analyze()/model() helpers
+    api project(':relix-symbol')      // Schema, ScalarType, ColumnDefinition in public API
+    api project(':relix-value')       // Value — every Row is a tuple of them
+    api project(':relix-events')      // QueryEventListener in QueryExecutor.trace public API
+    api project(':relix-provenance')  // Semiring<K> in the AnnotatedRelation public API
+    api project(':relix-function')    // FunctionCatalog — an ExecutionContext component
+    implementation project(':relix-semantic')  // SemanticModel, SchemaAnnotations — internal
+    implementation project(':relix-plan')   // Planner + PhysicalNode — execution plans the logical tree
+    // The solver SPI — SubsetOptimizer states its problem in it. The provider that
+    // searches (relix-solver-ojalgo) is discovered, never depended on.
+    implementation project(':relix-solver')
+    // JsonReader — the connector-plugin manifest. A leaf module, so no cycle.
+    implementation project(':relix-json')
+
+    // The shipped solver, on the TEST classpath only: the OPTIMIZE and COVER EXACT
+    // suites assert what a solver returns, so one has to be installed for them to run
+    // — exactly as relix-semantic installs the default function library for its tests.
+    testImplementation project(':relix-solver-ojalgo')
+
+    // ProcessorTestSupport builds Rows and Schemas, nothing more.
+    testFixturesApi project(':relix-symbol')
+    testFixturesApi project(':relix-value')
+
+    // ProcessorAssertions extends PlanAssertions — the top of the entry-point chain,
+    // so an executor test reaching for a plan assert needs no second import.
+    testFixturesApi project(':relix-plan')
+    testFixturesApi testFixtures(project(':relix-plan'))
+}

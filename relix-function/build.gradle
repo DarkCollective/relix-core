@@ -1,0 +1,12 @@
+// relix-function — the function SPI: signatures, implementations, catalogue.
+//
+// It requires both relix-symbol (a signature is written in ScalarType and
+// ParameterDefinition) and relix-value (an implementation takes and returns
+// Value). That pair is why the SPI is its own module rather than living in
+// relix-symbol: Value.type() returns ScalarType, so relix-value already requires
+// relix-symbol, and an SPI hosted there would need the edge back — a cycle.
+
+dependencies {
+    api project(':relix-symbol')   // ScalarType, ParameterDefinition — in signatures
+    api project(':relix-value')    // Value — in every implementation's signature
+}

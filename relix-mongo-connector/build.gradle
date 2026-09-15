@@ -1,0 +1,109 @@
+// relix-mongo-connector — a MongoDB RelixConnector plugin (ADR-0010, Phase G; #22).
+//
+// Distributed as an external connector plugin: dropped into ~/.relix/connectors/
+// and discovered by ConnectorPluginLoader via ServiceLoader.  It is NOT part of
+// the relix-cli build/image — the connector SPI (relix-processor) is provided by
+// the host at runtime, so it is a compileOnly dependency here; the MongoDB driver
+// is bundled with the plugin.
+//
+// This module is a plain (non-modular) jar: it is loaded from the classpath by a
+// URLClassLoader, so it needs no module-info.
+
+dependencies {
+    // The connector SPI + Row/Schema/Value types. Provided by the host relix
+    // runtime (relix-processor is already on the parent class loader), so compileOnly.
+    compileOnly project(':relix-processor')
+
+    // The MongoDB driver — bundled with the plugin (the host does not ship it).
+    implementation 'org.mongodb:mongodb-driver-sync:5.2.1'
+
+    // Tests exercise the connector against the real SPI types with a fake document
+    // source (no live MongoDB needed).
+    testImplementation project(':relix-processor')
+
+    // MongoPushdownAgreementTest plans and executes a real script both ways, so it needs
+    // the analyzer's test fixtures and the modules a planned query is stated in terms of.
+    testImplementation testFixtures(project(':relix-semantic'))   // analyze()
+    testImplementation project(':relix-semantic')
+    testImplementation project(':relix-plan')
+    testImplementation project(':relix-events')
+    testImplementation project(':relix-symbol')
+    testImplementation project(':relix-lang-ast')
+    // The bundled function library, so a script analyses against the functions it names.
+    testRuntimeOnly project(':relix-function-builtin')
+
+    // End-to-end test against a throwaway MongoDB container (Testcontainers).
+    // Skipped automatically when Docker is unavailable (disabledWithoutDocker).
+    testImplementation 'org.testcontainers:mongodb:1.21.3'
+    testImplementation 'org.testcontainers:junit-jupiter:1.21.3'
+    // A logging binding so Testcontainers/MongoDB-driver log lines are visible
+    // (and the driver's "SLF4J not found" warning is silenced).
+    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.13'
+}
+
+// Emits the hosted-catalog entry for this plugin: the thin connector JAR (at the
+// release-asset URL passed via -PpluginUrl) plus its runtime dependency JARs mapped
+// to Maven Central, each with a freshly-computed SHA-256. Written to
+// build/connector-catalog-entry.json and printed; the release pipeline merges it
+// into connectors/relix-connectors.json. See connectors/README.md.
+tasks.register('connectorCatalogEntry') {
+    description = 'Emits the connector-catalog JSON entry for this plugin.'
+    group = 'distribution'
+    dependsOn jar
+    doLast {
+        def pluginUrl = findProperty('pluginUrl')
+        if (!pluginUrl) {
+            throw new GradleException('Provide -PpluginUrl=<release-asset-url> for the thin connector JAR')
+        }
+        def sha256 = { java.io.File f ->
+            java.security.MessageDigest.getInstance('SHA-256').digest(f.bytes).encodeHex().toString()
+        }
+        def artifacts = []
+        artifacts << [url: pluginUrl.toString(), sha256: sha256(jar.archiveFile.get().asFile)]
+        configurations.runtimeClasspath.resolvedConfiguration.resolvedArtifacts.each { a ->
+            def id = a.moduleVersion.id
+            def path = "${id.group.replace('.', '/')}/${id.name}/${id.version}/${id.name}-${id.version}.jar"
+            artifacts << [url: "https://repo1.maven.org/maven2/${path}".toString(), sha256: sha256(a.file)]
+        }
+        def entry = [type: 'mongodb', artifacts: artifacts]
+        def json = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(entry))
+        def out = layout.buildDirectory.file('connector-catalog-entry.json').get().asFile
+        out.parentFile.mkdirs()
+        out.text = json + '\n'
+        println "Wrote ${out}:"
+        println json
+    }
+}
+
+// `integrationTest` (Docker-backed Testcontainers, @Tag("integration")) is
+// registered for every subproject by the root build; augment this module's with
+// the Docker API-version pin its containers need.
+//   docker-java defaults to Docker API v1.32 for its probe, which Docker Engine
+//   25+ rejects (minimum API 1.44). Pin a supported version so Testcontainers can
+//   detect Docker; override via $DOCKER_API_VERSION for an older daemon.
+tasks.named('integrationTest') {
+    systemProperty 'api.version', System.getenv('DOCKER_API_VERSION') ?: '1.44'
+}
+
+// A private Docker config for this tier, holding nothing.
+//
+// The real source of the macOS permission prompt these tests raise: a developer's
+// ~/.docker/config.json commonly sets `"credsStore": "desktop"`, so every image
+// lookup shells out to docker-credential-desktop, and that helper asks TCC for Full
+// Disk Access — three times in a single run of this suite, on a machine where the
+// popup appears. It is not the container's network at all.
+//
+// The images here (mongo, testcontainers/ryuk) are public and need no credentials,
+// so pointing DOCKER_CONFIG at an empty config keeps the helper out of the loop
+// entirely. A tier that ever needs a private registry would have to drop this and
+// grant the helper access instead.
+def dockerConfigDir = layout.buildDirectory.dir('docker-config')
+
+tasks.named('integrationTest') {
+    environment 'DOCKER_CONFIG', dockerConfigDir.map { it.asFile.absolutePath }.get()
+    doFirst {
+        def dir = dockerConfigDir.get().asFile
+        dir.mkdirs()
+        new File(dir, 'config.json').text = '{}\n'
+    }
+}

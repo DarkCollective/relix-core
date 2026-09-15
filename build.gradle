@@ -1,0 +1,930 @@
+plugins {
+    id 'me.champeau.gradle.japicmp' version '0.4.3' apply false
+}
+
+// Root build.gradle — shared configuration for all subprojects.
+// No 'java' plugin here: the root has no sources of its own.
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+
+plugins {
+    id 'jacoco'
+    // For javaToolchains in the root's aggregate Javadoc tasks; the root itself has
+    // no sources, so 'java' would be wrong.
+    id 'jvm-toolchains'
+    // Mutation testing, applied to every subproject below. `apply false` because the
+    // root has no sources of its own — and because the plugins DSL cannot carry a
+    // version inside a `subprojects {}` block.
+    id 'info.solidsoft.pitest' version '1.15.0' apply false
+}
+
+repositories {
+    mavenCentral()
+}
+
+// The heavier test tiers, excluded from the default `test` and each given an
+// opt-in task per subproject below. Defined at the root because `verifyAll` reads
+// the same list — a second copy is a second thing to forget.
+ext.tieredTestTags = ['integration', 'live', 'ml', 'benchmark']
+
+// Every exec file a subproject's test tasks can write — `test` plus one per tier.
+//
+// Coverage used to be `test.exec` alone, so a tier's work was measured and then
+// thrown away: relix-mongo-connector read 73.9% while its Docker-backed suite
+// took it to 91.8%, and MongoDocumentSource read 3.7% while being fully covered.
+// A number that low reads as "this is untested" and sends someone to write tests
+// that already exist.
+//
+// Derived from tieredTestTags rather than listed, for the reason the tag list
+// itself is defined here: a new tier must not need a second edit to be counted.
+ext.jacocoExecFiles = { proj ->
+    (['test'] + rootProject.ext.tieredTestTags.collect { "${it}Test" }).collect { task ->
+        proj.layout.buildDirectory.file("jacoco/${task}.exec")
+    }
+}
+
+// ── The documentation gates (./gradlew guides) ─────────────────────────────
+//
+// Two manuals ship, and each is held to its examples by tests rather than by
+// review: docs/reference by the parse/analyse/execute guards, and docs/guide by
+// one that compiles and runs its Java. Those tests already run in `build` — this
+// is not a second gate, it is the short way to run only the doc checks while
+// writing docs, which is when you want the answer in seconds rather than minutes.
+//
+// Declared as data because the guards live in four modules: the module that hosts
+// one is the lowest that can see what it needs, which is a property of the check
+// and not something a task list should have to restate.
+//
+//   docs  — the trees a guide's guards read, declared as task inputs so that
+//           editing a page re-runs them (without this, a docs-only change leaves
+//           them UP-TO-DATE: passing because they never ran)
+//   tests — module path -> test-class filters
+ext.docGuides = [
+        reference  : [
+                title: 'the language reference (docs/reference)',
+                docs : ['docs/reference', '.claude'],
+                // The PDF half: which task renders it, from where, to what, under
+                // which MANUALS profile in generate_pdf.py. The task name is data
+                // too — docsPdf predates the pair and CI calls it by that name.
+                pdf  : [task: 'docsPdf', source: 'docs/reference',
+                        out: 'reference.pdf', profile: 'reference'],
+                tests: [
+                        ':relix-lang'    : ['*ProjectDocsGuardTest', '*ReferenceExampleParseTest',
+                                            '*DocAudienceGuardTest'],
+                        ':relix-semantic': ['*ReferenceExampleAnalysisTest'],
+                        ':relix-console' : ['*WorkedExampleOutputTest'],
+                ],
+        ],
+        programming: [
+                title: 'the programming guide (docs/guide)',
+                docs : ['docs/guide'],
+                pdf  : [task: 'guidePdf', source: 'docs/guide',
+                        out: 'guide.pdf', profile: 'guide'],
+                tests: [
+                        ':relix-embed': ['*ProgrammingGuideTest'],
+                        // Also here, not only under `reference`: the audience rules
+                        // govern both manuals, so each task has to be complete on its own.
+                        ':relix-lang' : ['*DocAudienceGuardTest'],
+                ],
+        ],
+]
+
+subprojects {
+    apply plugin: 'java-library'
+    apply plugin: 'jacoco'
+
+    group = 'com.darkcollective.relix'
+    version = findProperty('relixVersion') ?: '1.0-SNAPSHOT'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(24)
+        }
+    }
+
+    // Stamp the version where a running process can read it back, so `relix.version`
+    // can say which build a discovered provider is rather than only that it is there.
+    // Both are needed because they are read by different runtimes: the module
+    // descriptor on a module path (jlink, the CLI's image), the jar manifest on a
+    // class path. A provider with neither honestly reports "unknown".
+    tasks.named('jar') {
+        manifest {
+            attributes(
+                    'Implementation-Title'  : project.name,
+                    'Implementation-Version': project.version)
+        }
+    }
+    tasks.named('compileJava') {
+        doFirst {
+            if (file("$projectDir/src/main/java/module-info.java").exists()) {
+                options.compilerArgs += ['--module-version', project.version.toString()]
+            }
+        }
+    }
+
+    // Keep parameter names in the class files.
+    //
+    // It is an additive, non-breaking attribute — but it is not free decoration: the
+    // authoring surfaces (AstBuilders, ScriptBuilders) are checked by *calling* every
+    // factory, and telling closure(input, from, to) from closure(input, to, from) from
+    // the outside is impossible without the names. With them, each argument is matched
+    // to the record component of the same name, which is the claim those builders
+    // actually make. It also gives an embedder real names in IDE completion and in the
+    // published javadoc's signatures, rather than arg0, arg1.
+    tasks.withType(JavaCompile).configureEach {
+        options.compilerArgs += ['-parameters']
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+        testImplementation 'org.assertj:assertj-core:3.24.2'
+        testImplementation 'org.mockito:mockito-core:5.5.0'
+        // Required by Gradle 8+ to discover and run JUnit Platform tests
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.0'
+    }
+
+    // Default `./gradlew test` runs only fast, deterministic, hermetic unit tests.
+    // Heavier suites are tagged and excluded here; each has an opt-in task below.
+    //   integration — Docker/Testcontainers            (integrationTest)
+    //   live        — a running model service / network (liveTest)
+    //   ml          — needs a trained model artifact     (mlTest)
+    //   benchmark   — performance / eval                 (benchmarkTest)
+    ext.tieredTestTags = rootProject.ext.tieredTestTags
+
+    test {
+        useJUnitPlatform {
+            excludeTags(*tieredTestTags)
+        }
+        // The :ask failure log (issue #470) is on by default and writes to the
+        // working directory — which, for a forked test JVM, is the module dir.
+        // Force it off for every test so no run leaves an ask-log.jsonl behind;
+        // the log's own tests re-enable it against a @TempDir explicitly.
+        environment 'RELIX_ASK_LOG', 'off'
+        finalizedBy jacocoTestReport
+    }
+
+    // One opt-in task per tier, running ONLY that tag (e.g. :relix-ask:mlTest,
+    // :relix-mongo-connector:integrationTest). A tier with no matching tests in a
+    // given subproject simply runs nothing — tag filters don't fail on no match.
+    tieredTestTags.each { tag ->
+        tasks.register("${tag}Test", Test) {
+            group = 'verification'
+            description = "Runs @Tag(\"${tag}\") tests only (excluded from the default `test`)."
+            testClassesDirs = sourceSets.test.output.classesDirs
+            classpath = sourceSets.test.runtimeClasspath
+            useJUnitPlatform {
+                includeTags tag
+            }
+        }
+    }
+
+    // One Test task per guide this module carries a guard for — :relix-lang gains
+    // referenceGuideTest and programmingGuideTest, :relix-embed only the latter.
+    rootProject.ext.docGuides.each { guide, spec ->
+        List<String> filters = spec.tests[project.path]
+        if (filters == null) {
+            return
+        }
+        tasks.register("${guide}GuideTest", Test) {
+            group = 'documentation'
+            description = "Runs this module's guards for ${spec.title}."
+            testClassesDirs = sourceSets.test.output.classesDirs
+            classpath = sourceSets.test.runtimeClasspath
+            useJUnitPlatform()
+            filter { filters.each { pattern -> includeTestsMatching pattern } }
+            environment 'RELIX_ASK_LOG', 'off'
+            spec.docs.each { dir ->
+                // Declared only where the tree is there, for the reason relix-lang's own
+                // declaration gives: the reference guide names `.claude` beside
+                // docs/reference, the public tree has only the manual, and an absent
+                // declared input fails the task during configuration.
+                if (file("$rootDir/$dir").exists()) {
+                    inputs.dir("$rootDir/$dir").withPropertyName(dir.replaceAll('[^A-Za-z]', ''))
+                }
+            }
+            // Coverage is `test`'s job. An exec file nothing reads is a file that goes
+            // stale and then misleads whoever finds it.
+            jacoco { enabled = false }
+        }
+    }
+
+    jacocoTestReport {
+        dependsOn test
+        // Credit any tier that has run, without requiring one to. `test` remains the
+        // only dependency — a report that needed Docker would be a report nobody runs —
+        // and filter{} drops a tier whose exec file is absent. mustRunAfter (not
+        // dependsOn) is what lets this read a tier's output: it is the ordering Gradle
+        // accepts in place of a dependency, so `verifyAll jacocoTestReport` sees the
+        // containers' data instead of failing on an undeclared input.
+        executionData.from files(rootProject.ext.jacocoExecFiles(project)).filter { it.exists() }
+        mustRunAfter tieredTestTags.collect { tasks.named("${it}Test") }
+        reports {
+            xml.required = true
+            html.required = true
+        }
+    }
+
+    // ── Mutation testing (./gradlew mutationReport) ─────────────────────────
+    //
+    // Coverage says a line RAN. Mutation testing says a test would FAIL if the line
+    // were wrong — which is the question 124k lines of test code exist to answer and
+    // nothing else here measures. PIT edits the compiled bytecode one mutation at a
+    // time (`<` → `<=`, delete a void call, replace a return with a default) and
+    // reruns the tests that cover the line: a mutant nothing kills is a line that is
+    // executed but unasserted, the gap `coverageAudit` cannot see because JaCoCo
+    // paints it green.
+    //
+    // A REPORT, NEVER A GATE, for three separate reasons:
+    //   - The score moves with unrelated commits, so an assertion on it would go amber
+    //     and then be ignored — the broken-window failure the tiered suites are
+    //     populated to avoid.
+    //   - Some survivors are equivalent mutants that CANNOT be killed: in relix-cost,
+    //     30 of 58 are `depth + 1` → `depth - 1` on a recursion counter that only bites
+    //     past MAX_DEPTH. The output is a list to read, not a number to defend.
+    //   - PIT's timeout is wall-clock (a mutation can create an infinite loop), and a
+    //     mutant killed by the clock on a loaded machine would have survived on an idle
+    //     one. That is exactly the property #679 rejected for the benchmark tier.
+    //
+    // Applied to EVERY subproject rather than a chosen few — scoping hides things, and
+    // the whole core set runs in about three minutes. Two distortions to read it with:
+    //
+    //   1. THERE IS NO AGGREGATE. Unlike jacocoAggregateReport, PIT runs each module
+    //      against its OWN tests only, so a module whose tests live downstream
+    //      under-reports badly. relix-ast scores 79% with PrettyPrinter at 50% — of
+    //      which 50 of 55 are NO_COVERAGE — while RelNodeCorpusRoundTripTest, in
+    //      relix-parser, round-trips every node kind through that printer and
+    //      demonstrably kills its mutants. A low score on a low-level module is
+    //      evidence about where its tests live, not that it lacks any.
+    //   2. A TIER THAT DID NOT RUN UNDERSTATES AT CLASS LEVEL, invisibly. Without a
+    //      Docker daemon relix-mongo-connector still reads 86%, because the module
+    //      average buries MongoDocumentSource at 2 of 9 killed — the same class, and
+    //      very nearly the same number, that read 3.7% line coverage before the tier
+    //      exec files were wired into the JaCoCo reports.
+    apply plugin: 'info.solidsoft.pitest'
+
+    pitest {
+        pitestVersion = '1.30.0'   // the plugin's default bundles an ASM that cannot
+                                   // read Java 24 bytecode: "Unsupported class file
+                                   // major version 68". The plugin itself is dormant
+                                   // at 1.15.0; the engine is not, and is overridable.
+        junit5PluginVersion = '1.2.1'
+        targetClasses = ['com.darkcollective.relix.**']
+        timestampedReports = false
+        outputFormats = ['HTML', 'XML']
+        threads = 4
+        failWhenNoMutations = false   // relix-events and friends are small enough to
+                                      // legitimately produce none from a given filter
+    }
+
+    // Javadoc is part of the gate, not a task you have to remember to run.
+    // The project's rule is that public API carries Javadoc kept "clean and up to
+    // date" (.claude/CLAUDE.md), but nothing enforced it: `build` never ran
+    // `javadoc`, so a renamed method left a dangling {@link} behind and no one
+    // saw it. By the time this was wired up, 12 of 17 modules were failing on 23
+    // such errors — every one of them a doc claim that had quietly gone false.
+    // The cost is a few seconds per module; the alternative is documentation that
+    // rots exactly as fast as the code moves.
+    tasks.named('check') {
+        dependsOn tasks.named('javadoc')
+    }
+
+    javadoc {
+        options.encoding = 'UTF-8'
+        // Fail on a broken reference or malformed tag rather than warning. The
+        // `missing` group stays off: an undocumented parameter is a gap, while a
+        // dangling {@link} is a statement that is now WRONG, and only the second
+        // is worth blocking a build over.
+        options.addBooleanOption('Xdoclint:all,-missing', true)
+    }
+}
+
+// Aggregate report: combines exec data from all subprojects so visitor
+// code in relix-ast is credited for coverage driven by relix-parser tests.
+task jacocoAggregateReport(type: JacocoReport, group: 'verification',
+        description: 'Combined coverage report across all subprojects') {
+    dependsOn subprojects.collect { it.tasks.named('jacocoTestReport') }
+    // Name each subproject's exec file rather than scanning for them. A
+    // fileTree(rootDir) sweep matched the same files, but it also made every
+    // build/ directory under the root an input of this task — so Gradle saw it
+    // reading the output of :relix-ask:javadoc, :relix-cli:installDist and the
+    // rest without a declared dependency, and failed the moment `build` ran in
+    // the same invocation:
+    //     ./gradlew jacocoAggregateReport                 (worked)
+    //     ./gradlew clean build jacocoAggregateReport     (failed)
+    // which is the invocation anyone reaching for coverage actually types.
+    // filter{} keeps a module whose tests have not run from failing the report.
+    //
+    // Every tier's exec file counts, not just `test.exec` — see ext.jacocoExecFiles.
+    // The dependency stays on jacocoTestReport alone so this is still runnable on a
+    // machine with no Docker; mustRunAfter puts the tiers first when they are in the
+    // same graph, which is both the correct ordering and what Gradle accepts in place
+    // of a dependency on an output this reads.
+    executionData.from files(subprojects.collect { proj ->
+        rootProject.ext.jacocoExecFiles(proj)
+    }.flatten()).filter { it.exists() }
+    mustRunAfter subprojects.collect { proj ->
+        tieredTestTags.collect { proj.tasks.named("${it}Test") }
+    }.flatten()
+    reports {
+        xml.required = true
+        html.required = true
+        html.outputLocation  = layout.buildDirectory.dir('reports/jacoco/aggregate')
+        xml.outputLocation   = layout.buildDirectory.file('reports/jacoco/aggregate/jacocoAggregateReport.xml')
+    }
+}
+afterEvaluate {
+    jacocoAggregateReport {
+        subprojects.each { proj ->
+            sourceDirectories.from proj.sourceSets.main.allJava.srcDirs
+            classDirectories.from  proj.sourceSets.main.output.classesDirs
+        }
+    }
+}
+
+tasks.register('mutationReport') {
+    group = 'verification'
+    description = 'Runs mutation testing (PIT) across every subproject. A report to ' +
+            'read, not a gate: deliberately not wired into `check`.'
+    dependsOn subprojects.collect { it.tasks.named('pitest') }
+    doLast {
+        logger.lifecycle('mutationReport: one report per module at ' +
+                '<module>/build/reports/pitest/index.html')
+        logger.lifecycle('  a surviving mutant is a line that RAN but that no test ' +
+                'asserts on — read the list, do not chase the percentage')
+        logger.lifecycle('  PIT has no cross-module aggregate: a module whose tests ' +
+                'live downstream (relix-ast) under-reports')
+        logger.lifecycle('  a module whose test tier did not run understates per CLASS, ' +
+                'invisibly in its average (relix-mongo-connector without Docker)')
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Aggregate Javadoc  ->  build/docs/javadoc/core   (./gradlew javadocCore)
+//                        build/docs/javadoc/all    (./gradlew javadocAll)
+//
+// `javadoc` runs per module, leaving one unlinked tree per subproject: a reader
+// following a {@link} from relix-plan into relix-ast lands nowhere, and the site
+// has nothing to stage. These two tasks document many modules in ONE javadoc run,
+// so every cross-module reference resolves and the output carries a real module
+// summary page per module — which is where the boundary this project is built
+// around (who `requires` whom) actually becomes visible to a reader.
+//
+// javadocCore is the published engine contract; javadocAll is everything on top
+// of it. Both are on-demand — neither is wired into `check`, so `build` is
+// unaffected; the per-module `javadoc` remains the gate that fails on a dangling
+// reference.
+//
+// MECHANISM: javadoc is invoked in MODULE mode. Gradle passes the source files,
+// and `--module-source-path <module>=<dir>` (repeated once per module) tells
+// javadoc which module each file belongs to — the pattern form (`*/src/main/java`)
+// cannot be used because a Gradle directory name (relix-ast) is not the module
+// name (com.darkcollective.relix.ast). External dependencies go on the module
+// path rather than the classpath, because javadoc reads a modular source tree
+// with javac's rules — relix-ask's own javadoc task records the same trap.
+// ---------------------------------------------------------------------------
+
+// The published engine contract, as one list. ADR-0025 draws the first line — the
+// `.relix` grammar is a frontend, not core, so relix-parser/relix-lang are out —
+// and ADR-0026 the second: a provider supplies processing the engine only
+// declares the form of, so relix-function-builtin, relix-connectors-std and
+// relix-solver-ojalgo are out while the SPIs they implement are in. This is the
+// set EngineDependencyBoundaryTest asserts requires nothing but java.base and
+// each other.
+//
+// It lives HERE, once, because it has a second consumer coming: ADR-0025 D5's
+// published core artifact and its japicmp/revapi compatibility gate (#497) needs
+// the same list, and two copies of "what is core" would drift the first time a
+// module moved across the line.
+// The two front ends are applications rather than libraries: they are distributed as
+// an image or a dist, and nothing depends on their jars. They are also not published
+// — nothing here is, except the one artifact relix-dist assembles, which is what the
+// bundle list below describes.
+//
+// There was an `ext.applicationModules` naming them, read by nothing, under a comment
+// still describing the arrangement #755 replaced: it said everything but the front
+// ends was published and that two artifacts carried a compatibility promise. One is,
+// and `relix-dist` is the only project applying `maven-publish`. A list with no
+// consumer cannot go stale loudly, so it went quietly for however long that was.
+
+// Which modules the public engine repository carries. One list, for the reason
+// `coreModules` is one: the export that produces that tree and the guard that checks
+// its architecture document both need the same answer, and two copies would disagree
+// the first time a module moved across the line.
+//
+// What is NOT here is the console tooling — the CLI, the REPL, their shared front-end
+// support, the NL-to-Relix model and the website generator. The engine is public; the
+// things built on top of it are not, for now.
+ext.publicModules = [
+        ':relix-ast',
+        ':relix-value',
+        ':relix-symbol',
+        ':relix-function',
+        ':relix-lang-ast',
+        ':relix-events',
+        ':relix-json',
+        ':relix-provenance',
+        ':relix-solver',
+        ':relix-semantic',
+        ':relix-cost',
+        ':relix-plan',
+        ':relix-optimizer',
+        ':relix-processor',
+        ':relix-parser',
+        ':relix-lang',
+        ':relix-embed',
+        ':relix-function-builtin',
+        ':relix-connectors-std',
+        ':relix-solver-ojalgo',
+        ':relix-mongo-connector',
+        ':relix-dist',
+]
+
+ext.coreModules = [
+        ':relix-ast',
+        ':relix-value',
+        ':relix-symbol',
+        ':relix-function',
+        ':relix-lang-ast',
+        ':relix-events',
+        ':relix-json',
+        ':relix-provenance',
+        ':relix-solver',
+        ':relix-semantic',
+        ':relix-cost',
+        ':relix-plan',
+        ':relix-optimizer',
+        ':relix-processor',
+]
+
+// ---------------------------------------------------------------------------
+// The compatibility gate
+//
+// `relix-core` and `relix-embed` are backward-compatible per minor (ADR-0027 D14),
+// and a promise nothing checks is a promise nobody keeps. japicmp compares the jars
+// this build produces against a released baseline and fails on a breaking change.
+//
+// It needs a baseline, and until the first release there is not one — so the task is
+// off unless told which version to compare against:
+//   ./gradlew apiCompatibility -PcompatBaseline=1.0.0
+//
+// That is deliberately explicit rather than "the latest release": a release job knows
+// which version it is succeeding, and guessing is how a gate silently compares against
+// the wrong thing. Point it at the current snapshot to check the wiring itself.
+// ---------------------------------------------------------------------------
+def compatBaseline = findProperty('compatBaseline')
+def compatBaselineRepo = findProperty('compatBaselineRepo')
+        ?: "${System.getProperty('user.home')}/.m2/repository"
+
+tasks.register('apiCompatibility') {
+    group = 'verification'
+    description = 'Checks the published surfaces against -PcompatBaseline=<version>.'
+    doFirst {
+        if (compatBaseline == null) {
+            throw new GradleException(
+                    'apiCompatibility needs a baseline: -PcompatBaseline=<released version> '
+                            + '[-PcompatBaselineRepo=<maven repo dir>]')
+        }
+    }
+}
+
+/**
+ * The baseline jar, named by path rather than resolved as a dependency.
+ *
+ * Resolution is the wrong mechanism here and quietly gives the wrong answer: within one
+ * build Gradle prefers a project over an external module of the same coordinates, so
+ * asking for `com.darkcollective.relix:relix-embed:<baseline>` hands back *this build's*
+ * jar and the gate compares it with itself. japicmp wants two jars; this names them.
+ */
+def baselineJar = { Project p ->
+    file("${compatBaselineRepo}/com/darkcollective/relix/relix/"
+            + "${compatBaseline}/relix-${compatBaseline}.jar")
+}
+
+// The gate has one subject, because there is one published surface.
+configure([project(':relix-dist')]) {
+    apply plugin: 'me.champeau.gradle.japicmp'
+
+    if (compatBaseline != null) {
+        def old = baselineJar(project)
+        def check = tasks.register('japicmpCheck', me.champeau.gradle.japicmp.JapicmpTask) {
+            group = 'verification'
+            description = "Compares the published jar against relix:${compatBaseline}."
+            doFirst {
+                if (!old.exists()) {
+                    throw new GradleException("no baseline jar at ${old} — publish or "
+                            + 'download the baseline first')
+                }
+            }
+            oldClasspath.from(files(old))
+            newClasspath.from(tasks.named('jar'))
+            onlyModified = true
+            failOnModification = true
+            // Only what a caller can reach: a change behind `protected` is not a change
+            // to the promise, and the promise is what this gate is about.
+            accessModifier = 'protected'
+            ignoreMissingClasses = true
+            htmlOutputFile = layout.buildDirectory.file('reports/japicmp.html').get().asFile
+        }
+        rootProject.tasks.named('apiCompatibility') { dependsOn check }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Publication
+//
+// **One artifact.** A client writes one dependency, `com.darkcollective.relix:relix`,
+// and everything the engine is made of travels inside it.
+//
+// The modules are not published individually, and that is the point. Twenty-one
+// coordinates in a repository is nineteen internal ones a client can name, pin and be
+// broken by — a published surface far larger than anything we would defend. The module
+// graph is a claim about *this* build, enforced by its own tests; it is not a contract
+// with anyone outside.
+//
+// `relix-dist` assembles it. Nothing else publishes.
+// ---------------------------------------------------------------------------
+
+// What goes inside the published jar: the engine, plus the frontend and the providers
+// that make it work out of the box. `relix-ask` is REPL tooling and is not here;
+// `relix-mongo-connector` is a plugin, downloaded into ~/.relix/connectors/ rather than
+// carried by the artifact, which is what "a connector is downloadable separately" means.
+//
+// `relix-console` is not here either, and the reason is a rule rather than a judgement:
+// a module belongs in the bundle only if the published descriptor exports something of
+// it, or a bundled module needs it. It was neither — `relix-dist` exports no `runtime`
+// package, so every class in it was compiled, merged and unreachable, along with the 92
+// reference pages its `processResources` copies in. What kept it here was a single
+// dependency, `relix-embed`'s on CompositeDataSourceConnector, and that class now lives
+// in `relix-embed`. The renderers, the docs registry, env loading and the REPL's
+// highlighter serve `relix-cli` and `relix-repl`, neither of which is published.
+ext.bundledModules = coreModules + [
+        ':relix-lang',
+        ':relix-parser',
+        ':relix-connectors-std',
+        ':relix-function-builtin',
+        ':relix-solver-ojalgo',
+        ':relix-embed',
+]
+
+// Everything with a module-info.java — i.e. every subproject except
+// relix-mongo-connector, which is deliberately a plain non-modular jar (it is
+// loaded from a URLClassLoader as an out-of-tree plugin, see its build.gradle).
+// A module-mode javadoc run documents modules, so a module-less source tree
+// cannot join one; the plugin keeps its own per-module `javadoc`.
+// `relix-dist` is excluded: it declares the same packages as the modules it is
+// assembled from, and a module-mode javadoc run cannot read a package from two modules
+// at once. Its published javadoc is this aggregate's output, which documents exactly
+// the same code one layer down.
+ext.javadocModules = subprojects
+        .findAll { it.file('src/main/java/module-info.java').exists() }
+        .findAll { it.path != ':relix-dist' }
+        .collect { it.path }
+        .sort()
+
+// The module name a project declares, read from the declaration rather than a
+// hand-kept table — a rename cannot leave a stale mapping behind. Matches only a
+// `module x.y {` at column 0, which is how every module-info.java here is written,
+// so the word "module" in the file's own Javadoc is not mistaken for it.
+ext.declaredModuleName = { Project p ->
+    def source = p.file('src/main/java/module-info.java')
+    def matcher = (source.text =~ /(?m)^(?:open\s+)?module\s+([\w.]+)\s*\{/)
+    if (!matcher) {
+        throw new GradleException("no module declaration in ${source}")
+    }
+    matcher[0][1]
+}
+
+// Both tasks differ only in which modules they take, so they are configured by
+// one closure — the alternative is two copies of the module-path handling that
+// drift the first time one is fixed.
+def aggregateJavadoc = { String name, List<String> modulePaths, String title, String description ->
+    tasks.register(name, Javadoc) {
+        group = 'documentation'
+        it.description = description
+
+        def documented = modulePaths.collect { project(it) }
+        // The classes task, not just the sources: an external dependency has to be
+        // resolved and on disk before javadoc can read the module it names.
+        dependsOn documented.collect { "${it.path}:classes" }
+
+        javadocTool = javaToolchains.javadocToolFor {
+            languageVersion = project(':relix-ast').java.toolchain.languageVersion.get()
+        }
+
+        source documented.collect { it.sourceSets.main.allJava }
+        destinationDir = layout.buildDirectory.dir("docs/javadoc/${title}").get().asFile
+        // Nothing goes on the classpath in module mode; see modulePath below.
+        classpath = files()
+
+        options.encoding = 'UTF-8'
+        options.docTitle = "Relix API (${title})"
+        options.windowTitle = "Relix API (${title})"
+        // The same setting the per-module `javadoc` uses: a dangling {@link} is a
+        // claim that has gone false and fails the build; a missing @param is a gap
+        // and does not.
+        options.addBooleanOption('Xdoclint:all,-missing', true)
+        // Repeated once per module. addMultilineStringsOption writes the option
+        // again for each value, which is what javadoc wants — the `<module>=<path>`
+        // form takes exactly one module per occurrence.
+        options.addMultilineStringsOption('-module-source-path').setValue(
+                documented.collect { p ->
+                    def dirs = p.sourceSets.main.java.srcDirs.findAll { it.exists() }
+                    "${declaredModuleName(p)}=${dirs.join(File.pathSeparator)}".toString()
+                })
+
+        doFirst {
+            // Use the typed `modulePath` property, NOT addStringOption('-module-path'):
+            // Gradle calls CoreJavadocOptions.modulePath() itself and casts the stored
+            // value to List, so a String registered under that key fails the task with
+            // `class java.lang.String cannot be cast to class java.util.List`.
+            // (relix-ask's own javadoc task records the same trap.)
+            //
+            // Only the EXTERNAL dependencies — llama, picocli, jline, ojalgo. A
+            // documented module's own jar must not appear here: javadoc refuses a
+            // module that is on both the module source path and the module path.
+            options.modulePath = documented.collectMany { p ->
+                p.configurations.compileClasspath.incoming.artifactView {
+                    componentFilter { !(it instanceof ProjectComponentIdentifier) }
+                }.files as List
+            }.unique()
+        }
+    }
+}
+
+aggregateJavadoc('javadocCore', coreModules, 'core',
+        'Aggregate Javadoc for the published engine contract (ADR-0025 core, ADR-0026 SPIs).')
+aggregateJavadoc('javadocAll', javadocModules, 'all',
+        'Aggregate Javadoc for every modular subproject — engine, frontends and providers.')
+
+// ---------------------------------------------------------------------------
+// docs/reference  ->  build/docs/reference.pdf   (Relix Language Reference)
+//
+// A self-contained ReportLab generator (docs/pdf/generate_pdf.py) renders the
+// custom-format pages under docs/reference into one polished PDF: title page,
+// two-level dotted-leader table of contents, blue chapter/entry headings and
+// light-grey code boxes. It runs inside a pinned Docker image, so the result is
+// identical on every machine and needs no host toolchain (python/fonts/LaTeX).
+//
+// WHICH FILES ARE LOADED is driven entirely by docs/reference/README.md: its
+// "## N. Title" headings are the chapters (with their intro paragraph and their
+// summary table), and the order of the [text](path.md) links within each chapter
+// is the page order. Everything above the first heading becomes the manual's
+// preface. A page cross-listed in two chapters is rendered once, under the first.
+// To add or remove a page from the PDF, register (or unregister) it in the README.
+//
+//   ./gradlew docsPdf        ->  build/docs/reference.pdf
+//   ./gradlew guidePdf       ->  build/docs/guide.pdf
+//   ./gradlew pdfs           ->  both
+//   ./gradlew docsPdfImage   ->  (re)build the renderer image only
+//   ./gradlew docsPdfTest    ->  run the renderer's own tests (both PDFs need them)
+// ---------------------------------------------------------------------------
+def docsPdfImageTag = 'relix-docs-pdf'
+
+tasks.register('docsPdfImage', Exec) {
+    group = 'documentation'
+    description = 'Build the Docker image that renders the manual PDFs.'
+    inputs.file('docs/pdf/Dockerfile')
+    inputs.file('docs/pdf/generate_pdf.py')
+    inputs.file('docs/pdf/test_generate_pdf.py')
+    workingDir projectDir
+    commandLine 'docker', 'build', '-t', docsPdfImageTag, 'docs/pdf'
+}
+
+// The renderer is a Markdown parser, and every defect it has had was silent: the
+// page still rendered, just not as written. These tests pin each one down, and
+// docsPdf depends on them so a broken renderer never produces a manual.
+tasks.register('docsPdfTest', Exec) {
+    group = 'documentation'
+    description = 'Run the manual-PDF renderer tests inside the render image.'
+    dependsOn 'docsPdfImage'
+    inputs.file('docs/pdf/generate_pdf.py')
+    inputs.file('docs/pdf/test_generate_pdf.py')
+    // Both indexes: the tests check that every page a README registers exists,
+    // which is the check that catches a manual rendering its chapters and nothing else.
+    inputs.file('docs/reference/README.md')
+    inputs.file('docs/guide/README.md')
+
+    workingDir projectDir
+    commandLine 'docker', 'run', '--rm', '-v', "${projectDir}:/work",
+            '--entrypoint', 'python', docsPdfImageTag,
+            '/opt/test_generate_pdf.py'
+}
+
+// One render task per manual, from the same ext.docGuides registry the check
+// tasks read: two manuals, one renderer, and one place that says what each is.
+// They differ only in a MANUALS profile inside generate_pdf.py — a reference page
+// is a run of `# Label:` sections, a guide page is ordinary prose — so a third
+// manual costs a registry entry rather than a fork of the renderer.
+ext.docGuides.each { guide, spec ->
+    def pdf = spec.pdf
+    tasks.register(pdf.task, Exec) {
+        group = 'documentation'
+        description = "Render ${pdf.source} into build/docs/${pdf.out} (Docker + ReportLab)."
+        dependsOn 'docsPdfImage', 'docsPdfTest'
+
+        def outDir = file("$buildDir/docs")
+        inputs.dir(pdf.source)
+        inputs.file('docs/pdf/generate_pdf.py')
+        outputs.file("$outDir/${pdf.out}")
+
+        workingDir projectDir
+        doFirst { outDir.mkdirs() }
+
+        // Build the run command, mapping the host user on Unix so the generated
+        // PDF isn't written as root into build/.
+        def cmd = ['docker', 'run', '--rm', '-v', "${projectDir}:/work"]
+        if (!org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+            def uid = ['id', '-u'].execute().text.trim()
+            def gid = ['id', '-g'].execute().text.trim()
+            cmd += ['--user', "${uid}:${gid}"]
+        }
+        cmd += [docsPdfImageTag, pdf.source, "build/docs/${pdf.out}", pdf.profile]
+        commandLine cmd
+
+        doLast { println "Wrote ${outDir}/${pdf.out}" }
+    }
+}
+
+tasks.register('pdfs') {
+    group = 'documentation'
+    description = 'Render both manuals — the reference and the guide — as PDFs.'
+    dependsOn rootProject.ext.docGuides.values().collect {
+        rootProject.tasks.named(it.pdf.task)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// relix-ask tooling — the model, the corpus, the eval harness
+//
+// Its own file because it is private to this repository: the public engine tree
+// carries neither relix-ask nor docs/llm, and it is removed by not copying the
+// file rather than by editing this one. Absent, the tasks simply do not exist.
+// ---------------------------------------------------------------------------
+if (file('gradle/ask-tooling.gradle').exists()) {
+    apply from: 'gradle/ask-tooling.gradle'
+}
+
+// =============================================================================
+// Coverage audit — is what is left untested *defensible*?
+// =============================================================================
+//
+// Two families of gap are invisible in the JaCoCo HTML report and so accumulate
+// silently: a line whose `&&`/`||` has one arm exercised (shown green), and a
+// method with no covered instructions at all. `coverageReport` lists them;
+// `coverageAudit` fails on any that carries no reason in
+// tools/coverage/register.tsv.
+//
+// `coverageAudit` is a RATCHET rather than a gate at zero, and it is in `check`.
+// The plan it replaces was to wire it in once every gap carried a reason, and that
+// was never going to arrive: most of the 275 are defensible-but-unargued, so the
+// work of getting there is 275 register rows with very little hardening in them,
+// and until it is done the count is free to climb. So tools/coverage/baseline.tsv
+// records what each file has today and audit.py holds it there — by the four rules
+// AstConstructionRatchetTest already uses, for the reason it uses them. It starts
+// green, which is the property CLAUDE.md asks of a gate; what it buys is that the
+// number can only fall.
+//
+// Run a coverage report first, with as many tiers as the machine allows:
+//     ./gradlew verifyAll jacocoAggregateReport   (Docker/model present)
+//     ./gradlew test jacocoAggregateReport        (the hermetic gate alone)
+// A tier that did not run makes its code look untested; that is not something
+// the register should be used to paper over.
+
+// Both read the aggregate XML rather than producing it, so both are ordered after the
+// task that writes it. Without that, `./gradlew test jacocoAggregateReport coverageReport`
+// — the invocation the lines above invite — is free to run the audit against the
+// *previous* run's XML: it reported 255 unjustified gaps where the fresh report had 332,
+// and cited a package that had been renamed a fortnight earlier. mustRunAfter rather than
+// dependsOn, for the reason jacocoAggregateReport itself uses it: listing gaps against an
+// XML that already exists must stay possible without re-running the suite.
+
+tasks.register('coverageReport', Exec) {
+    group = 'verification'
+    description = 'List coverage gaps that carry no reason in tools/coverage/register.tsv.'
+    mustRunAfter tasks.named('jacocoAggregateReport')
+    workingDir projectDir
+    commandLine 'python3', 'tools/coverage/audit.py', '--report'
+}
+
+tasks.register('coverageAudit', Exec) {
+    group = 'verification'
+    description = 'Hold every file to its row in tools/coverage/baseline.tsv.'
+    mustRunAfter tasks.named('jacocoAggregateReport')
+    workingDir projectDir
+    commandLine 'python3', 'tools/coverage/audit.py'
+}
+
+// The ratchet decides whether the build is green, and until #916 it had no test of
+// its own: its four rules were probed once by hand, and a probe leaves nothing
+// behind. What that missed was the tier interaction — `verifyAll` leaves the heavier
+// tiers' exec files on disk, so the NEXT `build` compared a tier-inclusive count
+// against a baseline that is a claim about the gate alone, and asked for three
+// budgets to be lowered to numbers the very next bare checkout would have failed.
+//
+// Standard library only, so this needs no image and no virtualenv — unlike
+// docsPdfTest, whose renderer needs reportlab. No declared inputs, like its two
+// neighbours: a guard that can go UP-TO-DATE is a guard that can stop running.
+tasks.register('coverageAuditTest', Exec) {
+    group = 'verification'
+    description = "Run the coverage ratchet's own tests."
+    workingDir projectDir
+    commandLine 'python3', 'tools/coverage/test_audit.py'
+}
+
+// The root has no `java` plugin — no sources of its own — so it has no `check` or
+// `build` to hang this on, and `./gradlew build` reaches only the subprojects. These
+// two are the lifecycle tasks the base plugin would give, declared by hand rather
+// than by applying it: `base` would also add a root `clean` that deletes build/, and
+// the aggregate report, the assembled javadoc and the rendered PDFs live there.
+//
+// The dependency on jacocoAggregateReport sits HERE rather than on coverageAudit,
+// which keeps `./gradlew coverageAudit` answering against a report that already
+// exists — the property mustRunAfter was chosen for above. What `check` needs is
+// the stronger claim: the numbers it gates on were produced by this run.
+tasks.register('check') {
+    group = 'verification'
+    description = 'Repository-wide checks that no single subproject can run.'
+    dependsOn tasks.named('jacocoAggregateReport'), tasks.named('coverageAudit'),
+            tasks.named('coverageAuditTest')
+}
+
+tasks.register('build') {
+    group = 'build'
+    description = 'Lifecycle task, so that `./gradlew build` reaches the root checks.'
+    dependsOn tasks.named('check')
+}
+
+
+// ---------------------------------------------------------------------------
+// verifyAll — the whole suite, on demand
+//
+// `./gradlew build` is the gate, and it deliberately runs only fast, hermetic
+// tests: the tiered suites need a Docker daemon, a trained model or a network
+// service, and a gate that cannot run on a clean checkout is a gate people learn
+// to skip. But "not in the gate" must not mean "unrunnable in one command", which
+// is what it had become — the tier tasks existed per subproject and nothing named
+// them together, so running everything meant knowing the list.
+//
+//   ./gradlew verifyAll                        build + every tier
+//   ./gradlew verifyAll -PtestTiers=integration  build + the container suites only
+//
+// Container tests carry @Testcontainers(disabledWithoutDocker = true), so on a
+// machine with no Docker they skip rather than fail — `verifyAll` is safe to run
+// anywhere, it just verifies less.
+// ---------------------------------------------------------------------------
+def requestedTiers = ((findProperty('testTiers') ?: tieredTestTags.join(',')) as String)
+        .split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+
+def unknownTiers = requestedTiers - tieredTestTags
+if (!unknownTiers.isEmpty()) {
+    throw new GradleException("Unknown test tier(s) ${unknownTiers}. " +
+            "Known tiers: ${tieredTestTags.join(', ')}")
+}
+
+// ── The documentation gates, as three lifecycle tasks ──────────────────────
+//
+//   ./gradlew referenceGuide    -> every docs/reference guard
+//   ./gradlew programmingGuide  -> every docs/guide guard
+//   ./gradlew guides            -> both
+//
+// Derived from ext.docGuides rather than listed, for the reason the tier list is:
+// a new guide, or a guard moving module, must not need a second edit to be run.
+ext.docGuides.each { guide, spec ->
+    tasks.register("${guide}Guide") {
+        group = 'documentation'
+        description = "Checks every example in ${spec.title}."
+        // findProject, not project: `project(path)` raises on a module this build does
+        // not contain, which takes the whole configuration phase down rather than the
+        // one task. A guard whose module is absent is simply not demanded — the same
+        // rule the per-module registration above already follows, where a module with
+        // no filters returns early. What the task still checks is every guard that IS
+        // here, so the manual is never checked less thoroughly than the tree allows.
+        dependsOn spec.tests.keySet()
+                .collect { path -> findProject(path) }
+                .findAll { it != null }
+                .collect { proj -> proj.tasks.named("${guide}GuideTest") }
+    }
+}
+
+tasks.register('guides') {
+    group = 'documentation'
+    description = 'Checks every example in both manuals — the reference and the guide.'
+    dependsOn rootProject.ext.docGuides.keySet().collect { rootProject.tasks.named("${it}Guide") }
+}
+
+tasks.register('verifyAll') {
+    group = 'verification'
+    description = 'Runs the default build plus every tiered test suite ' +
+            '(integration/live/ml/benchmark). Narrow with -PtestTiers=integration.'
+    dependsOn subprojects.collect { it.tasks.named('build') }
+    requestedTiers.each { tier ->
+        dependsOn subprojects.collect { it.tasks.named("${tier}Test") }
+    }
+    doLast {
+        logger.lifecycle("verifyAll: build + tiers ${requestedTiers.join(', ')}")
+        logger.lifecycle("  container suites skip themselves when no Docker daemon is present")
+    }
+}
