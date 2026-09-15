@@ -2,6 +2,8 @@
 
 > A relational algebra engine you can embed in a Java program.
 
+[![CI](https://github.com/DarkCollective/relix-core/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkCollective/relix-core/actions/workflows/ci.yml)
+
 Relix takes a query written in **relational algebra** — filter, project, join,
 group — infers its schema, rewrites it, works out how much of it your database can
 run, and runs the rest itself.
