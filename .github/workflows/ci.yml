@@ -57,3 +57,88 @@ jobs:
           name: test-reports
           path: '**/build/reports/tests/**'
           retention-days: 7
+
+  # Every test tagged `integration`, against real MongoDB, MySQL and Postgres
+  # containers. All five classes live in public modules — two in
+  # relix-connectors-std, three in relix-mongo-connector — so this tier is whole
+  # here rather than a subset of one that runs elsewhere.
+  #
+  # It is a lane of its own rather than part of the gate above, so that a failure
+  # says whether it was the engine or the containers. It needs no `needs:` on that
+  # job: compiling twice costs less than serialising, and a compilation failure is
+  # legible whichever lane reports it first.
+  #
+  # ubuntu-latest ships a running Docker daemon. The tests carry
+  # @Testcontainers(disabledWithoutDocker = true), so on a runner without one they
+  # would skip rather than fail — which is worth knowing, because a green tick here
+  # would then mean nothing. 559 tests run on a runner that has it.
+  integration:
+    name: Integration (Docker)
+    runs-on: ubuntu-latest
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 24
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 24
+          cache: gradle
+
+      - name: Run the integration tier
+        run: ./gradlew --no-daemon integrationTest
+
+      - name: Upload integration test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-report
+          path: '**/build/reports/tests/integrationTest/**'
+          retention-days: 7
+
+  # Both manuals, rendered. The renderer runs in its own Docker image and reads the
+  # markdown; it needs no compiled engine, which is why this lane stands alone.
+  #
+  # These are **build artifacts**, downloadable from the run and expiring with it.
+  # They are not release assets and are not meant to be linked: sealing a rendered
+  # manual to a version and publishing it is a separate job for when there is a
+  # release to attach one to, and there is not one yet.
+  docs:
+    name: Manuals (PDF)
+    runs-on: ubuntu-latest
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 24
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 24
+          cache: gradle
+
+      # `pdfs` runs docsPdfTest first, so a renderer regression fails here rather
+      # than being left for whoever next opens the file.
+      - name: Render both manuals
+        run: ./gradlew --no-daemon pdfs
+
+      - name: Upload the language reference
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relix-language-reference-pdf
+          path: build/docs/reference.pdf
+          retention-days: 14
+
+      - name: Upload the programming guide
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relix-programming-guide-pdf
+          path: build/docs/guide.pdf
+          retention-days: 14
