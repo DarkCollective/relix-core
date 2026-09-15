@@ -42,16 +42,18 @@ relix.relation("τ kind, component (relix.version)").toList().forEach(System.out
 ```
 
 ```
-(component=csv, kind=connector, version=1.0-SNAPSHOT)
+(component=csv, kind=connector, version=<version>)
 (component=org.h2.Driver, kind=driver, version=2.2)
-(component=relix-engine, kind=engine, version=1.0-SNAPSHOT)
+(component=relix-engine, kind=engine, version=<version>)
 (component=relix-embed, kind=facade, version=unknown)
-(component=relix-builtin, kind=function-library, version=1.0-SNAPSHOT)
-(component=ojAlgo, kind=solver, version=1.0-SNAPSHOT)
+(component=relix-builtin, kind=function-library, version=<version>)
+(component=ojAlgo, kind=solver, version=<version>)
 ```
 
 One row per component the process has loaded. `engine` and `facade` are Relix's own; the
-rest were contributed by whatever assembled the classpath.
+rest were contributed by whatever assembled the classpath. `<version>` stands in for the
+version each component was built at, which is a fact about your build rather than about
+Relix — it is the one thing on this page that has no value a page could print.
 
 Because it is a relation, the startup check a program actually wants is a query:
 

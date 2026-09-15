@@ -38,9 +38,10 @@ import java.util.function.Supplier;
  * is fetched from {@link #DEFAULT_CATALOG_URL} (overridable via
  * {@code $RELIX_CONNECTOR_CATALOG}, which may be an {@code https://} URL or a local
  * file path) so a connector plugin can be published — and the catalog updated —
- * without rebuilding relix.  The catalog is loaded <em>lazily</em> and only when
- * downloading is actually needed, so no network call happens at startup or when
- * downloads are off.
+ * without rebuilding relix.  It is served as an asset of the latest release, which is
+ * what keeps a pre-release's catalog out of everybody's hands.  The catalog is loaded
+ * <em>lazily</em> and only when downloading is actually needed, so no network call
+ * happens at startup or when downloads are off.
  *
  * <p>Downloading is <strong>opt-in</strong>: a provisioner created with
  * {@code enabled == false} never reaches the network and reports {@link Outcome#DISABLED}.
@@ -48,15 +49,27 @@ import java.util.function.Supplier;
 public final class ConnectorProvisioner {
 
     /**
-     * The hosted catalog, served from the engine repository's {@code main} branch.
+     * The hosted catalog, served as an asset of the engine repository's latest release.
      *
-     * <p>It resolves only while that repository is readable without credentials, which is
-     * what {@code raw.githubusercontent.com} serves. A catalog that 404s is not a failure
-     * here: provisioning is opt-in, and a caller who has not asked to download never
-     * fetches it.
+     * <p>A release asset rather than a file on a branch, and the difference is what the
+     * URL means. {@code /releases/latest/download/} resolves to the newest release that is
+     * <strong>not</strong> a pre-release — so a release candidate's catalog is published
+     * under its own tag and served to nobody, which is the property this needs: the file
+     * is fetched at run time by every user who asks to download a connector, and a
+     * candidate that is later dropped must never have been what they got. Reading a
+     * branch could only approximate that with a rule someone has to remember.
+     *
+     * <p>It also means a release writes nothing back. The catalog committed in the
+     * repository is the <em>base</em> — which connectors exist — and each release publishes
+     * it merged with that build's own entry, so the per-release part (a version in a URL,
+     * a hash of the artifact just built) is never a commit at all.
+     *
+     * <p>Overridable via {@code $RELIX_CONNECTOR_CATALOG}, an {@code https://} URL or a
+     * local file path. A catalog that 404s is not a failure here: provisioning is opt-in,
+     * and a caller who has not asked to download never fetches it.
      */
     public static final String DEFAULT_CATALOG_URL =
-            "https://raw.githubusercontent.com/DarkCollective/relix-core/main/connectors/relix-connectors.json";
+            "https://github.com/DarkCollective/relix-core/releases/latest/download/relix-connectors.json";
 
     private static final System.Logger LOG = System.getLogger(ConnectorProvisioner.class.getName());
 
