@@ -1,0 +1,79 @@
+// relix-lang — Lexer and parser for the relix scripting language.
+// Produces a Script AST (from relix-lang-ast) by parsing a .relix source file.
+// Delegates { ... } relational-algebra expression blocks to RelAlgebraParser
+// from relix-parser.
+
+// ReferenceExampleParseTest parses every fenced block in docs/reference and
+// .claude; ProjectDocsGuardTest checks the same tree against the code;
+// CoreModuleListTest checks the root build's ext.coreModules against the module
+// declarations it names; AssertionSurfaceGuardTest and BuilderSurfaceGuardTest read every
+// module's test sources — the latter against the three published authoring surfaces — and
+// AstConstructionRatchetTest reads them against tools/ast-builders/baseline.tsv.
+// All six read the repository rather than this module, so Gradle is told about them —
+// see the same declaration in relix-console for why. Without it a change in another
+// module leaves the guard UP-TO-DATE: passing because it never ran, which is the one
+// failure mode a guard must not have.
+tasks.named('test') {
+    inputs.dir("$rootDir/docs/reference").withPropertyName('referenceDocs')
+    inputs.dir("$rootDir/docs/guide").withPropertyName('programmingGuide')
+    // Declared only where the tree is there. These two belong to this repository
+    // rather than to the engine, and the public tree carries neither — where a declared
+    // input directory is absent Gradle fails the task during *configuration*, taking the
+    // build with it, and `optional(true)` does not help: it permits a property with no
+    // value, not a path that is not there. What the guards do with an absent tree is
+    // their own business; this only keeps the task runnable without it.
+    if (file("$rootDir/.claude").exists()) {
+        inputs.dir("$rootDir/.claude").withPropertyName('projectDocs')
+    }
+    if (file("$rootDir/relix-site/content").exists()) {
+        inputs.dir("$rootDir/relix-site/content").withPropertyName('siteContent')
+    }
+    inputs.file("$rootDir/build.gradle").withPropertyName('rootBuild')
+    // ProjectDocsGuardTest reads the module list from here. Undeclared until the guard
+    // learned to see a repository-root path at all — ROOTS is five directories, and a
+    // file at the root is under none of them.
+    inputs.file("$rootDir/settings.gradle").withPropertyName('settings')
+    // The published module map, read by ProjectDocsGuardTest. Undeclared, the guard is
+    // UP-TO-DATE across exactly the edit it exists to catch — which it was, and both
+    // probes of it passed while the document was wrong.
+    inputs.file("$rootDir/ARCHITECTURE.md").withPropertyName('architecture')
+    // Every module's build, for RepoTreeInputGuardTest — which reads them to check that
+    // a test naming a repository tree declares it, and would otherwise have exactly the
+    // hole it exists to close.
+    inputs.files(fileTree(rootDir) { include '*/build.gradle' }).withPropertyName('moduleBuilds')
+    inputs.file("$rootDir/tools/ast-builders/baseline.tsv").withPropertyName('astBuilderRatchet')
+    // LicenseHeaderTest reads the header text from here. It went undeclared because the
+    // guard below accepted any `tools/…` declaration for any `tools/…` read.
+    inputs.file("$rootDir/tools/license/HEADER.txt").withPropertyName('licenseHeader')
+    inputs.files(fileTree(rootDir) { include '*/src/main/java/module-info.java' })
+            .withPropertyName('moduleDeclarations')
+    inputs.files(fileTree(rootDir) {
+        include '*/src/main/java/com/darkcollective/relix/ast/RelNode.java'
+        include '*/src/main/java/com/darkcollective/relix/ast/ConditionalJoinNode.java'
+        include '*/src/main/java/com/darkcollective/relix/ast/AstBuilders.java'
+        include '*/src/main/java/com/darkcollective/relix/ast/Expr.java'
+        include '*/src/main/java/com/darkcollective/relix/lang/ast/ScriptBuilders.java'
+        include '*/src/main/java/com/darkcollective/relix/ast/*.java'
+        include '*/src/main/java/com/darkcollective/relix/lang/ast/*.java'
+        // LicenseHeaderTest reads every module's main sources, not only the AST packages
+        // the guards above it care about. Without this the check is UP-TO-DATE across a
+        // change to any other module's main source — which is most of them.
+        include '*/src/main/java/**/*.java'
+        include '*/src/test/java/**/*.java'
+        include '*/src/testFixtures/java/**/*.java'
+    }).withPropertyName('testSources')
+}
+
+dependencies {
+    api project(':relix-lang-ast')
+    implementation project(':relix-parser')
+
+    // AstAssertions/RelNodeAssert — this suite's subject is a parsed tree, and a shape
+    // assertion that prints the tree is the whole point of that fixture.
+    testImplementation testFixtures(project(':relix-ast'))
+
+    // ScriptCorpus — one of every Statement/SourceConfig kind, for the print → parse gate.
+    // The grammar lives here, so this is the lowest module that can read a printed script
+    // back, exactly as RelNodeCorpusRoundTripTest sits in relix-parser.
+    testImplementation testFixtures(project(':relix-lang-ast'))
+}

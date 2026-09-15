@@ -1,0 +1,83 @@
+// relix-embed — the embedding API: what a plain Java program depends on to build,
+// optimise, inspect and run a Relix query.
+//
+// A *frontend* (ADR-0025's taxonomy: it produces an AST), and an application-shaped
+// one — batteries included. It carries the provider edges so no engine module has to,
+// exactly as relix-cli and relix-repl do, which is what stops the purity of the core
+// cut from landing on users as assembly work.
+
+plugins {
+    // Publishes EmbedAssertions/RelationAssert (src/testFixtures) — the facade's own
+    // assert, whose failures print the query that disagreed. Its consumers are this
+    // module's suite and the two front ends built on the facade.
+    id 'java-test-fixtures'
+}
+
+// ProgrammingGuideTest reads docs/guide and compiles what it finds there. Gradle
+// cannot see that input, so without declaring it a guide-only change leaves the guard
+// UP-TO-DATE — passing because it never ran, the one failure mode a guard must not have.
+tasks.named('test') {
+    inputs.dir("$rootDir/docs/guide").withPropertyName('programmingGuide')
+}
+
+dependencies {
+    // The engine, as an embedder sees it. `api` because these types are in the
+    // facade's own signatures — a Relation names a RelNode, a schema is core's Schema.
+    api project(':relix-ast')
+    api project(':relix-lang-ast')
+    api project(':relix-semantic')
+    api project(':relix-symbol')
+
+    // Values and rows are in the facade's own signatures once the terminals land.
+    api project(':relix-value')
+    api project(':relix-processor')
+
+    // The .relix grammar. The facade is a frontend, so naming a frontend is allowed
+    // here in a way it is not anywhere in the engine (EngineBoundaryTest).
+    implementation project(':relix-lang')
+
+    // `api`, not `implementation`, for the same reason as the four above: each of
+    // these appears in a public signature, one step out at most — a plan carries
+    // PlanEstimates, a rewrite is a TransformationRecord, a run reports QueryEvents,
+    // provenance is annotated over a Semiring, a library is a FunctionLibrary, and
+    // the provisioners are named where a host supplies them. The set is not a matter
+    // of taste: ReExportSurfaceTest computes it, and it is the same set the facade's
+    // compatibility promise reaches through.
+    api project(':relix-plan')
+    api project(':relix-optimizer')
+    api project(':relix-events')
+    api project(':relix-provenance')
+    api project(':relix-function')
+    api project(':relix-connectors-std')
+
+    // Used, but never named in a signature.
+    implementation project(':relix-cost')
+    implementation project(':relix-solver')
+    implementation project(':relix-json')
+
+    // The batteries. Nothing here references either — the engine discovers them with
+    // ServiceLoader — but "one dependency" is only true if depending on the facade
+    // installs them, and a module nothing `requires` is left out of the resolved
+    // graph. An embedder who wants to assemble their own stack takes `relix-core`,
+    // which is what that artifact is for.
+    implementation project(':relix-function-builtin')
+    implementation project(':relix-solver-ojalgo')
+
+    // H2 backs the bound-DataSource tests: an injected handle has no url, and the only
+    // way to prove introspection works through one is to introspect a real database.
+    testImplementation 'com.h2database:h2:2.2.224'
+
+    testImplementation testFixtures(project(':relix-ast'))
+    testImplementation testFixtures(project(':relix-lang-ast'))
+    testImplementation testFixtures(project(':relix-semantic'))
+
+    // EmbedAssertions extends ProcessorAssertions — the top of the entry-point chain,
+    // so one import at the facade layer reaches every assert beneath it, and a
+    // RelationAssert can hand a schema, a plan or a table of rows to the assert that
+    // already reports it well.
+    testFixturesApi project(':relix-optimizer')
+    testFixturesApi testFixtures(project(':relix-processor'))
+    // Under test the providers must be on the classpath, not merely in the image.
+    testRuntimeOnly project(':relix-function-builtin')
+    testRuntimeOnly project(':relix-solver-ojalgo')
+}

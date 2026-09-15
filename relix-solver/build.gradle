@@ -1,0 +1,5 @@
+// relix-solver — the mathematical-programming SPI (ADR-0026 S13, #595).
+//
+// A leaf module with no dependencies at all: a linear program is variables,
+// coefficients and bounds. The engine builds one and reads the answer; a
+// discovered provider (relix-solver-ojalgo) performs the search.

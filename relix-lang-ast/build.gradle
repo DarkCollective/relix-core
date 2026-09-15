@@ -1,0 +1,17 @@
+// relix-lang-ast — AST nodes for the relix scripting language.
+// Depends on relix-symbol (which transitively pulls in relix-ast) for ScalarType
+// and ParameterDefinition used in column specs and def statements.
+// The parser (relix-lang) depends on this module; relix-lang-ast itself is
+// parser-free and safe to use as a pure data layer.
+
+plugins {
+    id 'java-test-fixtures'
+}
+
+dependencies {
+    api project(':relix-symbol')
+
+    // ScriptBuilders extends AstBuilders, so a test that builds a Script gets the
+    // whole AST surface from one import — the point of ADR-0025 D4.
+    testFixturesApi testFixtures(project(':relix-ast'))
+}

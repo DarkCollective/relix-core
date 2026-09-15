@@ -1,0 +1,104 @@
+# Unjustified coverage gaps per file — a ratchet, not a register.
+#
+# A gap is a partly-exercised `&&`/`||` or a method with no covered instructions
+# (audit.py's module docstring says why those two). register.tsv holds the ones
+# with an argued reason; every remaining one is counted here, against the file it
+# is in. audit.py holds each file to its row:
+#
+#   * a file with no row must have NO unjustified gap — this is what stops new
+#     ones appearing, a new file having a budget of zero without anyone deciding;
+#   * a file with a row must not exceed it;
+#   * a file BELOW its row fails, asking for the row to be lowered — which makes
+#     "close what you touch" a thing the build records rather than a thing people
+#     remember. A budget that only ratchets down cannot drift back up;
+#   * a row naming a missing file fails, the discipline register.tsv follows.
+#
+# So: when a gap goes, lower or delete the row in the same commit. There are two
+# ways to spend a row down and they are not the same claim — write the test, or
+# write a register.tsv row arguing the gap is not worth closing. The second is
+# reviewed like any other claim ("hard to reach" is not a reason; "the grammar
+# cannot express it" is), which is why this file records a number and register.tsv
+# records prose.
+#
+# Regenerate with `python3 tools/coverage/audit.py --baseline`, and read the diff:
+# every row that MOVES UP is a gap someone added, and the tool cannot tell that
+# from a row someone lowered.
+#
+# Every number here is a claim about the gate's configuration, which is `test`
+# alone. Running a heavier tier moves a file's count in BOTH directions — it covers
+# the method, and uncovers a condition inside that method which was not a gap while
+# nothing called it at all — so no single number holds on both a bare machine and a
+# Docker-equipped one. audit.py therefore skips the three counting rules entirely
+# when a tier's exec file is present, rather than comparing numbers that are not
+# comparable; `./gradlew clean test jacocoAggregateReport` is what gates.
+#
+# A file register.tsv excuses through a TIER still keeps its row, and the gate holds
+# it to that row like any other.
+2	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/ConnectionPool.java
+1	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/CsvDataSourceConnector.java
+2	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/DataSourceRegistry.java
+1	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/DriverCatalog.java
+5	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/HttpDataSourceConnector.java
+5	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/JdbcDataSourceConnector.java
+1	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/JsonFileDataSourceConnector.java
+1	relix-cost/src/main/java/com/darkcollective/relix/cost/CostEstimator.java
+1	relix-embed/src/main/java/com/darkcollective/relix/embed/ComposedModel.java
+1	relix-embed/src/main/java/com/darkcollective/relix/embed/CompositeDataSourceConnector.java
+3	relix-embed/src/main/java/com/darkcollective/relix/embed/RecordBinding.java
+1	relix-embed/src/main/java/com/darkcollective/relix/embed/Relation.java
+6	relix-embed/src/main/java/com/darkcollective/relix/embed/Relix.java
+1	relix-embed/src/main/java/com/darkcollective/relix/embed/Tuple.java
+1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/BuiltinFunctionLibrary.java
+1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/Category.java
+2	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/DateTimeFunctions.java
+1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/MathFunctions.java
+1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/TypeCheckFunctions.java
+2	relix-function/src/main/java/com/darkcollective/relix/function/FunctionCatalog.java
+10	relix-lang/src/main/java/com/darkcollective/relix/lang/LangLexer.java
+9	relix-lang/src/main/java/com/darkcollective/relix/lang/ScriptParser.java
+4	relix-lang/src/main/java/com/darkcollective/relix/lang/SourceConfigParser.java
+1	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/ConjunctBounds.java
+2	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/JoinRulesPass.java
+1	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/OperandSimplifier.java
+1	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/PredicateSimplifier.java
+3	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/SelectionIntoFixpointPass.java
+1	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/TransitiveEqualityPass.java
+4	relix-parser/src/main/java/com/darkcollective/relix/parser/Lexer.java
+10	relix-parser/src/main/java/com/darkcollective/relix/parser/RelAlgebraParser.java
+5	relix-plan/src/main/java/com/darkcollective/relix/plan/JoinPlanning.java
+3	relix-plan/src/main/java/com/darkcollective/relix/plan/MongoExpressions.java
+4	relix-plan/src/main/java/com/darkcollective/relix/plan/MongoPushdownPlanner.java
+1	relix-plan/src/main/java/com/darkcollective/relix/plan/PushdownFolding.java
+1	relix-plan/src/main/java/com/darkcollective/relix/plan/PushdownRenderer.java
+2	relix-plan/src/main/java/com/darkcollective/relix/plan/RelationFunctionInliner.java
+2	relix-plan/src/main/java/com/darkcollective/relix/plan/SqlExpressions.java
+18	relix-plan/src/main/java/com/darkcollective/relix/plan/SqlPushdownPlanner.java
+1	relix-plan/src/main/java/com/darkcollective/relix/plan/StableCalls.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/ArrayRow.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/QueryExecutor.java
+3	relix-processor/src/main/java/com/darkcollective/relix/processor/connector/ConnectorProvisioner.java
+3	relix-processor/src/main/java/com/darkcollective/relix/processor/eval/OperandEvaluator.java
+4	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/CoverExecutor.java
+3	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/DownsampleExecutor.java
+2	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/JoinExecutor.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/LateralMemo.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/MaterializationBudget.java
+5	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/RecursionExecutor.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/SessionizeExecutor.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/SpoolBuffer.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/SpoolCache.java
+3	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/TreeExecutor.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/generator/GeneratorDataSourceConnector.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/generator/GeneratorDistinctnessSource.java
+2	relix-processor/src/main/java/com/darkcollective/relix/processor/provenance/BaseAnnotator.java
+1	relix-processor/src/main/java/com/darkcollective/relix/processor/provenance/ProvenanceEvaluator.java
+2	relix-semantic/src/main/java/com/darkcollective/relix/semantic/CatalogBuilder.java
+1	relix-semantic/src/main/java/com/darkcollective/relix/semantic/CatalogSnapshot.java
+1	relix-semantic/src/main/java/com/darkcollective/relix/semantic/IrReport.java
+9	relix-semantic/src/main/java/com/darkcollective/relix/semantic/RelAlgebraValidator.java
+5	relix-semantic/src/main/java/com/darkcollective/relix/semantic/SchemaGraphBuilder.java
+2	relix-semantic/src/main/java/com/darkcollective/relix/semantic/SchemaInferenceVisitor.java
+2	relix-semantic/src/main/java/com/darkcollective/relix/semantic/SymbolCollector.java
+2	relix-semantic/src/main/java/com/darkcollective/relix/semantic/graph/JoinObserver.java
+1	relix-semantic/src/main/java/com/darkcollective/relix/semantic/graph/JoinPathResolver.java
+1	relix-semantic/src/main/java/com/darkcollective/relix/semantic/graph/JoinResolution.java

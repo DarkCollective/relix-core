@@ -1,0 +1,93 @@
+// relix-semantic — Semantic analysis for .relix scripts.
+// Resolves imports, collects symbols, infers RA schemas, and validates all
+// declarations. Produces either a fully-validated SemanticModel or a list of
+// SemanticErrors (or both when errors are non-fatal).
+
+plugins {
+    // Publishes SemanticFixtures (src/testFixtures) — the shared analyze()/model()
+    // helpers used by tests in this and every downstream module — and
+    // SemanticAssertions/SemanticResultAssert, their assertion counterpart.
+    id 'java-test-fixtures'
+}
+
+dependencies {
+    api project(':relix-lang-ast')   // Script, Statement, SourceConfig types in public API
+    api project(':relix-symbol')     // SymbolTable, Schema in public API
+    api project(':relix-json')       // JsonWriter — in LogicalPlanJson.write(...) signature
+    api project(':relix-events')     // QueryEvent — in SemanticAnalyzer.withSessionEvents(...)
+
+    // The function SPI: FunctionCatalog is what the pipeline resolves calls
+    // against, and it travels on in SemanticModel.functions(), so it is api.
+    // Note what is NOT here: the default library. The engine names the seam, not
+    // the provider — the libraries are discovered at runtime, which is why the
+    // application modules (relix-cli, relix-repl) are the ones that depend on
+    // relix-function-builtin.
+    api project(':relix-function')
+
+    // The relation-property framework (ADR-0009), for the boundedness of
+    // relix.relations. Not the pipeline inversion it looks like: relix-cost
+    // requires nothing but relix-ast and relix-symbol, so it is a sibling
+    // library of derivations over the same two inputs rather than a later
+    // phase, and boundedness is a *logical* property rather than an estimate.
+    // Deriving it a second time here is the copy this project keeps refusing.
+    // `api` because Boundedness appears on the GeneratorCatalog seam.
+    api project(':relix-cost')
+
+    // The .relix grammar is a FRONTEND (ADR-0025 D2), not part of the engine:
+    // main must not see it, so `relix-semantic`'s production code cannot depend
+    // on the concrete syntax. It stays on the test + testFixtures classpaths
+    // (D3) so the large body of text-driven tests — ParserTestSupport, the
+    // analyze(src) fixtures — keeps working unchanged.
+    testImplementation project(':relix-lang')
+    testFixturesImplementation project(':relix-lang')
+
+    // The default function library (ADR-0026 S3) is on the TEST classpath only —
+    // the engine requires no provider, it discovers whichever are installed. Tests
+    // need one installed to analyse a script that calls Len(); BuiltinLibraryParityTest
+    // additionally holds its signatures against the ones BuiltinFunctionRegistry
+    // produces, and both stay alive until they are deleted together.
+    testImplementation project(':relix-function-builtin')
+
+    // …and on the test-fixtures RUNTIME path, because SemanticFixtures.analyze()
+    // runs the pipeline: a consumer of the fixtures (every downstream module's test
+    // suite) needs a library installed for a script's function calls to resolve.
+    // Runtime only — the fixtures never name a built-in, they discover one.
+    testFixturesRuntimeOnly project(':relix-function-builtin')
+
+    // SemanticAssertions extends SymbolAssertions, so a consumer importing it reaches
+    // the Schema and RelNode asserts too — hence `api`, not `implementation`.
+    testFixturesApi testFixtures(project(':relix-symbol'))
+}
+
+// ReferenceExampleAnalysisTest reads the repository's docs/reference tree rather than
+// this module's sources. Gradle cannot see that input, so without declaring it a
+// docs-only change leaves the guard UP-TO-DATE — passing because it never ran, which
+// is the one failure mode a guard must not have.
+tasks.named('test') {
+    inputs.dir("$rootDir/docs/reference").withPropertyName('referenceDocs')
+
+    // FunctionAccessGuardTest and ValueSemanticsGuardTest read the *main sources* of every
+    // engine module, and this module depends on almost none of them — relix-processor sits
+    // above it, so nothing on the test classpath changes when the processor does. Without
+    // this declaration the task goes UP-TO-DATE across exactly the edit either guard exists
+    // to catch: passing because it never ran, which is the one failure mode a guard must
+    // not have. Verified by reintroducing a defect and watching the guard stay green.
+    //
+    // The list is the guards' own, rather than every module, so an edit to the CLI or the
+    // REPL does not re-run this suite.
+    inputs.files(fileTree(rootDir) {
+        ['relix-ast', 'relix-symbol', 'relix-value', 'relix-function', 'relix-lang-ast',
+         'relix-semantic', 'relix-cost', 'relix-plan', 'relix-optimizer', 'relix-events',
+         'relix-json', 'relix-provenance', 'relix-processor'].each { engineModule ->
+            include "$engineModule/src/main/java/**/*.java"
+        }
+    }).withPropertyName('engineMainSources')
+}
+
+// The engine's own version, readable at runtime: relix.version reports it, and a
+// process that cannot say which build it is running is one nobody can support.
+processResources {
+    filesMatching('**/version.properties') {
+        expand(version: project.version)
+    }
+}

@@ -1,0 +1,18 @@
+// relix-value — the sealed runtime Value hierarchy.
+//
+// A near-leaf module: its only relix dependency is relix-symbol, for the
+// ScalarType each value reports. It sits that low on purpose. Metadata about a
+// function (its symbol, its signature) lives at the bottom of the graph in
+// relix-symbol, while anything that *implements* one needs Value — which used to
+// live in relix-processor, at the top. Pulling Value down is what lets the two
+// meet without the bottom of the graph depending on the executor.
+
+dependencies {
+    api project(':relix-symbol')   // ScalarType — in Value's public API
+
+    // Test-only, and deliberately not a main dependency: JsonRoundTripTest holds
+    // this module's reader against relix-json's writer. The two halves of the JSON
+    // grammar live in different modules and nothing had ever asserted they agree,
+    // so the escaping contract held only by coincidence.
+    testImplementation project(':relix-json')
+}
