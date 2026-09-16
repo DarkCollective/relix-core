@@ -85,12 +85,29 @@ final class JoinExecutor {
         };
     }
 
+    /**
+     * A matched pair as one output row. The join's relation sets go with it so that an
+     * open output can still tell which relation each field came from (#970).
+     */
+    private static Row joined(PhysicalNode.Join join, Row left, Row right) {
+        return concatRows(left, right, join.schema(), join.leftRelations(), join.rightRelations());
+    }
+
+    /** An unmatched left row of an outer join, padded for the right side. */
+    private static Row padRight(PhysicalNode.Join join, Row left, int rightWidth) {
+        return nullPaddedRight(left, rightWidth, join.schema(), join.leftRelations());
+    }
+
+    /** An unmatched right row of an outer join, padded for the left side. */
+    private static Row padLeft(PhysicalNode.Join join, int leftWidth, Row right) {
+        return nullPaddedLeft(leftWidth, right, join.schema(), join.rightRelations());
+    }
+
     private Stream<Row> executeProduct(PhysicalNode.Join join, EvalCtx ctx) {
-        Schema outputSchema = join.schema();
         List<Row> right = dispatch.materialize(join.right(), ctx, join);
         return dispatch.execute(join.left(), ctx)
                 .flatMap(leftRow -> right.stream()
-                        .map(rightRow -> concatRows(leftRow, rightRow, outputSchema)));
+                        .map(rightRow -> joined(join, leftRow, rightRow)));
     }
 
     private Stream<Row> executeInnerJoin(PhysicalNode.Join join, EvalCtx ctx) {
@@ -102,7 +119,7 @@ final class JoinExecutor {
             return dispatch.execute(join.left(), ctx)
                     .flatMap(leftRow -> right.stream()
                             .filter(rightRow -> matcher.matches(leftRow, rightRow))
-                            .map(rightRow -> concatRows(leftRow, rightRow, outputSchema)));
+                            .map(rightRow -> joined(join, leftRow, rightRow)));
         }
         int[] leftKeys = keys(join.keys().left());
         int[] rightKeys = keys(join.keys().right());
@@ -111,13 +128,13 @@ final class JoinExecutor {
             return dispatch.execute(join.left(), ctx).flatMap(leftRow ->
                     probe(index, leftRow, leftKeys).stream()
                             .filter(rightRow -> matcher.matches(leftRow, rightRow))
-                            .map(rightRow -> concatRows(leftRow, rightRow, outputSchema)));
+                            .map(rightRow -> joined(join, leftRow, rightRow)));
         }
         Map<List<String>, List<Row>> index = buildSide(join.left(), leftKeys, join, ctx).index();
         return dispatch.execute(join.right(), ctx).flatMap(rightRow ->
                 probe(index, rightRow, rightKeys).stream()
                         .filter(leftRow -> matcher.matches(leftRow, rightRow))
-                        .map(leftRow -> concatRows(leftRow, rightRow, outputSchema)));
+                        .map(leftRow -> joined(join, leftRow, rightRow)));
     }
 
     private Stream<Row> executeNaturalJoin(PhysicalNode.Join join, EvalCtx ctx) {
@@ -164,10 +181,10 @@ final class JoinExecutor {
             List<Row> candidates = (index == null) ? right : probe(index, leftRow, leftKeys);
             List<Row> matches = candidates.stream()
                     .filter(rightRow -> matcher.matches(leftRow, rightRow))
-                    .map(rightRow -> concatRows(leftRow, rightRow, outputSchema))
+                    .map(rightRow -> joined(join, leftRow, rightRow))
                     .toList();
             return matches.isEmpty()
-                    ? Stream.of(nullPaddedRight(leftRow, rightWidth, outputSchema))
+                    ? Stream.of(padRight(join, leftRow, rightWidth))
                     : matches.stream();
         });
     }
@@ -186,10 +203,10 @@ final class JoinExecutor {
             List<Row> candidates = (index == null) ? left : probe(index, rightRow, rightKeys);
             List<Row> matches = candidates.stream()
                     .filter(leftRow -> matcher.matches(leftRow, rightRow))
-                    .map(leftRow -> concatRows(leftRow, rightRow, outputSchema))
+                    .map(leftRow -> joined(join, leftRow, rightRow))
                     .toList();
             return matches.isEmpty()
-                    ? Stream.of(nullPaddedLeft(leftWidth, rightRow, outputSchema))
+                    ? Stream.of(padLeft(join, leftWidth, rightRow))
                     : matches.stream();
         });
     }
@@ -209,13 +226,13 @@ final class JoinExecutor {
         List<Row> result = new ArrayList<>();
 
         if (!hashable(join)) {
-            fullOuterDriveLeft(leftRows, rightRows, leftRow -> rightRows,
-                    matcher, leftWidth, rightWidth, outputSchema, result);
+            fullOuterDriveLeft(join, leftRows, rightRows, leftRow -> rightRows,
+                    matcher, leftWidth, rightWidth, result);
         } else if (buildRight) {
             Map<List<String>, List<Row>> index = right.index();
             int[] leftKeys = keys(join.keys().left());
-            fullOuterDriveLeft(leftRows, rightRows, leftRow -> probe(index, leftRow, leftKeys),
-                    matcher, leftWidth, rightWidth, outputSchema, result);
+            fullOuterDriveLeft(join, leftRows, rightRows, leftRow -> probe(index, leftRow, leftKeys),
+                    matcher, leftWidth, rightWidth, result);
         } else {
             Map<List<String>, List<Row>> index = left.index();
             int[] rightKeys = keys(join.keys().right());
@@ -224,14 +241,14 @@ final class JoinExecutor {
                 boolean matched = false;
                 for (Row leftRow : probe(index, rightRow, rightKeys)) {
                     if (matcher.matches(leftRow, rightRow)) {
-                        result.add(concatRows(leftRow, rightRow, outputSchema));
+                        result.add(joined(join, leftRow, rightRow));
                         matchedLeft.add(leftRow);
                         matched = true;
                     }
                 }
-                if (!matched) result.add(nullPaddedLeft(leftWidth, rightRow, outputSchema));
+                if (!matched) result.add(padLeft(join, leftWidth, rightRow));
             }
-            addUnmatched(leftRows, matchedLeft, l -> result.add(nullPaddedRight(l, rightWidth, outputSchema)));
+            addUnmatched(leftRows, matchedLeft, l -> result.add(padRight(join, l, rightWidth)));
         }
         return BagRelation.of(outputSchema, result).stream();
     }
@@ -243,23 +260,23 @@ final class JoinExecutor {
      * iterate left — nested-loop (all right rows) and right-build hash (probed
      * candidates) — differ only in {@code rightCandidates}.
      */
-    private void fullOuterDriveLeft(List<Row> leftRows, List<Row> rightRows,
+    private void fullOuterDriveLeft(PhysicalNode.Join join, List<Row> leftRows, List<Row> rightRows,
                                     Function<Row, Iterable<Row>> rightCandidates,
                                     JoinMatcher matcher, int leftWidth, int rightWidth,
-                                    Schema outputSchema, List<Row> result) {
+                                    List<Row> result) {
         Set<Row> matchedRight = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Row leftRow : leftRows) {
             boolean matched = false;
             for (Row rightRow : rightCandidates.apply(leftRow)) {
                 if (matcher.matches(leftRow, rightRow)) {
-                    result.add(concatRows(leftRow, rightRow, outputSchema));
+                    result.add(joined(join, leftRow, rightRow));
                     matchedRight.add(rightRow);
                     matched = true;
                 }
             }
-            if (!matched) result.add(nullPaddedRight(leftRow, rightWidth, outputSchema));
+            if (!matched) result.add(padRight(join, leftRow, rightWidth));
         }
-        addUnmatched(rightRows, matchedRight, r -> result.add(nullPaddedLeft(leftWidth, r, outputSchema)));
+        addUnmatched(rightRows, matchedRight, r -> result.add(padLeft(join, leftWidth, r)));
     }
 
     /** Semi-join: emits each left row that has at least one matching right row. */
@@ -413,7 +430,7 @@ final class JoinExecutor {
                             Row leftRow  = left.get(li);
                             Row rightRow = right.get(ri);
                             if (matcher.matches(leftRow, rightRow)) {
-                                result.add(concatRows(leftRow, rightRow, outputSchema));
+                                result.add(joined(join, leftRow, rightRow));
                             }
                         }
                     }
