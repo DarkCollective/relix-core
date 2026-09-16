@@ -1,0 +1,38 @@
+name: Feature request
+description: A new operator, function, connector or API — or a change to an existing one.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A request that starts from the problem is much easier to act on than one that starts from a proposed syntax.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and where does Relix get in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: The workaround you use now, in Relix or elsewhere — a SQL query that does it is useful context.
+      render: text
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: How you would like to write it, and what it should return. A worked example with input and output rows is ideal.
+    validations:
+      required: true
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to work on it?
+      options:
+        - "No"
+        - "Yes, with guidance"
+        - "Yes"
+    validations:
+      required: true
