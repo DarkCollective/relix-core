@@ -17,6 +17,7 @@ package com.darkcollective.relix.optimizer;
 
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.ProductNode;
+import com.darkcollective.relix.ast.Qualifiers;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
@@ -158,7 +159,7 @@ final class JoinRulesPass {
                 Optional<Schema> rs = schemaOf(prod.right(), schemas);
                 if (ls.isEmpty() || rs.isEmpty()) yield null;
 
-                JoinSide side = determineJoinSide(attrs, ls.get(), rs.get());
+                JoinSide side = determineJoinSide(attrs, prod.left(), ls.get(), prod.right(), rs.get());
                 yield switch (side) {
                     case LEFT -> {
                         // Predicate only references left input — push into it
@@ -207,7 +208,7 @@ final class JoinRulesPass {
                 Optional<Schema> rs = schemaOf(j.right(), schemas);
                 if (ls.isEmpty() || rs.isEmpty()) yield null;
 
-                JoinSide side = determineJoinSide(attrs, ls.get(), rs.get());
+                JoinSide side = determineJoinSide(attrs, j.left(), ls.get(), j.right(), rs.get());
                 yield switch (side) {
                     case LEFT -> {
                         ctx.record(OptimizationCode.JOIN_002, queryName,
@@ -256,25 +257,32 @@ final class JoinRulesPass {
 
     /**
      * Determines which side of a binary operator the predicate with
-     * {@code predAttrs} can be pushed into.
+     * {@code predAttrs} can be pushed into: {@link JoinSide#LEFT} when every
+     * referenced attribute belongs to the left input, {@link JoinSide#RIGHT} when
+     * every one belongs to the right, {@link JoinSide#NEITHER} otherwise. An empty
+     * attribute set is vacuously all-left.
      *
-     * <p>Returns {@link JoinSide#LEFT} when all referenced columns are
-     * exclusively in the left schema, {@link JoinSide#RIGHT} when exclusively
-     * in the right schema, and {@link JoinSide#NEITHER} otherwise (predicate
-     * spans both sides, references unknown columns, or the attribute set is
-     * empty — in which case {@code allLeft} is vacuously true, so LEFT is
-     * returned by the {@code allLeft && !anyRight} branch).
+     * <p>Ownership is {@link JoinSides#sideOf}'s answer, the one
+     * {@link SelectionPushdownPass} uses. This pass used to decide by stripped column
+     * name alone, which a schema-on-read input answers for every name — so a σ over a
+     * view of an open join was pushed into the open input under a qualifier only the
+     * view defines, and matched nothing (#971).
      */
     private static JoinSide determineJoinSide(Set<String> predAttrs,
-                                               Schema leftSchema,
-                                               Schema rightSchema) {
-        boolean anyLeft  = predAttrs.stream().anyMatch(a -> hasColumn(leftSchema,  a));
-        boolean anyRight = predAttrs.stream().anyMatch(a -> hasColumn(rightSchema, a));
-        boolean allLeft  = predAttrs.stream().allMatch(a -> hasColumn(leftSchema,  a));
-        boolean allRight = predAttrs.stream().allMatch(a -> hasColumn(rightSchema, a));
-
-        if (allLeft  && !anyRight) return JoinSide.LEFT;
-        if (allRight && !anyLeft)  return JoinSide.RIGHT;
+                                               RelNode left, Schema leftSchema,
+                                               RelNode right, Schema rightSchema) {
+        Set<String> leftQualifiers  = Qualifiers.inScope(left);
+        Set<String> rightQualifiers = Qualifiers.inScope(right);
+        boolean allLeft  = true;
+        boolean allRight = true;
+        for (String attr : predAttrs) {
+            JoinSides.Side side = JoinSides.sideOf(
+                    attr, leftSchema, rightSchema, leftQualifiers, rightQualifiers);
+            allLeft  &= side == JoinSides.Side.LEFT;
+            allRight &= side == JoinSides.Side.RIGHT;
+        }
+        if (allLeft)  return JoinSide.LEFT;
+        if (allRight) return JoinSide.RIGHT;
         return JoinSide.NEITHER;
     }
 

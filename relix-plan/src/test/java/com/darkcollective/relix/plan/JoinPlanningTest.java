@@ -233,41 +233,4 @@ final class JoinPlanningTest {
             assertThat(keysDisjoint(not(key)).isEmpty()).isTrue();
         }
     }
-
-    @Nested
-    @DisplayName("relationNames — the qualifiers a subtree answers to")
-    class RelationNames {
-
-        @Test
-        @DisplayName("a leaf answers to its own name, lowercased")
-        void leaf() {
-            assertThat(JoinPlanning.relationNames(rel("Orders"))).containsExactly("orders");
-        }
-
-        @Test
-        @DisplayName("a relation-renaming ρ shadows what is beneath it")
-        void renamingRhoShadows() {
-            RelNode renamed = rename("V", List.of(), rel("Orders"));
-            assertThat(JoinPlanning.relationNames(renamed)).containsExactly("v");
-        }
-
-        @Test
-        @DisplayName("a column-only ρ leaves the underlying names in scope")
-        void columnOnlyRhoDoesNot() {
-            RelNode renamed = rename(java.util.Optional.empty(), List.of("a", "b"),
-                    List.of(), rel("Orders"));
-            assertThat(JoinPlanning.relationNames(renamed)).containsExactly("orders");
-        }
-
-        @Test
-        @DisplayName("every leaf under an operator is reachable")
-        void recursesThroughOtherOperators() {
-            RelNode tree = select(
-                    cmp(attr("a"),
-                            ComparisonOperator.EQUAL, num("1")),
-                    new com.darkcollective.relix.ast.ProductNode(rel("Orders"), rel("Customers")));
-            assertThat(JoinPlanning.relationNames(tree))
-                    .containsExactlyInAnyOrder("orders", "customers");
-        }
-    }
 }
