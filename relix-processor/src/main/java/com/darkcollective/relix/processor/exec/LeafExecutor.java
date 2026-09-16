@@ -88,6 +88,13 @@ final class LeafExecutor {
                     "Unexpected view in physical plan (should have been inlined): '"
                     + view.declaredName() + "'");
         };
+        if (scan.schema().isOpen() && scan.qualifier().isPresent()) {
+            // A declared row answers `products.name` through its heading's provenance; a
+            // document has no heading, so without this a qualified reference to its own
+            // field read as a path into a field called `products` (#972).
+            String qualifier = scan.qualifier().get();
+            rows = rows.map(row -> row instanceof DocumentRow document ? document.reanchored(qualifier) : row);
+        }
         // GEN-001: a pushed generator bound stops the (otherwise unbounded,
         // ascending) producer via takeWhile, so the lazy scan is finite.
         if (scan.produceBound().isPresent()) {

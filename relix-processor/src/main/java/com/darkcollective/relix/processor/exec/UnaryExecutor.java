@@ -18,11 +18,15 @@ package com.darkcollective.relix.processor.exec;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.DocumentRow;
 import com.darkcollective.relix.processor.Row;
+import com.darkcollective.relix.processor.eval.EvaluationException;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.symbol.Schema;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 /**
@@ -52,8 +56,33 @@ final class UnaryExecutor {
 
     Stream<Row> executeRename(PhysicalNode.Rename node, EvalCtx ctx) {
         Schema outputSchema = node.schema();
-        return dispatch.execute(node.input(), ctx).map(row ->
-                row.schema().equals(outputSchema) ? row : reschema(row, outputSchema));
+        return dispatch.execute(node.input(), ctx).map(row -> switch (row) {
+            // A schema-on-read row has no positional heading to relabel — restating it
+            // under the rename's heading sized a document against the columns that
+            // heading happens to know, and failed (#971). What a rename changes for a
+            // document is which relation its fields answer to.
+            case DocumentRow document -> renamed(document, node);
+            default -> row.schema().equals(outputSchema) ? row : reschema(row, outputSchema);
+        });
+    }
+
+    /**
+     * A document under a rename: the pair form renames the fields it names (#977), and a
+     * new relation name re-anchors every field to it. Renaming first matters — anchoring
+     * replaces the origins a rename would otherwise carry across.
+     */
+    private static Row renamed(DocumentRow document, PhysicalNode.Rename node) {
+        DocumentRow row = document;
+        if (!node.pairs().isEmpty()) {
+            Map<String, String> renames = new LinkedHashMap<>();
+            node.pairs().forEach(pair -> renames.put(pair.from(), pair.to()));
+            try {
+                row = row.renamed(renames);
+            } catch (IllegalArgumentException e) {
+                throw new EvaluationException("Rename ρ: " + e.getMessage(), e);
+            }
+        }
+        return node.relation().map(row::reanchored).orElse(row);
     }
 
     /** Re-labels {@code row} with {@code newSchema} (same width), sharing values for an {@link ArrayRow}. */

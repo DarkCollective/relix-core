@@ -121,6 +121,207 @@ final class JoinOperatorsTest extends ProcessorTestSupport {
         }
     }
 
+    /**
+     * A qualified reference <em>above</em> a join with an open side (#970). Both inputs
+     * carry {@code account}, so the joined document renames one of them — and before the
+     * fix a qualified name read as a path into a field named after the relation, found
+     * nothing, and returned NULL on every row.
+     */
+    @Nested
+    @DisplayName("a qualified reference above a join with a schema-on-read side (#970)")
+    class QualifiedAboveOpenJoin {
+
+        private static final DataSourceConnector DOCS = (_, _) -> Stream.of(
+                document(1002, "Ada"),
+                document(1009, "Bo"),
+                document(1050, "Cy"));
+
+        private static Row document(int account, String holder) {
+            java.util.Map<String, com.darkcollective.relix.value.Value> fields =
+                    new java.util.LinkedHashMap<>();
+            fields.put("account", num(account));
+            fields.put("holder", str(holder));
+            return new com.darkcollective.relix.processor.DocumentRow(
+                    new com.darkcollective.relix.value.StructValue(fields));
+        }
+
+        private static final String SETUP = """
+                source Docs from json("docs.json");
+                Ledger := [| account | depth |
+                           | 1002    | 1     |
+                           | 1009    | 2     |
+                           | 2000    | 3     |];
+                """;
+
+        private static List<String> column(List<Row> rows, String name) {
+            return rows.stream().map(r -> r.get(name).asDisplayString()).toList();
+        }
+
+        private static List<String> pairs(List<Row> rows) {
+            return rows.stream()
+                    .map(r -> r.get("l").asDisplayString() + "/" + r.get("d").asDisplayString())
+                    .sorted().toList();
+        }
+
+        @Test
+        @DisplayName("declared ⨝ open: each qualified name reads its own side")
+        void declaredLeft() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.account → l, Docs.account → d, Docs.holder → h
+                            (Ledger ⨝ Ledger.account = Docs.account Docs) };
+                    """, DOCS);
+
+            assertThat(rows).hasSize(2);
+            assertThat(column(rows, "l")).containsExactly("1002", "1009");
+            assertThat(column(rows, "d")).containsExactly("1002", "1009");
+            assertThat(column(rows, "h")).containsExactly("Ada", "Bo");
+        }
+
+        @Test
+        @DisplayName("open ⨝ declared: the renamed field is found under its own relation")
+        void openLeft() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.depth → x, Ledger.account → l, Docs.account → d
+                            (Docs ⨝ Docs.account = Ledger.account Ledger) };
+                    """, DOCS);
+
+            assertThat(column(rows, "x")).containsExactly("1", "2");
+            assertThat(column(rows, "l")).containsExactly("1002", "1009");
+        }
+
+        @Test
+        @DisplayName("a non-equi join, where the two sides' values differ, keeps them apart")
+        void nonEquiJoin() {
+            // The case where reading the wrong side is visible: in an equi-join the two
+            // values agree, and a wrong answer looks right.
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.account → l, Docs.account → d
+                            (Ledger ⨝ Ledger.account < Docs.account Docs) };
+                    """, DOCS);
+
+            assertThat(pairs(rows)).containsExactly(
+                    "1002/1009", "1002/1050", "1009/1050");
+        }
+
+        @Test
+        @DisplayName("a qualified grouping key groups by its own side")
+        void groupingKey() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { γ Ledger.account → acct, COUNT(*) → n
+                            (Ledger ⨝ Ledger.account ≤ Docs.account Docs) };
+                    """, DOCS);
+
+            assertThat(rows)
+                    .extracting(r -> r.get("acct").asDisplayString() + ":" + r.get("n").asDisplayString())
+                    .containsExactlyInAnyOrder("1002:3", "1009:2");
+        }
+
+        @Test
+        @DisplayName("a cross product keeps both sides")
+        void product() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.account → l, Docs.account → d (Ledger × Docs) };
+                    """, DOCS);
+
+            assertThat(rows).hasSize(9);
+            assertThat(pairs(rows)).contains("2000/1002", "1002/1050");
+        }
+
+        @Test
+        @DisplayName("left outer: an unmatched row still reads its own side")
+        void leftOuter() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.account → l, Docs.account → d
+                            (Ledger ⟕ Ledger.account = Docs.account Docs) };
+                    """, DOCS);
+
+            assertThat(pairs(rows)).containsExactly("1002/1002", "1009/1009", "2000/NULL");
+        }
+
+        @Test
+        @DisplayName("right outer: an unmatched row still reads its own side")
+        void rightOuter() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.account → l, Docs.account → d
+                            (Ledger ⟖ Ledger.account = Docs.account Docs) };
+                    """, DOCS);
+
+            assertThat(pairs(rows)).containsExactly("1002/1002", "1009/1009", "NULL/1050");
+        }
+
+        @Test
+        @DisplayName("full outer: both kinds of unmatched row read their own side")
+        void fullOuter() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.account → l, Docs.account → d
+                            (Ledger ⟗ Ledger.account = Docs.account Docs) };
+                    """, DOCS);
+
+            assertThat(pairs(rows)).containsExactly(
+                    "1002/1002", "1009/1009", "2000/NULL", "NULL/1050");
+        }
+
+        @Test
+        @DisplayName("full outer with a non-equi condition takes the same path")
+        void fullOuterNonEqui() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.account → l, Docs.account → d
+                            (Ledger ⟗ Ledger.account > Docs.account Docs) };
+                    """, DOCS);
+
+            // 1002 is greater than no document; every document is less than some account.
+            assertThat(pairs(rows)).containsExactly(
+                    "1002/NULL", "1009/1002", "2000/1002", "2000/1009", "2000/1050");
+        }
+
+        @Test
+        @DisplayName("a rename over the whole join re-anchors every field, the open side's included (#971)")
+        void renameOverTheJoin() {
+            // The shape an inlined view takes: `J := { Ledger ⨝ … Docs }` becomes
+            // `ρ J (Ledger ⨝ … Docs)`. The rename used to restate each document row
+            // under its heading, which knows only Ledger's columns, and failed on width.
+            List<Row> rows = collectWith(SETUP + """
+                    query { π J.account → l, J.account_r → d, J.holder → h
+                            (ρ J (Ledger ⨝ Ledger.account = Docs.account Docs)) };
+                    """, DOCS);
+
+            assertThat(column(rows, "l")).containsExactly("1002", "1009");
+            assertThat(column(rows, "d")).containsExactly("1002", "1009");
+            assertThat(column(rows, "h")).containsExactly("Ada", "Bo");
+        }
+
+        @Test
+        @DisplayName("a relation hidden by the rename no longer answers")
+        void hiddenRelationIsAPathAgain() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.account → l (ρ J (Ledger ⨝ Ledger.account = Docs.account Docs)) };
+                    """, DOCS);
+
+            assertThat(column(rows, "l")).containsOnly("NULL");
+        }
+
+        @Test
+        @DisplayName("a column-only rename leaves a document's origins as they were")
+        void columnOnlyRenameKeepsOrigins() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Docs.holder → h (ρ (depth → level) (Ledger ⨝ Ledger.account = Docs.account Docs)) };
+                    """, DOCS);
+
+            assertThat(column(rows, "h")).containsExactly("Ada", "Bo");
+        }
+
+        @Test
+        @DisplayName("a renamed open side answers to its new name")
+        void renamedOpenSide() {
+            List<Row> rows = collectWith(SETUP + """
+                    query { π Ledger.account → l, D.holder → d
+                            (Ledger ⨝ Ledger.account = D.account (ρ D (Docs))) };
+                    """, DOCS);
+
+            assertThat(pairs(rows)).containsExactly("1002/Ada", "1009/Bo");
+        }
+    }
+
     // ── ProductNode ───────────────────────────────────────────────────────────
 
     @Nested
