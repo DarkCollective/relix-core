@@ -1153,14 +1153,22 @@ final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      * Validates the pair form {@code ρ (old → new, …)}: every source column must
      * exist in the input schema, no two pairs may target the same name, and a
      * target may not collide with a surviving (un-renamed) column. Skips silently
-     * when the input schema is open or unresolved to avoid cascading false
-     * positives.
+     * when the input schema is unresolved to avoid cascading false positives.
+     *
+     * <p>Over an open (schema-on-read) input only the checks the pairs settle by
+     * themselves apply — a source renamed twice, two pairs with one target — since
+     * which fields exist, and so which targets would collide, is a fact about each
+     * document. The executor refuses a collision there, row by row.
      */
     private void validateRenamePairs(RenameNode node) {
         Optional<Schema> inputOpt = annotations.get(node.input());
         if (inputOpt.isEmpty()) return;
         Schema input = inputOpt.get();
-        if (input.isOpen() || input == SymbolCollector.UNRESOLVED_SCHEMA) return;
+        if (input == SymbolCollector.UNRESOLVED_SCHEMA) return;
+        if (input.isOpen()) {
+            validateRenamePairsAlone(node);
+            return;
+        }
 
         Set<String> inputNames = input.columns().stream()
                 .map(c -> c.name().toLowerCase(Locale.ROOT))
@@ -1190,6 +1198,22 @@ final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         for (RenameNode.RenamePair pair : node.pairs()) {
             String to = pair.to().toLowerCase(Locale.ROOT);
             if (!targets.add(to)) {
+                error(node.location(), "Rename ρ: target column '" + pair.to()
+                        + "' collides with another column");
+            }
+        }
+    }
+
+    /** The pair-form checks that need no input heading: no source twice, no target twice. */
+    private void validateRenamePairsAlone(RenameNode node) {
+        Set<String> sources = new HashSet<>();
+        Set<String> targets = new HashSet<>();
+        for (RenameNode.RenamePair pair : node.pairs()) {
+            if (!sources.add(pair.from().toLowerCase(Locale.ROOT))) {
+                error(node.location(), "Rename ρ: column '" + pair.from()
+                        + "' is renamed more than once");
+            }
+            if (!targets.add(pair.to().toLowerCase(Locale.ROOT))) {
                 error(node.location(), "Rename ρ: target column '" + pair.to()
                         + "' collides with another column");
             }

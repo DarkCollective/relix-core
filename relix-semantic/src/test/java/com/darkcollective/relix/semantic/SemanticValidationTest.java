@@ -1786,6 +1786,44 @@ final class SemanticValidationTest {
                     .containsIgnoringCase("collides");
         }
 
+        // Over a schema-on-read input which fields exist is a fact about each document,
+        // so only the checks the pairs settle by themselves apply (#977).
+
+        @Test
+        @DisplayName("Pair rename over an open input: a source it may not carry is not an error")
+        void openPairRenameUnknownSourceIsFine() {
+            registerOpen("Docs");
+            RelNode tree = rename(java.util.Optional.empty(), List.of(),
+                    List.of(new RenameNode.RenamePair("anything", "id")), rel("Docs"));
+            assertThat(inferAndValidate(tree)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Pair rename over an open input: a source renamed twice is an error")
+        void openPairRenameSourceTwice() {
+            registerOpen("Docs");
+            RelNode tree = rename(java.util.Optional.empty(), List.of(),
+                    List.of(new RenameNode.RenamePair("a", "x"), new RenameNode.RenamePair("A", "y")),
+                    rel("Docs"));
+            List<SemanticError> errors = inferAndValidate(tree);
+
+            assertThat(errors).hasSize(1);
+            assertThat(errors.get(0).message()).contains("renamed more than once").contains("A");
+        }
+
+        @Test
+        @DisplayName("Pair rename over an open input: two pairs with one target collide")
+        void openPairRenameDuplicateTarget() {
+            registerOpen("Docs");
+            RelNode tree = rename(java.util.Optional.of("D"), List.of(),
+                    List.of(new RenameNode.RenamePair("a", "x"), new RenameNode.RenamePair("b", "X")),
+                    rel("Docs"));
+            List<SemanticError> errors = inferAndValidate(tree);
+
+            assertThat(errors).hasSize(1);
+            assertThat(errors.get(0).message()).containsIgnoringCase("collides").contains("X");
+        }
+
         @Test
         @DisplayName("Two pairs targeting the same new name collide")
         void pairRenameDuplicateTarget() {

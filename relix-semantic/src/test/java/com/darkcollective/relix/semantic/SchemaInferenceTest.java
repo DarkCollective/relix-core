@@ -41,6 +41,7 @@ import com.darkcollective.relix.ast.WindowFunction;
 import com.darkcollective.relix.ast.WindowNode;
 import com.darkcollective.relix.ast.StructConstruction;
 import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.symbol.ColumnProvenance;
 import com.darkcollective.relix.symbol.Provenance;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;
@@ -860,6 +861,73 @@ final class SchemaInferenceTest {
             assertThat(s.column("id")).isPresent();
             assertThat(s.column("name")).isPresent();
             assertThat(s.column("dept_id")).isPresent();
+        }
+
+        @Test
+        @DisplayName("A relation rename over a partly-open join re-anchors the known columns and stays open")
+        void renameOverPartlyOpenJoin() {
+            // The shape an inlined view over `Users ⨝ Docs` takes (#971). Returning the
+            // heading untouched left `id` answering to `Users` beneath the rename, so a
+            // qualifier the rename had hidden still validated.
+            table.register(new SourceRelationSymbol(
+                    "default", "Docs", Provenance.BUILTIN, ShadowPolicy.PERMITTED, Schema.open()));
+
+            Optional<Schema> result = rename("J", List.of(),
+                    join(rel("Users"), rel("Docs"), truePred())).accept(visitor());
+
+            assertThat(result).isPresent();
+            Schema s = result.get();
+            assertThat(s.isOpen()).as("the document side still resolves by name").isTrue();
+            assertThat(s.columns()).isNotEmpty().allSatisfy(c -> assertThat(c.provenance())
+                    .isEqualTo(new ColumnProvenance("J", c.name())));
+            assertThat(s.qualifiedIndices("J", "id")).isEmpty();   // open: no positional answer
+            assertThat(s.column("id")).get().extracting(ColumnDefinition::type)
+                    .isEqualTo(ScalarType.NUMBER);
+            assertThat(errors).isEmpty();
+        }
+
+        @Test
+        @DisplayName("A relation rename over a fully open input passes it through")
+        void renameOverFullyOpen() {
+            table.register(new SourceRelationSymbol(
+                    "default", "Docs", Provenance.BUILTIN, ShadowPolicy.PERMITTED, Schema.open()));
+
+            Optional<Schema> result = rename("D", List.of(), rel("Docs")).accept(visitor());
+
+            assertThat(result).contains(Schema.open());
+        }
+
+        @Test
+        @DisplayName("A pair rename over a partly-open join renames its known columns and stays open (#977)")
+        void pairRenameOverPartlyOpenJoin() {
+            table.register(new SourceRelationSymbol(
+                    "default", "Docs", Provenance.BUILTIN, ShadowPolicy.PERMITTED, Schema.open()));
+
+            Optional<Schema> result = rename(Optional.empty(), List.of(),
+                    List.of(renamePair("name", "full_name"), renamePair("title", "heading")),
+                    join(rel("Users"), rel("Docs"), truePred())).accept(visitor());
+
+            assertThat(result).isPresent();
+            Schema s = result.get();
+            assertThat(s.isOpen()).isTrue();
+            assertThat(s.indexOf("name")).as("the known column is renamed").isNegative();
+            assertThat(s.column("full_name")).get().extracting(ColumnDefinition::provenance)
+                    .isEqualTo(new ColumnProvenance("Users", "full_name"));
+            assertThat(s.indexOf("heading")).as("a document field is not declared by renaming it")
+                    .isNegative();
+            assertThat(s.column("heading")).as("…but the open heading still resolves it").isPresent();
+        }
+
+        @Test
+        @DisplayName("A pair rename over a fully open input passes it through")
+        void pairRenameOverFullyOpen() {
+            table.register(new SourceRelationSymbol(
+                    "default", "Docs", Provenance.BUILTIN, ShadowPolicy.PERMITTED, Schema.open()));
+
+            Optional<Schema> result = rename(Optional.empty(), List.of(),
+                    List.of(renamePair("title", "heading")), rel("Docs")).accept(visitor());
+
+            assertThat(result).contains(Schema.open());
         }
 
         @Test
