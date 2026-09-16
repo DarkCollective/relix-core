@@ -222,6 +222,45 @@ final class SchemaTest extends SymbolTestSupport {
         assertThat(Schema.empty().concat(Schema.open()).isOpen()).isTrue();
     }
 
+    // ── withColumns ─────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("withColumns keeps an open heading open, with the replacement as its known columns")
+    void withColumnsKeepsOpenness() {
+        // A partly-open heading — the only way to make one is concat (#971).
+        Schema partlyOpen = schema(col("id", ScalarType.NUMBER)).concat(Schema.open());
+        ColumnDefinition renamed = new ColumnDefinition("id", ScalarType.NUMBER,
+                new ColumnProvenance("J", "id"));
+
+        Schema result = partlyOpen.withColumns(List.of(renamed));
+
+        assertThat(result.isOpen()).isTrue();
+        assertThat(result.columns()).containsExactly(renamed);
+        assertThat(result.column("anything")).isPresent();
+    }
+
+    @Test
+    @DisplayName("withColumns keeps a closed heading closed")
+    void withColumnsKeepsClosed() {
+        Schema closed = schema(col("id", ScalarType.NUMBER));
+        Schema result = closed.withColumns(List.of(col("key", ScalarType.STRING)));
+
+        assertThat(result.isOpen()).isFalse();
+        assertThat(result.column("key")).isPresent();
+        assertThat(result.column("id")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("withColumns refuses what the constructor refuses")
+    void withColumnsValidates() {
+        Schema open = Schema.open();
+        assertThatThrownBy(() -> open.withColumns(List.of()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> open.withColumns(List.of(
+                col("id", ScalarType.NUMBER), col("ID", ScalarType.STRING))))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     @DisplayName("concat of two empty schemas is the empty schema — a join of nullary relations")
     void concatOfTwoEmptySchemasIsEmpty() {
