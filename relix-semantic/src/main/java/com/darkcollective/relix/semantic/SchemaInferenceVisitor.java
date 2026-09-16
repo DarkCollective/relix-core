@@ -742,9 +742,10 @@ final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Schema>> {
             return annotate(node, stampProvenance(input, node.relationName().orElseThrow()));
         }
 
-        if (input.isOpen() || input.isEmpty()) {
-            // No columns to map — pass the (open) schema through, re-anchoring only
-            // when a new relation name is supplied.
+        if (input.columns().isEmpty()) {
+            // No known columns to map — pass the schema through, re-anchoring only when a
+            // new relation name is supplied. An open heading still resolves the new names,
+            // and the executor renames the fields each document carries (#977).
             return annotate(node, node.relationName()
                     .map(name -> stampProvenance(input, name))
                     .orElse(input));
@@ -771,8 +772,9 @@ final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Schema>> {
         }
         // A collision (e.g. a pair renaming onto a surviving column) is a validation
         // error, but inference must still yield a well-formed schema for downstream
-        // nodes — so deduplicate rather than let the Schema constructor throw.
-        return annotate(node, new Schema(deduplicateColumns(cols)));
+        // nodes — so deduplicate rather than let the Schema constructor throw. An open
+        // heading's known columns are renamed like any others, and it stays open (#977).
+        return annotate(node, input.withColumns(deduplicateColumns(cols)));
     }
 
     /**
@@ -1250,14 +1252,18 @@ final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Schema>> {
      * Open and empty schemas are returned unchanged (they carry no columns).
      */
     private static Schema stampProvenance(Schema schema, String relation) {
-        if (schema.isOpen() || schema.isEmpty()) {
+        if (schema.columns().isEmpty()) {
             return schema;
         }
         List<ColumnDefinition> cols = new ArrayList<>(schema.columns().size());
         for (ColumnDefinition c : schema.columns()) {
             cols.add(c.withProvenance(new ColumnProvenance(relation, c.name())));
         }
-        return new Schema(cols);
+        // An open heading with known columns — a join with a schema-on-read side —
+        // is re-anchored too, and stays open. Returning it untouched left the known
+        // columns answering to the relations *inside* the rename, so a qualifier the
+        // rename had hidden still validated (#971).
+        return schema.withColumns(cols);
     }
 
     /**
