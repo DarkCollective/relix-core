@@ -20,6 +20,7 @@ import com.darkcollective.relix.symbol.NestedPaths;
 import com.darkcollective.relix.symbol.Schema;
 
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Which input of a binary join owns an attribute reference.
@@ -65,6 +66,25 @@ final class JoinSides {
      * @return the owning side, or {@link Side#UNKNOWN} when either or neither could own it
      */
     static Side sideOf(String reference, Schema left, Schema right) {
+        return sideOf(reference, left, right, Set.of(), Set.of());
+    }
+
+    /**
+     * {@link #sideOf(String, Schema, Schema)}, given also the relation names each input
+     * answers to as qualifiers ({@link com.darkcollective.relix.ast.Qualifiers#inScope}).
+     *
+     * <p>Those names settle a qualified reference into a schema-on-read input, which has
+     * no provenance to settle it by: {@code products.name} belongs to the open input
+     * named {@code products} when the other input does not answer to that name. A row
+     * that input produces answers to its relation's name (#972), so the reference still
+     * resolves once a predicate is pushed there. Only a single qualifier segment is
+     * read that way; a longer dotted name is left to the rules below.
+     *
+     * @param leftQualifiers  lowercased names the left input answers to
+     * @param rightQualifiers lowercased names the right input answers to
+     */
+    static Side sideOf(String reference, Schema left, Schema right,
+                       Set<String> leftQualifiers, Set<String> rightQualifiers) {
         String qualifier = AttributeNames.qualifierOf(reference);
         String bare      = AttributeNames.stripQualifier(reference);
 
@@ -74,6 +94,12 @@ final class JoinSides {
             if (inLeft && !inRight) return Side.LEFT;
             if (inRight && !inLeft) return Side.RIGHT;
             if (inLeft) return Side.UNKNOWN;      // both sides claim it — do not guess
+
+            String q = qualifier.toLowerCase(Locale.ROOT);
+            boolean namesLeft  = leftQualifiers.contains(q);
+            boolean namesRight = rightQualifiers.contains(q);
+            if (namesLeft && !namesRight && left.isOpen())  return Side.LEFT;
+            if (namesRight && !namesLeft && right.isOpen()) return Side.RIGHT;
         }
         // A dotted name may be a path into a nested column rather than a relation
         // qualifier, and then the column it names is the head, not the tail. Resolving
@@ -83,17 +109,64 @@ final class JoinSides {
         // NestedPaths owns the rule, including why an open schema is asked nothing:
         // it resolves every name, so its answer is no evidence about which side was
         // meant. The executor asks the same question of the same headings.
-        switch (NestedPaths.ownerOf(reference, left, right)) {
-            case LEFT -> { return Side.LEFT; }
-            case RIGHT -> { return Side.RIGHT; }
-            case BOTH -> { return Side.UNKNOWN; }   // both could answer — do not guess
-            case NEITHER -> { /* not a path; the bare name decides below */ }
+        // A bare name is not a path, and asking would let a declared side claim it
+        // before the rule below could weigh an open side against it.
+        boolean qualified = qualifier != null;
+        if (qualified) {
+            switch (NestedPaths.ownerOf(reference, left, right)) {
+                case LEFT -> { return Side.LEFT; }
+                case RIGHT -> { return Side.RIGHT; }
+                case BOTH -> { return Side.UNKNOWN; }   // both could answer — do not guess
+                case NEITHER -> { /* not a path; the bare name decides below */ }
+            }
         }
 
-        boolean leftHas  = left.column(bare).isPresent();
-        boolean rightHas = right.column(bare).isPresent();
+        Boolean leftHas  = carries(left, right, bare, qualified, true);
+        Boolean rightHas = carries(right, left, bare, qualified, false);
+        if (leftHas == null || rightHas == null) return Side.UNKNOWN;
         if (leftHas && !rightHas)  return Side.LEFT;
         if (rightHas && !leftHas)  return Side.RIGHT;
         return Side.UNKNOWN;
+    }
+
+    /**
+     * Whether {@code side} carries the column {@code bare} under that name in the joined
+     * row: yes, no, or {@code null} when the heading cannot say.
+     *
+     * <p>A closed heading answers exactly, and so does an open heading for the columns
+     * it knows. Beyond those an open heading resolves every name, so its yes means only
+     * that it <em>may</em> hold the name (#971):
+     * <ul>
+     *   <li>where the other side declares the name, the join's collision rule decides —
+     *       the left keeps a shared name and the right's copy becomes {@code name_r}. An
+     *       open right therefore cannot own it; an open left may, row by row, so the
+     *       answer is yes and the pair is ambiguous;</li>
+     *   <li>a <em>qualified</em> name that neither provenance nor the inputs'
+     *       qualifiers settled cannot be answered at all. Its qualifier is in scope only
+     *       above this join (a view's name, say), and below it would be read as a path;</li>
+     *   <li>nor can a name the join itself invents for a collision — {@code c_r} where
+     *       the other side has {@code c}. The open input holds that value as {@code c}.</li>
+     * </ul>
+     */
+    private static Boolean carries(Schema side, Schema other, String bare,
+                                   boolean qualified, boolean isLeft) {
+        if (!side.isOpen() || side.indexOf(bare) >= 0) {
+            return side.column(bare).isPresent();
+        }
+        if (qualified || isCollisionName(bare, other)) {
+            return null;
+        }
+        return isLeft || other.isOpen() || other.column(bare).isEmpty();
+    }
+
+    /** Whether {@code name} is {@code c_r}, {@code c_r1}, … for a column {@code c} that {@code other} knows. */
+    private static boolean isCollisionName(String name, Schema other) {
+        int marker = name.toLowerCase(Locale.ROOT).lastIndexOf("_r");
+        if (marker <= 0) {
+            return false;
+        }
+        String suffix = name.substring(marker + 2);
+        return suffix.chars().allMatch(Character::isDigit)
+                && other.indexOf(name.substring(0, marker)) >= 0;
     }
 }

@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -180,8 +181,143 @@ final class JoinSidesTest {
             // other side also has ambiguous rather than resolving it.
             assertThat(JoinSides.sideOf("A.k", Schema.open(), right))
                     .as("both sides claim k").isEqualTo(JoinSides.Side.UNKNOWN);
+            // Not LEFT: the qualifier matched neither heading, and a row read straight
+            // from an open source cannot resolve it once the predicate is pushed there —
+            // it reads `A.absent` as a path into a field named `A` (#971, #972).
             assertThat(JoinSides.sideOf("A.absent", Schema.open(), right))
-                    .as("only the open side claims it").isEqualTo(JoinSides.Side.LEFT);
+                    .as("only the open side could claim it, and cannot say").isEqualTo(JoinSides.Side.UNKNOWN);
+        }
+    }
+
+    /**
+     * What a schema-on-read side is evidence of (#971). Its heading resolves every name,
+     * so its yes decides only a plain name the other side lacks — and not even that when
+     * the name is one the join invents.
+     */
+    @Nested
+    @DisplayName("An open side — what its answer is evidence of (#971)")
+    class OpenSide {
+
+        private final Schema declared = schema(from("orders", "product_id"), from("orders", "quantity"));
+
+        @Test
+        @DisplayName("a plain name the declared side lacks belongs to the open side")
+        void plainNameGoesToTheOpenSide() {
+            assertThat(JoinSides.sideOf("product_name", declared, Schema.open()))
+                    .isEqualTo(JoinSides.Side.RIGHT);
+            assertThat(JoinSides.sideOf("product_name", Schema.open(), declared))
+                    .isEqualTo(JoinSides.Side.LEFT);
+        }
+
+        @Test
+        @DisplayName("a name the declared left has is the left's — an open right's copy would be renamed")
+        void declaredLeftKeepsASharedName() {
+            assertThat(JoinSides.sideOf("quantity", declared, Schema.open()))
+                    .isEqualTo(JoinSides.Side.LEFT);
+        }
+
+        @Test
+        @DisplayName("a name the declared right has is UNKNOWN when an open left may hold it too")
+        void openLeftMayOwnASharedName() {
+            // A document carrying `quantity` keeps the name and renames the right's to
+            // `quantity_r` — row by row, so no plan-time answer is right.
+            assertThat(JoinSides.sideOf("quantity", Schema.open(), declared))
+                    .isEqualTo(JoinSides.Side.UNKNOWN);
+        }
+
+        @Test
+        @DisplayName("two open sides decide nothing")
+        void twoOpenSides() {
+            assertThat(JoinSides.sideOf("anything", Schema.open(), Schema.open()))
+                    .isEqualTo(JoinSides.Side.UNKNOWN);
+        }
+
+        @Test
+        @DisplayName("a qualifier that names neither side is not pushed into the open side")
+        void unmatchedQualifierIsUnknown() {
+            // `J` is a view over this join: in scope above it, nowhere below.
+            assertThat(JoinSides.sideOf("J.product_name", declared, Schema.open()))
+                    .isEqualTo(JoinSides.Side.UNKNOWN);
+            assertThat(JoinSides.sideOf("J.product_name", Schema.open(), declared))
+                    .isEqualTo(JoinSides.Side.UNKNOWN);
+        }
+
+        @Test
+        @DisplayName("a qualified name the declared side's provenance settles still goes there")
+        void provenanceStillDecides() {
+            assertThat(JoinSides.sideOf("orders.quantity", declared, Schema.open()))
+                    .isEqualTo(JoinSides.Side.LEFT);
+        }
+
+        @Test
+        @DisplayName("a collision name the join invents is UNKNOWN — the open input holds it unsuffixed")
+        void collisionNameIsUnknown() {
+            assertThat(JoinSides.sideOf("product_id_r", declared, Schema.open()))
+                    .isEqualTo(JoinSides.Side.UNKNOWN);
+            assertThat(JoinSides.sideOf("PRODUCT_ID_R2", declared, Schema.open()))
+                    .isEqualTo(JoinSides.Side.UNKNOWN);
+            assertThat(JoinSides.sideOf("product_id_r", Schema.open(), declared))
+                    .isEqualTo(JoinSides.Side.UNKNOWN);
+        }
+
+        @Test
+        @DisplayName("a name that only looks like a collision is a plain name")
+        void lookalikeCollisionNames() {
+            assertThat(JoinSides.sideOf("price_r", declared, Schema.open()))
+                    .as("the declared side has no `price`").isEqualTo(JoinSides.Side.RIGHT);
+            assertThat(JoinSides.sideOf("quantity_rx", declared, Schema.open()))
+                    .as("not a numeric suffix").isEqualTo(JoinSides.Side.RIGHT);
+            assertThat(JoinSides.sideOf("_r", declared, Schema.open()))
+                    .as("no stem at all").isEqualTo(JoinSides.Side.RIGHT);
+        }
+
+        @Test
+        @DisplayName("a qualifier naming only the open input settles it there (#972)")
+        void qualifierNamesTheOpenInput() {
+            Set<String> orders = Set.of("orders");
+            Set<String> products = Set.of("products");
+            assertThat(JoinSides.sideOf("products.product_name", declared, Schema.open(), orders, products))
+                    .isEqualTo(JoinSides.Side.RIGHT);
+            assertThat(JoinSides.sideOf("Products.product_id", Schema.open(), declared, products, orders))
+                    .as("even for a name the declared side also carries")
+                    .isEqualTo(JoinSides.Side.LEFT);
+            assertThat(JoinSides.sideOf("products.product_name", Schema.open(), Schema.open(),
+                    Set.of("docs"), products))
+                    .as("two open inputs, told apart by name").isEqualTo(JoinSides.Side.RIGHT);
+        }
+
+        @Test
+        @DisplayName("a qualifier the inputs' names do not settle stays unknown")
+        void qualifierNamesUnsettled() {
+            Set<String> products = Set.of("products");
+            assertThat(JoinSides.sideOf("products.x", Schema.open(), Schema.open(), products, products))
+                    .as("both inputs answer to it").isEqualTo(JoinSides.Side.UNKNOWN);
+            assertThat(JoinSides.sideOf("orders.x", declared, Schema.open(), Set.of("orders"), products))
+                    .as("it names the declared input, whose provenance has no `x`")
+                    .isEqualTo(JoinSides.Side.UNKNOWN);
+            assertThat(JoinSides.sideOf("products.details.maker", declared, Schema.open(),
+                    Set.of("orders"), products))
+                    .as("a longer dotted name is not read by the inputs' names")
+                    .isEqualTo(JoinSides.Side.UNKNOWN);
+        }
+
+        @Test
+        @DisplayName("provenance still outranks the inputs' names")
+        void provenanceFirst() {
+            assertThat(JoinSides.sideOf("orders.quantity", declared, Schema.open(),
+                    Set.of("orders"), Set.of("orders")))
+                    .isEqualTo(JoinSides.Side.LEFT);
+        }
+
+        @Test
+        @DisplayName("an open heading's known columns answer exactly, like a declared one")
+        void knownColumnsOfAnOpenHeading() {
+            Schema partlyOpen = declared.concat(Schema.open());
+            Schema other = schema(from("returns", "reason"));
+            assertThat(JoinSides.sideOf("quantity", partlyOpen, other))
+                    .isEqualTo(JoinSides.Side.LEFT);
+            assertThat(JoinSides.sideOf("reason", partlyOpen, other))
+                    .as("the open heading could hold it too").isEqualTo(JoinSides.Side.UNKNOWN);
         }
     }
 
