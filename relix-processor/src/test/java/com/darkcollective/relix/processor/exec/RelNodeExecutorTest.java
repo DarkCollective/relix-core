@@ -607,6 +607,105 @@ final class RelNodeExecutorTest extends ProcessorTestSupport {
             assertThat(rows.get(1)).hasValue("name", "Bob");
         }
 
+        /**
+         * A schema-on-read source: rows are documents, and the heading names nothing, so
+         * the scan is what tells a row which relation it came from (#972).
+         */
+        private List<Row> documents(String query) {
+            String src = "source Docs from json(\"docs.json\");\n" + query;
+            SemanticModel model = model(src);
+            DataSourceConnector connector = (name, s) -> Stream.of(
+                    document(1, "Ada", "Oslo"), document(2, "Bo", "Rome"));
+            var q = model.rootQueries().getFirst();
+            try (Stream<Row> stream = EXECUTOR.execute(queryNode(q), ExecutionContext.of(model, connector))) {
+                return stream.toList();
+            }
+        }
+
+        private static Row document(int id, String name, String city) {
+            var fields = new java.util.LinkedHashMap<String, com.darkcollective.relix.value.Value>();
+            fields.put("id", num(id));
+            fields.put("name", str(name));
+            fields.put("addr", new com.darkcollective.relix.value.StructValue(
+                    java.util.Map.of("city", str(city))));
+            return new com.darkcollective.relix.processor.DocumentRow(
+                    new com.darkcollective.relix.value.StructValue(fields));
+        }
+
+        @Test
+        @DisplayName("a qualified reference to a schema-on-read source's own field reads it (#972)")
+        void qualifiedReferenceIntoAnOpenSource() {
+            List<Row> rows = documents(
+                    "query { π Docs.name → n, docs.addr.city → c (σ Docs.id = 2 (Docs)) };");
+
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()).hasValue("n", "Bo").hasValue("c", "Rome");
+        }
+
+        @Test
+        @DisplayName("a renamed schema-on-read source answers to its new name, and not its old one")
+        void renamedOpenSource() {
+            List<Row> rows = documents("query { π D.name → n, Docs.name → old (ρ D (Docs)) };");
+
+            assertThat(rows).hasSize(2);
+            assertThat(rows.getFirst()).hasValue("n", "Ada");
+            assertThat(rows.getFirst().get("old"))
+                    .isEqualTo(com.darkcollective.relix.value.NullValue.INSTANCE);
+        }
+
+        @Test
+        @DisplayName("a pair rename over a schema-on-read source renames the field (#977)")
+        void pairRenameOverAnOpenSource() {
+            List<Row> rows = documents(
+                    "query { π full_name → n, D.full_name → q, name → old (ρ D (name → full_name) (Docs)) };");
+
+            assertThat(rows).hasSize(2);
+            assertThat(rows.getFirst()).hasValue("n", "Ada").hasValue("q", "Ada");
+            assertThat(rows.getFirst().get("old"))
+                    .isEqualTo(com.darkcollective.relix.value.NullValue.INSTANCE);
+        }
+
+        @Test
+        @DisplayName("a pair rename onto a field the document carries is refused as it runs")
+        void pairRenameCollisionIsRefused() {
+            assertThatThrownBy(() -> documents("query { ρ (name → id) (Docs) };"))
+                    .isInstanceOf(EvaluationException.class)
+                    .hasMessage("Rename ρ: renaming 'name' to 'id' collides with the field 'id' "
+                            + "the document carries");
+        }
+
+        @Test
+        @DisplayName("an open scan the planner gave no qualifier leaves its documents unanchored")
+        void openScanWithoutQualifier() {
+            // Every scan the planner builds for a relation reference names it; a plan
+            // assembled by hand need not, and then there is nothing to anchor to.
+            SemanticModel model = model("source Docs from json(\"docs.json\");\nquery Docs;");
+            var symbol = model.symbolTable().lookupRelation("Docs").orElseThrow();
+            var scan = new com.darkcollective.relix.plan.PhysicalNode.Scan(
+                    com.darkcollective.relix.symbol.Schema.open(), symbol,
+                    java.util.Optional.empty(), java.util.Optional.empty());
+            Row document = document(1, "Ada", "Oslo");
+            try (Stream<Row> stream = new PhysicalExecutor().execute(scan,
+                    ExecutionContext.of(model, (name, s) -> Stream.of(document)))) {
+                assertThat(stream.toList()).containsExactly(document);
+            }
+        }
+
+        @Test
+        @DisplayName("a declared source's rows are passed through untouched")
+        void declaredSourceRowsUntouched() {
+            var schema = schema(col("id", ScalarType.NUMBER));
+            Row declared = row(schema, num(1));
+            SemanticModel model = model(
+                    "source Users from database { url: \"jdbc:h2:mem\", table: \"users\","
+                    + " schema: { id: NUMBER } };\nquery Users;");
+            var q = model.rootQueries().getFirst();
+            try (Stream<Row> stream = EXECUTOR.execute(queryNode(q),
+                    ExecutionContext.of(model, (name, s) -> Stream.of(declared)))) {
+                assertThat(stream.toList()).containsExactly(declared);
+            }
+        }
+
         @Test
         @DisplayName("inlineOnly connector throws EvaluationException for source relations")
         void inlineOnlyThrowsForSource() {

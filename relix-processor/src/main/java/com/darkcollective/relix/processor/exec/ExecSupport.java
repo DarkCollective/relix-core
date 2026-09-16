@@ -26,6 +26,7 @@ import com.darkcollective.relix.processor.eval.ValueComparator;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.symbol.ColumnProvenance;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Type;
 import com.darkcollective.relix.symbol.Schema;
@@ -340,8 +341,21 @@ final class ExecSupport {
     }
 
     static Row concatRows(Row left, Row right, Schema outputSchema) {
+        return concatRows(left, right, outputSchema, Set.of(), Set.of());
+    }
+
+    /**
+     * {@link #concatRows(Row, Row, Schema)} for a join that knows which relations each
+     * input exposes as qualifiers — what a schema-on-read output needs so that a
+     * qualified reference above the join still finds its side (#970).
+     *
+     * @param leftRelations  lowercased relation names reachable under the left input
+     * @param rightRelations lowercased relation names reachable under the right input
+     */
+    static Row concatRows(Row left, Row right, Schema outputSchema,
+                          Set<String> leftRelations, Set<String> rightRelations) {
         if (outputSchema.isOpen()) {
-            return concatDocuments(left, right);
+            return concatDocuments(left, right, leftRelations, rightRelations);
         }
         List<Value> values = new ArrayList<>(outputSchema.width());
         for (int i = 0; i < left.width();  i++) values.add(left.get(i));
@@ -359,11 +373,20 @@ final class ExecSupport {
      * A name the left already holds is suffixed {@code _r} on the right, which is
      * what a declared join heading does with a collision, so the same query reads
      * the same either way.
+     *
+     * <p>Carrying values by name drops the one thing a declared heading carries beside
+     * them: which relation each column came from. So every field is recorded with its
+     * {@linkplain DocumentRow#origins() origins} — without them {@code orders.product_id}
+     * above the join read as a path into a field named {@code orders}, found nothing, and
+     * the query returned NULL on every row with nothing reporting a problem (#970).
      */
-    private static Row concatDocuments(Row left, Row right) {
+    private static Row concatDocuments(Row left, Row right,
+                                       Set<String> leftRelations, Set<String> rightRelations) {
         Map<String, Value> fields = new LinkedHashMap<>();
+        Map<String, List<ColumnProvenance>> origins = new LinkedHashMap<>();
         for (String name : left.columnNames()) {
             fields.put(name, left.get(name));
+            origins.put(name, originsOf(left, name, leftRelations));
         }
         for (String name : right.columnNames()) {
             String target = name;
@@ -373,8 +396,35 @@ final class ExecSupport {
                 suffix++;
             }
             fields.put(target, right.get(name));
+            origins.put(target, originsOf(right, name, rightRelations));
         }
-        return new DocumentRow(new StructValue(fields));
+        return new DocumentRow(new StructValue(fields), origins);
+    }
+
+    /**
+     * The qualified names {@code row}'s field {@code name} answers to. A field keeps what
+     * it already knew — a document a join built, or a declared column's own provenance,
+     * which survives a rename where the join's relation set would not. A field that knew
+     * nothing answers to every relation its side exposes, under its own name.
+     */
+    private static List<ColumnProvenance> originsOf(Row row, String name, Set<String> relations) {
+        if (row instanceof DocumentRow document) {
+            List<ColumnProvenance> known = document.originsOf(name);
+            if (!known.isEmpty()) {
+                return known;
+            }
+        } else {
+            ColumnProvenance declared = row.schema().column(name)
+                    .map(ColumnDefinition::provenance).orElse(null);
+            if (declared != null) {
+                return List.of(declared);
+            }
+        }
+        List<ColumnProvenance> origins = new ArrayList<>(relations.size());
+        for (String relation : relations) {
+            origins.add(new ColumnProvenance(relation, name));
+        }
+        return origins;
     }
 
     private static boolean containsIgnoreCase(Map<String, Value> fields, String name) {
@@ -387,12 +437,21 @@ final class ExecSupport {
     }
 
     static Row nullPaddedRight(Row left, int rightWidth, Schema outputSchema) {
+        return nullPaddedRight(left, rightWidth, outputSchema, Set.of());
+    }
+
+    /**
+     * An unmatched left row of an outer join, padded for the right side.
+     *
+     * @param leftRelations lowercased relation names reachable under the left input
+     */
+    static Row nullPaddedRight(Row left, int rightWidth, Schema outputSchema, Set<String> leftRelations) {
         if (outputSchema.isOpen()) {
             // There is nothing to pad *with*: an unmatched row keeps its own fields,
             // and a field a document does not carry already reads as NULL. Padding a
             // declared heading exists to keep every row the same width, which a
             // schema-on-read relation does not promise in the first place.
-            return documentOf(left);
+            return documentOf(left, leftRelations);
         }
         List<Value> values = new ArrayList<>(outputSchema.width());
         for (int i = 0; i < left.width(); i++) values.add(left.get(i));
@@ -400,21 +459,32 @@ final class ExecSupport {
         return ArrayRow.of(outputSchema, values);
     }
 
-    /** The row as a document — itself when it already is one, else its named values. */
-    private static Row documentOf(Row row) {
-        if (row instanceof DocumentRow document) {
-            return document;
-        }
+    /**
+     * The row as a document carrying its fields' origins — the shape a matched row of
+     * the same join has, so a qualified reference reads an unmatched row the same way.
+     */
+    private static Row documentOf(Row row, Set<String> relations) {
         Map<String, Value> fields = new LinkedHashMap<>();
+        Map<String, List<ColumnProvenance>> origins = new LinkedHashMap<>();
         for (String name : row.columnNames()) {
             fields.put(name, row.get(name));
+            origins.put(name, originsOf(row, name, relations));
         }
-        return new DocumentRow(new StructValue(fields));
+        return new DocumentRow(new StructValue(fields), origins);
     }
 
     static Row nullPaddedLeft(int leftWidth, Row right, Schema outputSchema) {
+        return nullPaddedLeft(leftWidth, right, outputSchema, Set.of());
+    }
+
+    /**
+     * An unmatched right row of an outer join, padded for the left side.
+     *
+     * @param rightRelations lowercased relation names reachable under the right input
+     */
+    static Row nullPaddedLeft(int leftWidth, Row right, Schema outputSchema, Set<String> rightRelations) {
         if (outputSchema.isOpen()) {
-            return documentOf(right);
+            return documentOf(right, rightRelations);
         }
         List<Value> values = new ArrayList<>(outputSchema.width());
         for (int i = 0; i < leftWidth;     i++) values.add(NullValue.INSTANCE);

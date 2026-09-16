@@ -23,6 +23,8 @@ import com.darkcollective.relix.processor.eval.OperandEvaluator;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.StructValue;
 import com.darkcollective.relix.value.Value;
+import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.symbol.ColumnProvenance;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.Type;
@@ -605,6 +607,119 @@ final class ExecSupportTest extends ProcessorTestSupport {
             assertThat(out.get("a")).isEqualTo(NullValue.INSTANCE);
             assertThat(out.get("b")).isEqualTo(NullValue.INSTANCE);
             assertThat(out).hasValue("c", "2");
+        }
+    }
+
+    /**
+     * A join whose output heading is open carries values by name, so it has to carry
+     * each field's origin too — otherwise a qualified reference above the join reads
+     * NULL (#970).
+     */
+    @Nested
+    @DisplayName("row builders over an open output — field origins (#970)")
+    class OpenRowBuilders {
+
+        /** {@code orders(product_id, quantity)}, each column knowing it came from {@code orders}. */
+        private static final Schema ORDERS = new Schema(List.of(
+                new ColumnDefinition("product_id", ScalarType.NUMBER, new ColumnProvenance("orders", "product_id")),
+                new ColumnDefinition("quantity", ScalarType.NUMBER, new ColumnProvenance("orders", "quantity"))));
+
+        private static Row order(int id, int quantity) {
+            return ArrayRow.of(ORDERS, num(id), num(quantity));
+        }
+
+        private static DocumentRow product(int id, String name) {
+            Map<String, Value> fields = new LinkedHashMap<>();
+            fields.put("product_id", num(id));
+            fields.put("name", str(name));
+            return new DocumentRow(new StructValue(fields));
+        }
+
+        private static List<ColumnProvenance> origin(String relation, String column) {
+            return List.of(new ColumnProvenance(relation, column));
+        }
+
+        @Test
+        @DisplayName("a declared left and an open right each keep their own side")
+        void declaredLeftOpenRight() {
+            Row out = concatRows(order(1, 2), product(7, "Novel"), Schema.open(),
+                    Set.of("orders"), Set.of("products"));
+
+            assertThat(out.get("orders.product_id")).isEqualTo(num(1));
+            assertThat(out.get("products.product_id")).isEqualTo(num(7));
+            assertThat(out.get("products.name")).isEqualTo(str("Novel"));
+            assertThat(((DocumentRow) out).origins())
+                    .containsEntry("product_id", origin("orders", "product_id"))
+                    .containsEntry("product_id_r", origin("products", "product_id"));
+        }
+
+        @Test
+        @DisplayName("an open left and a declared right: the rename lands on the declared side")
+        void openLeftDeclaredRight() {
+            Row out = concatRows(product(7, "Novel"), order(1, 2), Schema.open(),
+                    Set.of("products"), Set.of("orders"));
+
+            assertThat(out.get("products.product_id")).isEqualTo(num(7));
+            assertThat(out.get("orders.product_id")).isEqualTo(num(1));
+            assertThat(out.get("orders.quantity")).isEqualTo(num(2));
+        }
+
+        @Test
+        @DisplayName("a declared column's provenance is kept over the join's relation set")
+        void declaredProvenanceWins() {
+            // The relation set names what the planner saw; the column already knows better.
+            Row out = concatRows(order(1, 2), product(7, "Novel"), Schema.open(),
+                    Set.of("something_else"), Set.of("products"));
+            assertThat(out.get("orders.product_id")).isEqualTo(num(1));
+            assertThat(out.get("something_else.product_id")).isEqualTo(NullValue.INSTANCE);
+        }
+
+        @Test
+        @DisplayName("a declared column with no provenance answers to its side's relations")
+        void declaredColumnWithoutProvenance() {
+            Row out = concatRows(ab(num(1), num(2)), product(7, "Novel"), Schema.open(),
+                    Set.of("t"), Set.of("products"));
+            assertThat(out.get("t.a")).isEqualTo(num(1));
+            assertThat(out.get("t.b")).isEqualTo(num(2));
+        }
+
+        @Test
+        @DisplayName("a document an earlier join built keeps its origins through the next join")
+        void nestedJoinKeepsOrigins() {
+            Row inner = concatRows(order(1, 2), product(7, "Novel"), Schema.open(),
+                    Set.of("orders"), Set.of("products"));
+            Map<String, Value> fields = new LinkedHashMap<>();
+            fields.put("product_id", num(9));
+            Row outer = concatRows(inner, new DocumentRow(new StructValue(fields)), Schema.open(),
+                    Set.of("orders", "products"), Set.of("returns"));
+
+            assertThat(outer.get("orders.product_id")).isEqualTo(num(1));
+            assertThat(outer.get("products.product_id")).isEqualTo(num(7));
+            assertThat(outer.get("returns.product_id")).isEqualTo(num(9));
+        }
+
+        @Test
+        @DisplayName("without relation sets only declared provenance is recorded")
+        void threeArgumentFormRecordsDeclaredOnly() {
+            Row out = concatRows(order(1, 2), product(7, "Novel"), Schema.open());
+            assertThat(out.get("orders.product_id")).isEqualTo(num(1));
+            assertThat(((DocumentRow) out).origins().get("product_id_r")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("an unmatched row keeps its origins on either side of an outer join")
+        void paddedRowsKeepOrigins() {
+            Row right = nullPaddedRight(order(1, 2), 0, Schema.open(), Set.of("orders"));
+            assertThat(right.get("orders.quantity")).isEqualTo(num(2));
+            assertThat(right.get("products.name")).isEqualTo(NullValue.INSTANCE);
+
+            Row left = nullPaddedLeft(0, product(7, "Novel"), Schema.open(), Set.of("products"));
+            assertThat(left.get("products.name")).isEqualTo(str("Novel"));
+
+            // …and the forms without relation sets still produce a document
+            assertThat(nullPaddedRight(product(7, "Novel"), 0, Schema.open())).isInstanceOf(DocumentRow.class);
+            assertThat(nullPaddedLeft(0, order(1, 2), Schema.open()).get("orders.product_id"))
+                    .isEqualTo(num(1));
         }
     }
 
