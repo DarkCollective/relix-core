@@ -21,20 +21,16 @@ import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.Predicate;
-import com.darkcollective.relix.ast.RelNode;
-import com.darkcollective.relix.ast.RelationNode;
-import com.darkcollective.relix.ast.RenameNode;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
 /**
- * Join-planning helpers: extracting equi-join key columns from a join condition,
- * and collecting the relation names a subtree exposes as attribute qualifiers
- * (used to disambiguate a name that exists on both sides of a join).
+ * Join-planning helpers: extracting equi-join key columns from a join condition. The
+ * relation names each side exposes as qualifiers, which disambiguate a name both sides
+ * carry, are {@link com.darkcollective.relix.ast.Qualifiers#inScope}.
  *
  * <p>Key extraction is sound: only {@code =} comparisons between two attribute
  * references reached through top-level {@code ∧} conjunctions are taken as keys,
@@ -44,30 +40,6 @@ import java.util.Set;
 final class JoinPlanning {
 
     private JoinPlanning() {
-    }
-
-    /** Lowercased relation names reachable as qualifiers within {@code node}. */
-    static Set<String> relationNames(RelNode node) {
-        Set<String> names = new HashSet<>();
-        collectRelationNames(node, names);
-        return names;
-    }
-
-    private static void collectRelationNames(RelNode node, Set<String> out) {
-        switch (node) {
-            case RelationNode r -> out.add(r.name().toLowerCase(Locale.ROOT));
-            // A rename with a new relation name aliases its whole subtree to that name
-            // (shadowing it); a column-only rename (no new name) leaves the underlying
-            // relation names in scope, so recurse.
-            case RenameNode r -> {
-                if (r.relationName().isPresent()) {
-                    out.add(r.relationName().get().toLowerCase(Locale.ROOT));
-                } else {
-                    collectRelationNames(r.input(), out);
-                }
-            }
-            default -> node.children().forEach(child -> collectRelationNames(child, out));
-        }
     }
 
     /**

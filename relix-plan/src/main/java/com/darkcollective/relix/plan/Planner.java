@@ -43,6 +43,7 @@ import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.ProductNode;
+import com.darkcollective.relix.ast.Qualifiers;
 import com.darkcollective.relix.ast.ProjectedAttribute;
 import com.darkcollective.relix.ast.ProjectionNode;
 import com.darkcollective.relix.ast.RelNode;
@@ -513,7 +514,8 @@ public final class Planner {
 
             case SelectionNode s  -> new PhysicalNode.Select(schemaOf(s), s.predicate(), plan(s.input()));
             case ProjectionNode p -> new PhysicalNode.Project(schemaOf(p), p.attributes(), plan(p.input()));
-            case RenameNode r     -> new PhysicalNode.Rename(schemaOf(r), plan(r.input()));
+            case RenameNode r     -> new PhysicalNode.Rename(
+                    schemaOf(r), r.relationName(), r.pairs(), plan(r.input()));
             case DistinctNode d   -> planDistinct(d);
             case UnnestNode u     -> new PhysicalNode.Unnest(
                     schemaOf(u), u.column(), u.outer(), u.ordinalityColumn(), plan(u.input()));
@@ -717,7 +719,7 @@ public final class Planner {
         if (symbol instanceof QueryRelationSymbol view) {
             return plan(view.body());   // inline the view
         }
-        return new PhysicalNode.Scan(symbol.schema(), symbol, node.produceBound());
+        return new PhysicalNode.Scan(symbol.schema(), symbol, node.produceBound(), Optional.of(node.name()));
     }
 
     /**
@@ -802,8 +804,8 @@ public final class Planner {
                                   RelNode leftLogical, RelNode rightLogical, Predicate condition) {
         PhysicalNode left = plan(leftLogical);
         PhysicalNode right = plan(rightLogical);
-        Set<String> leftRelations = JoinPlanning.relationNames(leftLogical);
-        Set<String> rightRelations = JoinPlanning.relationNames(rightLogical);
+        Set<String> leftRelations = Qualifiers.inScope(leftLogical);
+        Set<String> rightRelations = Qualifiers.inScope(rightLogical);
         JoinKeys keys = JoinPlanning.extractKeys(
                 condition, left.schema(), right.schema(), leftRelations, rightRelations);
 
@@ -833,8 +835,8 @@ public final class Planner {
     private PhysicalNode planAsOfJoin(AsOfJoinNode node) {
         PhysicalNode left = plan(node.left());
         PhysicalNode right = plan(node.right());
-        Set<String> leftRelations = JoinPlanning.relationNames(node.left());
-        Set<String> rightRelations = JoinPlanning.relationNames(node.right());
+        Set<String> leftRelations = Qualifiers.inScope(node.left());
+        Set<String> rightRelations = Qualifiers.inScope(node.right());
         JoinKeys partitionKeys = JoinPlanning.extractKeys(
                 node.condition(), left.schema(), right.schema(), leftRelations, rightRelations);
         JoinPlanning.AsOfMatch match = JoinPlanning.extractAsOfMatch(
@@ -1020,7 +1022,7 @@ public final class Planner {
 
     /** Whether {@code required}'s keys are a prefix of a candidate key of {@code logical}'s base relation. */
     private boolean indexBacked(RelNode logical, Ordering required) {
-        Set<String> relations = JoinPlanning.relationNames(logical);
+        Set<String> relations = Qualifiers.inScope(logical);
         if (relations.size() != 1) {
             return false;   // need a single base relation to attribute a candidate key
         }
@@ -1350,7 +1352,10 @@ public final class Planner {
         PhysicalNode right = plan(node.right());
         return new PhysicalNode.Join(schemaOf(node), JoinKind.PRODUCT, JoinAlgorithm.NESTED_LOOP,
                 buildSide(JoinKind.PRODUCT, node.left(), node.right()), Optional.empty(), JoinKeys.none(),
-                Set.of(), Set.of(), left, right);
+                // No condition needs them, but a schema-on-read output does: its rows
+                // record which relation each field came from (#970).
+                Qualifiers.inScope(node.left()), Qualifiers.inScope(node.right()),
+                left, right);
     }
 
     /**

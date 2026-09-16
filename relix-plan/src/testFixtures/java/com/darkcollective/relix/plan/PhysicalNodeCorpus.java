@@ -137,7 +137,8 @@ public final class PhysicalNodeCorpus {
                 // ── leaves ──────────────────────────────────────────────────────
                 new PhysicalNode.Scan(SCHEMA, SOURCE,
                         Optional.of(produceBound("x", ComparisonOperator.LESS,
-                                num("100")))),
+                                num("100"))),
+                        Optional.of("T")),
                 new PhysicalNode.Empty(SCHEMA),
                 new PhysicalNode.PushedScan(SCHEMA, "jdbc", "db", "SELECT x FROM t",
                         Ordering.of(List.of(sortKey(X, SortDirection.ASC)))),
@@ -149,7 +150,8 @@ public final class PhysicalNodeCorpus {
                 new PhysicalNode.Select(SCHEMA, CONDITION, LEFT),
                 new PhysicalNode.Project(SCHEMA,
                         List.of(ProjectedAttribute.aliased(X, "y")), LEFT),
-                new PhysicalNode.Rename(SCHEMA, LEFT),
+                new PhysicalNode.Rename(SCHEMA, Optional.of("R"),
+                        List.of(renamePair("x", "y")), LEFT),
                 new PhysicalNode.Distinct(SCHEMA, true, LEFT),
                 new PhysicalNode.Unnest(SCHEMA, "items", true, Optional.of("ord"), LEFT),
 
