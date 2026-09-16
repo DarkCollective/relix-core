@@ -377,6 +377,26 @@ public final class Schema {
     }
 
     /**
+     * Returns a schema with {@code replacement} as its known columns and this schema's
+     * openness.
+     *
+     * <p>A rewrite of an open heading's known columns (re-anchoring their provenance
+     * under a rename, say) has to leave the heading open: a document row under it
+     * still carries fields the heading does not name. Building the result with
+     * {@link #Schema(List)} would close it, and the executor would then size a
+     * document row against a fixed width.
+     *
+     * @param replacement the new known columns, in order; must not be {@code null} or
+     *                    empty, and must not contain duplicate names
+     * @return a schema over {@code replacement}, open exactly when this one is
+     * @throws IllegalArgumentException if {@code replacement} is empty or contains a
+     *                                  duplicate column name
+     */
+    public Schema withColumns(List<ColumnDefinition> replacement) {
+        return new Schema(replacement, open);
+    }
+
+    /**
      * Whether any column in this schema carries source-relation
      * {@link ColumnProvenance}.  Qualified-reference resolution and
      * validation only engage when provenance is present; a schema with none falls
