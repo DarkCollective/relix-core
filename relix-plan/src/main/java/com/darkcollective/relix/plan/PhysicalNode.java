@@ -22,6 +22,7 @@ import com.darkcollective.relix.ast.AllocationSpec;
 import com.darkcollective.relix.ast.ObjectiveSense;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.RelNode;
+import com.darkcollective.relix.ast.RenameNode;
 import com.darkcollective.relix.ast.OptimizeConstraint;
 import com.darkcollective.relix.ast.ProduceBound;
 import com.darkcollective.relix.ast.Predicate;
@@ -109,7 +110,7 @@ public sealed interface PhysicalNode {
             }
             case Rename n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Rename(n.schema(), in);
+                yield in == n.input() ? n : new Rename(n.schema(), n.relation(), n.pairs(), in);
             }
             case Distinct n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -304,13 +305,30 @@ public sealed interface PhysicalNode {
 
     // ── leaves ──────────────────────────────────────────────────────────────
 
-    /** Reads a base relation: inline rows, or an external source/database via the connector. */
+    /**
+     * Reads a base relation: inline rows, or an external source/database via the connector.
+     *
+     * <p>{@code qualifier} is the name the query referenced the relation by, which is the
+     * qualifier its columns answer to. A declared heading carries it as column provenance;
+     * a schema-on-read row has no heading to carry it, so the executor anchors each
+     * document to it.
+     *
+     * @param schema       the relation's heading
+     * @param source       the relation read
+     * @param produceBound a generator production bound, if one was pushed
+     * @param qualifier    the name the query referenced the relation by, when known
+     */
     record Scan(Schema schema, RelationSymbol source,
-                Optional<ProduceBound> produceBound) implements PhysicalNode {
+                Optional<ProduceBound> produceBound, Optional<String> qualifier) implements PhysicalNode {
 
         /** Scan without a generator production bound. */
         Scan(Schema schema, RelationSymbol source) {
             this(schema, source, Optional.empty());
+        }
+
+        /** Scan under no particular qualifier. */
+        Scan(Schema schema, RelationSymbol source, Optional<ProduceBound> produceBound) {
+            this(schema, source, produceBound, Optional.empty());
         }
 
         @Override public List<PhysicalNode> children() { return List.of(); }
@@ -417,8 +435,32 @@ public sealed interface PhysicalNode {
         @Override public List<PhysicalNode> children() { return List.of(input); }
     }
 
-    /** Relation/column rename — a metadata-only relabel to {@link #schema()}. */
-    record Rename(Schema schema, PhysicalNode input) implements PhysicalNode {
+    /**
+     * Relation/column rename — a metadata-only relabel to {@link #schema()}.
+     *
+     * <p>A declared row is relabelled by the heading alone. A schema-on-read row has no
+     * heading to relabel, so the executor applies the rename to the document itself:
+     * {@code pairs} renames the fields it names, and {@code relation} re-anchors the
+     * document to the new relation name.
+     *
+     * @param schema   the renamed heading
+     * @param relation the new relation name, if the rename supplies one
+     * @param pairs    the {@code old → new} pairs of the pair form; empty otherwise
+     * @param input    the renamed sub-plan
+     */
+    record Rename(Schema schema, Optional<String> relation,
+                  List<RenameNode.RenamePair> pairs,
+                  PhysicalNode input) implements PhysicalNode {
+
+        public Rename {
+            pairs = List.copyOf(pairs);
+        }
+
+        /** A rename that gives no new relation name. */
+        public Rename(Schema schema, PhysicalNode input) {
+            this(schema, Optional.empty(), List.of(), input);
+        }
+
         @Override public List<PhysicalNode> children() { return List.of(input); }
     }
 
