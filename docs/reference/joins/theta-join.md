@@ -62,6 +62,53 @@ Output — `devices.name` and `rooms.name` each resolve to their own side:
  "Lamp"        "Bedroom"
 ```
 
+**Schema-on-read inputs are the exception.** The check relies on a declared
+heading, which records where each column came from. A document from a JSON, HTTP or
+MongoDB source records nothing, and over it a dotted name may also be a path into one
+of its fields (`address.city`). So once a view or a rename has hidden a relation's
+name, a reference that still uses the hidden name is **not** refused: it is read as a
+path, finds no such field, and yields NULL.
+
+This is deliberate. Refusing the name would also refuse a genuine path into a document
+field that happens to share it.
+
+**Worked example — a hidden name over a document source.** `orders` is a declared CSV
+file and `products` is a JSON file, and the view `Sales` joins them:
+
+```
+orders.csv                  products.json
+ product_id  quantity        [{"product_id": 1, "name": "Novel"},
+ ──────────  ────────         {"product_id": 2, "name": "Trowel"}]
+ 1           2
+ 2           5
+```
+
+```relix
+source orders from csv("orders.csv") {
+    header: true, schema: { product_id: NUMBER, quantity: NUMBER }
+};
+source products from json("products.json");
+
+Sales := { orders ⨝ orders.product_id = products.product_id products };
+
+query { π orders.quantity → stale, Sales.quantity → quantity, Sales.name → name (Sales) };
+```
+
+Output — outside the view its columns answer to `Sales`, so `orders.quantity`
+names nothing and reads NULL:
+
+```
+ stale  quantity  name
+ ─────  ────────  ──────
+ NULL          2  Novel
+ NULL          5  Trowel
+```
+
+Over two declared relations the same `orders.quantity` is an analysis error. Over a
+document source, use the view's own name: `Sales.quantity`, and `Sales.product_id_r`
+for the copy of `product_id` the join renamed. The same holds for a rename,
+`ρ P (products)`, whose fields answer to `P` only.
+
 # Legacy `_r` disambiguation:
 For backward compatibility the joined schema still renames the right side's
 colliding column with an `_r` suffix (`name` on the left, `name_r` on the right),

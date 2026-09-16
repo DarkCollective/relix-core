@@ -834,6 +834,45 @@ tasks.register('coverageAuditTest', Exec) {
     commandLine 'python3', 'tools/coverage/test_audit.py'
 }
 
+// ---------------------------------------------------------------------------
+// exportCore — assemble the public engine tree (relix-core)
+//
+//   ./gradlew exportCore                                  into ~/relix-core
+//   ./gradlew exportCore -PexportDir=/tmp/relix-core      somewhere else
+//   ./gradlew exportCore -PexportVerify                   …and build the result
+//
+// A wrapper over tools/export/export.py, which owns what travels and why. The export
+// is one-way: the tree it writes is replaced, not merged, so read `git status` and the
+// diff in the clone before pushing anything from it.
+//
+// Not part of `check`: it writes outside this repository and runs a nested build of
+// the tree it produced. No declared inputs or outputs either — the target is a working
+// copy someone reads and commits from, and an UP-TO-DATE export would leave it holding
+// whatever was there last. The script refuses a target it must not empty; its tests
+// run in `check` as exportCoreTest.
+//
+// Both exist only where the script is. This build file travels to the public tree and
+// tools/export does not, so there `check` must not name a test it cannot run.
+// ---------------------------------------------------------------------------
+def exportScriptPresent = file('tools/export/export.py').exists()
+if (exportScriptPresent) {
+    tasks.register('exportCore', Exec) {
+        group = 'distribution'
+        description = 'Export the public engine tree to ~/relix-core (-PexportDir, -PexportVerify).'
+        def target = (findProperty('exportDir') ?: "${System.getProperty('user.home')}/relix-core") as String
+        def verify = project.hasProperty('exportVerify')
+        workingDir projectDir
+        commandLine(['python3', 'tools/export/export.py', target] + (verify ? ['--verify'] : []))
+    }
+
+    tasks.register('exportCoreTest', Exec) {
+        group = 'verification'
+        description = "Run the public-tree export's own tests."
+        workingDir projectDir
+        commandLine 'python3', 'tools/export/test_export.py'
+    }
+}
+
 // The root has no `java` plugin — no sources of its own — so it has no `check` or
 // `build` to hang this on, and `./gradlew build` reaches only the subprojects. These
 // two are the lifecycle tasks the base plugin would give, declared by hand rather
@@ -849,6 +888,9 @@ tasks.register('check') {
     description = 'Repository-wide checks that no single subproject can run.'
     dependsOn tasks.named('jacocoAggregateReport'), tasks.named('coverageAudit'),
             tasks.named('coverageAuditTest')
+    if (exportScriptPresent) {
+        dependsOn tasks.named('exportCoreTest')
+    }
 }
 
 tasks.register('build') {

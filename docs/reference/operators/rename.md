@@ -102,11 +102,51 @@ two name columns are now distinct. The result:
 └────────┴────────────┘
 ```
 
+**Worked example — rename a field of a schema-on-read source.** `people.json` holds
+documents that do not all carry the same fields:
+
+```
+[{"id": 1, "fullname": "Ada Lovelace", "city": "London"},
+ {"id": 2, "fullname": "Alan Turing"}]
+```
+
+```relix
+source people from json("people.json");
+
+query { π id, name, city (ρ (fullname → name) (people)) };
+```
+
+Each document's `fullname` field is renamed to `name`. The second document carries
+no `city`, so that column is NULL:
+
+```
+ id  name          city
+ ──  ────────────  ──────
+  1  Ada Lovelace  London
+  2  Alan Turing   NULL
+```
+
+After the rename, `fullname` names nothing and reads NULL, and `people.name` names the
+renamed field. Renaming `fullname → city` instead stops the query at the first
+document, which already carries a `city`.
+
 # Limitations:
 The positional form names columns **by position**, which a schema-on-read source
 (JSON, HTTP, MongoDB) does not have — each document carries the fields it carries,
 in its own order. Use the pair form there, `ρ (old → new, …)`, which names the
-columns explicitly and works over any relation.
+columns explicitly.
+
+Over a schema-on-read source, which fields exist is a fact about each document, so
+the pair form is checked as each document is read rather than in advance. A document
+that lacks a listed field is passed through unchanged. A document that already
+carries a field under the new name stops the query with an error, as a declared
+relation would refuse the same rename before running.
+
+Over a schema-on-read input, a name the rename hides is not refused afterwards.
+Over a declared relation, `π E.name (ρ M (E))` is an analysis error. Over a JSON,
+HTTP or MongoDB source, `E.name` is read as a path into a field called `E`, and
+yields NULL. Refer to the columns by the new name; see
+[theta-join](../joins/theta-join.md) for a worked case.
 
 The positional form must list exactly as many names as the relation has columns.
 To rename a subset, use the pair form (`ρ (old → new, …) (R)`) or projection with

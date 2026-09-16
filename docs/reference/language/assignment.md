@@ -44,6 +44,11 @@ query { Active ⋈ Orders };
 A view is a logical definition, not a materialised table — it is recomputed
 (inlined) wherever used. A script with no `query` statement produces no output.
 
+Outside a view, its columns answer to the view's name, not to the relations inside
+it. When the view reads a schema-on-read source (JSON, HTTP, MongoDB), a reference
+that still uses an inner relation's name is not refused. It yields NULL instead; see
+[theta-join](../joins/theta-join.md) for a worked case.
+
 # Alternatives:
 A table-valued function (`def … : RELATION`) is a view that takes parameters.
 
