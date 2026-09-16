@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/DarkCollective/relix-core/security/advisories/new
+    about: Please report security problems privately, never in a public issue.
+  - name: Report a code of conduct problem
+    url: https://docs.google.com/forms/d/e/1FAIpQLSd5z5m517BWo0An9nS6ZAnAoVvM5UwgNZgMSviayUo7OWGOkg/viewform
+    about: Report behaviour that breaks the code of conduct privately to the maintainers.
+  - name: Ask a question
+    url: https://github.com/DarkCollective/relix-core/discussions
+    about: Questions about using Relix belong in Discussions.

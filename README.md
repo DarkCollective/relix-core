@@ -119,6 +119,13 @@ API carries `@since` tags and a backward-compatible-per-major promise, checked b
 compatibility gate; the rest of the module graph is internal to this build and not
 a surface to depend on.
 
+## Contributing
+
+Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md). To report a
+security problem, follow [`SECURITY.md`](SECURITY.md) rather than opening an issue.
+Everyone taking part is expected to follow the
+[code of conduct](CODE_OF_CONDUCT.md).
+
 ## License
 
 Apache License 2.0 — see [`LICENSE.txt`](LICENSE.txt) and [`NOTICE`](NOTICE).
