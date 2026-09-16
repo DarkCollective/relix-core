@@ -1,0 +1,53 @@
+name: Bug report
+description: Something returns the wrong rows, fails when it should not, or does not match the documentation.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. **If it is a security problem, stop here** and report it privately instead — see `SECURITY.md`.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The Relix version or commit you are using.
+      placeholder: 1.0.0-rc1, or a commit hash
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Java version and operating system, plus the database and driver version if a connection is involved.
+      placeholder: Temurin 24, macOS 15, PostgreSQL 16 / pgjdbc 42.7
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The smallest script or Java snippet that shows the problem. Inline tables (`R := [ | col | … ];`) make a report reproducible without your data.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: The rows or behaviour you expected, and why — a link to the reference page that says so is ideal.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: The rows you got, or the full error message and stack trace.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan (optional)
+      description: If the result looks like an optimizer or pushdown problem, the output of `explain()` for the query helps a great deal.
+      render: text
