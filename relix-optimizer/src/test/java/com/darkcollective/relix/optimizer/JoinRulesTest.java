@@ -350,6 +350,114 @@ final class JoinRulesTest {
     // Two-step optimisation: stacked selections over a product
     // =========================================================================
 
+    /**
+     * The side a one-sided σ goes to is {@link JoinSides}' answer (#971). This pass used
+     * to decide by stripped column name, which a schema-on-read input answers for every
+     * name, and ignored the provenance a qualified name carries.
+     */
+    @Nested
+    @DisplayName("JOIN-002 — which side owns a reference (#971)")
+    class Join002Sides {
+
+        private static ColumnDefinition from(String relation, String name) {
+            return new ColumnDefinition(name, ScalarType.NUMBER,
+                    new com.darkcollective.relix.symbol.ColumnProvenance(relation, name));
+        }
+
+        @Test
+        @DisplayName("a qualifier only the view defines is not pushed into an open input")
+        void viewQualifierStaysAboveAnOpenJoin() {
+            var orders = rel("Orders");
+            var docs = rel("Docs");
+            var join = join(orders, docs, cmp(attr("Orders.id"), ComparisonOperator.EQUAL, attr("Docs.id")));
+            var sel = select(cmp(attr("J.name"), ComparisonOperator.EQUAL, str("x")), join);
+
+            RelNode result = applyJoin(sel, annotate(orders,
+                    new Schema(List.of(from("Orders", "id"))), docs, Schema.open()));
+
+            assertThat(result).isSameAs(sel);
+            assertThat(ctx).didNotFire(OptimizationCode.JOIN_002);
+        }
+
+        @Test
+        @DisplayName("the open input's own qualifier is pushed into it (#972)")
+        void openInputQualifierIsPushed() {
+            var orders = rel("Orders");
+            var docs = rel("Docs");
+            var join = join(orders, docs, cmp(attr("Orders.id"), ComparisonOperator.EQUAL, attr("Docs.id")));
+            var sel = select(cmp(attr("Docs.id"), ComparisonOperator.EQUAL, num("2")), join);
+
+            RelNode result = applyJoin(sel, annotate(orders,
+                    new Schema(List.of(from("Orders", "id"))), docs, Schema.open()));
+
+            assertThat(result).right().isNode(SelectionNode.class).input().isRelation("Docs");
+            assertThat(result).left().isRelation("Orders");
+        }
+
+        @Test
+        @DisplayName("the open input's qualifier is pushed through a cartesian product too")
+        void openInputQualifierThroughProduct() {
+            var orders = rel("Orders");
+            var docs = rel("Docs");
+            var sel = select(cmp(attr("Docs.name"), ComparisonOperator.EQUAL, str("x")),
+                    product(orders, docs));
+
+            RelNode result = applyJoin(sel, annotate(orders,
+                    new Schema(List.of(from("Orders", "id"))), docs, Schema.open()));
+
+            assertThat(result).isNode(ProductNode.class)
+                    .right().isNode(SelectionNode.class).input().isRelation("Docs");
+        }
+
+        @Test
+        @DisplayName("a plain name the declared side lacks is pushed into the open input")
+        void plainNameGoesToTheOpenInput() {
+            var orders = rel("Orders");
+            var docs = rel("Docs");
+            var join = join(orders, docs, cmp(attr("Orders.id"), ComparisonOperator.EQUAL, attr("Docs.id")));
+            var sel = select(cmp(attr("name"), ComparisonOperator.EQUAL, str("x")), join);
+
+            RelNode result = applyJoin(sel, annotate(orders,
+                    new Schema(List.of(from("Orders", "id"))), docs, Schema.open()));
+
+            assertThat(result).isNode(ThetaJoinNode.class);
+            assertThat(result).left().isRelation("Orders");
+            assertThat(result).right().isNode(SelectionNode.class).input().isRelation("Docs");
+            assertThat(ctx).fired(OptimizationCode.JOIN_002, 1);
+        }
+
+        @Test
+        @DisplayName("a name the join invents for a collision is not pushed into the open input")
+        void collisionNameStaysAbove() {
+            var orders = rel("Orders");
+            var docs = rel("Docs");
+            var join = join(orders, docs, cmp(attr("Orders.id"), ComparisonOperator.EQUAL, attr("Docs.id")));
+            var sel = select(cmp(attr("id_r"), ComparisonOperator.EQUAL, num("2")), join);
+
+            RelNode result = applyJoin(sel, annotate(orders,
+                    new Schema(List.of(from("Orders", "id"))), docs, Schema.open()));
+
+            assertThat(result).isSameAs(sel);
+        }
+
+        @Test
+        @DisplayName("provenance settles a name both declared sides carry")
+        void provenanceSettlesASharedName() {
+            // Stripped to `k`, both sides answered and the σ stayed above the join.
+            var a = rel("A");
+            var b = rel("B");
+            var join = join(a, b, cmp(attr("A.id"), ComparisonOperator.EQUAL, attr("B.id")));
+            var sel = select(cmp(attr("A.k"), ComparisonOperator.GREATER, num("0")), join);
+
+            RelNode result = applyJoin(sel, annotate(
+                    a, new Schema(List.of(from("A", "id"), from("A", "k"))),
+                    b, new Schema(List.of(from("B", "id"), from("B", "k")))));
+
+            assertThat(result).left().isNode(SelectionNode.class).input().isRelation("A");
+            assertThat(result).right().isRelation("B");
+        }
+    }
+
     @Nested
     @DisplayName("Combined — JOIN-002 then JOIN-001 (stacked selections over product)")
     class Combined {

@@ -193,6 +193,43 @@ final class SelectionPushdownPassTest {
     }
 
     // =========================================================================
+    // SEL-005 — a schema-on-read input, settled by its own qualifier (#972)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("SEL-005 — a schema-on-read input's qualifier (#972)")
+    class OpenInputQualifier {
+
+        @Test @DisplayName("σ Docs.x over declared ⨝ Docs is pushed into Docs")
+        void pushedIntoTheOpenInput() {
+            var docs = rel("Docs");
+            var annotated = new SchemaAnnotations(Map.of(
+                    left, leftSchema, docs, Schema.open()));
+            var node = sel(on("Docs.x"), join(left, docs, on("l_id")));
+
+            RelNode result = SelectionPushdownPass.apply(node, "Q", annotated, ctx);
+
+            assertThat(result).isNode(ThetaJoinNode.class)
+                    .right().isNode(SelectionNode.class).input().isRelation("Docs");
+            assertThat(ctx).fired(OptimizationCode.SEL_005, 1);
+        }
+
+        @Test @DisplayName("σ D.x over declared ⨝ ρ D (Docs) reaches Docs with its qualifier dropped")
+        void pushedThroughARenamedOpenInput() {
+            var docs = rel("Docs");
+            var renamed = rename("D", List.of(), docs);
+            var annotated = new SchemaAnnotations(Map.of(
+                    left, leftSchema, docs, Schema.open(), renamed, Schema.open()));
+            var node = sel(on("D.x"), join(left, renamed, on("l_id")));
+
+            RelNode result = SelectionPushdownPass.apply(node, "Q", annotated, ctx);
+
+            assertThat(result).right().isNode(RenameNode.class)
+                    .input().isEquivalentTo(sel(on("x"), docs));
+        }
+    }
+
+    // =========================================================================
     // SEL-004 — below rename (attribute references rewritten)
     // =========================================================================
 
@@ -211,6 +248,34 @@ final class SelectionPushdownPassTest {
             var inner = (SelectionNode) ((RenameNode) result).input();
             assertThat(inner.predicate()).isSameAs(node.predicate());
             assertThat(ctx).fired(OptimizationCode.SEL_004, 1);
+        }
+
+        @Test @DisplayName("relation-only rename: the rename's own qualifier is dropped on the way down (#971)")
+        void relationOnlyRenameDropsItsQualifier() {
+            // Beneath ρ Renamed nothing answers to `Renamed`. A declared row forgave the
+            // stale qualifier; a schema-on-read row reads it as a path and finds nothing.
+            var node = sel(and(on("Renamed.l_id"), on("RENAMED.l_val")),
+                    rename("Renamed", List.of(), left));
+
+            RelNode result = apply(node);
+
+            assertThat(result).isNode(RenameNode.class)
+                    .input().isNode(SelectionNode.class)
+                    .isEquivalentTo(sel(and(on("l_id"), on("l_val")), left));
+            assertThat(ctx).fired(OptimizationCode.SEL_004, 1);
+        }
+
+        @Test @DisplayName("relation-only rename: any other qualifier is left as written")
+        void relationOnlyRenameKeepsOtherQualifiers() {
+            // `Renamedx.` is longer; `Xenamed.` is the same length and differs only in
+            // its letters.
+            var node = sel(and(on("L.l_id"), and(on("Renamedx.l_val"), on("Xenamed.l_id"))),
+                    rename("Renamed", List.of(), left));
+
+            RelNode result = apply(node);
+
+            assertThat(result).input().isEquivalentTo(
+                    sel(and(on("L.l_id"), and(on("Renamedx.l_val"), on("Xenamed.l_id"))), left));
         }
 
         @Test @DisplayName("full column rename: every attribute reference maps back to the old name")
