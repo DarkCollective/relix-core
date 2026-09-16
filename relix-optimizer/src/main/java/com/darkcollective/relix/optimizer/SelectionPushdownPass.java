@@ -37,6 +37,7 @@ import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.OrPredicate;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.Predicates;
+import com.darkcollective.relix.ast.Qualifiers;
 import com.darkcollective.relix.ast.ProjectedAttribute;
 import com.darkcollective.relix.ast.ProjectionNode;
 import com.darkcollective.relix.ast.RelNode;
@@ -63,6 +64,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -227,7 +229,7 @@ final class SelectionPushdownPass {
                 Optional<Schema> ls = schemas.get(j.left());
                 Optional<Schema> rs = schemas.get(j.right());
                 if (ls.isEmpty() || rs.isEmpty()) yield null;
-                JoinSide side = determineJoinSide(attrs, ls.get(), rs.get());
+                JoinSide side = determineJoinSide(attrs, j.left(), ls.get(), j.right(), rs.get());
                 yield switch (side) {
                     case LEFT -> {
                         ctx.record(OptimizationCode.SEL_005, queryName,
@@ -256,7 +258,7 @@ final class SelectionPushdownPass {
                 Optional<Schema> ls = schemas.get(j.left());
                 Optional<Schema> rs = schemas.get(j.right());
                 if (ls.isEmpty() || rs.isEmpty()) yield null;
-                JoinSide side = determineJoinSide(attrs, ls.get(), rs.get());
+                JoinSide side = determineJoinSide(attrs, j.left(), ls.get(), j.right(), rs.get());
                 yield switch (side) {
                     case LEFT -> {
                         ctx.record(OptimizationCode.SEL_005, queryName,
@@ -593,10 +595,15 @@ final class SelectionPushdownPass {
         Schema inputSchema = inputSchemaOpt.get();
 
         if (!r.renamesColumns()) {
-            // Relation-only rename: column names unchanged, just verify they exist
+            // Relation-only rename: column names unchanged, just verify they exist. The
+            // rename's own qualifier is dropped on the way down — beneath `ρ J` nothing
+            // answers to `J`. A declared row forgave the stale qualifier by falling back
+            // to the bare name; a schema-on-read row reads it as a path and finds
+            // nothing, so a σ over a view of an open join matched no rows (#971).
             if (!predAttrs.stream().allMatch(a -> hasColumn(inputSchema, a)))
                 return Optional.empty();
-            return Optional.of(pred); // unchanged
+            String relation = r.relationName().orElseThrow();
+            return Optional.of(rewriteAttrNames(pred, name -> withoutQualifier(name, relation)));
         }
 
         // Column rename: build output(new) → input(old) name mapping.
@@ -610,7 +617,24 @@ final class SelectionPushdownPass {
         });
         if (!allMapped) return Optional.empty();
 
-        return Optional.of(rewriteAttrNames(pred, mapping));
+        return Optional.of(rewriteAttrNames(pred, name -> {
+            String mapped = mapping.get(
+                    PredicateAttributeCollector.columnPart(name).toLowerCase(Locale.ROOT));
+            return mapped != null ? mapped : name;
+        }));
+    }
+
+    /**
+     * {@code name} as it reads beneath {@code ρ relation}: a leading {@code relation.}
+     * is dropped, since the rename's own name is in scope only above it and a
+     * relation-only rename keeps every column's name. Anything else is unchanged.
+     */
+    private static String withoutQualifier(String name, String relation) {
+        int length = relation.length();
+        return name.length() > length + 1
+                && name.charAt(length) == '.'
+                && name.regionMatches(true, 0, relation, 0, length)
+                ? name.substring(length + 1) : name;
     }
 
     /**
@@ -650,12 +674,15 @@ final class SelectionPushdownPass {
      * (predicate spans both sides, or column is absent from both).
      */
     private static JoinSide determineJoinSide(Set<String> predAttrs,
-                                               Schema leftSchema,
-                                               Schema rightSchema) {
+                                               RelNode left, Schema leftSchema,
+                                               RelNode right, Schema rightSchema) {
+        Set<String> leftQualifiers  = Qualifiers.inScope(left);
+        Set<String> rightQualifiers = Qualifiers.inScope(right);
         boolean allLeft  = true;
         boolean allRight = true;
         for (String attr : predAttrs) {
-            JoinSides.Side side = JoinSides.sideOf(attr, leftSchema, rightSchema);
+            JoinSides.Side side = JoinSides.sideOf(
+                    attr, leftSchema, rightSchema, leftQualifiers, rightQualifiers);
             allLeft  &= side == JoinSides.Side.LEFT;
             allRight &= side == JoinSides.Side.RIGHT;
         }
@@ -675,7 +702,7 @@ final class SelectionPushdownPass {
      * column part before lookup, and the rewritten operand is unqualified.
      */
     private static Predicate rewriteAttrNames(Predicate pred,
-                                               Map<String, String> mapping) {
+                                               UnaryOperator<String> mapping) {
         return switch (pred) {
             case ComparisonPredicate c -> {
                 Operand newL = rewriteAttrNames(c.left(), mapping);
@@ -718,13 +745,11 @@ final class SelectionPushdownPass {
         };
     }
 
-    private static Operand rewriteAttrNames(Operand op, Map<String, String> mapping) {
+    private static Operand rewriteAttrNames(Operand op, UnaryOperator<String> mapping) {
         return switch (op) {
             case AttributeOperand a -> {
-                String col = PredicateAttributeCollector.columnPart(a.name())
-                        .toLowerCase(Locale.ROOT);
-                String mapped = mapping.get(col);
-                yield (mapped != null) ? new AttributeOperand(mapped, a.location()) : a;
+                String mapped = mapping.apply(a.name());
+                yield mapped.equals(a.name()) ? a : new AttributeOperand(mapped, a.location());
             }
             case BinaryArithmeticExpression b -> {
                 Operand newL = rewriteAttrNames(b.left(), mapping);
