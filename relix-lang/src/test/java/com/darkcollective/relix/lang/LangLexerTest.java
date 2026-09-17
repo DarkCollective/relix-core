@@ -276,6 +276,45 @@ class LangLexerTest {
         assertThat(tok.value()).isEqualTo("my_rel_1");
     }
 
+    @Nested
+    @DisplayName("delimited names")
+    class DelimitedNames {
+
+        @Test
+        @DisplayName("a backtick-delimited name lexes without its backticks")
+        void delimitedName() {
+            LangToken tok = single("`unit-price`");
+            assertThat(tok.type()).isEqualTo(LangTokenType.DELIMITED_IDENTIFIER);
+            assertThat(tok.value()).isEqualTo("unit-price");
+        }
+
+        @Test
+        @DisplayName("a doubled backtick is a literal one, and a keyword inside is just a name")
+        void doubledBacktickAndKeyword() {
+            assertThat(single("`odd``name`").value()).isEqualTo("odd`name");
+            assertThat(single("`schema`").type()).isEqualTo(LangTokenType.DELIMITED_IDENTIFIER);
+        }
+
+        @Test
+        @DisplayName("the token after a delimited name is read normally")
+        void followingToken() {
+            assertThat(tokenize("`a b`: NUMBER").stream().map(LangToken::type).toList())
+                    .containsExactly(LangTokenType.DELIMITED_IDENTIFIER, LangTokenType.COLON,
+                            LangTokenType.NUMBER, LangTokenType.EOF);
+        }
+
+        @Test
+        @DisplayName("an empty, unterminated or line-spanning name is refused")
+        void malformedNames() {
+            assertThatThrownBy(() -> single("``"))
+                    .isInstanceOf(LangParseException.class).hasMessageContaining("Empty delimited name");
+            assertThatThrownBy(() -> single("`open"))
+                    .isInstanceOf(LangParseException.class).hasMessageContaining("Unterminated");
+            assertThatThrownBy(() -> single("`two\nlines`"))
+                    .isInstanceOf(LangParseException.class).hasMessageContaining("Unterminated");
+        }
+    }
+
     // =========================================================================
     // String literals
     // =========================================================================

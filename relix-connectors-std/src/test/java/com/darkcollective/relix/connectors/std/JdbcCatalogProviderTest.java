@@ -144,6 +144,26 @@ final class JdbcCatalogProviderTest {
         assertThat(region.nullCount()).hasValue(1L);
     }
 
+    @Test
+    @DisplayName("statistics are read for a table and column whose names are not plain identifiers")
+    void statisticsForDelimitedNames() throws SQLException {
+        String url = "jdbc:h2:mem:cat_delimited;DB_CLOSE_DELAY=-1";
+        try (Connection c = DriverManager.getConnection(url)) {
+            var st = c.createStatement();
+            st.execute("CREATE TABLE \"order-lines\" (lid INT, \"unit-price\" INT)");
+            st.execute("INSERT INTO \"order-lines\" VALUES (1, 10), (2, 10), (3, NULL)");
+        }
+
+        Optional<RelationStatistics> stats =
+                new JdbcCatalogProvider().tableStatistics(connection(url), "order-lines");
+
+        assertThat(stats).isPresent();
+        assertThat(stats.get().rowCount()).hasValue(3L);
+        ColumnStatistics price = columnOf(stats.get(), "unit-price");
+        assertThat(price.distinctCount()).hasValue(1L);
+        assertThat(price.nullCount()).hasValue(1L);
+    }
+
     /** Looks up a column's stats case-insensitively (the catalog stores names in its own case). */
     private static ColumnStatistics columnOf(RelationStatistics stats, String name) {
         return stats.columnStatistics().entrySet().stream()

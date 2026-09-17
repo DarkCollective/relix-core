@@ -21,6 +21,13 @@ import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.cost.Ordering;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.semantic.SemanticModel;
+import com.darkcollective.relix.semantic.CatalogProvider;
+import com.darkcollective.relix.semantic.SemanticFixtures;
+import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.symbol.ScalarType;
+import com.darkcollective.relix.symbol.Schema;
+import com.darkcollective.relix.symbol.StructType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -30,6 +37,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import com.darkcollective.relix.function.FunctionContext;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static com.darkcollective.relix.ast.AstBuilders.*;
@@ -1466,6 +1474,270 @@ final class SqlPushdownPlannerTest {
         void anUnrenderableConditionBlocksTheFold() {
             // Both sides are bare scans on one connection; only the ON expression fails.
             notPushed("Orders ⨝ Orders.id = [Customers.id] Customers");
+        }
+    }
+
+    // =========================================================================
+    // Natural join (#981)
+    // =========================================================================
+
+    /** A natural join over two tables on one connection folds into one {@code JOIN … ON}. */
+    @Nested
+    @DisplayName("natural join → JOIN … ON the shared columns")
+    class NaturalJoinFold {
+
+        private static final String TWO_TABLES = ORDERS + CUSTOMERS_SAME_DB;
+
+        @Test
+        @DisplayName("the shared column is equated, and appears once, from the left")
+        void foldsOnTheSharedColumn() {
+            assertThat(scanOf(push(TWO_TABLES + "query { Orders ⋈ Customers };")).nativeQuery())
+                    .isEqualTo("SELECT Orders.id, Orders.amount, Customers.name "
+                            + "FROM orders Orders JOIN customers Customers ON (Orders.id = Customers.id)");
+        }
+
+        @Test
+        @DisplayName("every shared column is equated, in the left side's order")
+        void foldsOnEverySharedColumn() {
+            String src = "connection db from database { url: \"jdbc:h2:mem:x\" };\n"
+                    + "source Stock from db { table: \"stock\", "
+                    + "schema: { site: STRING, sku: STRING, qty: NUMBER } };\n"
+                    + "source Prices from db { table: \"prices\", "
+                    + "schema: { sku: STRING, price: NUMBER, site: STRING } };\n"
+                    + "query { Stock JOIN Prices };";
+            assertThat(scanOf(push(src)).nativeQuery())
+                    .isEqualTo("SELECT Stock.site, Stock.sku, Stock.qty, Prices.price "
+                            + "FROM stock Stock JOIN prices Prices "
+                            + "ON (Stock.site = Prices.site) AND (Stock.sku = Prices.sku)");
+        }
+
+        @Test
+        @DisplayName("a σ above renders a shared column from the left, bare or left-qualified")
+        void selectionAboveTheJoin() {
+            assertThat(scanOf(push(TWO_TABLES + "query { σ id = 1 (Orders ⋈ Customers) };"))
+                    .nativeQuery()).endsWith("WHERE (Orders.id = 1)");
+            assertThat(scanOf(push(TWO_TABLES + "query { σ Orders.id = 1 (Orders ⋈ Customers) };"))
+                    .nativeQuery()).endsWith("WHERE (Orders.id = 1)");
+            assertThat(scanOf(push(TWO_TABLES
+                    + "query { σ name = 'x' ∧ Orders.amount > 2 (Orders ⋈ Customers) };"))
+                    .nativeQuery()).endsWith("WHERE ((Customers.name = 'x') AND (Orders.amount > 2))");
+        }
+
+        @Test
+        @DisplayName("a qualifier naming the wrong side, or neither, is not rendered")
+        void unrenderableReferences() {
+            SemanticModel model = model(TWO_TABLES + "query { Orders ⋈ Customers };");
+            RelNode join = ((ExpressionQueryTarget) model.rootQueries().get(0).target()).expression();
+            SqlPushdownPlanner planner = new SqlPushdownPlanner(model.nodeSchemas(), model.sources(),
+                    model.connections(), model.functions());
+            // Built by hand: analysis refuses each of these before a planner could see it.
+            for (String reference : List.of("Customers.id", "Customers.amount", "Orders.name", "Other.id", "missing")) {
+                assertThat(planner.tryPush(select(com.darkcollective.relix.ast.Expr.eq(attr(reference), num("1")), join)))
+                        .as("%s", reference).isEmpty();
+            }
+        }
+
+        @Test
+        @DisplayName("a shared column typed differently on each side is not folded")
+        void differentlyTypedSharedColumn() {
+            String src = ORDERS
+                    + "source Tags from db { table: \"tags\", schema: { id: STRING, tag: STRING } };\n"
+                    + "query { Orders ⋈ Tags };";
+            assertThat(push(src)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("headings sharing no column are not folded")
+        void noSharedColumn() {
+            // Analysis reports this as an error and still hands back a model, which is
+            // how the planner can be asked at all.
+            String src = ORDERS
+                    + "source Notes from db { table: \"notes\", schema: { note: STRING } };\n"
+                    + "query { Orders ⋈ Notes };";
+            SemanticModel model = SemanticFixtures.analyze(src).model().orElseThrow();
+            RelNode logical = ((ExpressionQueryTarget) model.rootQueries().get(0).target()).expression();
+            assertThat(new SqlPushdownPlanner(model.nodeSchemas(), model.sources(), model.connections(),
+                    model.functions()).tryPush(logical)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a self-join is not folded, and neither is a side that is not a bare scan")
+        void ineligibleSides() {
+            assertThat(push(TWO_TABLES + "query { Orders ⋈ Orders };")).isEmpty();
+            assertThat(push(TWO_TABLES + "query { δ (Orders) ⋈ Customers };")).isEmpty();
+            assertThat(push(TWO_TABLES + "query { Orders ⋈ δ (Customers) };")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("on a collated backend a string key is compared exactly")
+        void collatedStringKey() {
+            String src = "connection db from database { url: \"jdbc:mysql://h/db\" };\n"
+                    + "source Stock from db { table: \"stock\", schema: { sku: STRING, qty: NUMBER } };\n"
+                    + "source Prices from db { table: \"prices\", schema: { sku: STRING, price: NUMBER } };\n"
+                    + "query { Stock ⋈ Prices };";
+            assertThat(scanOf(push(src)).nativeQuery()).endsWith(
+                    "ON (CONVERT(`Stock`.`sku` USING utf8mb4) COLLATE utf8mb4_0900_bin "
+                            + "= CONVERT(`Prices`.`sku` USING utf8mb4) COLLATE utf8mb4_0900_bin)");
+        }
+    }
+
+    // =========================================================================
+    // connection.table references (#982)
+    // =========================================================================
+
+    /**
+     * Joins over tables named as {@code connection.table} rather than declared as sources.
+     *
+     * <p>A dotted name is not a SQL identifier, and the fold used to name each side of the
+     * statement by its relation name — so none of these folded. The statement now names
+     * the sides by aliases of its own, and a condition still qualifies by relation name.
+     */
+    @Nested
+    @DisplayName("joins over connection.table references")
+    class DottedReferences {
+
+        private static final Map<String, Schema> TABLES = Map.of(
+                "customers", new Schema(List.of(
+                        new ColumnDefinition("id", ScalarType.NUMBER),
+                        new ColumnDefinition("name", ScalarType.STRING),
+                        new ColumnDefinition("addr", new StructType(List.of(
+                                new StructType.Field("city", ScalarType.STRING)))))),
+                "orders", new Schema(List.of(
+                        new ColumnDefinition("oid", ScalarType.NUMBER),
+                        new ColumnDefinition("cid", ScalarType.NUMBER),
+                        new ColumnDefinition("city", ScalarType.STRING))),
+                "order-lines", new Schema(List.of(
+                        new ColumnDefinition("lid", ScalarType.NUMBER),
+                        new ColumnDefinition("line-oid", ScalarType.NUMBER))),
+                "trades", new Schema(List.of(
+                        new ColumnDefinition("sym", ScalarType.STRING),
+                        new ColumnDefinition("t", ScalarType.TIMESTAMP))),
+                "quotes", new Schema(List.of(
+                        new ColumnDefinition("qsym", ScalarType.STRING),
+                        new ColumnDefinition("qt", ScalarType.TIMESTAMP))),
+                "stays", new Schema(List.of(
+                        new ColumnDefinition("checkin", ScalarType.TIMESTAMP),
+                        new ColumnDefinition("checkout", ScalarType.TIMESTAMP))),
+                "bookings", new Schema(List.of(
+                        new ColumnDefinition("bfrom", ScalarType.TIMESTAMP),
+                        new ColumnDefinition("bto", ScalarType.TIMESTAMP))));
+
+        private static final CatalogProvider CATALOG =
+                (connection, table) -> Optional.ofNullable(TABLES.get(table));
+
+        private static final String SHOP =
+                "connection shop from database { url: \"jdbc:h2:mem:x\" };\n";
+
+        /** Pushes the first query of {@code src}, with dotted references resolved by the catalog. */
+        private static Optional<PhysicalNode.PushedScan> pushDotted(String src) {
+            SemanticResult result = SemanticFixtures.analyze(src, CATALOG);
+            assertThat(result.errors()).as("analysis of: %s", src).isEmpty();
+            SemanticModel model = result.model().orElseThrow();
+            RelNode logical =
+                    ((ExpressionQueryTarget) model.rootQueries().get(0).target()).expression();
+            return new SqlPushdownPlanner(model.nodeSchemas(), model.sources(), model.connections(),
+                    model.functions()).tryPush(logical);
+        }
+
+        @Test
+        @DisplayName("a theta join folds, each side aliased by its table and qualified by its dotted name")
+        void thetaJoinFolds() {
+            assertThat(scanOf(pushDotted(SHOP + "query { shop.customers "
+                    + "⨝ shop.customers.id = shop.orders.cid shop.orders };")).nativeQuery())
+                    .isEqualTo("SELECT customers.id, customers.name, customers.addr, "
+                            + "orders.oid, orders.cid, orders.city "
+                            + "FROM customers customers JOIN orders orders "
+                            + "ON (customers.id = orders.cid)");
+        }
+
+        @Test
+        @DisplayName("an unqualified reference renders against the one side that has it")
+        void unqualifiedReferencesFold() {
+            assertThat(scanOf(pushDotted(SHOP
+                    + "query { shop.customers ⨝ id = cid shop.orders };")).nativeQuery())
+                    .endsWith("ON (customers.id = orders.cid)");
+        }
+
+        @Test
+        @DisplayName("a derived alias that clashes with the other side's is suffixed, and each "
+                + "qualifier still reaches its own side")
+        void clashingAliasesAreSuffixed() {
+            // `Orders` is a declared source over another table; `shop.orders` derives the
+            // alias `orders`, which differs from `Orders` only in case.
+            String src = SHOP + "source Orders from shop { table: \"archive\", "
+                    + "schema: { oid: NUMBER, cid: NUMBER } };\n"
+                    + "query { Orders ⨝ Orders.oid = shop.orders.oid shop.orders };";
+            assertThat(scanOf(pushDotted(src)).nativeQuery())
+                    .isEqualTo("SELECT Orders.oid, Orders.cid, orders_1.oid, orders_1.cid, orders_1.city "
+                            + "FROM archive Orders JOIN orders orders_1 "
+                            + "ON (Orders.oid = orders_1.oid)");
+        }
+
+        @Test
+        @DisplayName("a table whose name is no identifier is aliased by position")
+        void nonIdentifierTableIsAliasedByPosition() {
+            String pg = "connection shop from database { url: \"jdbc:postgresql://h/db\" };\n";
+            assertThat(scanOf(pushDotted(pg + "query { shop.orders "
+                    + "⨝ shop.orders.oid = shop.`order-lines`.`line-oid` shop.`order-lines` };")).nativeQuery())
+                    .isEqualTo("SELECT \"orders\".\"oid\", \"orders\".\"cid\", \"orders\".\"city\", "
+                            + "\"t1\".\"lid\", \"t1\".\"line-oid\" "
+                            + "FROM \"orders\" \"orders\" JOIN \"order-lines\" \"t1\" "
+                            + "ON (\"orders\".\"oid\" = \"t1\".\"line-oid\")");
+        }
+
+        @Test
+        @DisplayName("on a generic connection a name that is no identifier is delimited, and the rest stay bare")
+        void genericDelimitsNonIdentifierNames() {
+            assertThat(scanOf(pushDotted(SHOP + "query { shop.orders "
+                    + "⨝ shop.orders.oid = shop.`order-lines`.`line-oid` shop.`order-lines` };")).nativeQuery())
+                    .isEqualTo("SELECT orders.oid, orders.cid, orders.city, t1.lid, t1.\"line-oid\" "
+                            + "FROM orders orders JOIN \"order-lines\" t1 ON (orders.oid = t1.\"line-oid\")");
+            assertThat(scanOf(pushDotted(SHOP + "query { σ `line-oid` > 1 (shop.`order-lines`) };"))
+                    .nativeQuery())
+                    .isEqualTo("SELECT lid, \"line-oid\" FROM \"order-lines\" WHERE (\"line-oid\" > 1)");
+        }
+
+        @Test
+        @DisplayName("a self-join is still not folded — one qualifier cannot say which side")
+        void selfJoinIsNotFolded() {
+            // A qualified reference is refused by analysis as ambiguous, so the condition
+            // names no column; the fold must still decline on the names alone.
+            assertThat(pushDotted(SHOP + "query { shop.orders ⨝ 1 = 1 shop.orders };")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a path into a nested column is not resolved by its tail")
+        void nestedPathIsNotResolvedByItsTail() {
+            // `addr.city` is a path into the left's struct; the right has a column named
+            // `city`. Binding the reference by its tail would compare the right's `city`.
+            assertThat(pushDotted(SHOP + "query { shop.customers "
+                    + "⨝ addr.city = shop.orders.city shop.orders };")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("an AS-OF join folds into the LATERAL lookup, the sub-select aliased too")
+        void asOfFolds() {
+            String pg = "connection shop from database { url: \"jdbc:postgresql://h/db\" };\n";
+            assertThat(scanOf(pushDotted(pg + "query { shop.trades ASOF "
+                    + "shop.trades.sym = shop.quotes.qsym ∧ shop.trades.t >= shop.quotes.qt "
+                    + "shop.quotes };")).nativeQuery())
+                    .isEqualTo("SELECT \"trades\".\"sym\", \"trades\".\"t\", "
+                            + "\"quotes\".\"qsym\", \"quotes\".\"qt\" "
+                            + "FROM \"trades\" \"trades\" LEFT JOIN LATERAL ("
+                            + "SELECT \"quotes\".\"qsym\", \"quotes\".\"qt\" FROM \"quotes\" \"quotes\" "
+                            + "WHERE ((\"trades\".\"sym\" = \"quotes\".\"qsym\") "
+                            + "AND (\"trades\".\"t\" >= \"quotes\".\"qt\")) "
+                            + "ORDER BY \"quotes\".\"qt\" DESC LIMIT 1) \"quotes\" ON TRUE");
+        }
+
+        @Test
+        @DisplayName("an interval join folds into JOIN … ON")
+        void intervalJoinFolds() {
+            assertThat(scanOf(pushDotted(SHOP + "query { shop.stays IJOIN MEETS "
+                    + "(shop.stays.checkin, shop.stays.checkout, shop.bookings.bfrom, shop.bookings.bto) "
+                    + "shop.bookings };")).nativeQuery())
+                    .isEqualTo("SELECT stays.checkin, stays.checkout, bookings.bfrom, bookings.bto "
+                            + "FROM stays stays JOIN bookings bookings ON (stays.checkout = bookings.bfrom)");
         }
     }
 }

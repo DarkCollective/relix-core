@@ -83,10 +83,29 @@ where it can fold. That is why the two features compound — see
 | τ sort | `ORDER BY` | a projection, sort or limit is already folded, or a sort key is not a bare column. Above a γ the key may be one of its output columns |
 | λ limit | `LIMIT`/`OFFSET` | a limit is already folded |
 | `TOP` | `ORDER BY … LIMIT` | it is per-group (`PER …`) — only the whole-relation form folds |
-| ⨝ theta join | `JOIN … ON` | either side is not a bare table scan, the two sides are on different connections, or the condition has an untranslatable part |
+| ⨝ theta join | `JOIN … ON` | either side is not a bare table scan, the two sides are on different connections or are the same relation (a self-join), or the condition has an untranslatable part |
+| ⋈ natural join | `JOIN … ON` equating the shared columns | either side is not a bare table scan, the two sides are on different connections or are the same relation, or a shared column has a different type on each side |
 | `ASOF` join | `LEFT JOIN LATERAL (… ORDER BY … LIMIT 1) ON TRUE`, or `JOIN LATERAL` for the `INNER` form | the dialect is not PostgreSQL, or the join carries a `WITHIN` tolerance |
 | `IJOIN` interval | `JOIN … ON` over the endpoints | either side is not a bare scan, or they are on different connections |
 | `WINDOW` / `ROLLING` | `OVER (PARTITION BY … ORDER BY …)` | the dialect is MySQL, or a projection, grouping or limit is already folded |
+
+A join folds the same way whether its tables are declared sources or are named
+directly as `connection.table`. The generated statement names each side by an
+alias of its own: the relation's name when that is a plain identifier, otherwise
+the table's name, and `t0`/`t1` when neither is. A condition still refers to a side
+by its relation name, so over two undeclared tables
+
+```relix
+connection shop from database { url: "jdbc:h2:mem:shop" };
+query { shop.customers ⨝ shop.customers.customer_id = shop.orders.customer_id shop.orders };
+```
+
+folds to one statement:
+
+```sql
+SELECT customers.customer_id, customers.name, orders.order_id, orders.customer_id, orders.amount
+FROM customers customers JOIN orders orders ON (customers.customer_id = orders.customer_id)
+```
 
 ### Above a γ
 
@@ -121,10 +140,10 @@ places them. Repeating it is legal everywhere, so it is what every dialect gets.
 A π above a γ is the one that does not fold: it would have to rewrite the select
 list the grouping fixed, and the projection happens in the engine instead.
 
-Every other operator is computed by the engine. That includes the natural join ⋈,
-the outer joins ⟕ ⟖ ⟗, the semi and anti joins ⋉ ▷, every set operation
-(∪ ⊎ ⊔ ∩ − ∆ × ÷ ∘), μ unnest, the recursion and graph operators
-(`CLOSURE`, `CLUSTER`, `PATH`, `FIX`, `TRACE`), `PIVOT`/`UNPIVOT`, `TREE`,
+Every other operator is computed by the engine. That includes the outer joins
+⟕ ⟖ ⟗, the semi and anti joins ⋉ ▷, every set operation (∪ ⊎ ⊔ ∩ − ∆ × ÷ ∘),
+μ unnest, the recursion and graph operators (`CLOSURE`, `CLUSTER`, `PATH`, `FIX`,
+`TRACE`), `PIVOT`/`UNPIVOT`, `TREE`,
 `SESSIONIZE`, `DOWNSAMPLE`, `SAMPLE`, `COVER`, `SOLVE`, `OPTIMIZE` and ω `WHY`.
 An outer join over two tables of one database is therefore an engine join over
 two pushed scans — each side's filters still fold, and the join itself does not.
@@ -300,9 +319,16 @@ comparison at all, at the cost of computing those in the engine — see
 
 | Dialect | Identifiers | Notable |
 |---|---|---|
-| `generic` (default) | unquoted | no `DATE_TRUNC`; relies on the backend folding unquoted identifiers, and on its string comparison being the common one — see below |
+| `generic` (default) | unquoted, unless not a plain identifier | no `DATE_TRUNC`; relies on the backend folding unquoted identifiers, and on its string comparison being the common one — see below |
 | `postgres` | `"quoted"` | the only dialect that folds an `ASOF` join, `DURATION` literals and `NULLS LAST`; string *ordering* is collated, string equality is not |
 | `mysql` | `` `quoted` `` | no window functions, so those are computed in the engine; `DATE_TRUNC` folds through `DATE_FORMAT`; string comparison and ordering are collated |
+
+Each dialect writes a table name one part at a time, so a schema-qualified
+`table: "sales.orders"` becomes `"sales"."orders"` on PostgreSQL. On `generic`, a
+name that is a plain identifier (letters, digits and `_`, not starting with a digit)
+is written bare, and any other name is double-quoted exactly as written. A table
+created as `"order-lines"` is therefore read as `"order-lines"`, and its name must
+match the stored name's case.
 
 ### Strings, and the collation they are compared under
 

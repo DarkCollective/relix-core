@@ -196,6 +196,35 @@ final class NestedSchemaTypeTest {
     }
 
     @Nested
+    @DisplayName("names the grammar does not spell bare")
+    final class DelimitedNames {
+
+        @Test
+        @DisplayName("a column may be named between backticks")
+        void delimitedColumn() {
+            assertThat(columnType("{ id: NUMBER, `unit-price`: NUMBER }", "unit-price"))
+                    .isEqualTo(ScalarType.NUMBER);
+        }
+
+        @Test
+        @DisplayName("so may a struct field")
+        void delimitedField() {
+            assertThat(columnType("{ addr: { `post-code`: STRING } }", "addr"))
+                    .isEqualTo(new StructType(List.of(
+                            new StructType.Field("post-code", ScalarType.STRING))));
+        }
+
+        @Test
+        @DisplayName("a relation name may not — only a database names its columns")
+        void delimitedRelationNameIsRefused() {
+            assertThatThrownBy(() -> ScriptParser.parse(CONNECTION
+                    + "source `my-docs` from mg { table: \"docs\" };\nquery { 1 };"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("Expected source name");
+        }
+    }
+
+    @Nested
     @DisplayName("what stays scalar")
     final class StillScalar {
 

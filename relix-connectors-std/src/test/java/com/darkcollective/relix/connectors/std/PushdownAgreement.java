@@ -21,6 +21,7 @@ import com.darkcollective.relix.processor.DataSourceConnector;
 import com.darkcollective.relix.processor.ExecutionContext;
 import com.darkcollective.relix.processor.QueryExecutor;
 import com.darkcollective.relix.processor.Row;
+import com.darkcollective.relix.semantic.CatalogProvider;
 import com.darkcollective.relix.semantic.SemanticFixtures;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.semantic.SemanticResult;
@@ -91,6 +92,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 final class PushdownAgreement {
 
+    /**
+     * What a dotted {@code db.orders} reference is resolved through: the live database.
+     *
+     * <p>Schemas only. A declared source's statistics would otherwise be read too, which
+     * the corpus was written without, and a cost decision moving under it is not what a
+     * dotted-reference case is here to test.
+     */
+    private static final CatalogProvider CATALOG = new JdbcCatalogProvider()::tableSchema;
+
     private final String preamble;
     private final Dialect dialect;
     private final boolean exactStrings;
@@ -155,7 +165,7 @@ final class PushdownAgreement {
      */
     void assertAgrees(String expression, boolean expectedToFold, String knownDivergence) {
         String script = preamble + "query { " + expression + " };";
-        SemanticResult analysis = SemanticFixtures.analyze(script);
+        SemanticResult analysis = SemanticFixtures.analyze(script, CATALOG);
         assertThat(analysis.errors()).as("analysis of: %s", expression).isEmpty();
         SemanticModel model = analysis.model().orElseThrow();
         assertThat(model.connections().values().stream().map(Dialect::of))
@@ -230,7 +240,7 @@ final class PushdownAgreement {
      */
     boolean assertAgreesWhenFolded(String expression) {
         String script = preamble + "query { " + expression + " };";
-        SemanticResult analysis = SemanticFixtures.analyze(script);
+        SemanticResult analysis = SemanticFixtures.analyze(script, CATALOG);
         if (!analysis.errors().isEmpty() || analysis.model().isEmpty()) {
             return false;   // not a query; the generator's business, not the renderer's
         }

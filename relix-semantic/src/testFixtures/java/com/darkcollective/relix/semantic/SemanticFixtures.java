@@ -131,8 +131,34 @@ public final class SemanticFixtures {
      * @return the analyser
      */
     public static SemanticAnalyzer analyzer(ScriptLoader loader) {
-        return new SemanticAnalyzer(loader, BuiltinProvider.none(), CatalogProvider.NONE,
+        return analyzer(loader, CatalogProvider.NONE);
+    }
+
+    /**
+     * An analyser over {@code loader} that resolves a dotted {@code connection.table}
+     * reference through {@code catalog}.
+     *
+     * @param loader  the script loader used to resolve imports
+     * @param catalog what a dotted reference's schema is asked of
+     * @return the analyser
+     */
+    public static SemanticAnalyzer analyzer(ScriptLoader loader, CatalogProvider catalog) {
+        return new SemanticAnalyzer(loader, BuiltinProvider.none(), catalog,
                 GeneratorCatalog.NONE, FUNCTIONS);
+    }
+
+    /**
+     * Analyzes {@code src}, resolving dotted {@code connection.table} references
+     * through {@code catalog} — the form a script takes when it declares no source.
+     *
+     * @param src     the {@code .relix} source
+     * @param catalog what a dotted reference's schema is asked of
+     * @return the semantic analysis result
+     */
+    public static SemanticResult analyze(String src, CatalogProvider catalog) {
+        return analyzer(new InMemoryScriptLoader(Map.of()), catalog)
+                .analyze(ScriptParser.parse(src, SemanticAnalyzer.STDIN_PATH),
+                        SemanticAnalyzer.STDIN_PATH);
     }
 
     /**

@@ -21,7 +21,9 @@ expected, just like any other table.
 an optional `header:` flag (default true) and a `schema`. Column types are NUMBER,
 STRING, BOOLEAN, ANY, and the temporal types DATE/TIME/TIMESTAMP/DURATION. A column
 may also be **nested**: `{ field: TYPE, … }` declares a
-struct and `[TYPE]` an array, composing to any depth. `${VAR}` placeholders in URLs
+struct and `[TYPE]` an array, composing to any depth. A column or field whose name
+is not a plain identifier, such as `unit-price`, is written between backticks, as it
+is in a query; a doubled backtick stands for one. `${VAR}` placeholders in URLs
 are substituted from the active environment before analysis. Other source kinds (json, http, generator) exist for
 their respective connectors. CSV paths resolve relative to the script's directory.
 
@@ -65,6 +67,21 @@ The declaration is what types a path through the column: `address.geo.lat` infer
 NUMBER and `μ items` yields the struct, where an `ANY` column would give `ANY` for
 both and catch no misspelled field. Declare `ANY` when the shape genuinely varies —
 schema-on-read is still what a document store often wants.
+
+A table whose column names are not plain identifiers, named between backticks here
+and in the query that reads them:
+```relix
+source Lines from database {
+    url: "${DB}", table: "order-lines",
+    schema: { lid: NUMBER, `unit-price`: NUMBER, `line total`: NUMBER }
+};
+query { σ `unit-price` > 10 (Lines) };
+```
+
+Backticks name a column, not a relation. A source's own name must be a plain name:
+```relix-invalid
+source `order-lines` from database { url: "${DB}", table: "order-lines" };
+```
 
 A CSV file with a header row:
 ```relix

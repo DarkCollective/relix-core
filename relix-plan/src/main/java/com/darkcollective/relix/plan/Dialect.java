@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.StringJoiner;
+import java.util.regex.Pattern;
 
 /**
  * A SQL dialect — the database-specific surface syntax used when the planner
@@ -37,10 +38,13 @@ import java.util.StringJoiner;
  * databases relix targets:
  *
  * <ul>
- *   <li><b>Identifier quoting</b> — {@link #quote(String)} wraps a column, table,
- *       or alias in the dialect's quote characters ({@code "x"} for PostgreSQL,
- *       {@code `x`} for MySQL), or leaves it bare for the generic dialect (which
- *       relies on the database folding unquoted identifiers case-insensitively).</li>
+ *   <li><b>Identifier quoting</b> — {@link #quote(String)} wraps a column or alias
+ *       in the dialect's quote characters ({@code "x"} for PostgreSQL,
+ *       {@code `x`} for MySQL). The generic dialect leaves a plain identifier bare,
+ *       relying on the database folding unquoted identifiers case-insensitively, and
+ *       delimits any other name with standard SQL's {@code "x"}, since no backend
+ *       reads {@code order-lines} bare. {@link #table(String)} does the same for each
+ *       part of a possibly schema-qualified table name.</li>
  *   <li><b>Row limiting</b> — {@link #limit(long, long)} renders the
  *       {@code LIMIT}/{@code OFFSET} clause.</li>
  *   <li><b>String literals</b> — {@link #stringLiteral(String)} writes a value as
@@ -50,8 +54,9 @@ import java.util.StringJoiner;
  * </ul>
  *
  * <p>The {@link #GENERIC} dialect emits the exact SQL the planner produced before
- * dialects existed (unquoted identifiers, {@code LIMIT n [OFFSET m]}), so it is a
- * safe default for H2, PostgreSQL, MySQL, and SQLite.  The {@link #POSTGRES} and
+ * dialects existed for every name that is a plain identifier (unquoted identifiers,
+ * {@code LIMIT n [OFFSET m]}), so it is a safe default for H2, PostgreSQL, MySQL, and
+ * SQLite.  The {@link #POSTGRES} and
  * {@link #MYSQL} dialects add identifier quoting, which is correct when the relix
  * schema's column names match the database's stored case (always true for
  * introspected {@code conn.table} references).
@@ -62,7 +67,7 @@ import java.util.StringJoiner;
  * from an answer nobody considered, and the two differ exactly when the new backend is
  * the odd one out — which is the case a default is least able to get right. The two
  * methods that do not switch are the two whose answer is not the backend's to give:
- * {@link #quote} reads the quote characters each constant declares, and {@link #boolAnd}
+ * {@link #quote} reads the quoting each constant declares, and {@link #boolAnd}
  * renders SQL-92 that no backend lacks.
  *
  * <p>All three constants render {@code LIMIT n [OFFSET m]}. A backend whose row-limiting
@@ -72,41 +77,76 @@ import java.util.StringJoiner;
  */
 public enum Dialect {
 
-    /** Unquoted identifiers and {@code LIMIT n [OFFSET m]} — the default. */
-    GENERIC("", ""),
+    /**
+     * Unquoted identifiers and {@code LIMIT n [OFFSET m]} — the default. A name that is
+     * not a plain identifier is double-quoted, as standard SQL delimits one.
+     */
+    GENERIC("\"", "\"", false),
 
     /** PostgreSQL: double-quoted identifiers. */
-    POSTGRES("\"", "\""),
+    POSTGRES("\"", "\"", true),
 
     /** MySQL / MariaDB: back-tick-quoted identifiers. */
-    MYSQL("`", "`");
+    MYSQL("`", "`", true);
+
+    /** A name every backend reads bare, up to case folding. */
+    private static final Pattern PLAIN_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     private final String open;
     private final String close;
+    private final boolean quotesEveryName;
 
-    Dialect(String open, String close) {
+    Dialect(String open, String close, boolean quotesEveryName) {
         this.open = open;
         this.close = close;
+        this.quotesEveryName = quotesEveryName;
     }
 
     /**
      * Quotes an identifier for this dialect, doubling any embedded quote character.
-     * The generic dialect returns the identifier unchanged.
+     * The generic dialect returns a plain identifier ({@code [A-Za-z_][A-Za-z0-9_]*})
+     * unchanged and double-quotes anything else.
+     *
+     * <p>Generic leaves a plain identifier bare because it does not know how the backend
+     * folds case, and a bare name lets the backend decide. A name like
+     * {@code order-lines} is different: no backend reads it bare, and a table or column
+     * with that name can only have been created delimited, which also preserved its
+     * case, so the delimited form written exactly as named is the one that finds it.
      *
      * <p>One of the two methods here that does not switch on the dialect, and it needs
-     * no arm for the same reason a switch would give one: the quote characters are
+     * no arm for the same reason a switch would give one: the quoting is given by
      * constructor arguments, so a new constant states its own answer where it is
      * declared. Doubling the closing character is the rule every quoting backend
      * follows, bracket-quoting included.
      *
-     * @param identifier the column, table, or alias name; must not be null
-     * @return the quoted (or, for {@link #GENERIC}, unchanged) identifier
+     * @param identifier the column or alias name; must not be null
+     * @return the identifier as this dialect writes it
      */
     public String quote(String identifier) {
-        if (open.isEmpty()) {
+        if (!quotesEveryName && PLAIN_IDENTIFIER.matcher(identifier).matches()) {
             return identifier;
         }
         return open + identifier.replace(close, close + close) + close;
+    }
+
+    /**
+     * Writes a table name for this dialect, quoting each dot-separated part with
+     * {@link #quote}: {@code public.orders} becomes {@code "public"."orders"} on
+     * PostgreSQL. A dot therefore always separates a schema from a table.
+     *
+     * <p>A {@code FROM} clause, pushed or not, writes its table through this, so that the
+     * engine's own scan of a table and a query pushed to the same table name the same
+     * thing.
+     *
+     * @param table the table name as declared, possibly schema-qualified; must not be null
+     * @return the table name as this dialect writes it
+     */
+    public String table(String table) {
+        StringJoiner parts = new StringJoiner(".");
+        for (String part : table.split("\\.", -1)) {
+            parts.add(quote(part));
+        }
+        return parts.toString();
     }
 
     /**

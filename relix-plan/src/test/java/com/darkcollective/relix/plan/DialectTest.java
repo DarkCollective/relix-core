@@ -60,6 +60,26 @@ final class DialectTest {
             assertThat(Dialect.MYSQL.quote("col")).isEqualTo("`col`");
             assertThat(Dialect.MYSQL.quote("a`b")).isEqualTo("`a``b`");
         }
+
+        @Test
+        @DisplayName("generic double-quotes a name that is not a plain identifier, exactly as written")
+        void genericDelimitsANonIdentifier() {
+            assertThat(Dialect.GENERIC.quote("_col9")).isEqualTo("_col9");
+            assertThat(Dialect.GENERIC.quote("order-lines")).isEqualTo("\"order-lines\"");
+            assertThat(Dialect.GENERIC.quote("Unit Price")).isEqualTo("\"Unit Price\"");
+            assertThat(Dialect.GENERIC.quote("9lives")).isEqualTo("\"9lives\"");
+            assertThat(Dialect.GENERIC.quote("a\"b")).isEqualTo("\"a\"\"b\"");
+        }
+
+        @Test
+        @DisplayName("a table name is quoted part by part, a dot separating schema from table")
+        void tableNamesAreQuotedPerPart() {
+            assertThat(Dialect.GENERIC.table("orders")).isEqualTo("orders");
+            assertThat(Dialect.GENERIC.table("public.orders")).isEqualTo("public.orders");
+            assertThat(Dialect.GENERIC.table("sales.order-lines")).isEqualTo("sales.\"order-lines\"");
+            assertThat(Dialect.POSTGRES.table("public.orders")).isEqualTo("\"public\".\"orders\"");
+            assertThat(Dialect.MYSQL.table("shop.orders")).isEqualTo("`shop`.`orders`");
+        }
     }
 
     @Nested

@@ -308,7 +308,7 @@ final class SourceConfigParser {
     }
 
     private ColumnSpec parseColumnSpec(boolean allowDirection) {
-        String name = parser.requireName("column name");
+        String name = parser.requireColumnName("column name");
         parser.consume(LangTokenType.COLON);
 
         ColumnDirection direction = ColumnDirection.OUT;

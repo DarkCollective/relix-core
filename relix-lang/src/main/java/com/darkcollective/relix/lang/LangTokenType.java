@@ -165,6 +165,12 @@ public enum LangTokenType {
 
     /** An unrecognised identifier: a name that is not a reserved keyword. */
     IDENTIFIER,
+    /**
+     * A backtick-delimited name, such as {@code `unit-price`}. The {@link LangToken#value()}
+     * holds the name without the backticks, a doubled backtick read as one. Accepted only
+     * where a {@code schema:} block names a column or a struct field.
+     */
+    DELIMITED_IDENTIFIER,
     /** A double-quoted string literal.  The {@link LangToken#value()} holds the
      *  content without the enclosing quotes (escape sequences resolved). */
     STRING_LIT,

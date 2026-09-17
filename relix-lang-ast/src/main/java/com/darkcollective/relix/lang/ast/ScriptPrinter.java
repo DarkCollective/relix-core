@@ -43,7 +43,11 @@ import com.darkcollective.relix.lang.ast.source.QueryParamBinding;
 import com.darkcollective.relix.lang.ast.source.SourceConfig;
 import com.darkcollective.relix.lang.ast.table.CsvInlineTable;
 import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
+import com.darkcollective.relix.symbol.ArrayType;
 import com.darkcollective.relix.symbol.ParameterDefinition;
+import com.darkcollective.relix.symbol.ScalarType;
+import com.darkcollective.relix.symbol.StructType;
+import com.darkcollective.relix.symbol.Type;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -356,9 +360,38 @@ public final class ScriptPrinter {
         }
         StringJoiner joiner = new StringJoiner(", ", "{ ", " }");
         for (ColumnSpec column : columns) {
-            joiner.add(column.name() + ": " + column.type().display() + binding(column));
+            joiner.add(columnName(column.name()) + ": " + type(column.type()) + binding(column));
         }
         return entry("schema", joiner.toString());
+    }
+
+    /**
+     * A column or struct-field name, backtick-delimited when it is not a plain
+     * identifier. A database names its own columns, so {@code unit-price} is as legal
+     * here as {@code price}.
+     */
+    private static String columnName(String name) {
+        boolean plain = !name.isEmpty()
+                && (Character.isLetter(name.charAt(0)) || name.charAt(0) == '_')
+                && name.chars().allMatch(c -> Character.isLetterOrDigit(c) || c == '_');
+        return plain ? name : "`" + name.replace("`", "``") + "`";
+    }
+
+    /**
+     * A column type in the grammar's own spelling: {@code { field: type }} for a struct
+     * and {@code [type]} for an array. {@code Type.display()} is a spelling for people,
+     * and the parser reads neither {@code struct{…}} nor {@code array<…>}.
+     */
+    private static String type(Type type) {
+        return switch (type) {
+            case ScalarType scalar -> scalar.display();
+            case StructType struct -> {
+                StringJoiner fields = new StringJoiner(", ", "{ ", " }");
+                struct.fields().forEach(f -> fields.add(columnName(f.name()) + ": " + type(f.type())));
+                yield fields.toString();
+            }
+            case ArrayType array -> "[" + type(array.element()) + "]";
+        };
     }
 
     private static String binding(ColumnSpec column) {

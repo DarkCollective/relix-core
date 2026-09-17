@@ -35,6 +35,7 @@ import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.SortSpecification;
+import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.TopKNode;
 import com.darkcollective.relix.ast.UniversalNode;
@@ -112,8 +113,13 @@ import java.util.stream.Stream;
  *       did.  A partitioned {@code TOP … PER k} does not: SQL needs a window function
  *       or a lateral join for it, so it falls back to in-engine execution;</li>
  *   <li>a {@link ThetaJoinNode} folds into a {@code JOIN … ON} when both inputs are
- *       bare connection-table scans on the <em>same</em> connection with distinct,
- *       identifier-shaped aliases and a translatable, unambiguous condition.</li>
+ *       bare connection-table scans of differently named relations on the
+ *       <em>same</em> connection, with a translatable, unambiguous condition. Each side
+ *       is named in the statement by an alias the fold chooses, so a dotted
+ *       {@code shop.orders} folds as readily as a declared source.</li>
+ *   <li>a {@link NaturalJoinNode} folds the same way, into a {@code JOIN … ON} whose
+ *       condition equates the columns the two headings share, when those columns have
+ *       the same type on both sides.</li>
  * </ul>
  *
  * <p>Anything else — a non-connection leaf, a mixed-connection sub-tree, an
@@ -200,6 +206,7 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             case LimitNode l       -> limit(l);
             case TopKNode t        -> topK(t);
             case ThetaJoinNode j   -> join(j);
+            case NaturalJoinNode j -> naturalJoin(j);
             case AsOfJoinNode j    -> asOfJoin(j);
             case IntervalJoinNode j -> intervalJoin(j);
             case WindowNode w      -> window(w);
@@ -225,7 +232,7 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         }
         ColumnRenderer renderer = name -> Optional.of(dialect.quote(SqlExpressions.column(name)));
         Pushed pushed = new Pushed(declaration.connectorType(), connection,
-                dialect.quote(table.table()), selectList, schema, renderer, dialect);
+                dialect.table(table.table()), selectList, schema, renderer, dialect);
         StringColumns scanStrings = stringColumnsOf(schema);
         pushed.exactStrings = Dialect.comparesStringsExactly(declaration);
         pushed.comparing = comparingRenderer(renderer, scanStrings,
@@ -234,7 +241,7 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         pushed.ordering = comparingRenderer(renderer, scanStrings,
                 pushed.ordersExactly, dialect, dialect::exactStringOrder);
         pushed.bareScan = true;
-        pushed.alias = node.name();
+        pushed.relationName = node.name();
         pushed.tableName = table.table();
         pushed.baseColumns = schema.columns();
         return Optional.of(pushed);
@@ -993,17 +1000,15 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         }
         Pushed left = leftOpt.get();
         Pushed right = rightOpt.get();
-        // Conservative: only join two bare scans on the same connection with distinct,
-        // identifier-shaped aliases.  Anything else falls back to an in-engine join.
+        // Conservative: only join two bare scans of distinct relations on the same
+        // connection.  Anything else falls back to an in-engine join.
         if (!bareJoinable(left, right)) {
             return Optional.empty();
         }
 
         Dialect dialect = left.dialect;   // both sides share the connection, hence the dialect
-        Map<String, List<String>> aliasColumns = new LinkedHashMap<>();
-        aliasColumns.put(left.alias, columnNames(left.baseColumns));
-        aliasColumns.put(right.alias, columnNames(right.baseColumns));
-        ColumnRenderer renderer = joinRenderer(aliasColumns, dialect);
+        JoinAliases aliases = JoinAliases.of(left, right);
+        ColumnRenderer renderer = joinRenderer(left, right, aliases, dialect);
         // A join condition compares the two sides' columns to each other, so it renders
         // in comparison position. Both sides share the connection, hence one answer.
         StringColumns joinStrings = stringColumnsOf(left.baseColumns, right.baseColumns);
@@ -1019,15 +1024,11 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         }
 
         List<String> selectList = new ArrayList<>();
-        for (ColumnDefinition col : left.baseColumns) {
-            selectList.add(dialect.quote(left.alias) + "." + dialect.quote(SqlExpressions.column(col.name())));
-        }
-        for (ColumnDefinition col : right.baseColumns) {
-            selectList.add(dialect.quote(right.alias) + "." + dialect.quote(SqlExpressions.column(col.name())));
-        }
+        selectList.addAll(qualifiedColumns(dialect, aliases.left(), left.baseColumns));
+        selectList.addAll(qualifiedColumns(dialect, aliases.right(), right.baseColumns));
 
-        String from = dialect.quote(left.tableName) + " " + dialect.quote(left.alias)
-                + " JOIN " + dialect.quote(right.tableName) + " " + dialect.quote(right.alias)
+        String from = dialect.table(left.tableName) + " " + dialect.quote(aliases.left())
+                + " JOIN " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
                 + " ON " + condition.get();
         Pushed joined = new Pushed(left.connectorType, left.connection, from, selectList,
                 schemaOf(node), renderer, dialect);
@@ -1042,16 +1043,165 @@ final class SqlPushdownPlanner implements PushdownRenderer {
     }
 
     /**
+     * Folds a natural join over two bare connection-table scans into a
+     * {@code JOIN … ON l.c = r.c AND …} over the columns the two headings share.
+     *
+     * <p>The condition is written out rather than left to SQL's {@code NATURAL JOIN},
+     * which decides the shared columns from the database's tables, not from the headings
+     * the engine joined on, and matches their names by the database's own case rules.
+     * The select list follows the join's inferred heading, where each shared column
+     * appears once and holds the left side's value.
+     *
+     * <p>Declines when the headings share no column, which analysis already refuses, and
+     * when a shared column has a different type on each side, because the engine's
+     * equality then follows its own coercions (an ISO string equals the date it spells)
+     * and a database's follows others.
+     */
+    private Optional<Pushed> naturalJoin(NaturalJoinNode node) {
+        Optional<Pushed> leftOpt = build(node.left());
+        Optional<Pushed> rightOpt = build(node.right());
+        if (leftOpt.isEmpty() || rightOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        Pushed left = leftOpt.get();
+        Pushed right = rightOpt.get();
+        if (!bareJoinable(left, right)) {
+            return Optional.empty();
+        }
+        List<String> shared = new ArrayList<>();
+        for (ColumnDefinition lc : left.baseColumns) {
+            for (ColumnDefinition rc : right.baseColumns) {
+                if (lc.name().equalsIgnoreCase(rc.name())) {
+                    if (!lc.type().equals(rc.type())) {
+                        return Optional.empty();
+                    }
+                    shared.add(lc.name());
+                }
+            }
+        }
+        if (shared.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Dialect dialect = left.dialect;   // both sides share the connection, hence the dialect
+        JoinAliases aliases = JoinAliases.of(left, right);
+        ColumnRenderer renderer = naturalJoinRenderer(left, right, shared, aliases, dialect);
+        StringColumns joinStrings = stringColumnsOf(left.baseColumns, right.baseColumns);
+        List<String> condition = new ArrayList<>(shared.size());
+        for (String column : shared) {
+            String l = qualified(dialect, aliases.left(), column);
+            String r = qualified(dialect, aliases.right(), column);
+            if (!left.exactStrings && joinStrings.includes(column)) {
+                l = dialect.exactStringComparison(l);
+                r = dialect.exactStringComparison(r);
+            }
+            condition.add("(" + l + " = " + r + ")");
+        }
+
+        // The select list is read off the join's own heading, so it cannot disagree with
+        // it: a column the left side has comes from the left, any other from the right.
+        List<String> leftColumns = columnNames(left.baseColumns);
+        Schema schema = schemaOf(node);
+        List<String> selectList = new ArrayList<>(schema.width());
+        for (ColumnDefinition col : schema.columns()) {
+            String alias = containsIgnoreCase(leftColumns, col.name()) ? aliases.left() : aliases.right();
+            selectList.add(qualified(dialect, alias, col.name()));
+        }
+
+        String from = dialect.table(left.tableName) + " " + dialect.quote(aliases.left())
+                + " JOIN " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
+                + " ON " + String.join(" AND ", condition);
+        Pushed joined = new Pushed(left.connectorType, left.connection, from, selectList,
+                schema, renderer, dialect);
+        joined.exactStrings = left.exactStrings;
+        joined.comparing = comparingRenderer(renderer, joinStrings,
+                left.exactStrings, dialect, dialect::exactStringComparison);
+        joined.ordersExactly = left.ordersExactly;
+        joined.ordering = comparingRenderer(renderer, joinStrings,
+                left.ordersExactly, dialect, dialect::exactStringOrder);
+        return Optional.of(joined);
+    }
+
+    /**
+     * Renders a reference to a natural join's output. A shared column is one column
+     * there, holding the left row's value and answering to the left relation's name, as
+     * analysis resolves it; any other column renders against the side that has it. A
+     * qualifier naming the other side, or neither, declines.
+     */
+    private static ColumnRenderer naturalJoinRenderer(Pushed left, Pushed right, List<String> shared,
+                                                      JoinAliases aliases, Dialect dialect) {
+        List<String> leftColumns = columnNames(left.baseColumns);
+        List<String> rightColumns = columnNames(right.baseColumns);
+        return attribute -> {
+            String col = SqlExpressions.column(attribute);
+            Optional<String> qualifier = SqlExpressions.qualifier(attribute);
+            if (qualifier.isPresent()
+                    && !qualifier.get().equalsIgnoreCase(left.relationName)
+                    && !qualifier.get().equalsIgnoreCase(right.relationName)) {
+                return Optional.empty();
+            }
+            boolean fromRight = qualifier.isPresent()
+                    && qualifier.get().equalsIgnoreCase(right.relationName);
+            if (!fromRight && containsIgnoreCase(leftColumns, col)) {
+                return Optional.of(qualified(dialect, aliases.left(), col));
+            }
+            boolean fromLeft = qualifier.isPresent() && !fromRight;
+            if (!fromLeft && containsIgnoreCase(rightColumns, col) && !containsIgnoreCase(shared, col)) {
+                return Optional.of(qualified(dialect, aliases.right(), col));
+            }
+            return Optional.empty();
+        };
+    }
+
+    /**
      * Whether two pushed sub-trees are joinable as bare connection-table scans: both
-     * are bare scans on the <em>same</em> connection with distinct, identifier-shaped
-     * aliases.  Shared by the theta-join, AS-OF, and interval-join folds.
+     * are bare scans on the <em>same</em> connection, of relations with different
+     * names.  Shared by the theta-join, AS-OF, and interval-join folds.
+     *
+     * <p>The names must differ because a qualifier is all a condition has to say which
+     * side it means: in a self-join {@code Orders.id} names both, and the fold would have
+     * to guess. What the names need <em>not</em> be is SQL identifiers — the statement
+     * names each side by an alias of its own ({@link JoinAliases}), which is what lets a
+     * dotted {@code shop.orders} fold.
      */
     private static boolean bareJoinable(Pushed left, Pushed right) {
         return left.bareScan && right.bareScan
                 && left.connection.equals(right.connection)
-                && IDENTIFIER.matcher(left.alias).matches()
-                && IDENTIFIER.matcher(right.alias).matches()
-                && !left.alias.equalsIgnoreCase(right.alias);
+                && !left.relationName.equalsIgnoreCase(right.relationName);
+    }
+
+    /**
+     * The SQL aliases a folded join names its two sides by.
+     *
+     * <p>An alias only has to be a unique, safe identifier inside one statement; it never
+     * has to <em>be</em> the relation's name. It is the name when that is already an
+     * identifier, which keeps the SQL readable ({@code customers Customers}); otherwise
+     * the last segment of a dotted name ({@code shop.orders} → {@code orders}), and
+     * failing that a positional {@code t0}/{@code t1}. A clash between the two — which
+     * only derivation can cause, since {@link #bareJoinable} refuses equal names — is
+     * settled by suffixing the right side.
+     *
+     * @param left  the left side's alias
+     * @param right the right side's alias
+     */
+    private record JoinAliases(String left, String right) {
+
+        static JoinAliases of(Pushed leftSide, Pushed rightSide) {
+            String left = aliasFor(leftSide.relationName, "t0");
+            String right = aliasFor(rightSide.relationName, "t1");
+            if (left.equalsIgnoreCase(right)) {
+                right = right + "_1";
+            }
+            return new JoinAliases(left, right);
+        }
+
+        private static String aliasFor(String relationName, String fallback) {
+            if (IDENTIFIER.matcher(relationName).matches()) {
+                return relationName;
+            }
+            String last = relationName.substring(relationName.lastIndexOf('.') + 1);
+            return IDENTIFIER.matcher(last).matches() ? last : fallback;
+        }
     }
 
     /**
@@ -1093,10 +1243,8 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         if (!dialect.supportsLateralAsOf()) {
             return Optional.empty();
         }
-        Map<String, List<String>> aliasColumns = new LinkedHashMap<>();
-        aliasColumns.put(left.alias, columnNames(left.baseColumns));
-        aliasColumns.put(right.alias, columnNames(right.baseColumns));
-        ColumnRenderer renderer = joinRenderer(aliasColumns, dialect);
+        JoinAliases aliases = JoinAliases.of(left, right);
+        ColumnRenderer renderer = joinRenderer(left, right, aliases, dialect);
         // A join condition compares the two sides' columns to each other, so it renders
         // in comparison position. Both sides share the connection, hence one answer.
         StringColumns joinStrings = stringColumnsOf(left.baseColumns, right.baseColumns);
@@ -1110,30 +1258,31 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         if (condition.isEmpty()) {
             return Optional.empty();
         }
-        // Decode the ordering inequality to drive the ORDER BY direction; the aliases
-        // double as the relation-name sets (base() sets each alias to its relation name).
+        // Decode the ordering inequality to drive the ORDER BY direction. A condition
+        // qualifies by relation name, never by the SQL alias, so the names are the sets.
         JoinPlanning.AsOfMatch match = JoinPlanning.extractAsOfMatch(
                 node.condition(), schemaOf(node.left()), schemaOf(node.right()),
-                Set.of(left.alias.toLowerCase(Locale.ROOT)), Set.of(right.alias.toLowerCase(Locale.ROOT)));
+                Set.of(left.relationName.toLowerCase(Locale.ROOT)),
+                Set.of(right.relationName.toLowerCase(Locale.ROOT)));
         if (match == null) {
             return Optional.empty();
         }
         String matchColumn = right.baseColumns.get(match.rightMatchIndex()).name();
-        String orderBy = qualified(dialect, right.alias, matchColumn)
+        String orderBy = qualified(dialect, aliases.right(), matchColumn)
                 + (match.backward() ? " DESC" : " ASC");
 
-        String subquery = "SELECT " + String.join(", ", qualifiedColumns(dialect, right.alias, right.baseColumns))
-                + " FROM " + dialect.quote(right.tableName) + " " + dialect.quote(right.alias)
+        String subquery = "SELECT " + String.join(", ", qualifiedColumns(dialect, aliases.right(), right.baseColumns))
+                + " FROM " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
                 + " WHERE " + condition.get()
                 + " ORDER BY " + orderBy
                 + " LIMIT 1";
         String lateral = node.inner() ? "JOIN LATERAL" : "LEFT JOIN LATERAL";
-        String from = dialect.quote(left.tableName) + " " + dialect.quote(left.alias)
-                + " " + lateral + " (" + subquery + ") " + dialect.quote(right.alias) + " ON TRUE";
+        String from = dialect.table(left.tableName) + " " + dialect.quote(aliases.left())
+                + " " + lateral + " (" + subquery + ") " + dialect.quote(aliases.right()) + " ON TRUE";
 
         List<String> selectList = new ArrayList<>();
-        selectList.addAll(qualifiedColumns(dialect, left.alias, left.baseColumns));
-        selectList.addAll(qualifiedColumns(dialect, right.alias, right.baseColumns));
+        selectList.addAll(qualifiedColumns(dialect, aliases.left(), left.baseColumns));
+        selectList.addAll(qualifiedColumns(dialect, aliases.right(), right.baseColumns));
         return Optional.of(new Pushed(left.connectorType, left.connection, from, selectList,
                 schemaOf(node), renderer, dialect));
     }
@@ -1162,10 +1311,8 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             return Optional.empty();
         }
         Dialect dialect = left.dialect;
-        Map<String, List<String>> aliasColumns = new LinkedHashMap<>();
-        aliasColumns.put(left.alias, columnNames(left.baseColumns));
-        aliasColumns.put(right.alias, columnNames(right.baseColumns));
-        ColumnRenderer renderer = joinRenderer(aliasColumns, dialect);
+        JoinAliases aliases = JoinAliases.of(left, right);
+        ColumnRenderer renderer = joinRenderer(left, right, aliases, dialect);
 
         Optional<String> ls = renderer.render(node.leftStart());
         Optional<String> le = renderer.render(node.leftEnd());
@@ -1177,10 +1324,10 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         String condition = allenCondition(node.relation(), ls.get(), le.get(), rs.get(), re.get());
 
         List<String> selectList = new ArrayList<>();
-        selectList.addAll(qualifiedColumns(dialect, left.alias, left.baseColumns));
-        selectList.addAll(qualifiedColumns(dialect, right.alias, right.baseColumns));
-        String from = dialect.quote(left.tableName) + " " + dialect.quote(left.alias)
-                + " JOIN " + dialect.quote(right.tableName) + " " + dialect.quote(right.alias)
+        selectList.addAll(qualifiedColumns(dialect, aliases.left(), left.baseColumns));
+        selectList.addAll(qualifiedColumns(dialect, aliases.right(), right.baseColumns));
+        String from = dialect.table(left.tableName) + " " + dialect.quote(aliases.left())
+                + " JOIN " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
                 + " ON " + condition;
         return Optional.of(new Pushed(left.connectorType, left.connection, from, selectList,
                 schemaOf(node), renderer, dialect));
@@ -1225,38 +1372,48 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         return out;
     }
 
-    private static ColumnRenderer joinRenderer(Map<String, List<String>> aliasColumns, Dialect dialect) {
+    /**
+     * Renders a reference in a folded join's condition as {@code alias.column}.
+     *
+     * <p>A qualified reference is resolved by the relation name it carries — the name
+     * the analyser checked it against, which for a dotted source is the whole of
+     * {@code shop.orders} — and then rendered with that side's SQL alias. Nothing else
+     * about a qualifier is trusted: one that names neither relation is a path into a
+     * nested column ({@code NestedPaths} is how the engine settles which side's), and a
+     * path has no {@code alias.column} spelling, so it declines rather than being
+     * resolved by its tail, which would bind it to whichever side has a column of that
+     * name. An unqualified reference renders only when exactly one side has the column.
+     */
+    private static ColumnRenderer joinRenderer(Pushed left, Pushed right, JoinAliases aliases,
+                                               Dialect dialect) {
+        List<String> leftColumns = columnNames(left.baseColumns);
+        List<String> rightColumns = columnNames(right.baseColumns);
         return attribute -> {
             String col = SqlExpressions.column(attribute);
             Optional<String> qualifier = SqlExpressions.qualifier(attribute);
             if (qualifier.isPresent()) {
-                String alias = matchAlias(qualifier.get(), aliasColumns.keySet());
-                if (alias == null || !containsIgnoreCase(aliasColumns.get(alias), col)) {
-                    return Optional.empty();
+                String q = qualifier.get();
+                if (q.equalsIgnoreCase(left.relationName)) {
+                    return containsIgnoreCase(leftColumns, col)
+                            ? Optional.of(dialect.quote(aliases.left()) + "." + dialect.quote(col))
+                            : Optional.empty();
                 }
-                return Optional.of(dialect.quote(alias) + "." + dialect.quote(col));
-            }
-            // Unqualified: resolve to the single alias that has the column, else ambiguous.
-            String found = null;
-            for (Map.Entry<String, List<String>> e : aliasColumns.entrySet()) {
-                if (containsIgnoreCase(e.getValue(), col)) {
-                    if (found != null) {
-                        return Optional.empty();   // ambiguous
-                    }
-                    found = e.getKey();
+                if (q.equalsIgnoreCase(right.relationName)) {
+                    return containsIgnoreCase(rightColumns, col)
+                            ? Optional.of(dialect.quote(aliases.right()) + "." + dialect.quote(col))
+                            : Optional.empty();
                 }
+                return Optional.empty();
             }
-            return found == null ? Optional.empty() : Optional.of(dialect.quote(found) + "." + dialect.quote(col));
+            // Unqualified: resolve to the single side that has the column, else ambiguous.
+            boolean onLeft = containsIgnoreCase(leftColumns, col);
+            boolean onRight = containsIgnoreCase(rightColumns, col);
+            if (onLeft == onRight) {
+                return Optional.empty();
+            }
+            return Optional.of(dialect.quote(onLeft ? aliases.left() : aliases.right())
+                    + "." + dialect.quote(col));
         };
-    }
-
-    private static String matchAlias(String qualifier, Iterable<String> aliases) {
-        for (String alias : aliases) {
-            if (alias.equalsIgnoreCase(qualifier)) {
-                return alias;
-            }
-        }
-        return null;
     }
 
     private static boolean containsIgnoreCase(List<String> columns, String name) {
@@ -1334,7 +1491,7 @@ final class SqlPushdownPlanner implements PushdownRenderer {
 
         // Set only while this is a bare base scan (enables join folding).
         boolean bareScan = false;
-        String alias;
+        String relationName;          // the name a join condition qualifies this side by
         String tableName;
         List<ColumnDefinition> baseColumns;
 

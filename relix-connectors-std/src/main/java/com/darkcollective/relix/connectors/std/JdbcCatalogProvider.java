@@ -17,6 +17,7 @@ package com.darkcollective.relix.connectors.std;
 
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
 import com.darkcollective.relix.lang.ast.source.DatabaseConnectionConfig;
+import com.darkcollective.relix.plan.Dialect;
 import com.darkcollective.relix.semantic.CatalogProvider;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ColumnStatistics;
@@ -104,12 +105,15 @@ public final class JdbcCatalogProvider implements CatalogProvider {
             if (resolved == null) {
                 return Optional.empty();
             }
-            OptionalLong rows = rowCount(conn, resolved);
+            // The name as the catalog stores it, written as a pushed query writes it, so a
+            // table whose name is not a plain identifier is counted rather than skipped.
+            Dialect dialect = Dialect.of(connection);
+            OptionalLong rows = rowCount(conn, dialect, resolved);
             if (rows.isEmpty()) {
                 return Optional.empty();
             }
-            Map<String, ColumnStatistics> columnStats =
-                    columnStatistics(conn, resolved, readColumns(meta, resolved), rows.getAsLong());
+            Map<String, ColumnStatistics> columnStats = columnStatistics(
+                    conn, dialect, resolved, readColumns(meta, resolved), rows.getAsLong());
             return Optional.of(new RelationStatistics(rows, columnStats, primaryKey(meta, resolved)));
         } catch (SQLException e) {
             return Optional.empty();
@@ -123,19 +127,20 @@ public final class JdbcCatalogProvider implements CatalogProvider {
      * count and keys are still returned.
      */
     private static Map<String, ColumnStatistics> columnStatistics(
-            Connection conn, String table, List<ColumnDefinition> columns, long rowCount) {
+            Connection conn, Dialect dialect, String table, List<ColumnDefinition> columns,
+            long rowCount) {
         if (columns.isEmpty()) {
             return Map.of();
         }
         StringBuilder sql = new StringBuilder("SELECT ");
         for (int i = 0; i < columns.size(); i++) {
-            String name = columns.get(i).name();
+            String name = dialect.quote(columns.get(i).name());
             if (i > 0) {
                 sql.append(", ");
             }
             sql.append("COUNT(").append(name).append("), COUNT(DISTINCT ").append(name).append(")");
         }
-        sql.append(" FROM ").append(table);
+        sql.append(" FROM ").append(dialect.table(table));
 
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql.toString())) {
@@ -186,9 +191,9 @@ public final class JdbcCatalogProvider implements CatalogProvider {
     }
 
     /** Runs {@code SELECT COUNT(*)} on a resolved table name; empty on failure. */
-    private static OptionalLong rowCount(Connection conn, String table) {
+    private static OptionalLong rowCount(Connection conn, Dialect dialect, String table) {
         try (Statement st = conn.createStatement();
-             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM " + table)) {
+             ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM " + dialect.table(table))) {
             return rs.next() ? OptionalLong.of(rs.getLong(1)) : OptionalLong.empty();
         } catch (SQLException e) {
             return OptionalLong.empty();

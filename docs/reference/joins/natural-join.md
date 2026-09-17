@@ -18,10 +18,12 @@ column names.
 
 # Technical Description:
 R ⋈ S joins on the intersection of their attribute names (equality on all common
-columns) and projects away the duplicate join columns, keeping one copy. With no
-common columns it degenerates to a cross product. It is commutative and the
-planner may reorder/choose build side by cardinality; same-connection natural
-joins push down to a SQL JOIN.
+columns) and projects away the duplicate join columns, keeping one copy, which holds
+the left input's value. Two inputs with no common column are an analysis error; use
+× (CROSS) for a Cartesian product. It is commutative and the planner may
+choose the build side by cardinality. A natural join of two tables on the same
+connection pushes down to a SQL `JOIN … ON` that equates the common columns, provided
+each common column has the same type on both sides.
 
 # Examples:
 Pair each user with their orders (shared user_id):

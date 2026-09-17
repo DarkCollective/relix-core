@@ -22,6 +22,9 @@ import com.darkcollective.relix.lang.ast.ScriptCorpus;
 import com.darkcollective.relix.lang.ast.ScriptPrinter;
 import com.darkcollective.relix.lang.ast.Statement;
 import com.darkcollective.relix.lang.ast.source.SourceConfig;
+import com.darkcollective.relix.symbol.ArrayType;
+import com.darkcollective.relix.symbol.ScalarType;
+import com.darkcollective.relix.symbol.StructType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Nested;
@@ -271,6 +274,31 @@ final class ScriptCorpusRoundTripTest {
             // printed is the empty block. That has to parse — the alternative is a
             // configuration the printer can produce and the grammar cannot read.
             assertRoundTrips(source("Bare", ScriptBuilders.jsonSource("./bare.json")));
+        }
+    }
+
+    @Nested
+    @DisplayName("a schema whose columns are named by the database")
+    final class DatabaseNamedColumns {
+
+        @Test
+        @DisplayName("a column that is not a plain identifier prints delimited and reads back")
+        void delimitedColumn() {
+            assertRoundTrips(source("Lines", connectionTable("db", "order-lines",
+                    column("lid", ScalarType.NUMBER),
+                    column("_rowid", ScalarType.NUMBER),
+                    column("9lives", ScalarType.NUMBER),
+                    column("unit-price", ScalarType.NUMBER),
+                    column("odd`name", ScalarType.STRING))));
+        }
+
+        @Test
+        @DisplayName("a nested column prints in the grammar's own spelling and reads back")
+        void nestedColumn() {
+            assertRoundTrips(source("Docs", connectionTable("db", "docs",
+                    column("addr", new StructType(List.of(
+                            new StructType.Field("post-code", ScalarType.STRING),
+                            new StructType.Field("geo", new ArrayType(ScalarType.NUMBER))))))));
         }
     }
 

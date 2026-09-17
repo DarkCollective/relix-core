@@ -283,6 +283,9 @@ final class PushdownCorpus {
         groups.put("∀ — a group survives only when every row satisfies the condition", universal());
         groups.put("⨝ — two tables on one connection, folded into one SELECT", joins());
         groups.put("ASOF — the nearest row in time, as a LATERAL sub-select", asOfJoins());
+        groups.put("connection.table — the same joins over tables no source declares", dottedReferences());
+        groups.put("names that are not identifiers — order-lines and unit-price", delimitedNames());
+        groups.put("⋈ — a natural join, equating the columns two headings share", naturalJoins());
         groups.put("stacks folded into a single statement", combinations());
         groups.put("what composes above a γ — HAVING, ORDER BY, LIMIT", aboveAggregation());
         groups.put("the same, keyed on a string — where a collation cannot help", aboveAggregationOnStrings());
@@ -710,6 +713,85 @@ final class PushdownCorpus {
                 Case.declined("Probes ASOF " + backward + " WITHIN DURATION 'PT90M' History"),
                 Case.declined("Probes ASOF INNER " + backward
                         + " WITHIN DURATION 'PT90M' History"));
+    }
+
+    /**
+     * The joins above, written over {@code db.orders} rather than a declared source.
+     *
+     * <p>A dotted name is not a SQL identifier, and every join fold named its sides by
+     * their relation names, so none of these folded — a form the programming guide leads
+     * with. The statement now names each side by an alias of its own, while a condition
+     * still qualifies by the dotted name; the cases hold the two apart. The schemas come
+     * from the database, so the columns are whatever names its catalog reports.
+     *
+     * <p>The mixed case joins a declared source to a dotted reference whose derived alias
+     * differs from the source's name only in case, which is the one clash the aliasing
+     * has to settle itself.
+     */
+    private static List<Case> dottedReferences() {
+        String backward = "db.probes.sym = db.history.sym ∧ db.probes.ts ≥ db.history.ts";
+        return List.of(
+                Case.of("db.orders ⨝ (db.orders.cid = db.customers.cid) db.customers"),
+                Case.of("db.customers ⨝ (db.customers.cid < db.orders.cid "
+                        + "∧ db.orders.region = 'north') db.orders"),
+                Case.of("Orders ⨝ (Orders.oid = db.orders.oid) db.orders"),
+                Case.of("τ oid (π oid, name (db.orders ⨝ (db.orders.cid = db.customers.cid) "
+                        + "db.customers))"),
+                Case.of("db.probes ASOF " + backward + " db.history", FOLDS_LATERAL_ASOF),
+                Case.of("db.probes ASOF INNER " + backward + " db.history", FOLDS_LATERAL_ASOF),
+                Case.of("db.orders IJOIN INTERSECTS (db.orders.placed, db.orders.stamped, "
+                        + "db.history.ts, db.history.ts) db.history"),
+                Case.declined("db.orders ⨝ (1 = 1) db.orders"));
+    }
+
+    /**
+     * A table and a column whose names are not plain identifiers.
+     *
+     * <p>Every dialect has to delimit them, including the generic one, which leaves a
+     * plain identifier bare. Before it delimited these it wrote {@code FROM order-lines},
+     * which no database reads, and the engine's own scan wrote the same, so neither run
+     * could read the table at all. The bare scan is the case that says so first.
+     *
+     * <p>Each question is asked twice: of {@code Lines}, whose {@code schema:} names the
+     * column between backticks, and of {@code db.`order-lines`}, whose heading comes from
+     * the database.
+     */
+    private static List<Case> delimitedNames() {
+        String lines = "db.`order-lines`";
+        return cases(
+                "Lines",
+                "σ `unit-price` > 10 (Lines)",
+                "π lid, `unit-price` (Lines)",
+                "γ oid, SUM(`unit-price`) → total (Lines)",
+                "Orders ⨝ (Orders.oid = Lines.oid) Lines",
+                lines,
+                "σ `unit-price` > 10 (" + lines + ")",
+                "π lid, `unit-price` (" + lines + ")",
+                "γ oid, SUM(`unit-price`) → total (" + lines + ")",
+                "db.orders ⨝ (db.orders.oid = " + lines + ".oid) " + lines);
+    }
+
+    /**
+     * The natural join, folded into a {@code JOIN … ON} over the shared columns.
+     *
+     * <p>{@code Orders ⋈ Customers} shares {@code cid}, which is NULL on one order and
+     * absent for one customer, so both sides lose rows. {@code Probes ⋈ History} shares a
+     * string and a timestamp, and probe 9's {@code 'a'} is where a case-insensitive
+     * collation would match a row the engine does not. The σ cases ask the fold's own
+     * renderer about the shared column, which is one column above the join.
+     */
+    private static List<Case> naturalJoins() {
+        return cases(
+                "Orders ⋈ Customers",
+                "Customers ⋈ Orders",
+                "Probes ⋈ History",
+                "History ⋈ Probes",
+                "σ cid = 10 (Orders ⋈ Customers)",
+                "σ Orders.cid = 20 ∧ tier = 'gold' (Orders ⋈ Customers)",
+                "σ sym = 'A' (Probes ⋈ History)",
+                "τ oid (π oid, name (Orders ⋈ Customers))",
+                "Lines ⋈ Orders",
+                "db.orders ⋈ db.customers");
     }
 
     private static List<Case> combinations() {

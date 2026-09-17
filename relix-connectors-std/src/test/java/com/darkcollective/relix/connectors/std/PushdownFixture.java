@@ -66,6 +66,12 @@ import java.sql.Statement;
  *
  * <p>Which SQL types those are is the {@link Flavour}'s answer, because the pair is not
  * spelled the same way twice.
+ *
+ * <h2>Why one table is called {@code order-lines}</h2>
+ * A name that is not a plain identifier reaches the database only delimited, and a
+ * dialect that leaves names bare is exactly the one that can forget to. So one table and
+ * one of its columns ({@code unit-price}) are named that way, and are created with the
+ * database's own delimiter, read from its metadata rather than spelled per backend.
  */
 final class PushdownFixture {
 
@@ -157,7 +163,10 @@ final class PushdownFixture {
         String customers = "customers" + suffix;
         String probes = "probes" + suffix;
         String history = "history" + suffix;
+        String q = connection.getMetaData().getIdentifierQuoteString();
+        String lines = q + "order-lines" + suffix + q;
         try (Statement st = connection.createStatement()) {
+            st.execute("DROP TABLE IF EXISTS " + lines);
             st.execute("DROP TABLE IF EXISTS " + orders);
             st.execute("DROP TABLE IF EXISTS " + customers);
             st.execute("DROP TABLE IF EXISTS " + probes);
@@ -238,7 +247,9 @@ final class PushdownFixture {
             // than A's nearer one, and 6 nothing, its partition being empty. Read forward
             // (`<=`) the same rows say it the other way round: 1 matches the first row
             // and 4 is the one with no match. 7 and 8 hold the NULLs — a partition key
-            // and a match value the comparison cannot decide.
+            // and a match value the comparison cannot decide. 9 is A's partition spelled
+            // in lower case: the same partition to a case-insensitive collation and a
+            // different one to the engine, which is what a string join key has to survive.
             st.execute("INSERT INTO " + probes + " VALUES "
                     + "(1, 'A',  '2024-03-01 09:00:00'), "
                     + "(2, 'A',  '2024-03-01 11:00:00'), "
@@ -247,7 +258,15 @@ final class PushdownFixture {
                     + "(5, 'B',  '2024-03-01 11:00:00'), "
                     + "(6, 'C',  '2024-03-01 11:00:00'), "
                     + "(7, NULL, '2024-03-01 11:00:00'), "
-                    + "(8, 'A',  NULL)");
+                    + "(8, 'A',  NULL), "
+                    + "(9, 'a',  '2024-03-01 11:00:00')");
+
+            // Two lines on order 1, one with no price on order 3, and one whose order
+            // does not exist, so a join over it drops a row from each side.
+            st.execute("CREATE TABLE " + lines + " (lid INT, oid INT, "
+                    + q + "unit-price" + q + " INT)");
+            st.execute("INSERT INTO " + lines + " VALUES "
+                    + "(1, 1, 10), (2, 1, 20), (3, 3, NULL), (4, 99, 5)");
         }
     }
 
@@ -314,6 +333,10 @@ final class PushdownFixture {
                 + "source History from db {\n"
                 + "    table: \"history" + suffix + "\",\n"
                 + "    schema: { hid: NUMBER, sym: STRING, ts: TIMESTAMP, px: NUMBER }\n"
+                + "};\n"
+                + "source Lines from db {\n"
+                + "    table: \"order-lines" + suffix + "\",\n"
+                + "    schema: { lid: NUMBER, oid: NUMBER, `unit-price`: NUMBER }\n"
                 + "};\n\n";
     }
 }

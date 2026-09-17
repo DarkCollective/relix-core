@@ -18,6 +18,7 @@ package com.darkcollective.relix.connectors.std;
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
 import com.darkcollective.relix.lang.ast.SourceDeclaration;
 import com.darkcollective.relix.lang.ast.source.ConnectionTableSourceConfig;
+import com.darkcollective.relix.plan.Dialect;
 import com.darkcollective.relix.processor.ArrayRow;
 import com.darkcollective.relix.processor.DataSourceConnector;
 import com.darkcollective.relix.processor.Row;
@@ -177,7 +178,9 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
                     "Unknown connection '" + table.connection() + "' for relation '" + relationName + "'");
         }
 
-        String sql = "SELECT * FROM " + table.table();
+        // Written as the pushdown writes it, so a table read here and the same table read
+        // by a pushed query are the same table.
+        String sql = "SELECT * FROM " + Dialect.of(connection).table(table.table());
         return streamQuery(connection, sql, schema, JdbcDataSourceConnector::readByName,
                 "JDBC error reading table '" + table.table() + "' on connection '"
                 + table.connection() + "'");

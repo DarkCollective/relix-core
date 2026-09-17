@@ -41,6 +41,10 @@ import java.util.Map;
  *   <li>Block comments: {@code /* ... *}{@code /} (C style, may span lines)</li>
  * </ul>
  *
+ * <h2>Delimited names</h2>
+ * A backtick-delimited name ({@code `unit-price`}) lexes as a
+ * {@link LangTokenType#DELIMITED_IDENTIFIER}, a doubled backtick standing for one,
+ * exactly as the expression grammar reads it.
  * <h2>String literals</h2>
  * Double-quoted strings; {@code \"} is the only recognised escape sequence
  * inside them. {@code ${VAR}} placeholders are preserved verbatim in the
@@ -160,6 +164,10 @@ final class LangLexer {
         // '-' is always a DASH token and negative numbers are not part of this grammar)
         if (Character.isDigit(c)) {
             return scanNumber(tokLine, tokCol);
+        }
+
+        if (c == '`') {
+            return scanDelimitedIdentifier(tokLine, tokCol);
         }
 
         // Identifier or keyword
@@ -354,6 +362,35 @@ final class LangLexer {
             }
         }
         return new LangToken(LangTokenType.NUMBER_LIT, input.substring(start, pos), tokLine, tokCol);
+    }
+
+    /**
+     * Scans a backtick-delimited name. The body runs to the closing backtick, and a
+     * doubled backtick is a literal one. The name may not be empty or span a line.
+     */
+    private LangToken scanDelimitedIdentifier(int tokLine, int tokCol) {
+        advance();   // opening backtick
+        StringBuilder name = new StringBuilder();
+        while (true) {
+            if (pos >= input.length() || input.charAt(pos) == '\n') {
+                throw new LangParseException("Unterminated delimited name", tokLine, tokCol);
+            }
+            char c = input.charAt(pos);
+            advance();
+            if (c == '`') {
+                if (pos < input.length() && input.charAt(pos) == '`') {
+                    advance();
+                    name.append('`');
+                    continue;
+                }
+                break;
+            }
+            name.append(c);
+        }
+        if (name.isEmpty()) {
+            throw new LangParseException("Empty delimited name", tokLine, tokCol);
+        }
+        return new LangToken(LangTokenType.DELIMITED_IDENTIFIER, name.toString(), tokLine, tokCol);
     }
 
     private LangToken scanIdentifierOrKeyword(int tokLine, int tokCol) {

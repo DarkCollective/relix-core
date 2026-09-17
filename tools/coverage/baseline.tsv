@@ -54,7 +54,7 @@
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/MathFunctions.java
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/TypeCheckFunctions.java
 2	relix-function/src/main/java/com/darkcollective/relix/function/FunctionCatalog.java
-10	relix-lang/src/main/java/com/darkcollective/relix/lang/LangLexer.java
+9	relix-lang/src/main/java/com/darkcollective/relix/lang/LangLexer.java
 9	relix-lang/src/main/java/com/darkcollective/relix/lang/ScriptParser.java
 4	relix-lang/src/main/java/com/darkcollective/relix/lang/SourceConfigParser.java
 1	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/ConjunctBounds.java
@@ -72,7 +72,7 @@
 1	relix-plan/src/main/java/com/darkcollective/relix/plan/PushdownRenderer.java
 2	relix-plan/src/main/java/com/darkcollective/relix/plan/RelationFunctionInliner.java
 2	relix-plan/src/main/java/com/darkcollective/relix/plan/SqlExpressions.java
-18	relix-plan/src/main/java/com/darkcollective/relix/plan/SqlPushdownPlanner.java
+17	relix-plan/src/main/java/com/darkcollective/relix/plan/SqlPushdownPlanner.java
 1	relix-plan/src/main/java/com/darkcollective/relix/plan/StableCalls.java
 1	relix-processor/src/main/java/com/darkcollective/relix/processor/ArrayRow.java
 1	relix-processor/src/main/java/com/darkcollective/relix/processor/QueryExecutor.java

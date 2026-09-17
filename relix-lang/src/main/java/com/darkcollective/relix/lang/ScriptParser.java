@@ -928,6 +928,20 @@ public final class ScriptParser {
         return value;
     }
 
+    /**
+     * Reads the current token as a column or struct-field name: anything
+     * {@link #requireName} accepts, or a backtick-delimited name, since a table's
+     * columns are named by the database rather than by this grammar.
+     */
+    String requireColumnName(String context) {
+        if (current.type() == LangTokenType.DELIMITED_IDENTIFIER) {
+            String value = current.value();
+            advance();
+            return value;
+        }
+        return requireName(context);
+    }
+
     String requireStringLit(String context) {
         if (current.type() != LangTokenType.STRING_LIT) {
             throw new LangParseException(
@@ -998,7 +1012,7 @@ public final class ScriptParser {
         consume(LangTokenType.LBRACE);
         List<StructType.Field> fields = new ArrayList<>();
         while (current.type() != LangTokenType.RBRACE && current.type() != LangTokenType.EOF) {
-            String name = requireName("struct field name");
+            String name = requireColumnName("struct field name");
             consume(LangTokenType.COLON);
             fields.add(new StructType.Field(name, requireType()));
             if (current.type() == LangTokenType.COMMA) {
