@@ -47,7 +47,7 @@ itself wherever an expression reads better as text.
 |---|---|
 | [Bringing your own data and code](data-in.md) | Rows held, rows produced per scan, a connector of your own, a function library of your own |
 | [Generating data](generating.md) | Generator relations and their bounds; `COVER` and all-pairs suites; seeded sampling and what a seed buys |
-| [Against a database](database.md) | Binding a `DataSource`, introspection, what is pushed down and what is not, joining your data to theirs, connection lifecycle |
+| [Against a database](database.md) | Binding a `DataSource`, introspection, what is pushed down and what is not, joining your data to theirs, connection lifecycle, and what a federated query does not promise |
 | [Working without a database](offline.md) | What composes offline; unresolved names; capturing a catalog snapshot and replaying it |
 
 ## Getting answers out

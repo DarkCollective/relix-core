@@ -102,7 +102,8 @@ final class ReExportSurfaceTest {
     /** The facade's own public types — everything a caller can reach. */
     private static final Class<?>[] FACADE = {
             Relix.class, Relix.Builder.class, Relation.class,
-            Rows.class, Tuple.class, Diagnostic.class, RelixException.class};
+            Rows.class, Tuple.class, Diagnostic.class, RelixException.class,
+            QueryExecutionException.class, UnboundedRelationException.class};
 
     @Test
     @DisplayName("nothing a caller can reach falls outside the allowlist")

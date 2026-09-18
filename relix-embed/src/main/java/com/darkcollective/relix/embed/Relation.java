@@ -78,7 +78,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Spliterator;
+import java.util.Spliterators;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * A relation — an expression together with the analysis it resolves against.
@@ -110,6 +114,18 @@ public final class Relation {
 
     /** The column {@link #count()} reads its answer out of. */
     private static final String COUNT_COLUMN = "count";
+
+    /**
+     * The spliterator characteristics {@link #guarded} carries across.
+     *
+     * <p>Everything outside this mask is dropped rather than repeated: {@code SIZED} would
+     * be a promise about a count the wrapper's own splitting does not keep, and
+     * {@code SORTED} obliges a comparator the wrapper has no way to supply. Both are
+     * optimisations, and losing one costs a little work; reporting one falsely is a wrong
+     * answer.
+     */
+    private static final int GUARDED_CHARACTERISTICS =
+            Spliterator.ORDERED | Spliterator.NONNULL | Spliterator.DISTINCT | Spliterator.IMMUTABLE;
 
     private final Relix session;
     private final SemanticModel model;
@@ -1180,8 +1196,9 @@ public final class Relation {
      * connection a lazy stream holds open.
      *
      * @return the rows, in the order the query produced them
-     * @throws com.darkcollective.relix.plan.BoundednessException if the relation is
-     *         provably unbounded, since collecting one would never return
+     * @throws UnboundedRelationException if the relation is provably unbounded, since
+     *         collecting one would never return
+     * @throws QueryExecutionException if the query runs and a source gives way
      * @throws RelixException if the session is closed
      * @since 1.0
      */
@@ -1244,8 +1261,9 @@ public final class Relation {
      * @throws RelixException if {@code type} is not a record, if a component names no
      *                        column, if a column holds a type the component cannot hold, or
      *                        if the record cannot be constructed from here
-     * @throws com.darkcollective.relix.plan.BoundednessException if the relation is
-     *         provably unbounded, since collecting one would never return
+     * @throws UnboundedRelationException if the relation is provably unbounded, since
+     *         collecting one would never return
+     * @throws QueryExecutionException if the query runs and a source gives way
      *
      * @since 1.0
      */
@@ -1323,8 +1341,8 @@ public final class Relation {
      * the planner's choices, what was pushed to a backend. See {@link Rows}.
      *
      * @return the rows and this run's events
-     * @throws com.darkcollective.relix.plan.BoundednessException if the relation is
-     *         provably unbounded
+     * @throws UnboundedRelationException if the relation is provably unbounded
+     * @throws QueryExecutionException if the query runs and a source gives way
      * @throws RelixException if the session is closed
      * @since 1.0
      */
@@ -1418,6 +1436,10 @@ public final class Relation {
         try (DataSourceConnector connector = session.openConnector(model)) {
             return new ProvenanceEvaluator()
                     .evaluate(node, semiring, context(connector, QueryEventListener.NONE), annotator);
+        } catch (RuntimeException e) {
+            // Reads every row before it can annotate one, so there is no lazy window here:
+            // the single catch covers the whole of it.
+            throw asFailure(e);
         }
     }
 
@@ -1436,15 +1458,73 @@ public final class Relation {
             // Registered with the session, so a stream the caller walks away from is still
             // closed when the session is — the connection it borrowed is otherwise beyond
             // the pool's reach, which closes what is idle and not what is out on loan.
-            return session.track(new RelNodeExecutor()
+            return session.track(guarded(new RelNodeExecutor()
                     .withObservedCardinalities(session.observedExpressions())
                     .execute(node, context(connector, observing(listener)))
                     .map(Tuple::of)
-                    .onClose(connector::close));
+                    .onClose(connector::close)));
         } catch (RuntimeException e) {
             connector.close();
-            throw e;
+            throw asFailure(e);
         }
+    }
+
+    /**
+     * The engine's row stream, with every failure it can raise restated as this API's own.
+     *
+     * <p>A lazy stream does its work when pulled, so the window this closes is not the one
+     * the {@code catch} above closes: starting the query is where a CSV file that is
+     * missing or a pushed statement a database refuses shows up, and <em>iterating</em> is
+     * where a connection dropped halfway through a result set does. The second window is
+     * the one a caller cannot guard by wrapping the call that opened the stream, because by
+     * then the exception is arriving inside their own loop.
+     *
+     * <p>Wrapping the spliterator rather than mapping the elements is what reaches it: the
+     * throw comes from advancing the stream, not from anything a {@code map} would see.
+     */
+    private static Stream<Tuple> guarded(Stream<Tuple> rows) {
+        Spliterator<Tuple> source = rows.spliterator();
+        Spliterator<Tuple> guarded = new Spliterators.AbstractSpliterator<>(
+                source.estimateSize(), source.characteristics() & GUARDED_CHARACTERISTICS) {
+            @Override
+            public boolean tryAdvance(Consumer<? super Tuple> action) {
+                try {
+                    return source.tryAdvance(action);
+                } catch (RuntimeException e) {
+                    throw asFailure(e);
+                }
+            }
+        };
+        return StreamSupport.stream(guarded, false).onClose(() -> {
+            try {
+                rows.close();
+            } catch (RuntimeException e) {
+                throw asFailure(e);
+            }
+        });
+    }
+
+    /**
+     * Restates an engine failure as a {@link QueryExecutionException}, keeping the message.
+     *
+     * <p>The engine's message is better than anything that could be written here — it names
+     * the connection and table, or the relation, that gave way — so the wrapper carries it
+     * unchanged and adds only the type. What is already this API's own is passed through:
+     * a closed session and an unresolvable name are refusals rather than failures, and
+     * re-wrapping one would say the query ran when it never started.
+     */
+    private static RuntimeException asFailure(RuntimeException e) {
+        if (e instanceof RelixException) {
+            return e;
+        }
+        // The planner's refusal of a blocking operator over an endless input is the same
+        // fact as a collecting terminal's, reached by a different route, so it is not a
+        // failure and does not arrive as one.
+        if (e instanceof com.darkcollective.relix.plan.BoundednessException) {
+            return new UnboundedRelationException(e.getMessage(), e);
+        }
+        return new QueryExecutionException(
+                e.getMessage() == null ? e.toString() : e.getMessage(), e);
     }
 
     /**
@@ -1493,7 +1573,7 @@ public final class Relation {
         BoundednessSource boundedness =
                 new GeneratorBoundednessSource(model.sources(), session.generators());
         if (PropertyDeriver.boundedness(node, boundedness) == Boundedness.UNBOUNDED) {
-            throw new com.darkcollective.relix.plan.BoundednessException(
+            throw new UnboundedRelationException(
                     "cannot collect an unbounded relation into a list; add a bound "
                             + "(e.g. limit(n)), or stream it instead");
         }

@@ -641,8 +641,8 @@ public final class Relix implements AutoCloseable {
      * @return this session, for chaining
      * @throws RelixException if the name is already taken, if the relation cannot be
      *                        executed, or if the result does not analyse
-     * @throws com.darkcollective.relix.plan.BoundednessException if the relation is
-     *         provably unbounded, since collecting one would never return
+     * @throws UnboundedRelationException if the relation is provably unbounded, since
+     *         collecting one would never return
      *
      * @since 1.0
      */

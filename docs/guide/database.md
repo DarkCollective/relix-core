@@ -265,3 +265,163 @@ One detail makes either form read the way it does: both sides are renamed with �
 the qualifier of a dotted reference is the whole dotted name — `warehouse.orders`, not
 `orders` — and a short alias is easier to write a join condition against.
 
+
+## What a federated query does not promise
+
+Two databases, a file and an API are four independent systems, and one query across them is
+four independent reads. Nothing coordinates them, and three consequences follow that are
+worth knowing before such a query carries any weight.
+
+### Nothing is contacted until rows are asked for
+
+A session can be built, a source declared and a plan produced with the backend entirely
+unreachable. Planning asks the catalog and the cost model and reads no rows — and where the
+script declares the schema, as here, it asks the database nothing at all:
+
+```java
+import com.darkcollective.relix.embed.QueryExecutionException;
+
+JdbcDataSource offline = new JdbcDataSource();
+offline.setURL("jdbc:h2:tcp://127.0.0.1:1/unreachable");
+
+try (Relix down = Relix.builder().jdbc("remote", offline).build()) {
+    down.define("""
+            source Remote from remote { table: "orders", schema: { id: NUMBER } };
+            """);
+
+    System.out.println(down.relation("Remote").explain().strip());
+
+    try {
+        down.relation("Remote").toList();
+    } catch (QueryExecutionException e) {
+        System.out.println(e.getMessage().split(":")[0]);
+    }
+}
+```
+
+```
+PushedScan [jdbc/remote] SELECT id FROM orders
+JDBC error running pushed-down query on connection 'remote'
+```
+
+The plan is not a guess: it is the statement that database would have been sent. What fails
+is the terminal, and the message names the connection the failure came from — every source
+does this, a JDBC one naming its connection and table, an HTTP or file source naming the
+relation. The text before the colon is the engine's; what follows it is the driver's, and
+varies with the driver.
+
+The type says which kind of wrong this is. A `QueryExecutionException` means the query was
+runnable and something outside it gave way, which is a fact about the world and may be worth
+retrying; a plain `RelixException` means the query was never runnable, and retrying a
+malformed query changes nothing. Both are unchecked, and both are `RelixException`, so a
+caller who wants neither distinction catches that and is covered.
+
+A collecting terminal has a third answer: `UnboundedRelationException`, for a relation that
+never ends. Nothing failed there — it is the shape of the question that a list cannot
+answer, so the remedy is a bound or `stream`.
+
+### One input is read to its end before the next is opened
+
+A join has to have one side in hand before it can match the other against it. So the two
+reads do not overlap — the engine drains one input completely, then opens the second:
+
+```java
+import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.symbol.ScalarType;
+import com.darkcollective.relix.value.NumberValue;
+import java.util.ArrayList;
+import java.util.stream.IntStream;
+
+List<String> reads = new ArrayList<>();
+
+Schema left = new Schema(List.of(new ColumnDefinition("id", ScalarType.NUMBER)));
+Schema right = new Schema(List.of(new ColumnDefinition("rid", ScalarType.NUMBER)));
+
+try (Relix timed = Relix.open()) {
+    timed.source("Left", left, () -> {
+        reads.add("opened Left");
+        return IntStream.rangeClosed(1, 2).mapToObj(i -> {
+            reads.add("  read Left " + i);
+            return ArrayRow.of(left, NumberValue.of(String.valueOf(i)));
+        });
+    });
+    timed.source("Right", right, () -> {
+        reads.add("opened Right");
+        return IntStream.rangeClosed(1, 2).mapToObj(i -> {
+            reads.add("  read Right " + i);
+            return ArrayRow.of(right, NumberValue.of(String.valueOf(i)));
+        });
+    });
+
+    timed.relation("Left >< Left.id = Right.rid Right").toList();
+}
+
+reads.forEach(System.out::println);
+```
+
+```
+opened Right
+  read Right 1
+  read Right 2
+opened Left
+  read Left 1
+  read Left 2
+```
+
+Which side goes first is the planner's build-side choice and can change with the
+statistics; that one of them is finished before the other starts cannot. A natural join
+buffers both sides rather than streaming the second, which changes how much is held, not
+the ordering.
+
+The consequence is the one to carry away: **a federated result is not a snapshot.** Each
+source is current as of the moment *it* was read, and those moments are different — far
+apart, if the first read is large or the second backend is slow. Where that matters, the
+answer is a column the data already carries — an as-of timestamp to join on, or a version
+to filter by — rather than anything the engine can arrange across systems it does not
+control.
+
+### What the caller has already seen depends on the terminal
+
+A failure aborts the query. Whether the application has already acted on part of the
+answer when that happens is decided by which terminal it used, because `toList` finishes
+before it returns anything and `stream` hands rows over as they are produced:
+
+```java
+import java.util.function.Supplier;
+
+Schema flaky = new Schema(List.of(new ColumnDefinition("id", ScalarType.NUMBER)));
+Supplier<Stream<Row>> failsAfterTwo = () -> Stream.concat(
+        IntStream.rangeClosed(1, 2).mapToObj(i ->
+                (Row) ArrayRow.of(flaky, NumberValue.of(String.valueOf(i)))),
+        Stream.generate(() -> { throw new IllegalStateException("connection reset"); }));
+
+try (Relix partial = Relix.open()) {
+    partial.source("Flaky", flaky, failsAfterTwo);
+
+    try {
+        List<Tuple> all = partial.relation("Flaky").toList();
+        System.out.println("toList: caller saw " + all.size() + " rows");
+    } catch (RuntimeException e) {
+        System.out.println("toList: caller saw nothing");
+    }
+
+    List<String> streamed = new ArrayList<>();
+    try (Stream<Tuple> rows = partial.relation("Flaky").stream()) {
+        rows.forEach(row -> streamed.add(row.decimal("id").toString()));
+    } catch (RuntimeException e) {
+        System.out.println("stream: caller saw " + streamed);
+    }
+}
+```
+
+```
+toList: caller saw nothing
+stream: caller saw [1, 2]
+```
+
+Neither is the safe one in general. `toList` is all-or-nothing and needs the whole result in
+memory; `stream` is bounded but can hand over a prefix of an answer that never completes, so
+an application doing something irreversible per row — posting a payment, sending a message —
+is doing it to rows that may turn out to be part of a failed query. Collect first, or make
+the per-row work replayable.
