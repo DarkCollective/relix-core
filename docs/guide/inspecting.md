@@ -228,6 +228,7 @@ relix.relation("π component, kind (relix.version)").toList()
 (component=relix-builtin, kind=function-library)
 (component=relix-embed, kind=facade)
 (component=csv, kind=connector)
+(component=gedcom, kind=connector)
 (component=ojAlgo, kind=solver)
 (component=org.h2.Driver, kind=driver)
 ```

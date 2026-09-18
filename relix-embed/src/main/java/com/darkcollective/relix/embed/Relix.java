@@ -22,6 +22,7 @@ import com.darkcollective.relix.connectors.std.ConnectionPool;
 import com.darkcollective.relix.connectors.std.DataSourceRegistry;
 import com.darkcollective.relix.connectors.std.DriverProvisioner;
 import com.darkcollective.relix.connectors.std.HttpFetcher;
+import com.darkcollective.relix.connectors.std.ConnectorCatalogProvider;
 import com.darkcollective.relix.connectors.std.JdbcCatalogProvider;
 import com.darkcollective.relix.lang.ScriptParser;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
@@ -146,6 +147,9 @@ public final class Relix implements AutoCloseable {
     private final DataSourceRegistry dataSources;
     private final boolean allowUnresolved;
     private final CatalogProvider catalog;
+
+    /** The catalog this session built, and therefore closes; null when one was supplied. */
+    private final ConnectorCatalogProvider ownedCatalog;
     private final List<FunctionLibrary> installedLibraries = new ArrayList<>();
 
     /**
@@ -233,12 +237,20 @@ public final class Relix implements AutoCloseable {
 
     private Relix(Builder builder) {
         this.dataSources = builder.dataSources;
-        // The default catalog introspects through the registry, which serves a bound
-        // handle and delegates a declared url. Offline it answers empty rather than
-        // failing, which is what lets a session compose with nothing reachable.
-        this.catalog = builder.catalog != null
-                ? builder.catalog
-                : new JdbcCatalogProvider(dataSources);
+        // The default catalog asks each connection's own connector to describe its tables
+        // and falls back to JDBC introspection, which serves a bound handle and delegates a
+        // declared url. Offline either answers empty rather than failing, which is what lets
+        // a session compose with nothing reachable. A caller-supplied catalog is theirs, so
+        // only the one built here is closed with the session.
+        if (builder.catalog != null) {
+            this.catalog = builder.catalog;
+            this.ownedCatalog = null;
+        } else {
+            ConnectorCatalogProvider built =
+                    new ConnectorCatalogProvider(new JdbcCatalogProvider(dataSources));
+            this.catalog = built;
+            this.ownedCatalog = built;
+        }
         this.allowUnresolved = builder.allowUnresolved;
         this.baseDirectory = builder.baseDirectory;
         this.clock = builder.clock;
@@ -934,10 +946,15 @@ public final class Relix implements AutoCloseable {
     public void close() {
         closed = true;
         int abandoned = releaseAbandoned();
-        // The pool is the one resource the session owns: it holds idle JDBC connections
-        // opened on its behalf. A bound DataSource is the caller's handle, and closing it
-        // would take away a connection source the caller may still be using elsewhere.
+        // The pool and the default catalog are the resources the session owns: the pool
+        // holds idle JDBC connections opened on its behalf, and the catalog holds the
+        // connector registry it introspects through. A bound DataSource is the caller's
+        // handle, and so is a catalog they supplied — closing either would take away
+        // something the caller may still be using elsewhere.
         pool.close();
+        if (ownedCatalog != null) {
+            ownedCatalog.close();
+        }
         if (abandoned > 0) {
             LOG.log(System.Logger.Level.WARNING,
                     abandoned + " row stream(s) were never closed; each held its connector, and any "
