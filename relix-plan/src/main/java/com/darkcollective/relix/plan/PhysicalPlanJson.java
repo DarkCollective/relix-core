@@ -181,6 +181,9 @@ public final class PhysicalPlanJson {
                 w.name("from").value(c.fromColumn());
                 w.name("to").value(c.toColumn());
                 w.name("reflexive").value(c.reflexive());
+                if (c.undirected()) {
+                    w.name("undirected").value(true);
+                }
                 c.boundSource().ifPresent(o -> w.name("boundSource").value(o.accept(OPND)));
                 c.boundTarget().ifPresent(o -> w.name("boundTarget").value(o.accept(OPND)));
             }
@@ -192,6 +195,9 @@ public final class PhysicalPlanJson {
             case PhysicalNode.Path p -> {
                 w.name("from").value(p.fromColumn());
                 w.name("to").value(p.toColumn());
+                if (p.undirected()) {
+                    w.name("undirected").value(true);
+                }
                 w.name("minHops").value(p.minHops());
                 w.name("maxHops").value(p.maxHops());
                 w.name("depth").value(p.depthColumn());
@@ -199,6 +205,9 @@ public final class PhysicalPlanJson {
             case PhysicalNode.Trace tr -> {
                 w.name("from").value(tr.fromColumn());
                 w.name("to").value(tr.toColumn());
+                if (tr.undirected()) {
+                    w.name("undirected").value(true);
+                }
                 w.name("weight").value(tr.weightColumn());
                 w.name("sense").value(tr.sense().name().toLowerCase());
                 w.name("path").value(tr.pathColumn());

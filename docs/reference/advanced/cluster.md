@@ -15,7 +15,7 @@ one cluster?"* — work that otherwise needs a hand-rolled recursive self-join.
 
 # Technical Description:
 Given an edge relation, CLUSTER reads the two named columns as **undirected**
-edges (`from ↔ to` — direction is ignored) and computes the graph's connected
+edges (direction is ignored) and computes the graph's connected
 components by an in-engine union-find least fixpoint. The output is a binary
 relation with one row per distinct node: the node identifier (keeping the
 `from` column's name and type) plus a `NUMBER` component-label column named by

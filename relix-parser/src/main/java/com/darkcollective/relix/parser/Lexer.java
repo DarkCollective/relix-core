@@ -279,6 +279,14 @@ public final class Lexer {
                 if (match('=')) {
                     yield token(TokenType.LESS_EQUAL, startIndex, startLine, startColumn);
                 }
+                // Both characters are checked before either is consumed: `x < -1` is a
+                // comparison against a negative literal, so eating the '-' on the strength
+                // of seeing it would misread that as the start of an undirected edge.
+                if (!isAtEnd() && peek() == '-' && peekNext() == '>') {
+                    advance();
+                    advance();
+                    yield token(TokenType.UNDIRECTED_EDGE, startIndex, startLine, startColumn);
+                }
                 yield token(TokenType.LESS, startIndex, startLine, startColumn);
             }
             case '≤' -> token(TokenType.LESS_EQUAL, startIndex, startLine, startColumn);
@@ -323,6 +331,7 @@ public final class Lexer {
             case ',' -> token(TokenType.COMMA, startIndex, startLine, startColumn);
             case '.' -> token(TokenType.DOT, startIndex, startLine, startColumn);
             case '→' -> token(TokenType.ARROW, startIndex, startLine, startColumn);
+            case '↔' -> token(TokenType.UNDIRECTED_EDGE, startIndex, startLine, startColumn);
             case '"' -> stringToken(startIndex, startLine, startColumn, '"');
             case '\'' -> stringToken(startIndex, startLine, startColumn, '\'');
             case '`' -> delimitedIdentifierToken(startLine, startColumn);

@@ -71,6 +71,7 @@ import java.util.Optional;
  * @param location     the source location of this node; never null
  */
 public record TraceNode(RelNode input, String fromColumn, String toColumn,
+                        boolean undirected,
                         String weightColumn, ObjectiveSense sense,
                         String pathColumn,
                         Optional<Operand> boundSource, Optional<Operand> boundTarget,
@@ -115,7 +116,7 @@ public record TraceNode(RelNode input, String fromColumn, String toColumn,
     public TraceNode(RelNode input, String fromColumn, String toColumn,
                      String weightColumn, ObjectiveSense sense, String pathColumn,
                      SourceLocation location) {
-        this(input, fromColumn, toColumn, weightColumn, sense, pathColumn,
+        this(input, fromColumn, toColumn, false, weightColumn, sense, pathColumn,
              Optional.empty(), Optional.empty(), location);
     }
 
@@ -135,8 +136,8 @@ public record TraceNode(RelNode input, String fromColumn, String toColumn,
      * @return a bounded copy
      */
     public TraceNode withBounds(Optional<Operand> newSource, Optional<Operand> newTarget) {
-        return new TraceNode(input, fromColumn, toColumn, weightColumn, sense, pathColumn,
-                newSource, newTarget, location);
+        return new TraceNode(input, fromColumn, toColumn, undirected, weightColumn, sense,
+                pathColumn, newSource, newTarget, location);
     }
 
     @Override

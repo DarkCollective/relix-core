@@ -46,7 +46,8 @@ package com.darkcollective.relix.parser;
  *   <li><b>Arithmetic operators</b> — {@code PLUS}, {@code MINUS},
  *       {@code MULTIPLY}, {@code DIVIDE}.</li>
  *   <li><b>Punctuation</b> — {@code LPAREN}, {@code RPAREN}, {@code COMMA},
- *       {@code DOT}, {@code ARROW} (→), {@code LBRACE}, {@code RBRACE}.</li>
+ *       {@code DOT}, {@code ARROW} (→), {@code UNDIRECTED_EDGE} (↔),
+ *       {@code LBRACE}, {@code RBRACE}.</li>
  *   <li><b>Set membership</b> — {@code ELEMENT_OF} (∈),
  *       {@code NOT_ELEMENT_OF} (∉).</li>
  *   <li><b>Sentinel</b> — {@code EOF}.</li>
@@ -181,6 +182,13 @@ public enum TokenType {
     COMMA,
     DOT,
     ARROW,
+
+    /**
+     * The undirected-edge separator {@code ↔} (ASCII {@code <->}), which stands where the
+     * comma stands between a graph operator's two endpoint columns and says that the edge
+     * relation is to be read both ways.
+     */
+    UNDIRECTED_EDGE,
     EOF,
 
     ELEMENT_OF,

@@ -207,7 +207,7 @@ final class PhysicalPlanJsonTest {
 
         @Test
         void closureCarriesFromToAndReflexive() {
-            var closure = new PhysicalNode.Closure(SCHEMA, "src", "dst", true, leaf());
+            var closure = new PhysicalNode.Closure(SCHEMA, "src", "dst", false, true, leaf());
             assertThat(PhysicalPlanJson.toJson(closure))
                     .contains("\"op\":\"Closure\"")
                     .contains("\"from\":\"src\"")
@@ -217,7 +217,7 @@ final class PhysicalPlanJsonTest {
 
         @Test
         void boundedClosureCarriesEndpointBounds() {
-            var closure = new PhysicalNode.Closure(SCHEMA, "src", "dst", false,
+            var closure = new PhysicalNode.Closure(SCHEMA, "src", "dst", false, false,
                     java.util.Optional.of(new com.darkcollective.relix.ast.NumberOperand("1")),
                     java.util.Optional.of(new com.darkcollective.relix.ast.NumberOperand("4")),
                     leaf());
@@ -229,7 +229,7 @@ final class PhysicalPlanJsonTest {
 
         @Test
         void boundedTraceCarriesEndpointBounds() {
-            var trace = new PhysicalNode.Trace(SCHEMA, "src", "dst", "cost",
+            var trace = new PhysicalNode.Trace(SCHEMA, "src", "dst", false, "cost",
                     com.darkcollective.relix.ast.ObjectiveSense.MINIMIZE, "route",
                     java.util.Optional.of(new com.darkcollective.relix.ast.NumberOperand("1")),
                     java.util.Optional.of(new com.darkcollective.relix.ast.NumberOperand("4")),
@@ -252,7 +252,7 @@ final class PhysicalPlanJsonTest {
 
         @Test
         void pathCarriesEndpointsHopWindowAndDepth() {
-            var path = new PhysicalNode.Path(SCHEMA, "src", "dst", 1, 3, "depth", leaf());
+            var path = new PhysicalNode.Path(SCHEMA, "src", "dst", false, 1, 3, "depth", leaf());
             assertThat(PhysicalPlanJson.toJson(path))
                     .contains("\"op\":\"Path\"")
                     .contains("\"from\":\"src\"")

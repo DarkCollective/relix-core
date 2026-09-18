@@ -520,15 +520,15 @@ public final class Planner {
             case UnnestNode u     -> new PhysicalNode.Unnest(
                     schemaOf(u), u.column(), u.outer(), u.ordinalityColumn(), plan(u.input()));
             case ClosureNode c    -> new PhysicalNode.Closure(
-                    schemaOf(c), c.fromColumn(), c.toColumn(), c.reflexive(),
+                    schemaOf(c), c.fromColumn(), c.toColumn(), c.undirected(), c.reflexive(),
                     c.boundSource(), c.boundTarget(), plan(c.input()));
             case ClusterNode c    -> new PhysicalNode.Cluster(
                     schemaOf(c), c.fromColumn(), c.toColumn(), c.labelColumn(), plan(c.input()));
             case PathNode p       -> new PhysicalNode.Path(
-                    schemaOf(p), p.fromColumn(), p.toColumn(),
+                    schemaOf(p), p.fromColumn(), p.toColumn(), p.undirected(),
                     p.minHops(), p.maxHops(), p.depthColumn(), plan(p.input()));
             case TraceNode t      -> new PhysicalNode.Trace(
-                    schemaOf(t), t.fromColumn(), t.toColumn(), t.weightColumn(),
+                    schemaOf(t), t.fromColumn(), t.toColumn(), t.undirected(), t.weightColumn(),
                     t.sense(), t.pathColumn(), traceAlgorithm(t),
                     t.boundSource(), t.boundTarget(), plan(t.input()));
             case LimitNode l      -> new PhysicalNode.Limit(schemaOf(l), l.offset(), l.count(), plan(l.input()));

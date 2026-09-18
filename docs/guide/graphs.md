@@ -153,6 +153,46 @@ System.out.println(aToD.array("route").stream().map(Value::asDisplayString).toLi
 [A, B, C, D]
 ```
 
+## Reading the edges both ways
+
+Every operator above follows the edge from `src` to `dst` and not back. That is the right
+reading for a dependency graph or a chain of command, and the wrong one for a friendship,
+a shared border or a cable. Passing `undirected` makes the same edge list readable from
+either end, without building a second relation holding the reverse of every row:
+
+```java
+Relation either = relix.relation("π src, dst (Edges)").closure("src", "dst", true, false);
+
+System.out.println(either.render());
+System.out.println("pairs: " + either.count());
+```
+
+```
+CLOSURE src ↔ dst (π src, dst (Edges))
+pairs: 20
+```
+
+The result is symmetric — `D` now reaches `A`, which it cannot do along the arrows — and
+the reference page spells the same thing `CLOSURE src ↔ dst (Edges)`. `path` and `trace`
+take the flag in the same position, so a shortest route may run against the direction a
+row was written in:
+
+```java
+Relation routes = relix.relation("Edges")
+        .trace("src", "dst", true, "cost", ObjectiveSense.MINIMIZE, "route");
+
+routes.toList().stream()
+        .filter(t -> t.string("src").equals("D") && t.string("dst").equals("A"))
+        .forEach(System.out::println);
+```
+
+```
+(src=D, dst=A, cost=9, route=[D, C, B, A])
+```
+
+`cluster` takes no such flag: connected components are an undirected question already, so
+it has always ignored edge direction.
+
 ## General recursion
 
 `CLOSURE`, `CLUSTER` and `PATH` are the specialised, fast forms. `FIX` is the general one:

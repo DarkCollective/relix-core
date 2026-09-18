@@ -589,12 +589,19 @@ public abstract class AstBuilders {
         return new ClosureNode(input, fromColumn, toColumn, reflexive);
     }
 
+    /** Closure reading its two columns as an undirected edge ({@code a ↔ b}). */
+    public static ClosureNode closure(String fromColumn, String toColumn, boolean undirected,
+                                      boolean reflexive, RelNode input) {
+        return new ClosureNode(input, fromColumn, toColumn, undirected, reflexive,
+                Optional.empty(), Optional.empty(), SourceLocation.UNKNOWN);
+    }
+
     /** Closure with the endpoint bounds {@code CLOSURE-001} pushes down. */
-    public static ClosureNode closure(String fromColumn, String toColumn, boolean reflexive,
-                                      Optional<Operand> boundSource,
+    public static ClosureNode closure(String fromColumn, String toColumn, boolean undirected,
+                                      boolean reflexive, Optional<Operand> boundSource,
                                       Optional<Operand> boundTarget, RelNode input) {
-        return new ClosureNode(input, fromColumn, toColumn, reflexive, boundSource, boundTarget,
-                SourceLocation.UNKNOWN);
+        return new ClosureNode(input, fromColumn, toColumn, undirected, reflexive,
+                boundSource, boundTarget, SourceLocation.UNKNOWN);
     }
 
     /** Connected components, labelled into {@code labelColumn}. */
@@ -609,18 +616,33 @@ public abstract class AstBuilders {
         return new PathNode(input, fromColumn, toColumn, minHops, maxHops, depthColumn);
     }
 
+    /** Bounded-hop paths over an undirected edge relation ({@code a ↔ b}). */
+    public static PathNode path(String fromColumn, String toColumn, boolean undirected,
+                                int minHops, int maxHops, String depthColumn, RelNode input) {
+        return new PathNode(input, fromColumn, toColumn, undirected, minHops, maxHops,
+                depthColumn, SourceLocation.UNKNOWN);
+    }
+
     /** Weighted shortest/longest path, appending {@code pathColumn}. */
     public static TraceNode trace(String from, String to, String weight, ObjectiveSense sense,
                                   String path, RelNode input) {
         return new TraceNode(input, from, to, weight, sense, path);
     }
 
+    /** Trace over an undirected weighted edge relation ({@code a ↔ b}). */
+    public static TraceNode trace(String from, String to, boolean undirected, String weight,
+                                  ObjectiveSense sense, String path, RelNode input) {
+        return new TraceNode(input, from, to, undirected, weight, sense, path,
+                Optional.empty(), Optional.empty(), SourceLocation.UNKNOWN);
+    }
+
     /** Trace with the endpoint bounds {@code TRACE-001} pushes down. */
-    public static TraceNode trace(String from, String to, String weight, ObjectiveSense sense,
-                                  String path, Optional<Operand> boundSource,
+    public static TraceNode trace(String from, String to, boolean undirected, String weight,
+                                  ObjectiveSense sense, String path,
+                                  Optional<Operand> boundSource,
                                   Optional<Operand> boundTarget, RelNode input) {
-        return new TraceNode(input, from, to, weight, sense, path, boundSource, boundTarget,
-                SourceLocation.UNKNOWN);
+        return new TraceNode(input, from, to, undirected, weight, sense, path,
+                boundSource, boundTarget, SourceLocation.UNKNOWN);
     }
 
     /** {@code FIX} — a monotone least fixpoint over {@code base} and {@code step}. */

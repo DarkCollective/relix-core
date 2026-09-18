@@ -219,9 +219,9 @@ final class RelNodeCorpusRoundTripTest extends ParserTestSupport {
         void bareFormsStillRoundTrip() {
             List<RelNode> bare = List.of(
                     rel("Users"),
-                    closure("src", "dst", true,
+                    closure("src", "dst", false, true,
                             Optional.empty(), Optional.empty(), rel("Edges")),
-                    trace("src", "dst", "weight",
+                    trace("src", "dst", false, "weight",
                             ObjectiveSense.MINIMIZE, "route",
                             Optional.empty(), Optional.empty(), rel("Edges")),
                     unnest("tags", false, Optional.of("ordinality"), rel("Articles")));

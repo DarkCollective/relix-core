@@ -136,6 +136,7 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
 
         // ── Miscellaneous ────────────────────────────────────────────────────
         row("`→`", "π name → full_name (Users)", "PROJECT name -> full_name (Users)");
+        row("`↔`", "CLOSURE src ↔ dst (Edges)", "CLOSURE src <-> dst (Edges)");
         row("`⊥`", "σ a = ⊥ (R)", "SELECT a = NULL (R)");
         row("`∈`", "σ dept ∈ {\"hr\", \"eng\"} (Employees)",
                    "SELECT dept IN {\"hr\", \"eng\"} (Employees)");
