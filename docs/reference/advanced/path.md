@@ -114,6 +114,25 @@ relation:
 Suspects := { π holder, bank, risk, depth (Accounts ⨝ account_id = dst_account Trail) };
 ```
 
+# Optimization — endpoint pushdown (single-source traversal):
+A selection fixing an endpoint to a constant is folded into the operator
+(`PATH-001`), so the traversal is seeded at that node instead of at every node:
+
+  σ src = "1001" (PATH src, dst HOPS 1 TO 3 AS depth (Transfers))
+
+becomes a single-source breadth-first search rather than an all-pairs one. A bound
+on the target column is the same search over the reversed adjacency, and both
+together is a single-pair search.
+
+This is why the start node is deliberately not part of the syntax: scoping a
+traversal is an ordinary selection, and the optimizer turns it into the cheap
+operator. The `depth` column is unaffected — the shortest path from one node does
+not depend on which other nodes were searched from — so the bounded answer is a
+slice of the unbounded one.
+
+A predicate on `depth`, an inequality on an endpoint, or a disjunction is not
+pushable and remains as a selection above the operator.
+
 # Limitations:
 PATH is **directed** reachability. Edges are read `from → to`; for undirected
 traversal, union the reversed edges into the input first. The output reports only

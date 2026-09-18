@@ -134,7 +134,7 @@ public sealed interface PhysicalNode {
             }
             case Path n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Path(n.schema(), n.fromColumn(), n.toColumn(), n.undirected(), n.minHops(), n.maxHops(), n.depthColumn(), in);
+                yield in == n.input() ? n : new Path(n.schema(), n.fromColumn(), n.toColumn(), n.undirected(), n.minHops(), n.maxHops(), n.depthColumn(), n.boundSource(), n.boundTarget(), in);
             }
             case Trace n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -543,12 +543,27 @@ public sealed interface PhysicalNode {
      * Emits one row {@code (from, to, depth)} for every pair connected by a directed
      * path whose length lies within {@code [minHops, maxHops]}, where {@code depth}
      * is the shortest such length ({@link #depthColumn()}, a NUMBER).  Evaluated
-     * in-engine by a bounded breadth-first traversal over the whole edge set; never
-     * pushed to a source.
+     * in-engine by a bounded breadth-first traversal; never pushed to a source.
+     *
+     * <p>{@link #boundSource()} / {@link #boundTarget()} carry the endpoint bounds the
+     * optimizer folds in ({@code PATH-001}): a present {@code boundSource} seeds the
+     * traversal at that literal instead of at every node, a present {@code boundTarget}
+     * searches the reversed adjacency from it, and both present is a single-pair search.
+     * The distance is unaffected — the shortest path from a seed does not depend on which
+     * other seeds were present — so the bounded result is a slice of the unbounded one.
      */
     record Path(Schema schema, String fromColumn, String toColumn, boolean undirected,
                 int minHops, int maxHops, String depthColumn,
+                Optional<Operand> boundSource, Optional<Operand> boundTarget,
                 PhysicalNode input) implements PhysicalNode {
+
+        /** Unbounded path (no endpoint pushdown) — both bounds empty. */
+        Path(Schema schema, String fromColumn, String toColumn, boolean undirected,
+             int minHops, int maxHops, String depthColumn, PhysicalNode input) {
+            this(schema, fromColumn, toColumn, undirected, minHops, maxHops, depthColumn,
+                    Optional.empty(), Optional.empty(), input);
+        }
+
         @Override public List<PhysicalNode> children() { return List.of(input); }
     }
 

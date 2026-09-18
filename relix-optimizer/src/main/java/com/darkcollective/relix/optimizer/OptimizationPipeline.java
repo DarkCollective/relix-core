@@ -296,6 +296,8 @@ public final class OptimizationPipeline {
                         OptimizationCode.CLOSURE_001),
                 PassRule.of("selection-into-trace", SelectionIntoTracePass::apply,
                         OptimizationCode.TRACE_001),
+                PassRule.of("selection-into-path", SelectionIntoPathPass::apply,
+                        OptimizationCode.PATH_001),
                 PassRule.of("selection-into-fixpoint", SelectionIntoFixpointPass::apply,
                         OptimizationCode.FIX_001),
                 PassRule.of("selection-into-generator", SelectionIntoGeneratorPass::apply,

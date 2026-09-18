@@ -191,4 +191,81 @@ final class SipEquivalenceTest {
                     OptimizationCode.TRACE_001);
         }
     }
+
+    // =========================================================================
+    // PATH-001 — the same fold, over a traversal that also reports a distance
+    // =========================================================================
+
+    @Nested
+    @DisplayName("PATH-001 — endpoint pushdown preserves the pairs and their depths")
+    class Path {
+
+        @Test
+        @DisplayName("σ src = c (PATH): single-source traversal equals filtered all-pairs")
+        void pathSourceEquivalent() {
+            assertEquivalent(
+                    EDGES
+                  + "query { σ src = \"A\" (PATH src, dst HOPS 1 TO 3 AS depth (Edges)) };\n",
+                    OptimizationCode.PATH_001);
+        }
+
+        @Test
+        @DisplayName("σ dst = c (PATH): single-target traversal equals filtered all-pairs")
+        void pathTargetEquivalent() {
+            // The reversed-adjacency search, which is where a distance could come back
+            // measured from the wrong end.
+            assertEquivalent(
+                    EDGES
+                  + "query { σ dst = \"D\" (PATH src, dst HOPS 1 TO 3 AS depth (Edges)) };\n",
+                    OptimizationCode.PATH_001);
+        }
+
+        @Test
+        @DisplayName("σ src = c ∧ dst = c (PATH): single-pair search equals filtered all-pairs")
+        void pathPairEquivalent() {
+            assertEquivalent(
+                    EDGES
+                  + "query { σ src = \"A\" ∧ dst = \"D\" (PATH src, dst HOPS 1 TO 3 AS depth (Edges)) };\n",
+                    OptimizationCode.PATH_001);
+        }
+
+        @Test
+        @DisplayName("a narrow hop window still reports the same depths")
+        void pathWindowEquivalent() {
+            // The window is applied to the shortest distance, so a seeded run must agree
+            // with the unseeded one about what falls inside it — the claim that seeding
+            // does not change a surviving row's depth, asserted where it would show.
+            assertEquivalent(
+                    EDGES
+                  + "query { σ src = \"A\" (PATH src, dst HOPS 2 TO 3 AS depth (Edges)) };\n",
+                    OptimizationCode.PATH_001);
+        }
+
+        @Test
+        @DisplayName("a predicate on depth is residual, and the answer is unchanged")
+        void pathResidualEquivalent() {
+            assertEquivalent(
+                    EDGES
+                  + "query { σ src = \"A\" ∧ depth > 1 (PATH src, dst HOPS 1 TO 3 AS depth (Edges)) };\n",
+                    OptimizationCode.PATH_001);
+        }
+
+        @Test
+        @DisplayName("an undirected traversal folds its bound and still reads both ways")
+        void pathUndirectedEquivalent() {
+            assertEquivalent(
+                    EDGES
+                  + "query { σ src = \"D\" (PATH src \u2194 dst HOPS 1 TO 3 AS depth (Edges)) };\n",
+                    OptimizationCode.PATH_001);
+        }
+
+        @Test
+        @DisplayName("an inequality on an endpoint is not pushable, and nothing changes")
+        void pathInequalityNotFired() {
+            assertNotFiredButEqual(
+                    EDGES
+                  + "query { σ src > \"A\" (PATH src, dst HOPS 1 TO 3 AS depth (Edges)) };\n",
+                    OptimizationCode.PATH_001);
+        }
+    }
 }

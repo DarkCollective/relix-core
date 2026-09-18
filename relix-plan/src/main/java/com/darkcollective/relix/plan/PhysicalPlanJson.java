@@ -201,6 +201,8 @@ public final class PhysicalPlanJson {
                 w.name("minHops").value(p.minHops());
                 w.name("maxHops").value(p.maxHops());
                 w.name("depth").value(p.depthColumn());
+                p.boundSource().ifPresent(o -> w.name("boundSource").value(o.accept(OPND)));
+                p.boundTarget().ifPresent(o -> w.name("boundTarget").value(o.accept(OPND)));
             }
             case PhysicalNode.Trace tr -> {
                 w.name("from").value(tr.fromColumn());

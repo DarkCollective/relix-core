@@ -16,6 +16,7 @@
 package com.darkcollective.relix.parser;
 
 import com.darkcollective.relix.ast.ClosureNode;
+import com.darkcollective.relix.ast.PathNode;
 import com.darkcollective.relix.ast.EmptyRelationNode;
 import com.darkcollective.relix.ast.ObjectiveSense;
 import com.darkcollective.relix.ast.RecursiveRefNode;
@@ -102,6 +103,9 @@ final class RelNodeCorpusRoundTripTest extends ParserTestSupport {
                             + "optimizer artifact, as above",
                     TraceNode.class,
                     "the ⟨src=…, dst=…⟩ endpoint bounds TRACE-001 pushes down are an "
+                            + "optimizer artifact, as above",
+                    PathNode.class,
+                    "the ⟨src=…, dst=…⟩ endpoint bounds PATH-001 pushes down are an "
                             + "optimizer artifact, as above",
                     UnnestNode.class,
                     "the OUTER variant is programmatic only — docs/reference/operators/"
