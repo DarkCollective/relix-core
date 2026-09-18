@@ -17,6 +17,7 @@ package com.darkcollective.relix.provenance;
 
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.math.BigDecimal;
 
 /**
  * The cheapest-route semiring {@code ((ℝ ∪ {+∞}) × ℘(Route), ⊕, ⊗, (+∞, ∅), (0, {ε}))}
@@ -113,4 +114,20 @@ public enum PathCostSemiring implements Semiring<PathCost> {
         }
         return new PathCost(cost, kept, true);
     }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Each base tuple is minted a token distinguishing it from every other edge, so
+     * that the cheapest route can name the edges it travelled rather than only its cost.
+     * An edge with no numeric weight costs {@code 0} — every route then weighs its hop
+     * count of zero, which makes an unweighted graph a defined reachability-with-witness
+     * rather than an error.
+     */
+    @Override
+    public PathCost base(BaseTuple tuple) {
+        double cost = tuple.weight().map(BigDecimal::doubleValue).orElse(0.0d);
+        return PathCost.of(cost, Route.of(tuple.source() + "#" + tuple.ordinal()));
+    }
+
 }

@@ -16,18 +16,15 @@
 package com.darkcollective.relix.processor.provenance;
 
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.provenance.CountingSemiring;
-import com.darkcollective.relix.provenance.PathCost;
-import com.darkcollective.relix.provenance.PathCostSemiring;
+import com.darkcollective.relix.provenance.BaseTuple;
 import com.darkcollective.relix.provenance.Polynomial;
 import com.darkcollective.relix.provenance.PolynomialSemiring;
-import com.darkcollective.relix.provenance.Route;
 import com.darkcollective.relix.provenance.Semiring;
-import com.darkcollective.relix.provenance.SourceRef;
-import com.darkcollective.relix.provenance.TropicalSemiring;
 import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.Value;
 
+import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
@@ -36,10 +33,13 @@ import java.util.TreeMap;
  * {@code K} value a {@link ProvenanceEvaluator} lifts each leaf row to before the
  * positive operators thread {@code ⊕}/{@code ⊗} above it.
  *
- * <p>For the cheap semirings this is simply {@link Semiring#one() one} for every
- * tuple (see {@link #constantOne}), so a base relation embeds with each row "present"
- * (boolean) or multiplicity one (ℕ). The lineage semiring {@code ℕ[X]} instead mints
- * a <em>distinct provenance variable per occurrence</em> (e.g. {@code Orders#1},
+ * <p>Which annotation a tuple lifts to is the <em>semiring's</em> answer, not this
+ * interface's: {@link #forSemiring} reduces the row to a
+ * {@link com.darkcollective.relix.provenance.BaseTuple} and asks
+ * {@link Semiring#base}. For the cheap semirings that is {@link Semiring#one() one} for
+ * every tuple, so a base relation embeds with each row "present" (boolean) or
+ * multiplicity one (ℕ). The lineage semiring {@code ℕ[X]} instead mints a
+ * <em>distinct provenance variable per occurrence</em> (e.g. {@code Orders#1},
  * {@code Orders#2}), which is what makes it the free, most-informative semiring: two
  * structurally-equal source rows receive different variables, and the merged tuple's
  * annotation becomes {@code x₁ ⊕ x₂}.
@@ -65,45 +65,61 @@ public interface BaseAnnotator<K> {
     K annotate(String source, long ordinal, Row row);
 
     /**
-     * {@return an annotator that lifts every base tuple to the semiring's
-     * {@link Semiring#one() one}} The correct (and zero-cost) lift for every cheap
-     * semiring; lineage is the exception.
-     *
-     * @param semiring the semiring whose {@code one()} is used
-     * @param <K>      the annotation type
-     */
-    static <K> BaseAnnotator<K> constantOne(Semiring<K> semiring) {
-        K one = semiring.one();
-        return (source, ordinal, row) -> one;
-    }
-
-    /**
      * {@return the annotator {@code semiring} wants, given an optional per-edge
      * {@code weightColumn}}
      *
-     * <p>Three shapes, and which one applies is a property of the semiring rather than
-     * a choice the caller makes: the cheapest-route semiring needs both a cost and a
-     * per-edge identity token; every other semiring reads the weight column alone; and
-     * with no weight column at all the answer is {@link #constantOne}. A row lacking the
-     * column, or carrying a null or non-numeric value, weighs {@link Semiring#one() one}.
+     * <p>Which shape of annotation a base tuple lifts to is a property of the semiring
+     * rather than a choice the caller makes, and it is the semiring that states it: this
+     * reduces each row to a {@link BaseTuple} — its leaf, its occurrence index, its weight
+     * and, on demand, its columns — and hands that to {@link Semiring#base}. So a
+     * constant, a cost, a multiplicity, a route token and a lineage variable are all the
+     * same call here, and an installed semiring reaches every one of those shapes without
+     * the engine recognising it.
      *
-     * <p>Lineage is not reachable from here — {@code ℕ[X]} mints a variable per
-     * occurrence rather than reading a weight, so it is {@link #lineage()}.
+     * <p>A row lacking the weight column, or carrying a null or non-numeric value, has no
+     * weight; the semiring decides what that means for it.
      *
      * @param semiring     the annotation semiring; must not be null
-     * @param weightColumn the per-edge weight column, or {@code null} for the plain lift
+     * @param weightColumn the per-edge weight column, or {@code null} for no weight
      * @param <K>          the annotation type
      */
-    @SuppressWarnings("unchecked")
     static <K> BaseAnnotator<K> forSemiring(Semiring<K> semiring, String weightColumn) {
-        if (semiring == PathCostSemiring.INSTANCE) {
-            return (BaseAnnotator<K>) pathCost(weightColumn);
-        }
-        return weightColumn == null
-                ? constantOne(semiring)
-                : (source, ordinal, row) -> row.schema().indexOf(weightColumn) < 0
-                        ? semiring.one()
-                        : coerceWeight(semiring, row.get(weightColumn));
+        return (source, ordinal, row) ->
+                semiring.base(tuple(source, ordinal, row, weightColumn));
+    }
+
+    /**
+     * {@return {@code row} as the neutral view a semiring reads} {@code columns()} builds
+     * its map per call, which is why it is a method rather than a captured field: only
+     * lineage asks for one.
+     */
+    private static BaseTuple tuple(String source, long ordinal, Row row, String weightColumn) {
+        return new BaseTuple() {
+            @Override
+            public String source() {
+                return source;
+            }
+
+            @Override
+            public long ordinal() {
+                return ordinal;
+            }
+
+            @Override
+            public Optional<BigDecimal> weight() {
+                if (weightColumn == null || row.schema().indexOf(weightColumn) < 0) {
+                    return Optional.empty();
+                }
+                return row.get(weightColumn) instanceof NumberValue n
+                        ? Optional.of(n.value())
+                        : Optional.empty();
+            }
+
+            @Override
+            public SortedMap<String, String> columns() {
+                return capturedColumns(row);
+            }
+        };
     }
 
     /**
@@ -113,45 +129,7 @@ public interface BaseAnnotator<K> {
      * that produced it, rather than merely nameable.
      */
     static BaseAnnotator<Polynomial> lineage() {
-        return (source, ordinal, row) ->
-                PolynomialSemiring.variable(new SourceRef(source, ordinal, capturedColumns(row)));
-    }
-
-    /**
-     * {@return the cheapest-route annotator} It mints each edge a distinct identity token
-     * and reads its cost from {@code weightColumn}. A row lacking the column (or carrying
-     * a null or non-numeric value), and the absence of a weight column entirely, weighs
-     * the edge {@code 0.0} — every route then weighs its hop count of zero, making
-     * cheapest-route a degenerate-but-defined reachability with witnesses.
-     */
-    private static BaseAnnotator<PathCost> pathCost(String weightColumn) {
-        return (source, ordinal, row) -> {
-            double cost = 0.0d;
-            if (weightColumn != null
-                    && row.schema().indexOf(weightColumn) >= 0
-                    && row.get(weightColumn) instanceof NumberValue n) {
-                cost = n.value().doubleValue();
-            }
-            return PathCost.of(cost, Route.of(source + "#" + ordinal));
-        };
-    }
-
-    /**
-     * {@return {@code value} coerced into the weight of {@code semiring}} A numeric value
-     * becomes a {@code double} (tropical) or a {@code BigInteger} multiplicity (ℕ); every
-     * other semiring, and any non-numeric or null value, yields {@link Semiring#one()}.
-     */
-    @SuppressWarnings("unchecked")
-    private static <K> K coerceWeight(Semiring<K> semiring, Value value) {
-        if (value instanceof NumberValue n) {
-            if (semiring == TropicalSemiring.INSTANCE) {
-                return (K) (Double) n.value().doubleValue();
-            }
-            if (semiring == CountingSemiring.INSTANCE) {
-                return (K) n.value().toBigInteger();
-            }
-        }
-        return semiring.one();
+        return forSemiring(PolynomialSemiring.INSTANCE, null);
     }
 
     /**

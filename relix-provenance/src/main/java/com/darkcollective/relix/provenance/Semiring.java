@@ -85,4 +85,27 @@ public interface Semiring<K> {
      * @return {@code a ⊗ b}
      */
     K times(K a, K b);
+
+    /**
+     * {@return the annotation a base tuple lifts to} This is how a semiring reads the
+     * data: the engine hands over each leaf tuple and the semiring says what it is worth.
+     *
+     * <p>The default lifts every base tuple to {@link #one()}, which is correct for any
+     * semiring whose annotation does not depend on the data — boolean existence and the
+     * security lattice, whose answers are decided entirely by how derivations combine.
+     * Override it to read {@link BaseTuple#weight()} (a cost, a multiplicity, a
+     * probability) or to mint a per-occurrence token from {@link BaseTuple#source()} and
+     * {@link BaseTuple#ordinal()} (a route, a lineage variable).
+     *
+     * <p>A semiring that reads a weight must decide for itself what an absent one means,
+     * because the two defensible answers differ: {@link #one()} leaves the tuple neutral,
+     * while a fixed constant makes an unweighted graph a defined special case rather than
+     * a degenerate one.
+     *
+     * @param tuple the base tuple; never {@code null}
+     * @return the tuple's base annotation; never {@code null}
+     */
+    default K base(BaseTuple tuple) {
+        return one();
+    }
 }

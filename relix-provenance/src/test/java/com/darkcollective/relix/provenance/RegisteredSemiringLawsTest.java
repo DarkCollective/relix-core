@@ -75,6 +75,10 @@ final class RegisteredSemiringLawsTest {
         SAMPLES.put("security", List.of(PUBLIC, CONFIDENTIAL, SECRET, TOP_SECRET));
         SAMPLES.put("lineage", polynomials());
         SAMPLES.put("cheapest-route", pathCosts());
+        // Discovered, not built in — which is the point: a semiring installed through the
+        // provider seam is held to the same laws as one that ships. The values are dyadic
+        // rationals so that sum-product over double is exact and the laws hold literally.
+        SAMPLES.put("kinship", List.of(0.0d, 1.0d, 0.5d, 0.25d));
     }
 
     private static List<Polynomial> polynomials() {
