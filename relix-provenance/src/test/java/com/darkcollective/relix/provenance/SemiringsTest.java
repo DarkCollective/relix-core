@@ -63,10 +63,19 @@ final class SemiringsTest {
     }
 
     @Test
-    @DisplayName("names() lists the canonical built-ins in declaration order")
+    @DisplayName("names() lists the canonical built-ins in declaration order, ahead of any installed one")
     void names() {
+        // Not containsExactly: the registry is open, and this module's own test library
+        // installs one. What is fixed is that the bundled six are all there, in order.
         assertThat(Semirings.names())
-                .containsExactly("boolean", "counting", "tropical", "security", "lineage",
+                .startsWith("boolean", "counting", "tropical", "security", "lineage",
                         "cheapest-route");
+    }
+
+    @Test
+    @DisplayName("names() includes a semiring installed through the provider seam")
+    void namesIncludesInstalled() {
+        assertThat(Semirings.names()).contains("kinship");
+        assertThat(Semirings.byName("kinship")).contains(KinshipSemiring.INSTANCE);
     }
 }

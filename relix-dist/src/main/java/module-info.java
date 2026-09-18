@@ -65,6 +65,7 @@ module com.darkcollective.relix {
     // reads these; a class path reads the merged META-INF/services beside them.
     uses com.darkcollective.relix.function.FunctionLibrary;
     uses com.darkcollective.relix.processor.connector.RelixConnector;
+    uses com.darkcollective.relix.provenance.SemiringLibrary;
     uses com.darkcollective.relix.solver.MathProgrammingSolver;
     uses java.sql.Driver;
 

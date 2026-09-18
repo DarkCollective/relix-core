@@ -61,7 +61,6 @@ import com.darkcollective.relix.processor.generator.GeneratorMonotonicitySource;
 import com.darkcollective.relix.processor.provenance.AnnotatedRelation;
 import com.darkcollective.relix.processor.provenance.BaseAnnotator;
 import com.darkcollective.relix.processor.provenance.ProvenanceEvaluator;
-import com.darkcollective.relix.provenance.PolynomialSemiring;
 import com.darkcollective.relix.provenance.Semiring;
 import com.darkcollective.relix.semantic.SchemaInference;
 import com.darkcollective.relix.semantic.RelationDeterminism;
@@ -1423,16 +1422,14 @@ public final class Relation {
     // Execution internals
     // -------------------------------------------------------------------------
 
-    @SuppressWarnings("unchecked")
     private <K> AnnotatedRelation<K> annotate(Semiring<K> semiring, String weightColumn) {
         Objects.requireNonNull(semiring, "semiring");
         session.requireOpen();
         requireResolvable();
-        // Lineage is the one semiring that does not read a weight: it mints a variable per
-        // base-tuple occurrence, which is what makes it the most informative of the five.
-        BaseAnnotator<K> annotator = semiring == PolynomialSemiring.INSTANCE
-                ? (BaseAnnotator<K>) BaseAnnotator.lineage()
-                : BaseAnnotator.forSemiring(semiring, weightColumn);
+        // Which shape of base annotation applies is the semiring's own answer, so there is
+        // nothing to dispatch on here: lineage mints a variable per occurrence and the
+        // weighted semirings read the column, both through the same call.
+        BaseAnnotator<K> annotator = BaseAnnotator.forSemiring(semiring, weightColumn);
         try (DataSourceConnector connector = session.openConnector(model)) {
             return new ProvenanceEvaluator()
                     .evaluate(node, semiring, context(connector, QueryEventListener.NONE), annotator);

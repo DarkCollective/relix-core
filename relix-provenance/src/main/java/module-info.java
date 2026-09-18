@@ -40,4 +40,9 @@
  */
 module com.darkcollective.relix.provenance {
     exports com.darkcollective.relix.provenance;
+
+    // Declared here so ServiceLoader binds against this module: a semiring is resolved
+    // by the name a --provenance request carries, and a consumer that ran its own scan
+    // could disagree with this one about what that name means.
+    uses com.darkcollective.relix.provenance.SemiringLibrary;
 }
