@@ -268,7 +268,7 @@ try {
 ```
 
 ```
-EvaluationException: TREE: cycle detected in the 'id' → 'manager_id' graph; a tree requires an acyclic, single-parent forest
+QueryExecutionException: TREE: cycle detected in the 'id' → 'manager_id' graph; a tree requires an acyclic, single-parent forest
 ```
 
 Sibling order is input order unless you ask for something else, and asking is a clause

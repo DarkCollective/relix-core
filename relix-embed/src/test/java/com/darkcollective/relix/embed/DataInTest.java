@@ -20,7 +20,6 @@ import com.darkcollective.relix.function.FunctionLibrary;
 import com.darkcollective.relix.function.FunctionSignature;
 import com.darkcollective.relix.function.ScalarFunction;
 import com.darkcollective.relix.function.StrictScalarFunction;
-import com.darkcollective.relix.plan.BoundednessException;
 import com.darkcollective.relix.processor.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
@@ -563,7 +562,7 @@ final class DataInTest {
                 relix.define("source Naturals from generator { name: \"Naturals\" };");
 
                 assertThatThrownBy(() -> relix.materialize("All", relix.relation("Naturals")))
-                        .isInstanceOf(BoundednessException.class);
+                        .isInstanceOf(UnboundedRelationException.class);
             }
         }
 

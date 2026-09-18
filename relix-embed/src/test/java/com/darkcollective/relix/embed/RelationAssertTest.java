@@ -17,7 +17,6 @@ package com.darkcollective.relix.embed;
 
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.optimizer.OptimizationCode;
-import com.darkcollective.relix.plan.BoundednessException;
 import com.darkcollective.relix.symbol.ScalarType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -206,9 +205,9 @@ final class RelationAssertTest {
                 assertThatThrownBy(() -> assertThat(relix.relation("Naturals")).hasRowCount(3))
                         .isInstanceOf(AssertionError.class)
                         .hasMessageContaining("expected to execute this relation")
-                        .hasMessageContaining("BoundednessException")
+                        .hasMessageContaining("UnboundedRelationException")
                         .hasMessageContaining("Naturals")
-                        .hasCauseInstanceOf(BoundednessException.class);
+                        .hasCauseInstanceOf(UnboundedRelationException.class);
             }
         }
 
