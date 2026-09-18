@@ -18,6 +18,7 @@ package com.darkcollective.relix.ast;
 import com.darkcollective.relix.ast.visitor.RelNodeVisitor;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Bounded variable-length path reachability — the RA-native graph-traversal
@@ -53,17 +54,23 @@ import java.util.Objects;
  * @param input       the edge relation; must not be null
  * @param fromColumn  the source-endpoint column; also names the output source column; must not be blank
  * @param toColumn    the target-endpoint column; must not be blank
- * @param undirected {@code true} reads the two endpoint columns as     an undirected edge, so the relation is read both ways from one edge set
- *                   ({@code a ↔ b}); {@code false} reads it as a directed edge
- *                   ({@code a, b})
+ * @param undirected  {@code true} reads the two endpoint columns as an
+ *                    undirected edge, so the relation is followed both ways from one
+ *                    edge set ({@code a ↔ b}); {@code false} reads a directed edge
+ *                    ({@code a, b})
  * @param minHops     the inclusive lower bound of the hop window; must be {@code >= 1}
  * @param maxHops     the inclusive upper bound of the hop window; must be {@code >= minHops}
  * @param depthColumn the name of the appended hop-distance column; must not be blank
+ * @param boundSource optional literal bound on the {@code fromColumn} endpoint
+ *                    (single-source); never null, possibly empty
+ * @param boundTarget optional literal bound on the {@code toColumn} endpoint
+ *                    (single-target); never null, possibly empty
  * @param location    the source location of this node; never null
  */
 public record PathNode(RelNode input, String fromColumn, String toColumn,
                        boolean undirected,
                        int minHops, int maxHops, String depthColumn,
+                       Optional<Operand> boundSource, Optional<Operand> boundTarget,
                        SourceLocation location)
         implements RelNode {
 
@@ -88,14 +95,47 @@ public record PathNode(RelNode input, String fromColumn, String toColumn,
         if (depthColumn.isBlank()) {
             throw new IllegalArgumentException("Path depthColumn must not be blank");
         }
+        Objects.requireNonNull(boundSource, "boundSource");
+        Objects.requireNonNull(boundTarget, "boundTarget");
         Objects.requireNonNull(location, "location");
+    }
+
+    /**
+     * Constructor without endpoint bounds (the parsed form): both bounds empty.
+     *
+     * @param input       the edge relation; must not be null
+     * @param fromColumn  the source-endpoint column; must not be blank
+     * @param toColumn    the target-endpoint column; must not be blank
+     * @param undirected  {@code true} to read the edges both ways
+     * @param minHops     the inclusive lower bound of the hop window
+     * @param maxHops     the inclusive upper bound of the hop window
+     * @param depthColumn the name of the appended hop-distance column
+     * @param location    the source location of this node; never null
+     */
+    public PathNode(RelNode input, String fromColumn, String toColumn, boolean undirected,
+                    int minHops, int maxHops, String depthColumn, SourceLocation location) {
+        this(input, fromColumn, toColumn, undirected, minHops, maxHops, depthColumn,
+                Optional.empty(), Optional.empty(), location);
+    }
+
+    /**
+     * Returns a copy of this path with the given endpoint bounds, preserving all other
+     * fields.
+     *
+     * @param newSource the source-endpoint bound; must not be null
+     * @param newTarget the target-endpoint bound; must not be null
+     * @return a bounded copy
+     */
+    public PathNode withBounds(Optional<Operand> newSource, Optional<Operand> newTarget) {
+        return new PathNode(input, fromColumn, toColumn, undirected, minHops, maxHops,
+                depthColumn, newSource, newTarget, location);
     }
 
     /** Convenience constructor for tests: {@link SourceLocation#UNKNOWN}. */
     public PathNode(RelNode input, String fromColumn, String toColumn,
                     int minHops, int maxHops, String depthColumn) {
         this(input, fromColumn, toColumn, false, minHops, maxHops, depthColumn,
-                SourceLocation.UNKNOWN);
+                Optional.empty(), Optional.empty(), SourceLocation.UNKNOWN);
     }
 
     @Override

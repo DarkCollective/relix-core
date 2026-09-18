@@ -61,6 +61,10 @@ import java.util.Optional;
  * @param input        the edge relation; must not be null
  * @param fromColumn   the origin node column; must not be blank
  * @param toColumn     the destination node column; must not be blank
+ * @param undirected   {@code true} reads the two endpoint columns as an
+ *                     undirected edge, so the relation is followed both ways from
+ *                     one edge set ({@code a ↔ b}); {@code false} reads a directed
+ *                     edge ({@code a, b})
  * @param weightColumn the edge-weight column (must be NUMBER or ANY); must not be blank
  * @param sense        whether to minimise or maximise total path weight; must not be null
  * @param pathColumn   the name of the appended ordered-path array column; must not be blank
@@ -108,7 +112,7 @@ public record TraceNode(RelNode input, String fromColumn, String toColumn,
      * @param input        the edge relation; must not be null
      * @param fromColumn   the origin node column; must not be blank
      * @param toColumn     the destination node column; must not be blank
-     * @param weightColumn the edge-weight column; must not be blank
+ * @param weightColumn the edge-weight column; must not be blank
      * @param sense        the objective sense; must not be null
      * @param pathColumn   the appended path-array column; must not be blank
      * @param location     the source location of this node; never null

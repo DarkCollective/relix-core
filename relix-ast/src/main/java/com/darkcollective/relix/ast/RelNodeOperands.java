@@ -110,7 +110,10 @@ public final class RelNodeOperands {
             case RenameNode ignored -> { }
             case UnnestNode ignored -> { }
             case ClusterNode ignored -> { }
-            case PathNode ignored -> { }
+            case PathNode n -> {
+                n.boundSource().ifPresent(onOperand);
+                n.boundTarget().ifPresent(onOperand);
+            }
             case LimitNode ignored -> { }
             case IntervalJoinNode ignored -> { }
             case CoverNode ignored -> { }
@@ -304,7 +307,6 @@ public final class RelNodeOperands {
             case RenameNode ignored -> node;
             case UnnestNode ignored -> node;
             case ClusterNode ignored -> node;
-            case PathNode ignored -> node;
             case LimitNode ignored -> node;
             case IntervalJoinNode ignored -> node;
             case CoverNode ignored -> node;
@@ -401,6 +403,14 @@ public final class RelNodeOperands {
                 yield source == n.boundSource() && target == n.boundTarget() ? n
                         : new ClosureNode(n.input(), n.fromColumn(), n.toColumn(),
                                 n.undirected(), n.reflexive(), source, target, n.location());
+            }
+            case PathNode n -> {
+                Optional<Operand> source = mapOptional(n.boundSource(), onOperand);
+                Optional<Operand> target = mapOptional(n.boundTarget(), onOperand);
+                yield source == n.boundSource() && target == n.boundTarget() ? n
+                        : new PathNode(n.input(), n.fromColumn(), n.toColumn(), n.undirected(),
+                                n.minHops(), n.maxHops(), n.depthColumn(), source, target,
+                                n.location());
             }
             case TraceNode n -> {
                 Optional<Operand> source = mapOptional(n.boundSource(), onOperand);

@@ -406,7 +406,10 @@ public final class AstLocations {
         public RelNode visit(PathNode node) {
             return new PathNode(node.input().accept(this), node.fromColumn(),
                     node.toColumn(), node.undirected(), node.minHops(), node.maxHops(),
-                    node.depthColumn(), SourceLocation.UNKNOWN);
+                    node.depthColumn(),
+                    node.boundSource().map(AstLocations::stripLocations),
+                    node.boundTarget().map(AstLocations::stripLocations),
+                    SourceLocation.UNKNOWN);
         }
 
         @Override

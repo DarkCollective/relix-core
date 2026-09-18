@@ -528,6 +528,55 @@ A predicate on `DOWNSAMPLE`'s *timestamp* column is a **range** restriction on
 the buckets rather than a partition selection — a different rewrite, and not one
 of these.
 
+## Endpoint bounds on a graph traversal
+
+```
+σ from = c (OP from, to … (E))   ≡   OP from, to … ⟨from=c⟩ (E)
+```
+
+Three graph operators compute an **all-pairs** answer over an edge relation, and a
+selection fixing an endpoint to a constant throws almost all of it away. Because
+the endpoint is a partitioning dimension — the all-pairs answer filtered to
+`from = X` is what seeding the traversal at `X` alone produces — the equality
+folds into the operator and the traversal starts where it was going to end up.
+
+| Code | Operator | What is skipped |
+|------|----------|-----------------|
+| `CLOSURE-001` | `CLOSURE` / `RCLOSURE` | reachability from every other node |
+| `TRACE-001` | `TRACE` | every other node's optimal-path table |
+| `PATH-001` | `PATH` | every other node's breadth-first traversal |
+
+A bound on the **target** is the same traversal over the reversed adjacency, and
+both bounds together is a single-pair search.
+
+```relix
+Transfers := [
+| src | dst |
+|-----|-----|
+| a1  | a2  |
+| a2  | a3  |
+| b1  | b2  |
+];
+query { σ src = "a1" (PATH src, dst HOPS 1 TO 3 AS depth (Transfers)) };
+```
+
+becomes `PATH src, dst HOPS 1 TO 3 AS depth ⟨src="a1"⟩ (Transfers)` — `b1`'s
+traversal never runs. That spelling is the one the operator pages recommend, since
+a start node is a selection rather than syntax, so the unbounded form is what
+following the manual gives you and this rule is what makes it cheap.
+
+**The distance column is unaffected.** `PATH`'s `depth` is the *shortest* path
+length, which is why `(from, to)` is a candidate key of its result; the shortest
+path from one node does not depend on which other nodes were searched from, so the
+bounded result is a slice of the unbounded one rather than a recomputation of it.
+
+**What is pushable**: a top-level conjoined `=` against a literal, on the operator's
+own `from` or `to` column, where that endpoint is not already bound. A predicate on
+a computed output column (`depth`, `TRACE`'s weight or path), an inequality, a
+second equality on an already-bound endpoint, a cross-column correlation like
+`from = to`, and any disjunction all stay as a residual σ above the bounded
+operator — so an unrecognised conjunct is never dropped.
+
 ## Distinctness rules (`DIST-nnn`)
 
 `δ` buffers a whole hash set, so a `δ` that changes nothing is one of the more
@@ -711,7 +760,7 @@ once each, in this order:
 | `simplify` | `EXPR-001..008`, `PRED-001..006` | Fold constants and normalise comparisons, so every later rule matches against settled expressions |
 | `pushdown` | `SEL-001`, `JOIN-004`, `EQ-001`, `SEL-003..009`, `NEST-001..003`, `WINDOW-001`, `TOPK-001`, `OPTIMIZE-001`, `SESSION-001`, `DOWNSAMPLE-001`, `JOIN-001..002` | Move filters toward the data and shape the joins |
 | `cleanup` | `SEL-002`, `PROJ-001..003`, `AGG-001`, `DIST-001..002`, `PROD-001`, `EMPTY-001..003`, `SORT-001` | Put conjunctions back together and drop what a rewrite made redundant |
-| `sip` | `CLOSURE-001`, `TRACE-001`, `FIX-001`, `GEN-001` | Fold a constraint into an expensive operator, once the σ above it has settled |
+| `sip` | `CLOSURE-001`, `TRACE-001`, `PATH-001`, `FIX-001`, `GEN-001` | Fold a constraint into an expensive operator, once the σ above it has settled |
 | `limit` | `LIM-001..004` | Move limits down, and fuse `λ ∘ τ` into `TOP` |
 | `prune` | `PROJ-004` | Narrow every leaf to the columns the query reads |
 

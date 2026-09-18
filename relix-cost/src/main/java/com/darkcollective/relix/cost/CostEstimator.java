@@ -336,7 +336,16 @@ public final class CostEstimator {
             case DistinctNode ignored -> rowsAt(node.children().get(0), depth + 1);
             case UnnestNode ignored -> rowsAt(node.children().get(0), depth + 1);
             case ClusterNode ignored -> rowsAt(node.children().get(0), depth + 1);
-            case PathNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            // A bounded PATH (ADR-0020 endpoint pushdown) computes one slice of the
+            // all-pairs distance table: both endpoints fixed is a single-pair search
+            // (≤ 1 row); one endpoint fixed is single-source/single-target, for which the
+            // input edge count is the same serviceable proxy the closure arm uses.
+            case PathNode p -> {
+                if (p.boundSource().isPresent() && p.boundTarget().isPresent()) {
+                    yield OptionalLong.of(1L);
+                }
+                yield rowsAt(p.input(), depth + 1);
+            }
             case SolveNode ignored -> rowsAt(node.children().get(0), depth + 1);
             case OptimizeNode ignored -> rowsAt(node.children().get(0), depth + 1);
             case CoverNode ignored -> rowsAt(node.children().get(0), depth + 1);

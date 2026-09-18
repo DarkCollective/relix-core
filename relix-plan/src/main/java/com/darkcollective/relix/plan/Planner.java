@@ -526,7 +526,8 @@ public final class Planner {
                     schemaOf(c), c.fromColumn(), c.toColumn(), c.labelColumn(), plan(c.input()));
             case PathNode p       -> new PhysicalNode.Path(
                     schemaOf(p), p.fromColumn(), p.toColumn(), p.undirected(),
-                    p.minHops(), p.maxHops(), p.depthColumn(), plan(p.input()));
+                    p.minHops(), p.maxHops(), p.depthColumn(),
+                    p.boundSource(), p.boundTarget(), plan(p.input()));
             case TraceNode t      -> new PhysicalNode.Trace(
                     schemaOf(t), t.fromColumn(), t.toColumn(), t.undirected(), t.weightColumn(),
                     t.sense(), t.pathColumn(), traceAlgorithm(t),
