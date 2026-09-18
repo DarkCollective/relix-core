@@ -146,7 +146,7 @@ final class PhysicalPlanPrinterTest {
     @DisplayName("a closure shows its from/to columns")
     void closureLabel() {
         PhysicalNode plan = new PhysicalNode.Closure(
-                SCHEMA, "src", "dst", false, sqlScan("SELECT x FROM edges"));
+                SCHEMA, "src", "dst", false, false, sqlScan("SELECT x FROM edges"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
                 CLOSURE src→dst
                 └─ PushedScan [jdbc/db] SELECT x FROM edges
@@ -157,7 +157,7 @@ final class PhysicalPlanPrinterTest {
     @DisplayName("a bounded closure shows its endpoint bounds")
     void boundedClosureLabel() {
         PhysicalNode plan = new PhysicalNode.Closure(
-                SCHEMA, "src", "dst", false,
+                SCHEMA, "src", "dst", false, false,
                 java.util.Optional.of(new com.darkcollective.relix.ast.NumberOperand("1")),
                 java.util.Optional.empty(),
                 sqlScan("SELECT x FROM edges"));
@@ -171,7 +171,7 @@ final class PhysicalPlanPrinterTest {
     @DisplayName("a bounded trace shows its endpoint bounds")
     void boundedTraceLabel() {
         PhysicalNode plan = new PhysicalNode.Trace(
-                SCHEMA, "src", "dst", "cost",
+                SCHEMA, "src", "dst", false, "cost",
                 com.darkcollective.relix.ast.ObjectiveSense.MINIMIZE, "route",
                 java.util.Optional.of(new com.darkcollective.relix.ast.StringOperand("JFK")),
                 java.util.Optional.of(new com.darkcollective.relix.ast.StringOperand("LAX")),
@@ -186,7 +186,7 @@ final class PhysicalPlanPrinterTest {
     @DisplayName("a single-pair Dijkstra trace shows its bounds and the [dijkstra] strategy")
     void dijkstraTraceLabel() {
         PhysicalNode plan = new PhysicalNode.Trace(
-                SCHEMA, "src", "dst", "cost",
+                SCHEMA, "src", "dst", false, "cost",
                 com.darkcollective.relix.ast.ObjectiveSense.MINIMIZE, "route",
                 com.darkcollective.relix.plan.TraceAlgorithm.DIJKSTRA,
                 java.util.Optional.of(new com.darkcollective.relix.ast.NumberOperand("1")),
@@ -213,7 +213,7 @@ final class PhysicalPlanPrinterTest {
     @DisplayName("a path shows its from/to columns, hop window, and depth column")
     void pathLabel() {
         PhysicalNode plan = new PhysicalNode.Path(
-                SCHEMA, "src", "dst", 1, 3, "depth", sqlScan("SELECT x FROM edges"));
+                SCHEMA, "src", "dst", false, 1, 3, "depth", sqlScan("SELECT x FROM edges"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
                 PATH src, dst HOPS 1 TO 3 AS depth
                 └─ PushedScan [jdbc/db] SELECT x FROM edges
@@ -536,7 +536,7 @@ final class PhysicalPlanPrinterTest {
     @DisplayName("a reflexive closure is RCLOSURE, and a target bound reads on the to-column")
     void reflexiveClosureWithTargetBound() {
         PhysicalNode plan = new PhysicalNode.Closure(
-                SCHEMA, "src", "dst", true,
+                SCHEMA, "src", "dst", false, true,
                 java.util.Optional.empty(),
                 java.util.Optional.of(new com.darkcollective.relix.ast.NumberOperand("4")),
                 sqlScan("SELECT x FROM edges"));

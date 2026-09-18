@@ -5,6 +5,8 @@ PATH <from>, <to> HOPS <m> TO <n> AS <depth> (Edges)
 
 PATH <from>, <to> HOPS <n> AS <depth> (Edges)      // shorthand for HOPS 1 TO n
 
+PATH <from> ↔ <to> HOPS <m> TO <n> AS <depth> (Edges)   // read both ways (ASCII: <->)
+
 PATH src_account, dst_account HOPS 1 TO 3 AS depth (Transfers)
 
 # Description:
@@ -47,6 +49,9 @@ Accounts within 1–3 transfer hops of any account:
 
 People reachable in exactly 2 introductions:
   PATH person, contact HOPS 2 TO 2 AS hops (Knows)
+
+Degrees of separation, regardless of who introduced whom:
+  PATH person ↔ contact HOPS 1 TO 6 AS degrees (Knows)
 
 Everything within 4 dependency levels:
   PATH module, dependency HOPS 4 AS levels (DependsOn)

@@ -246,6 +246,89 @@ final class WeightedClosureReferenceTest extends ProcessorTestSupport {
         assertThat(compared).as("graphs actually compared").isGreaterThan(DRAWS / 2);
     }
 
+
+    @Test
+    @DisplayName("an undirected weighted closure is the same edges written out both ways")
+    void theUndirectedClosureAgreesWithTheDoubledTable() {
+        // A one-way chain, so the two readings differ on every derived pair. No self-loops
+        // and no pair already written both ways, so doubling the table by hand is the
+        // reading exactly — see the self-loop case below for where the two part company.
+        String oneWay = """
+                Edges := [| src | dst | cost |
+                |-----|-----|------|
+                | 1   | 2   | 3    |
+                | 2   | 3   | 4    |
+                ];
+                """;
+        String bothWays = """
+                Edges := [| src | dst | cost |
+                |-----|-----|------|
+                | 1   | 2   | 3    |
+                | 2   | 1   | 3    |
+                | 2   | 3   | 4    |
+                | 3   | 2   | 4    |
+                ];
+                """;
+
+        assertThat(closure(oneWay + "query { CLOSURE src \u2194 dst (Edges) };",
+                        TropicalSemiring.INSTANCE, "cost"))
+                .as("tropical")
+                .isEqualTo(closure(bothWays + "query { CLOSURE src, dst (Edges) };",
+                        TropicalSemiring.INSTANCE, "cost"));
+
+        assertThat(closure(oneWay + "query { CLOSURE src \u2194 dst (Edges) };",
+                        BooleanSemiring.INSTANCE, null))
+                .as("boolean")
+                .isEqualTo(closure(bothWays + "query { CLOSURE src, dst (Edges) };",
+                        BooleanSemiring.INSTANCE, null));
+    }
+
+    @Test
+    @DisplayName("the cheapest route may run against the direction a row was written in")
+    void theUndirectedClosureTravelsBackwards() {
+        String script = """
+                Edges := [| src | dst | cost |
+                |-----|-----|------|
+                | 1   | 2   | 3    |
+                | 2   | 3   | 4    |
+                ];
+                query { CLOSURE src \u2194 dst (Edges) };
+                """;
+        Map<Pair, Double> costs = closure(script, TropicalSemiring.INSTANCE, "cost");
+
+        assertThat(costs).containsEntry(new Pair(1, 3), 7.0d);
+        // The pair the directed reading cannot reach at all.
+        assertThat(costs).containsEntry(new Pair(3, 1), 7.0d);
+    }
+
+    @Test
+    @DisplayName("a self-loop is read both ways without disturbing the answer")
+    void aSelfLoopIsHandled() {
+        // A self-loop is its own transpose, so the undirected reading ⊕-s it with itself.
+        // Under an idempotent semiring that is the same annotation, which is what makes the
+        // simpler implementation correct; under a non-idempotent one the loop is a cycle
+        // and the fixpoint does not converge either way.
+        String withLoop = """
+                Edges := [| src | dst | cost |
+                |-----|-----|------|
+                | 1   | 1   | 5    |
+                | 1   | 2   | 3    |
+                ];
+                """;
+        String doubled = """
+                Edges := [| src | dst | cost |
+                |-----|-----|------|
+                | 1   | 1   | 5    |
+                | 1   | 2   | 3    |
+                | 2   | 1   | 3    |
+                ];
+                """;
+        assertThat(closure(withLoop + "query { CLOSURE src \u2194 dst (Edges) };",
+                        TropicalSemiring.INSTANCE, "cost"))
+                .isEqualTo(closure(doubled + "query { CLOSURE src, dst (Edges) };",
+                        TropicalSemiring.INSTANCE, "cost"));
+    }
+
     @Test
     @DisplayName("a cheaper route of more hops still wins, which three nodes cannot say")
     void aLongerCheaperRouteWins() {

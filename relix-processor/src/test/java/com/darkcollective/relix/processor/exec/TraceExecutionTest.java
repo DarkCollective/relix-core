@@ -387,4 +387,69 @@ final class TraceExecutionTest extends ProcessorTestSupport {
                 .hasMessageContaining("TRACE")
                 .hasMessageContaining("1");
     }
+
+    @Nested
+    @DisplayName("undirected edges")
+    final class Undirected {
+
+        /**
+         * A chain written one way only. Read as directed there is no route from 3 back to
+         * 1; read both ways every pair is reachable, so this graph tells the two readings
+         * apart on every assertion below.
+         */
+        private static final String ONE_WAY_CHAIN =
+                "Edges := [| src | dst | cost |\n"
+                + "           | 1   | 2   | 3    |\n"
+                + "           | 2   | 3   | 4    |];\n";
+
+        /** The same edges written out in both directions — the reading, done by hand. */
+        private static final String BOTH_WAYS =
+                "Edges := [| src | dst | cost |\n"
+                + "           | 1   | 2   | 3    |\n"
+                + "           | 2   | 1   | 3    |\n"
+                + "           | 2   | 3   | 4    |\n"
+                + "           | 3   | 2   | 4    |];\n";
+
+        @Test
+        @DisplayName("agrees with the same edges written out in both directions")
+        void agreesWithTheDoubledTable() {
+            // No oracle is needed: doubling the table is the definition of the reading, and
+            // the executor does not do that — it reads one edge set from both ends.
+            assertThat(traceCosts(ONE_WAY_CHAIN
+                    + "query { TRACE src \u2194 dst VIA cost MINIMIZE AS route (Edges) };"))
+                    .isEqualTo(traceCosts(BOTH_WAYS
+                            + "query { TRACE src, dst VIA cost MINIMIZE AS route (Edges) };"));
+        }
+
+        @Test
+        @DisplayName("finds the route that runs against the written direction")
+        void travelsAnEdgeBackwards() {
+            String script = ONE_WAY_CHAIN
+                    + "query { TRACE src \u2194 dst VIA cost MINIMIZE AS route (Edges) };";
+            Map<String, Double> costs = traceCosts(script);
+
+            assertThat(costs).containsEntry("1\u21923", 7.0d);
+            // The pair the directed reading cannot reach at all.
+            assertThat(costs).containsEntry("3\u21921", 7.0d);
+            assertThat(tracePath(script, "3", "1")).isEqualTo("[3, 2, 1]");
+        }
+
+        @Test
+        @DisplayName("the directed reading is unchanged, and does not reach backwards")
+        void directedIsUnaffected() {
+            assertThat(traceCosts(ONE_WAY_CHAIN
+                    + "query { TRACE src, dst VIA cost MINIMIZE AS route (Edges) };"))
+                    .containsEntry("1\u21923", 7.0d)
+                    .doesNotContainKey("3\u21921");
+        }
+
+        @Test
+        @DisplayName("the ASCII spelling is the glyph")
+        void asciiSpelling() {
+            assertThat(traceCosts(ONE_WAY_CHAIN
+                    + "query { TRACE src <-> dst VIA cost MINIMIZE AS route (Edges) };"))
+                    .isEqualTo(traceCosts(ONE_WAY_CHAIN
+                            + "query { TRACE src \u2194 dst VIA cost MINIMIZE AS route (Edges) };"));
+        }
+    }
 }

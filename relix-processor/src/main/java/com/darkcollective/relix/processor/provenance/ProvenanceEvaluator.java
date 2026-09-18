@@ -332,10 +332,26 @@ public final class ProvenanceEvaluator {
         // edges (a null endpoint is not a graph node — mirrors the plain executor)
         // and project away every non-endpoint column, so parallel edges combine with
         // ⊕ (the cheaper weight under tropical, the summed multiplicity under ℕ).
-        AnnotatedRelation<K> edges =
+        AnnotatedRelation<K> directed =
                 eval(cl.input(), semiring, ctx, operandEval, predicateEval, ba)
                         .select(row -> !row.get(fromCol).isNull() && !row.get(toCol).isNull())
                         .project(out, row -> ArrayRow.of(out, List.of(row.get(fromCol), row.get(toCol))));
+
+        // An undirected reading is the edge set together with its transpose, merged by ⊕ —
+        // the same rule that already combines parallel edges, so an edge written both ways
+        // combines rather than counting twice.
+        //
+        // A self-loop is its own transpose, so it is ⊕-ed with itself. That is only a
+        // different answer for a non-idempotent semiring (ℕ would say 2 where the plain
+        // operator's deduplicating edge set says 1), and such a semiring cannot terminate
+        // on a graph containing a self-loop at all: the loop is a cycle, and the fixpoint
+        // adds to the annotation on every round. So there is no reading in which excluding
+        // it would change an answer anyone can observe, and a branch nothing can reach is
+        // worse than the arithmetic it avoids.
+        AnnotatedRelation<K> edges = cl.undirected()
+                ? directed.union(directed.project(
+                        out, row -> ArrayRow.of(out, List.of(row.get(1), row.get(0)))))
+                : directed;
 
         // Index the edges by their source endpoint for the per-round composition,
         // and collect the node set for the reflexive variant.

@@ -53,12 +53,16 @@ import java.util.Objects;
  * @param input       the edge relation; must not be null
  * @param fromColumn  the source-endpoint column; also names the output source column; must not be blank
  * @param toColumn    the target-endpoint column; must not be blank
+ * @param undirected {@code true} reads the two endpoint columns as     an undirected edge, so the relation is read both ways from one edge set
+ *                   ({@code a ↔ b}); {@code false} reads it as a directed edge
+ *                   ({@code a, b})
  * @param minHops     the inclusive lower bound of the hop window; must be {@code >= 1}
  * @param maxHops     the inclusive upper bound of the hop window; must be {@code >= minHops}
  * @param depthColumn the name of the appended hop-distance column; must not be blank
  * @param location    the source location of this node; never null
  */
 public record PathNode(RelNode input, String fromColumn, String toColumn,
+                       boolean undirected,
                        int minHops, int maxHops, String depthColumn,
                        SourceLocation location)
         implements RelNode {
@@ -90,7 +94,8 @@ public record PathNode(RelNode input, String fromColumn, String toColumn,
     /** Convenience constructor for tests: {@link SourceLocation#UNKNOWN}. */
     public PathNode(RelNode input, String fromColumn, String toColumn,
                     int minHops, int maxHops, String depthColumn) {
-        this(input, fromColumn, toColumn, minHops, maxHops, depthColumn, SourceLocation.UNKNOWN);
+        this(input, fromColumn, toColumn, false, minHops, maxHops, depthColumn,
+                SourceLocation.UNKNOWN);
     }
 
     @Override

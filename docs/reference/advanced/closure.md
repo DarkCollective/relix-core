@@ -6,6 +6,9 @@ RCLOSURE <from>, <to> (Edges)      -- R*: also adds identity pairs (n, n)
 Edges⁺ OVER (<from>, <to>)         -- same as CLOSURE  (⁺ = U+207A)
 Edges*  OVER (<from>, <to>)        -- same as RCLOSURE
 
+CLOSURE  <from> ↔ <to> (Edges)      -- read both ways (ASCII: <->)
+Edges⁺ OVER (<from> ↔ <to>)         -- same, postfix
+
 CLOSURE manager, report (OrgChart)
 
 # Description:
@@ -31,10 +34,16 @@ All ancestor/descendant pairs from a parent→child edge list:
   CLOSURE parent, child (Family)
 
 Everyone in a manager's chain of command:
-  CLOSURE manager, report (OrgChart)
+  CLOSURE  <from> ↔ <to> (Edges)      -- read both ways (ASCII: <->)
+Edges⁺ OVER (<from> ↔ <to>)         -- same, postfix
+
+CLOSURE manager, report (OrgChart)
 
 Reflexive — reachable nodes including the node itself:
   RCLOSURE src, dst (Network)
+
+Everyone connected to everyone, ignoring who added whom:
+  CLOSURE person ↔ friend (Friendships)
 
 Postfix glyph form (identical result):
   Family⁺ OVER (parent, child)

@@ -156,11 +156,13 @@ public final class PhysicalNodeCorpus {
                 new PhysicalNode.Unnest(SCHEMA, "items", true, Optional.of("ord"), LEFT),
 
                 // ── recursion and graphs ────────────────────────────────────────
-                new PhysicalNode.Closure(SCHEMA, "src", "dst", true,
+                // Undirected, so a renderer or walker dropping the component is caught:
+                // the directed reading is the default, and a dropped `false` looks the same.
+                new PhysicalNode.Closure(SCHEMA, "src", "dst", true, true,
                         Optional.of(ONE), Optional.of(ONE), LEFT),
                 new PhysicalNode.Cluster(SCHEMA, "src", "dst", "component", LEFT),
-                new PhysicalNode.Path(SCHEMA, "src", "dst", 1, 3, "depth", LEFT),
-                new PhysicalNode.Trace(SCHEMA, "src", "dst", "cost", ObjectiveSense.MINIMIZE,
+                new PhysicalNode.Path(SCHEMA, "src", "dst", true, 1, 3, "depth", LEFT),
+                new PhysicalNode.Trace(SCHEMA, "src", "dst", true, "cost", ObjectiveSense.MINIMIZE,
                         "route", TraceAlgorithm.RELAXATION,
                         Optional.of(ONE), Optional.of(ONE), LEFT),
                 new PhysicalNode.Fixpoint(SCHEMA, "T", LEFT, RIGHT),

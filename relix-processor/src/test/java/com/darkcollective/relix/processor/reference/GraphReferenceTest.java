@@ -259,6 +259,109 @@ final class GraphReferenceTest extends ProcessorTestSupport {
                 .toList().toString();
     }
 
+
+    /**
+     * The edge list read both ways — the definition of an undirected reading, written the
+     * obvious way. The executor does <em>not</em> do this: it reads one edge set from both
+     * ends, so agreeing with a doubled list is a claim and not a tautology.
+     */
+    private static List<Pair> symmetrise(List<Pair> edges) {
+        List<Pair> both = new ArrayList<>(edges);
+        edges.forEach(p -> both.add(new Pair(p.to(), p.from())));
+        return both;
+    }
+
+    @Test
+    @DisplayName("150 generated graphs: an undirected reading agrees with the symmetrised graph")
+    void undirectedAgreesWithTheSymmetrisedDefinition() {
+        Random rng = new Random(SEED);
+        int discriminatingDraws = 0;
+
+        for (int draw = 0; draw < DRAWS; draw++) {
+            Drawn drawn = draw(rng);
+            List<Pair> graph = drawn.edges();
+            if (graph.isEmpty()) {
+                continue;
+            }
+            String table = edges(drawn);
+            String as = "rows " + render(drawn);
+            List<Pair> both = symmetrise(graph);
+
+            Set<Pair> undirected = GraphReference.closure(both);
+            if (undirected.size() > GraphReference.closure(graph).size()) {
+                discriminatingDraws++;
+            }
+
+            assertThat(pairs(table + "query { CLOSURE src <-> dst (Edges) };"))
+                    .as("CLOSURE undirected — %s", as)
+                    .containsExactlyInAnyOrderElementsOf(undirected);
+
+            assertThat(pairs(table + "query { CLOSURE src \u2194 dst (Edges) };"))
+                    .as("the glyph spelling is the ASCII one — %s", as)
+                    .containsExactlyInAnyOrderElementsOf(undirected);
+
+            assertThat(pairs(table + "query { Edges\u207a OVER (src \u2194 dst) };"))
+                    .as("the postfix Kleene form takes it too — %s", as)
+                    .containsExactlyInAnyOrderElementsOf(undirected);
+
+            assertThat(pairs(table + "query { RCLOSURE src \u2194 dst (Edges) };"))
+                    .as("RCLOSURE undirected — %s", as)
+                    .containsExactlyInAnyOrderElementsOf(GraphReference.reflexiveClosure(both));
+
+            Map<Pair, Integer> shortest = GraphReference.shortestHops(both, NODES);
+            for (int[] window : new int[][] {{1, 1}, {1, 2}, {2, 3}, {1, NODES}}) {
+                Map<Pair, Integer> expected = new LinkedHashMap<>();
+                shortest.forEach((pair, hops) -> {
+                    if (hops >= window[0] && hops <= window[1]) {
+                        expected.put(pair, hops);
+                    }
+                });
+                assertThat(hops(table + "query { PATH src \u2194 dst HOPS " + window[0] + " TO "
+                                + window[1] + " AS depth (Edges) };"))
+                        .as("PATH undirected HOPS %d TO %d — %s", window[0], window[1], as)
+                        .containsExactlyInAnyOrderEntriesOf(expected);
+            }
+        }
+
+        // Without this the suite would pass on graphs that are already symmetric, where a
+        // modifier that does nothing at all is indistinguishable from one that works.
+        assertThat(discriminatingDraws)
+                .as("draws where reading both ways reaches a pair the directed reading does not")
+                .isGreaterThan(DRAWS / 2);
+    }
+
+    @Test
+    @DisplayName("150 generated graphs: undirected reachability is exactly CLUSTER's components")
+    void undirectedReachabilityAgreesWithCluster() {
+        Random rng = new Random(SEED);
+
+        for (int draw = 0; draw < DRAWS; draw++) {
+            Drawn drawn = draw(rng);
+            if (drawn.edges().isEmpty()) {
+                continue;
+            }
+            String table = edges(drawn);
+            String as = "rows " + render(drawn);
+
+            // Two operators, no oracle: CLUSTER has read its edges undirected since it
+            // shipped and shares no code with the closure traversal, so "reachable both
+            // ways" and "in the same component" being the same set of pairs is a claim
+            // about the new reading that the old operator is entitled to settle.
+            Map<Integer, Integer> components =
+                    labels(table + "query { CLUSTER src, dst AS cid (Edges) };");
+            Set<Pair> sameComponent = new LinkedHashSet<>();
+            components.forEach((a, ca) -> components.forEach((b, cb) -> {
+                if (ca.equals(cb)) {
+                    sameComponent.add(new Pair(a, b));
+                }
+            }));
+
+            assertThat(pairs(table + "query { RCLOSURE src \u2194 dst (Edges) };"))
+                    .as("undirected RCLOSURE against CLUSTER — %s", as)
+                    .containsExactlyInAnyOrderElementsOf(sameComponent);
+        }
+    }
+
     @Test
     @DisplayName("a FIX spelling out transitive closure gives what CLOSURE gives")
     void theGeneralFixpointAgreesWithTheOperator() {

@@ -170,13 +170,17 @@ final class SelectionIntoClosurePass {
                 return chain.get(0);
             }
             ClosureNode rebuilt = new ClosureNode(newInput, closure.fromColumn(),
-                    closure.toColumn(), closure.reflexive(),
+                    closure.toColumn(), closure.undirected(), closure.reflexive(),
                     closure.boundSource(), closure.boundTarget(), closure.location());
             return rebuildChain(chain, rebuilt);
         }
 
+        // Undirected is carried through: the adjacency a bound seeds a traversal over is
+        // symmetric or not by the operator's own reading, which pushing a bound does not
+        // change.
         ClosureNode bounded = new ClosureNode(newInput, closure.fromColumn(), closure.toColumn(),
-                closure.reflexive(), boundSource, boundTarget, closure.location());
+                closure.undirected(), closure.reflexive(), boundSource, boundTarget,
+                closure.location());
 
         ctx.record(OptimizationCode.CLOSURE_001, queryName,
                 describe(closure, boundSource, boundTarget), closure.location());

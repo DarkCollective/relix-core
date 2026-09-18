@@ -72,10 +72,10 @@ final class ClosureNodeTest {
     @Test
     void rejectsNullBounds() {
         assertThatNullPointerException().isThrownBy(() ->
-                new ClosureNode(INPUT, "src", "dst", false, null, Optional.empty(),
+                new ClosureNode(INPUT, "src", "dst", false, false, null, Optional.empty(),
                         SourceLocation.UNKNOWN));
         assertThatNullPointerException().isThrownBy(() ->
-                new ClosureNode(INPUT, "src", "dst", false, Optional.empty(), null,
+                new ClosureNode(INPUT, "src", "dst", false, false, Optional.empty(), null,
                         SourceLocation.UNKNOWN));
     }
 

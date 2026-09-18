@@ -94,6 +94,8 @@ final class RecursionExecutor {
         String fromCol = node.fromColumn();
         String toCol   = node.toColumn();
 
+        boolean undirected = node.undirected();
+
         Optional<Value> boundSource = node.boundSource().map(op -> literal(op, ctx));
         Optional<Value> boundTarget = node.boundTarget().map(op -> literal(op, ctx));
         boolean targetOnly = boundSource.isEmpty() && boundTarget.isPresent();
@@ -111,11 +113,11 @@ final class RecursionExecutor {
                 }
                 nodes.add(a);
                 nodes.add(b);
-                if (edges.add(new Pair(a, b))) {
-                    adjacency.computeIfAbsent(a, k -> new ArrayList<>()).add(b);
-                    if (reverse != null) {
-                        reverse.computeIfAbsent(b, k -> new ArrayList<>()).add(a);
-                    }
+                addEdge(edges, adjacency, reverse, a, b);
+                if (undirected) {
+                    // The reverse of the same row, not a second row: the adjacency is read
+                    // both ways from one edge set rather than from a doubled relation.
+                    addEdge(edges, adjacency, reverse, b, a);
                 }
             });
         }
@@ -129,6 +131,20 @@ final class RecursionExecutor {
             outputRows.add(ArrayRow.of(outputSchema, List.of(p.from(), p.to())));
         }
         return BagRelation.of(outputSchema, outputRows).stream();
+    }
+
+    /**
+     * Records one directed edge {@code a → b} into the edge set and both adjacency maps,
+     * doing nothing if the pair is already known.
+     */
+    private static void addEdge(Set<Pair> edges, Map<Value, List<Value>> adjacency,
+                                Map<Value, List<Value>> reverse, Value a, Value b) {
+        if (edges.add(new Pair(a, b))) {
+            adjacency.computeIfAbsent(a, k -> new ArrayList<>()).add(b);
+            if (reverse != null) {
+                reverse.computeIfAbsent(b, k -> new ArrayList<>()).add(a);
+            }
+        }
     }
 
     /** The original all-pairs transitive (R⁺) / reflexive-transitive (R*) closure. */
@@ -377,6 +393,7 @@ final class RecursionExecutor {
         String toCol   = node.toColumn();
         int minHops = node.minHops();
         int maxHops = node.maxHops();
+        boolean undirected = node.undirected();
 
         Map<Value, List<Value>> adjacency = new HashMap<>();
         Set<Pair> edges = new LinkedHashSet<>();
@@ -387,8 +404,9 @@ final class RecursionExecutor {
                 if (a.isNull() || b.isNull()) {
                     return;   // a null endpoint is not a graph node
                 }
-                if (edges.add(new Pair(a, b))) {
-                    adjacency.computeIfAbsent(a, k -> new ArrayList<>()).add(b);
+                addEdge(edges, adjacency, null, a, b);
+                if (undirected) {
+                    addEdge(edges, adjacency, null, b, a);
                 }
             });
         }
@@ -667,6 +685,7 @@ final class RecursionExecutor {
         String toCol     = node.toColumn();
         String weightCol = node.weightColumn();
         boolean minimize = node.sense() == ObjectiveSense.MINIMIZE;
+        boolean undirected = node.undirected();
         int maxRounds    = ctx.maxFixpointRounds();
 
         Optional<Value> boundSource = node.boundSource().map(op -> literal(op, ctx));
@@ -683,6 +702,10 @@ final class RecursionExecutor {
                 if (f.isNull() || w.isNull() || wt.isNull()) return;
                 if (wt instanceof NumberValue nv) {
                     edgeList.add(new TraceEdge(f, w, nv.value().doubleValue()));
+                    if (undirected) {
+                        // One edge, traversable either way at the same cost.
+                        edgeList.add(new TraceEdge(w, f, nv.value().doubleValue()));
+                    }
                 }
             });
         }

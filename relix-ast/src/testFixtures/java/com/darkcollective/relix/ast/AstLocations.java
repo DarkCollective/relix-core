@@ -390,7 +390,7 @@ public final class AstLocations {
         @Override
         public RelNode visit(ClosureNode node) {
             return new ClosureNode(node.input().accept(this), node.fromColumn(),
-                    node.toColumn(), node.reflexive(),
+                    node.toColumn(), node.undirected(), node.reflexive(),
                     node.boundSource().map(AstLocations::stripLocations),
                     node.boundTarget().map(AstLocations::stripLocations),
                     SourceLocation.UNKNOWN);
@@ -405,13 +405,15 @@ public final class AstLocations {
         @Override
         public RelNode visit(PathNode node) {
             return new PathNode(node.input().accept(this), node.fromColumn(),
-                    node.toColumn(), node.minHops(), node.maxHops(), node.depthColumn());
+                    node.toColumn(), node.undirected(), node.minHops(), node.maxHops(),
+                    node.depthColumn(), SourceLocation.UNKNOWN);
         }
 
         @Override
         public RelNode visit(TraceNode node) {
             return new TraceNode(node.input().accept(this), node.fromColumn(),
-                    node.toColumn(), node.weightColumn(), node.sense(), node.pathColumn(),
+                    node.toColumn(), node.undirected(), node.weightColumn(), node.sense(),
+                    node.pathColumn(),
                     node.boundSource().map(AstLocations::stripLocations),
                     node.boundTarget().map(AstLocations::stripLocations),
                     SourceLocation.UNKNOWN);

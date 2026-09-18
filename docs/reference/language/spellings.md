@@ -73,6 +73,7 @@ intact. A single expression may mix them freely.
 | Unicode | ASCII | Operation |
 |---------|-------|-----------|
 | `→` | `->` | Alias arrow (aggregation/projection) |
+| `↔` | `<->` | Undirected edge, between a graph operator's two endpoint columns |
 | `⊥` | `NULL` | Null check |
 | `∈` | `IN` | Element of |
 | `∉` | `NOT IN` | Not element of (two tokens) |

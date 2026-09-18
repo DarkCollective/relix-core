@@ -167,15 +167,17 @@ public final class PhysicalPlanPrinter {
             case PhysicalNode.Unnest u   -> "Unnest " + u.column() + (u.outer() ? " OUTER" : "")
                     + u.ordinalityColumn().map(c -> " ORDINALITY " + c).orElse("");
             case PhysicalNode.Closure c  -> (c.reflexive() ? "RCLOSURE " : "CLOSURE ")
-                    + c.fromColumn() + "→" + c.toColumn()
+                    + c.fromColumn() + (c.undirected() ? "↔" : "→") + c.toColumn()
                     + c.boundSource().map(o -> " [" + c.fromColumn() + "=" + o.accept(OPND) + "]").orElse("")
                     + c.boundTarget().map(o -> " [" + c.toColumn() + "=" + o.accept(OPND) + "]").orElse("");
             case PhysicalNode.Cluster cl -> "CLUSTER " + cl.fromColumn() + ", " + cl.toColumn()
                     + " AS " + cl.labelColumn();
-            case PhysicalNode.Path p -> "PATH " + p.fromColumn() + ", " + p.toColumn()
+            case PhysicalNode.Path p -> "PATH " + p.fromColumn()
+                    + (p.undirected() ? " ↔ " : ", ") + p.toColumn()
                     + " HOPS " + p.minHops() + " TO " + p.maxHops()
                     + " AS " + p.depthColumn();
-            case PhysicalNode.Trace tr -> "TRACE " + tr.fromColumn() + ", " + tr.toColumn()
+            case PhysicalNode.Trace tr -> "TRACE " + tr.fromColumn()
+                    + (tr.undirected() ? " ↔ " : ", ") + tr.toColumn()
                     + " VIA " + tr.weightColumn() + " " + tr.sense()
                     + " AS " + tr.pathColumn()
                     + tr.boundSource().map(o -> " [" + tr.fromColumn() + "=" + o.accept(OPND) + "]").orElse("")

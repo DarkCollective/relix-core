@@ -376,9 +376,18 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     @Override
     public String visit(ClosureNode node) {
         String keyword = node.reflexive() ? "RCLOSURE" : "CLOSURE";
-        return keyword + " " + node.fromColumn() + ", " + node.toColumn()
+        return keyword + " " + node.fromColumn() + edgeSeparator(node.undirected())
+                + node.toColumn()
                 + boundAnnotation(node)
                 + " (" + node.input().accept(this) + ")";
+    }
+
+    /**
+     * {@return what stands between a graph operator's two endpoint columns} A comma reads
+     * them as a directed edge; {@code ↔} reads the relation both ways.
+     */
+    private static String edgeSeparator(boolean undirected) {
+        return undirected ? " ↔ " : ", ";
     }
 
     /**
@@ -410,14 +419,14 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(PathNode node) {
-        return "PATH " + node.fromColumn() + ", " + node.toColumn()
+        return "PATH " + node.fromColumn() + edgeSeparator(node.undirected()) + node.toColumn()
                 + " HOPS " + node.minHops() + " TO " + node.maxHops()
                 + " AS " + node.depthColumn() + " (" + node.input().accept(this) + ")";
     }
 
     @Override
     public String visit(TraceNode node) {
-        return "TRACE " + node.fromColumn() + ", " + node.toColumn()
+        return "TRACE " + node.fromColumn() + edgeSeparator(node.undirected()) + node.toColumn()
                 + " VIA " + node.weightColumn() + " " + node.sense()
                 + " AS " + node.pathColumn()
                 + traceBoundAnnotation(node)

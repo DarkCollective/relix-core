@@ -192,11 +192,13 @@ public final class RelNodeCorpus {
                 composition(LEFT, RIGHT),
 
                 // ── recursion and graph ─────────────────────────────────────────
-                closure("src", "dst", true,
+                // Undirected, so that a walker dropping the component is caught: the
+                // directed reading is the default, and a dropped `false` looks identical.
+                closure("src", "dst", true, true,
                         Optional.of(attr("from_bound")), Optional.of(attr("to_bound")), LEFT),
                 cluster("src", "dst", "component", LEFT),
-                path("src", "dst", 1, 4, "hops", LEFT),
-                trace("src", "dst", "weight", ObjectiveSense.MINIMIZE, "route",
+                path("src", "dst", true, 1, 4, "hops", LEFT),
+                trace("src", "dst", true, "weight", ObjectiveSense.MINIMIZE, "route",
                         Optional.of(attr("from_bound")), Optional.of(attr("to_bound")), LEFT),
                 fixpoint("T", LEFT, RIGHT),
 

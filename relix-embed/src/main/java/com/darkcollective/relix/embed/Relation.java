@@ -746,6 +746,22 @@ public final class Relation {
     }
 
     /**
+     * CLOSURE reading its two columns as an undirected edge, so the relation is followed
+     * both ways from one edge set.
+     *
+     * @param fromColumn the first endpoint column
+     * @param toColumn   the second endpoint column
+     * @param undirected {@code true} to read the edges both ways
+     * @param reflexive  {@code true} for {@code R*}, {@code false} for {@code R⁺}
+     * @return the closure
+     * @since 1.0
+     */
+    public Relation closure(String fromColumn, String toColumn, boolean undirected,
+                            boolean reflexive) {
+        return derive(AstBuilders.closure(fromColumn, toColumn, undirected, reflexive, node));
+    }
+
+    /**
      * CLUSTER — connected components, labelled.
      *
      * @param fromColumn  the edge's source column
@@ -775,6 +791,24 @@ public final class Relation {
     }
 
     /**
+     * PATH over an edge relation read both ways.
+     *
+     * @param fromColumn  the first endpoint column
+     * @param toColumn    the second endpoint column
+     * @param undirected  {@code true} to read the edges both ways
+     * @param minHops     the inclusive lower bound on path length
+     * @param maxHops     the inclusive upper bound on path length
+     * @param depthColumn the name of the appended shortest-distance column
+     * @return the bounded paths
+     * @since 1.0
+     */
+    public Relation path(String fromColumn, String toColumn, boolean undirected,
+                         int minHops, int maxHops, String depthColumn) {
+        return derive(AstBuilders.path(fromColumn, toColumn, undirected, minHops, maxHops,
+                depthColumn, node));
+    }
+
+    /**
      * TRACE — the optimal path between each reachable pair, as an ordered array.
      *
      * @param from   the edge's source column
@@ -787,6 +821,24 @@ public final class Relation {
      */
     public Relation trace(String from, String to, String weight, ObjectiveSense sense, String path) {
         return derive(AstBuilders.trace(from, to, weight, sense, path, node));
+    }
+
+    /**
+     * TRACE over a weighted edge relation read both ways, each edge traversable in either
+     * direction at the same cost.
+     *
+     * @param from       the first endpoint column
+     * @param to         the second endpoint column
+     * @param undirected {@code true} to read the edges both ways
+     * @param weight     the edge-weight column
+     * @param sense      whether to minimise or maximise the total weight
+     * @param path       the name of the appended path-array column
+     * @return the optimal paths
+     * @since 1.0
+     */
+    public Relation trace(String from, String to, boolean undirected, String weight,
+                          ObjectiveSense sense, String path) {
+        return derive(AstBuilders.trace(from, to, undirected, weight, sense, path, node));
     }
 
     /**

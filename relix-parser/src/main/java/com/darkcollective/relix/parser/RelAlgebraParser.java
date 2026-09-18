@@ -469,12 +469,13 @@ public final class RelAlgebraParser {
         expect(TokenType.LPAREN,
                 "Expected '(' after 'OVER' in postfix closure");
         Token from = expectName("Expected the 'from' column name inside OVER (from, to)");
-        expect(TokenType.COMMA,
-                "Expected ',' between the two closure columns in OVER (from, to)");
+        boolean undirected = parseEdgeSeparator(
+                "Expected ',' or '↔' between the two closure columns in OVER (from, to)");
         Token to = expectName("Expected the 'to' column name inside OVER (from, to)");
         expect(TokenType.RPAREN,
                 "Expected ')' to close OVER (from, to)");
-        return new ClosureNode(input, from.lexeme(), to.lexeme(), reflexive, loc(glyph));
+        return new ClosureNode(input, from.lexeme(), to.lexeme(), undirected, reflexive,
+                Optional.empty(), Optional.empty(), loc(glyph));
     }
 
     private RelNode parsePrefix() {
@@ -779,6 +780,26 @@ public final class RelAlgebraParser {
         return new UnnestNode(attribute.lexeme(), false, ordinality, input, loc(opTok));
     }
 
+
+    /**
+     * Consumes what stands between a graph operator's two endpoint columns, and says
+     * whether the edge relation is to be read both ways.
+     *
+     * <p>A comma is a directed edge and {@code ↔} (ASCII {@code <->}) an undirected one.
+     * One helper serves every graph operator, and the postfix Kleene form too, so the
+     * four cannot drift about which separators they accept.
+     *
+     * @param message the diagnostic if neither separator is present
+     * @return {@code true} for {@code ↔}, {@code false} for {@code ,}
+     */
+    private boolean parseEdgeSeparator(String message) {
+        if (match(TokenType.UNDIRECTED_EDGE)) {
+            return true;
+        }
+        expect(TokenType.COMMA, message);
+        return false;
+    }
+
     /**
      * Parses a transitive-closure operator:
      * {@code CLOSURE from, to (R)} (transitive) or {@code RCLOSURE from, to (R)}
@@ -789,12 +810,14 @@ public final class RelAlgebraParser {
         String keyword = reflexive ? "RCLOSURE" : "CLOSURE";
         advance();   // consume CLOSURE / RCLOSURE
         Token from = expectName("Expected the 'from' column after '" + keyword + "'");
-        expect(TokenType.COMMA,
-                "Expected ',' between the two closure columns: " + keyword + " from, to (R)");
-        Token to = expectName("Expected the 'to' column after ',' in " + keyword);
+        boolean undirected = parseEdgeSeparator(
+                "Expected ',' or '↔' between the two closure columns: "
+                + keyword + " from, to (R)");
+        Token to = expectName("Expected the 'to' column after the separator in " + keyword);
         RelNode input = parseParenthesizedRelation(
                 "Expected '(' after the closure columns");
-        return new ClosureNode(input, from.lexeme(), to.lexeme(), reflexive, loc(opTok));
+        return new ClosureNode(input, from.lexeme(), to.lexeme(), undirected, reflexive,
+                Optional.empty(), Optional.empty(), loc(opTok));
     }
 
     /**
@@ -831,9 +854,10 @@ public final class RelAlgebraParser {
         Token opTok = current;
         expect(TokenType.PATH, "Expected 'PATH'");
         Token from = expectName("Expected the 'from' column after 'PATH'");
-        expect(TokenType.COMMA,
-                "Expected ',' between the two PATH edge columns: PATH from, to HOPS m TO n AS depth (R)");
-        Token to = expectName("Expected the 'to' column after ',' in PATH");
+        boolean undirected = parseEdgeSeparator(
+                "Expected ',' or '↔' between the two PATH edge columns: "
+                + "PATH from, to HOPS m TO n AS depth (R)");
+        Token to = expectName("Expected the 'to' column after the separator in PATH");
         expect(TokenType.HOPS,
                 "Expected 'HOPS' before the PATH hop window: PATH from, to HOPS m TO n AS depth (R)");
         Token firstTok = expect(TokenType.NUMBER,
@@ -861,7 +885,8 @@ public final class RelAlgebraParser {
                 "Expected 'AS' before the PATH depth column: PATH from, to HOPS m TO n AS depth (R)");
         Token depth = expectName("Expected the hop-distance column name after 'AS' in PATH");
         RelNode input = parseParenthesizedRelation("Expected '(' after the PATH depth column");
-        return new PathNode(input, from.lexeme(), to.lexeme(), min, max, depth.lexeme(), loc(opTok));
+        return new PathNode(input, from.lexeme(), to.lexeme(), undirected,
+                min, max, depth.lexeme(), loc(opTok));
     }
 
     private int parseHopCount(Token tok) {
@@ -997,10 +1022,10 @@ public final class RelAlgebraParser {
         Token opTok = current;
         expect(TokenType.TRACE, "Expected 'TRACE'");
         Token from = expectName("Expected the 'from' column after 'TRACE'");
-        expect(TokenType.COMMA,
-                "Expected ',' between the two TRACE endpoint columns: "
+        boolean undirected = parseEdgeSeparator(
+                "Expected ',' or '↔' between the two TRACE endpoint columns: "
                 + "TRACE from, to VIA weight MINIMIZE|MAXIMIZE AS path (R)");
-        Token to = expectName("Expected the 'to' column after ',' in TRACE");
+        Token to = expectName("Expected the 'to' column after the separator in TRACE");
         expect(TokenType.VIA,
                 "Expected 'VIA' after the 'to' column: "
                 + "TRACE from, to VIA weight MINIMIZE|MAXIMIZE AS path (R)");
@@ -1022,8 +1047,9 @@ public final class RelAlgebraParser {
         Token path = expectName("Expected the path column name after 'AS' in TRACE");
         RelNode input = parseParenthesizedRelation(
                 "Expected '(' after the TRACE path column");
-        return new TraceNode(input, from.lexeme(), to.lexeme(),
-                             weight.lexeme(), sense, path.lexeme(), loc(opTok));
+        return new TraceNode(input, from.lexeme(), to.lexeme(), undirected,
+                             weight.lexeme(), sense, path.lexeme(),
+                             Optional.empty(), Optional.empty(), loc(opTok));
     }
 
     /**
