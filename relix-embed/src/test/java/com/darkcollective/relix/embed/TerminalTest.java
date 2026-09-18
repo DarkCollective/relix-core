@@ -17,7 +17,6 @@ package com.darkcollective.relix.embed;
 
 import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.optimizer.OptimizationCode;
-import com.darkcollective.relix.plan.BoundednessException;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.provenance.BooleanSemiring;
 import com.darkcollective.relix.provenance.CountingSemiring;
@@ -350,7 +349,7 @@ final class TerminalTest {
         void toListRefuses() {
             try (Relix relix = naturals()) {
                 assertThatThrownBy(() -> relix.relation("Naturals").toList())
-                        .isInstanceOf(BoundednessException.class)
+                        .isInstanceOf(UnboundedRelationException.class)
                         .hasMessageContaining("limit(n)");
             }
         }
@@ -360,7 +359,7 @@ final class TerminalTest {
         void runRefuses() {
             try (Relix relix = naturals()) {
                 assertThatThrownBy(() -> relix.relation("Naturals").run())
-                        .isInstanceOf(BoundednessException.class);
+                        .isInstanceOf(UnboundedRelationException.class);
             }
         }
 
@@ -383,7 +382,7 @@ final class TerminalTest {
                 // out: no stream reaches the caller to close it.
                 assertThatThrownBy(() -> relix.relation("Naturals").sort(
                         com.darkcollective.relix.ast.AstBuilders.asc("n")).stream())
-                        .isInstanceOf(BoundednessException.class);
+                        .isInstanceOf(UnboundedRelationException.class);
             }
         }
 
@@ -392,7 +391,7 @@ final class TerminalTest {
         void countRefuses() {
             try (Relix relix = naturals()) {
                 assertThatThrownBy(() -> relix.relation("Naturals").count())
-                        .isInstanceOf(BoundednessException.class);
+                        .isInstanceOf(UnboundedRelationException.class);
             }
         }
 

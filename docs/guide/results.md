@@ -287,7 +287,7 @@ try {
 ```
 
 ```
-BoundednessException: cannot collect an unbounded relation into a list; add a bound (e.g. limit(n)), or stream it instead
+UnboundedRelationException: cannot collect an unbounded relation into a list; add a bound (e.g. limit(n)), or stream it instead
 ```
 
 ### A stream that got away
@@ -347,7 +347,7 @@ try {
 ```
 
 ```
-BoundednessException: cannot materialise unbounded relation for blocking operator τ (SORT); add a bound (e.g. λ n) below it
+UnboundedRelationException: cannot materialise unbounded relation for blocking operator τ (SORT); add a bound (e.g. λ n) below it
 ```
 
 That check is about *boundedness*, not size. A table with fifty million rows is
@@ -374,7 +374,7 @@ try (Relix capped = Relix.builder().maxMaterializedRows(2).build()) {
 ```
 
 ```
-EvaluationException: Sort buffered more than 2 rows; a blocking operator holds its whole input in memory. Reduce what reaches it (a σ or λ below it, or a pushdown), or raise maxMaterializedRows
+QueryExecutionException: Sort buffered more than 2 rows; a blocking operator holds its whole input in memory. Reduce what reaches it (a σ or λ below it, or a pushdown), or raise maxMaterializedRows
 ```
 
 Read the number as a guard rail rather than a memory limit. It bounds **one** operator, not
@@ -410,7 +410,7 @@ worker.interrupt();
 
 That is the mechanism the platform already routes everything through — `Future.cancel(true)`,
 `ExecutorService.shutdownNow`, and a pool being torn down all raise the same flag — so
-there is nothing new to hold. The query stops with an `EvaluationException` and the flag is
+there is nothing new to hold. The query stops with an `QueryExecutionException` and the flag is
 left raised, so a thread you hand back to a pool still knows it was interrupted.
 
 One limit is worth stating plainly: a thread blocked inside a JDBC driver is not
