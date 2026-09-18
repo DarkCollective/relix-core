@@ -544,7 +544,7 @@ public final class IrReport {
                     + l.offset().map(o -> o + ",").orElse("")
                     + l.count();
 
-            case DistinctNode _ -> "δ";
+            case DistinctNode ignored -> "δ";
 
             case UnnestNode u -> "μ " + u.column() + (u.outer() ? " OUTER" : "")
                     + u.ordinalityColumn().map(c -> " WITH ORDINALITY " + c).orElse("");
@@ -597,7 +597,7 @@ public final class IrReport {
                         : " PER " + String.join(", ", t.groupingAttributes()));
 
             // ── Joins ───────────────────────────────────────────────────────
-            case NaturalJoinNode   _ -> "⋈";
+            case NaturalJoinNode   ignored -> "⋈";
             case ThetaJoinNode     tj -> "⨝ "  + tj.condition().accept(PRED);
             case LeftOuterJoinNode  lj -> "⟕ "  + lj.condition().accept(PRED);
             case RightOuterJoinNode rj -> "⟖ "  + rj.condition().accept(PRED);
@@ -609,17 +609,17 @@ public final class IrReport {
             case IntervalJoinNode  ij -> "IJOIN " + ij.relation().name()
                     + " (" + ij.leftStart() + ", " + ij.leftEnd()
                     + " ; " + ij.rightStart() + ", " + ij.rightEnd() + ")";
-            case ProductNode        _ -> "×";
+            case ProductNode        ignored -> "×";
 
             // ── Set ops ─────────────────────────────────────────────────────
-            case UnionNode        _ -> "∪";
-            case UnionAllNode     _ -> "⊎";
-            case OuterUnionNode   _ -> "⊔";
-            case IntersectionNode _ -> "∩";
-            case DifferenceNode   _ -> "−";
-            case DivisionNode     _ -> "÷";
-            case SymmetricDifferenceNode _ -> "∆";
-            case CompositionNode  _ -> "∘";
+            case UnionNode        ignored -> "∪";
+            case UnionAllNode     ignored -> "⊎";
+            case OuterUnionNode   ignored -> "⊔";
+            case IntersectionNode ignored -> "∩";
+            case DifferenceNode   ignored -> "−";
+            case DivisionNode     ignored -> "÷";
+            case SymmetricDifferenceNode ignored -> "∆";
+            case CompositionNode  ignored -> "∘";
 
             // ── General recursion (FIX) ─────────────────────────────────────
             // The binder shows "FIX <name>" (with a [set] mat tag via withMatLabel)
@@ -659,7 +659,7 @@ public final class IrReport {
                     + " AS " + tn.childrenColumn();
 
             // ── Lineage reification (WHY) — appends a provenance:ANY column ──────
-            case WhyNode _ -> "ω";
+            case WhyNode ignored -> "ω";
         };
     }
 
@@ -686,10 +686,10 @@ public final class IrReport {
     static List<RelNode> nodeChildren(RelNode node) {
         return switch (node) {
             // Leaf
-            case RelationNode   _ -> List.of();
-            case RelationFunctionCall _ -> List.of();
-            case TruthRelationNode _ -> List.of();
-            case EmptyRelationNode _ -> List.of();   // its heading is inert, not a child
+            case RelationNode   ignored -> List.of();
+            case RelationFunctionCall ignored -> List.of();
+            case TruthRelationNode ignored -> List.of();
+            case EmptyRelationNode ignored -> List.of();   // its heading is inert, not a child
             // Unary
             case SelectionNode  s -> List.of(s.input());
             case ProjectionNode p -> List.of(p.input());
@@ -734,7 +734,7 @@ public final class IrReport {
             // General recursion (FIX): the binder shows its base and step subtrees;
             // the recursive reference is a leaf.
             case FixpointNode       fx -> List.of(fx.base(), fx.step());
-            case RecursiveRefNode   _  -> List.of();
+            case RecursiveRefNode   ignored  -> List.of();
             // Covering reduction (COVER) — unary, one child.
             case CoverNode          cv -> List.of(cv.input());
             case DownsampleNode      d -> List.of(d.input());

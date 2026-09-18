@@ -148,11 +148,11 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
         }
         return switch (declaration.config()) {
             case CsvFileSourceConfig csv -> openCsv(relationName, csv, schema);
-            case JsonFileSourceConfig _ -> jsonConnector.open(relationName, schema);
-            case DatabaseSourceConfig _ -> throw noConnector(relationName, "database");
-            case HttpSourceConfig _     -> httpConnector.open(relationName, schema);
+            case JsonFileSourceConfig ignored -> jsonConnector.open(relationName, schema);
+            case DatabaseSourceConfig ignored -> throw noConnector(relationName, "database");
+            case HttpSourceConfig ignored     -> httpConnector.open(relationName, schema);
             case ConnectionTableSourceConfig table -> openConnectionTable(relationName, table, schema);
-            case GeneratorSourceConfig _ -> generatorConnector.open(relationName, schema);
+            case GeneratorSourceConfig ignored -> generatorConnector.open(relationName, schema);
         };
     }
 

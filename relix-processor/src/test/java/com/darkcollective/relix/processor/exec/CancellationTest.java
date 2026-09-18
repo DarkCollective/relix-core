@@ -82,7 +82,7 @@ final class CancellationTest extends ProcessorTestSupport {
         SemanticModel m = model(DATA + "query { " + expression + " };\n");
         ExecutionContext ctx = ExecutionContext.inlineOnly(m);
         try (Stream<Row> rows = EXECUTOR.execute(queryNode(m.rootQueries().getFirst()), ctx)) {
-            rows.forEach(_ -> { });
+            rows.forEach(unused -> { });
         }
     }
 

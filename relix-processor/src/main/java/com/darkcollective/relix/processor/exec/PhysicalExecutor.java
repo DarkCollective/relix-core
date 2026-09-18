@@ -99,7 +99,7 @@ public final class PhysicalExecutor {
             case PhysicalNode.Scan s      -> leaf.executeScan(s, ctx);
             // ∅ — no rows, and nothing to run: the sub-plan the optimizer proved
             // unsatisfiable is not present in the physical plan at all.
-            case PhysicalNode.Empty _     -> Stream.empty();
+            case PhysicalNode.Empty ignored     -> Stream.empty();
             case PhysicalNode.PushedScan s -> ctx.connector()
                     .openQuery(s.connectorType(), s.connection(), s.nativeQuery(), s.schema());
             case PhysicalNode.Spool sp    -> spool.executeSpool(sp, ctx);

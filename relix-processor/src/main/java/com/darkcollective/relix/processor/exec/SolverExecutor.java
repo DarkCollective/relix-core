@@ -193,7 +193,7 @@ final class SolverExecutor {
         try (Stream<Row> input = dispatch.holding(node.input(), ctx, node, () -> held[0])) {
             input.forEach(row -> {
                 List<Value> key = groupAttrs.stream().map(row::get).toList();
-                if (groups.computeIfAbsent(key, _ -> new TopRows(bound, comparator)).offer(row)) {
+                if (groups.computeIfAbsent(key, unused -> new TopRows(bound, comparator)).offer(row)) {
                     held[0]++;
                 }
             });
@@ -237,7 +237,7 @@ final class SolverExecutor {
     Stream<Row> executeBernoulli(PhysicalNode.BernoulliSample node, EvalCtx ctx) {
         double p = node.probability();
         Random rnd = node.seed().<Random>map(Random::new).orElseGet(ThreadLocalRandom::current);
-        return dispatch.execute(node.input(), ctx).filter(_ -> rnd.nextDouble() < p);
+        return dispatch.execute(node.input(), ctx).filter(unused -> rnd.nextDouble() < p);
     }
 
     /**

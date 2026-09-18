@@ -109,7 +109,7 @@ final class FunctionAccessGuardTest {
     @Test
     @DisplayName("no engine module reaches a static function registry")
     void noStaticRegistry() {
-        assertThat(offenders(STATIC_REGISTRY, _ -> true))
+        assertThat(offenders(STATIC_REGISTRY, unused -> true))
                 .as("""
                         engine sources naming a static function registry. What a function \
                         is comes from the FunctionCatalog the caller supplied — analysis \

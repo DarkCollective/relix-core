@@ -86,10 +86,14 @@ public final class OperandWalker {
                     walk(elem, onAttribute, onFunction);
                 }
             }
-            case NumberOperand _, StringOperand _, BooleanOperand _,
-                 DateOperand _, TimeOperand _, TimestampOperand _, DurationOperand _ -> {
-                /* literals reference no columns and need no callback */
-            }
+            // literals reference no columns and need no callback
+            case NumberOperand ignored -> { }
+            case StringOperand ignored -> { }
+            case BooleanOperand ignored -> { }
+            case DateOperand ignored -> { }
+            case TimeOperand ignored -> { }
+            case TimestampOperand ignored -> { }
+            case DurationOperand ignored -> { }
         }
     }
 

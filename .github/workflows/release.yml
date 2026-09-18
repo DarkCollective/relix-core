@@ -114,11 +114,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Java 24
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 24
+          java-version: 21
           cache: gradle
 
       # The gate, run at the release version rather than at the default. Version is not

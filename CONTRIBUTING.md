@@ -42,10 +42,10 @@ written saves everyone a rewrite.
 
 ## The toolchain
 
-**Java 24, and nothing else.** The build uses a Gradle toolchain pinned to 24.
+**Java 21, and nothing else.** The build uses a Gradle toolchain pinned to 21.
 Please do not change it, add `--enable-preview`, or add a `gradle.properties`
 overriding the toolchain path — a pull request that does will be asked to drop
-it. If your machine lacks Java 24, Gradle can provision it for you.
+it. If your machine lacks Java 21, Gradle can provision it for you.
 
 ## The gate
 

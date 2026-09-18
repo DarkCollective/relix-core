@@ -262,9 +262,17 @@ final class RenameEliminationPass {
             case UnnestNode u -> addQualifier(u.column(), into);
 
             // Nodes with no column references of their own.
-            case RelationNode _, RenameNode _, LimitNode _, DistinctNode _,
-                 NaturalJoinNode _, ProductNode _, UnionNode _, UnionAllNode _,
-                 IntersectionNode _, DifferenceNode _, SymmetricDifferenceNode _ -> { }
+            case RelationNode ignored -> { }
+            case RenameNode ignored -> { }
+            case LimitNode ignored -> { }
+            case DistinctNode ignored -> { }
+            case NaturalJoinNode ignored -> { }
+            case ProductNode ignored -> { }
+            case UnionNode ignored -> { }
+            case UnionAllNode ignored -> { }
+            case IntersectionNode ignored -> { }
+            case DifferenceNode ignored -> { }
+            case SymmetricDifferenceNode ignored -> { }
 
             // Anything else — analytic, recursive, solver, generator, provenance —
             // carries column references this pass does not enumerate. Refuse rather
@@ -279,13 +287,13 @@ final class RenameEliminationPass {
     private static void collect(Predicate predicate, Set<String> into) {
         OperandWalker.walk(predicate,
                 attr -> addQualifier(attr.name(), into),
-                _ -> { /* a function's own name is not a column reference */ });
+                unused -> { /* a function's own name is not a column reference */ });
     }
 
     private static void collect(Operand expression, Set<String> into) {
         OperandWalker.walk(expression,
                 attr -> addQualifier(attr.name(), into),
-                _ -> { /* a function's own name is not a column reference */ });
+                unused -> { /* a function's own name is not a column reference */ });
     }
 
     private static void addQualifier(String attributeName, Set<String> into) {

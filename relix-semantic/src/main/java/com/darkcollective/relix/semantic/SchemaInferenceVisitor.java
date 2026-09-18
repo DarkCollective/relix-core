@@ -686,7 +686,7 @@ final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Schema>> {
                     a.operator() == AggregateOperator.COUNT
                             ? ScalarType.NUMBER
                             : inferOperandType(a.argument(), input);
-            case WindowFunction.RankingWindow _ -> ScalarType.NUMBER;
+            case WindowFunction.RankingWindow ignored -> ScalarType.NUMBER;
             case WindowFunction.OffsetWindow o -> inferOperandType(o.expression(), input);
         };
     }

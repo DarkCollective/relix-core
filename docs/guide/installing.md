@@ -50,17 +50,19 @@ jar. Shading it would hide it from your dependency report and from whatever scan
 report for vulnerabilities, which is a worse trade than one visible transitive
 dependency.
 
-## Java 24
+## Java 21
 
-Relix targets **Java 24** and the jar is compiled for it. A build on an earlier JDK
+Relix targets **Java 21** and the jar is compiled for it. A build on an earlier JDK
 fails at class-load time, which is a confusing way to learn a version requirement, so
 it is worth stating in the consuming build:
 
 ```gradle
 java {
-    toolchain { languageVersion = JavaLanguageVersion.of(24) }
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
 }
 ```
+
+A newer JDK is fine — 21 is the floor, not the ceiling.
 
 The engine ships as a set of JPMS modules and works equally on the class path or the
 module path. On the module path, the module to require is

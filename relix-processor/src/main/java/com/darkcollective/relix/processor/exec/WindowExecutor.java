@@ -171,8 +171,8 @@ final class WindowExecutor {
     private static List<Row> frameRows(List<Row> partition, int current, WindowFrame frame) {
         int start = switch (frame) {
             case WindowFrame.BoundedFrame b -> Math.max(0, current - b.n() + 1);
-            case WindowFrame.CumulativeFrame _ -> 0;
-            case WindowFrame.PartitionFrame _ -> 0;
+            case WindowFrame.CumulativeFrame ignored -> 0;
+            case WindowFrame.PartitionFrame ignored -> 0;
         };
         int endExclusive = frame instanceof WindowFrame.PartitionFrame
                 ? partition.size()

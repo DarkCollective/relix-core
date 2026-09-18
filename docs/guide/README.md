@@ -23,7 +23,7 @@ did with it.
 
 | Page | What it covers |
 |---|---|
-| [Getting the library](installing.md) | The artifact and its coordinate; Java 24; adding a JDBC driver; checking what a session found |
+| [Getting the library](installing.md) | The artifact and its coordinate; Java 21; adding a JDBC driver; checking what a session found |
 | [Getting started](getting-started.md) | The session and the relation; Java data in; the two authoring surfaces; the row terminals; the optimizer and the plan; errors |
 | [The session](sessions.md) | Declaring, running a script, reading a session back, diagnostics, what a session can be given, closing |
 

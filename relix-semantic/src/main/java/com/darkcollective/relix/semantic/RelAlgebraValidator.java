@@ -590,7 +590,7 @@ final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 out.add(attr.name());
                 yield true;
             }
-            case NumberOperand _ -> true;
+            case NumberOperand ignored -> true;
             case BinaryArithmeticExpression arith ->
                     collectSolveColumns(arith.left(), out, loc)
                             & collectSolveColumns(arith.right(), out, loc);

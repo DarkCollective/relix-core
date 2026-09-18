@@ -195,7 +195,7 @@ final class RandomQueryEquivalenceTest {
             RelNode tree = generator.generate(MAX_DEPTH).node();
             switch (RandomQueryEquivalence.check(tree, m)) {
                 case RandomQueryEquivalence.Outcome.Agreed a -> fired.addAll(a.fired());
-                case RandomQueryEquivalence.Outcome.Skipped _ -> skipped++;
+                case RandomQueryEquivalence.Outcome.Skipped ignored -> skipped++;
                 case RandomQueryEquivalence.Outcome.Disagreed d -> failWith(d, m);
             }
         }
@@ -325,7 +325,7 @@ final class RandomQueryEquivalenceTest {
             QueryGenerator generator = new QueryGenerator(new Random(SEED), m, RELATIONS);
             RelNode tree = generator.generate(MAX_DEPTH).node();
 
-            RelNode shrunk = RandomQueryEquivalence.shrink(tree, _ -> false);
+            RelNode shrunk = RandomQueryEquivalence.shrink(tree, unused -> false);
             assertThat(shrunk).isSameAs(tree);
         }
     }

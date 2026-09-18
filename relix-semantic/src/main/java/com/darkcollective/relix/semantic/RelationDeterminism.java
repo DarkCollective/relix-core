@@ -108,9 +108,9 @@ public final class RelationDeterminism {
         }
         boolean[] reproducible = {true};
         RelNodeOperands.forEach(node,
-                operand -> OperandWalker.walk(operand, _ -> { },
+                operand -> OperandWalker.walk(operand, unused -> { },
                         call -> reproducible[0] &= deterministic(call, functions)),
-                predicate -> OperandWalker.walk(predicate, _ -> { },
+                predicate -> OperandWalker.walk(predicate, unused -> { },
                         call -> reproducible[0] &= deterministic(call, functions)));
         if (!reproducible[0]) {
             return false;

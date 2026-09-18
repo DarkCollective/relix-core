@@ -87,22 +87,36 @@ public final class RelNodeOperands {
             // ── leaves and the purely structural operators ────────────────────────
             // No expressions of their own: a name, a position, or a set operation over
             // whole tuples.
-            case TruthRelationNode _, EmptyRelationNode _, RecursiveRefNode _,
-                 DistinctNode _, WhyNode _,
-                 NaturalJoinNode _, ProductNode _, UnionNode _, UnionAllNode _,
-                 OuterUnionNode _, DifferenceNode _, IntersectionNode _, DivisionNode _,
-                 SymmetricDifferenceNode _, CompositionNode _, FixpointNode _ -> {
-                /* nothing to report */
-            }
+            case TruthRelationNode ignored -> { }
+            case EmptyRelationNode ignored -> { }
+            case RecursiveRefNode ignored -> { }
+            case DistinctNode ignored -> { }
+            case WhyNode ignored -> { }
+            case NaturalJoinNode ignored -> { }
+            case ProductNode ignored -> { }
+            case UnionNode ignored -> { }
+            case UnionAllNode ignored -> { }
+            case OuterUnionNode ignored -> { }
+            case DifferenceNode ignored -> { }
+            case IntersectionNode ignored -> { }
+            case DivisionNode ignored -> { }
+            case SymmetricDifferenceNode ignored -> { }
+            case CompositionNode ignored -> { }
+            case FixpointNode ignored -> { }
 
             // ── column-name-only operators ────────────────────────────────────────
             // Every field is a column name or a literal constant of the operator, not an
             // expression evaluated per row.
-            case RenameNode _, UnnestNode _, ClusterNode _, PathNode _, LimitNode _,
-                 IntervalJoinNode _, CoverNode _, DownsampleNode _, UnpivotNode _,
-                 PivotNode _ -> {
-                /* nothing to report */
-            }
+            case RenameNode ignored -> { }
+            case UnnestNode ignored -> { }
+            case ClusterNode ignored -> { }
+            case PathNode ignored -> { }
+            case LimitNode ignored -> { }
+            case IntervalJoinNode ignored -> { }
+            case CoverNode ignored -> { }
+            case DownsampleNode ignored -> { }
+            case UnpivotNode ignored -> { }
+            case PivotNode ignored -> { }
 
             // ── operators carrying expressions ────────────────────────────────────
             case RelationNode n -> n.produceBound().ifPresent(b -> onOperand.accept(b.limit()));
@@ -160,9 +174,8 @@ public final class RelNodeOperands {
             // The probability / reservoir size are plain numbers on the node, not
             // expressions; the seed is a long. Nothing to report — but see
             // `usesSystemState`, which is where a sampling node's own volatility lives.
-            case SampleNode _, ReservoirSampleNode _ -> {
-                /* nothing to report */
-            }
+            case SampleNode ignored -> { }
+            case ReservoirSampleNode ignored -> { }
         }
     }
 
@@ -187,18 +200,50 @@ public final class RelNodeOperands {
             case SampleNode n          -> n.seed().isEmpty();
             case ReservoirSampleNode n -> n.seed().isEmpty();
 
-            case RelationNode _, RelationFunctionCall _, TruthRelationNode _,
-                 EmptyRelationNode _, RecursiveRefNode _, ProjectionNode _,
-                 SelectionNode _, RenameNode _, AggregationNode _, SortNode _,
-                 LimitNode _, DistinctNode _, UnnestNode _, ClosureNode _, ClusterNode _,
-                 PathNode _, TraceNode _, UniversalNode _, SolveNode _, OptimizeNode _,
-                 TopKNode _, CoverNode _, DownsampleNode _, WindowNode _,
-                 SessionizeNode _, UnpivotNode _, PivotNode _, TreeNode _, WhyNode _,
-                 LateralJoinNode _, NaturalJoinNode _, ConditionalJoinNode _,
-                 AsOfJoinNode _, IntervalJoinNode _, ProductNode _, UnionNode _,
-                 UnionAllNode _, OuterUnionNode _, DifferenceNode _, IntersectionNode _,
-                 DivisionNode _, SymmetricDifferenceNode _, CompositionNode _,
-                 FixpointNode _ -> false;
+            case RelationNode ignored -> false;
+            case RelationFunctionCall ignored -> false;
+            case TruthRelationNode ignored -> false;
+            case EmptyRelationNode ignored -> false;
+            case RecursiveRefNode ignored -> false;
+            case ProjectionNode ignored -> false;
+            case SelectionNode ignored -> false;
+            case RenameNode ignored -> false;
+            case AggregationNode ignored -> false;
+            case SortNode ignored -> false;
+            case LimitNode ignored -> false;
+            case DistinctNode ignored -> false;
+            case UnnestNode ignored -> false;
+            case ClosureNode ignored -> false;
+            case ClusterNode ignored -> false;
+            case PathNode ignored -> false;
+            case TraceNode ignored -> false;
+            case UniversalNode ignored -> false;
+            case SolveNode ignored -> false;
+            case OptimizeNode ignored -> false;
+            case TopKNode ignored -> false;
+            case CoverNode ignored -> false;
+            case DownsampleNode ignored -> false;
+            case WindowNode ignored -> false;
+            case SessionizeNode ignored -> false;
+            case UnpivotNode ignored -> false;
+            case PivotNode ignored -> false;
+            case TreeNode ignored -> false;
+            case WhyNode ignored -> false;
+            case LateralJoinNode ignored -> false;
+            case NaturalJoinNode ignored -> false;
+            case ConditionalJoinNode ignored -> false;
+            case AsOfJoinNode ignored -> false;
+            case IntervalJoinNode ignored -> false;
+            case ProductNode ignored -> false;
+            case UnionNode ignored -> false;
+            case UnionAllNode ignored -> false;
+            case OuterUnionNode ignored -> false;
+            case DifferenceNode ignored -> false;
+            case IntersectionNode ignored -> false;
+            case DivisionNode ignored -> false;
+            case SymmetricDifferenceNode ignored -> false;
+            case CompositionNode ignored -> false;
+            case FixpointNode ignored -> false;
         };
     }
 
@@ -240,14 +285,34 @@ public final class RelNodeOperands {
                               UnaryOperator<Predicate> onPredicate) {
         return switch (node) {
             // ── the nodes carrying no expressions: nothing to rewrite ─────────────
-            case TruthRelationNode _, EmptyRelationNode _, RecursiveRefNode _,
-                 DistinctNode _, WhyNode _,
-                 NaturalJoinNode _, ProductNode _, UnionNode _, UnionAllNode _,
-                 OuterUnionNode _, DifferenceNode _, IntersectionNode _, DivisionNode _,
-                 SymmetricDifferenceNode _, CompositionNode _, FixpointNode _,
-                 RenameNode _, UnnestNode _, ClusterNode _, PathNode _, LimitNode _,
-                 IntervalJoinNode _, CoverNode _, DownsampleNode _, UnpivotNode _,
-                 PivotNode _, SampleNode _, ReservoirSampleNode _ -> node;
+            case TruthRelationNode ignored -> node;
+            case EmptyRelationNode ignored -> node;
+            case RecursiveRefNode ignored -> node;
+            case DistinctNode ignored -> node;
+            case WhyNode ignored -> node;
+            case NaturalJoinNode ignored -> node;
+            case ProductNode ignored -> node;
+            case UnionNode ignored -> node;
+            case UnionAllNode ignored -> node;
+            case OuterUnionNode ignored -> node;
+            case DifferenceNode ignored -> node;
+            case IntersectionNode ignored -> node;
+            case DivisionNode ignored -> node;
+            case SymmetricDifferenceNode ignored -> node;
+            case CompositionNode ignored -> node;
+            case FixpointNode ignored -> node;
+            case RenameNode ignored -> node;
+            case UnnestNode ignored -> node;
+            case ClusterNode ignored -> node;
+            case PathNode ignored -> node;
+            case LimitNode ignored -> node;
+            case IntervalJoinNode ignored -> node;
+            case CoverNode ignored -> node;
+            case DownsampleNode ignored -> node;
+            case UnpivotNode ignored -> node;
+            case PivotNode ignored -> node;
+            case SampleNode ignored -> node;
+            case ReservoirSampleNode ignored -> node;
 
             // ── operators carrying expressions ────────────────────────────────────
             case RelationNode n -> {

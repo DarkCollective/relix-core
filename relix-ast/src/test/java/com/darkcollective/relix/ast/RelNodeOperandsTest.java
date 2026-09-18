@@ -45,13 +45,13 @@ final class RelNodeOperandsTest extends AstTestSupport {
 
     private static List<Operand> operandsOf(RelNode node) {
         List<Operand> found = new ArrayList<>();
-        RelNodeOperands.forEach(node, found::add, _ -> { });
+        RelNodeOperands.forEach(node, found::add, unused -> { });
         return found;
     }
 
     private static List<Predicate> predicatesOf(RelNode node) {
         List<Predicate> found = new ArrayList<>();
-        RelNodeOperands.forEach(node, _ -> { }, found::add);
+        RelNodeOperands.forEach(node, unused -> { }, found::add);
         return found;
     }
 
@@ -426,7 +426,7 @@ final class RelNodeOperandsTest extends AstTestSupport {
                         ComparisonOperator.EQUAL, num("777"));
 
         private static RelNode replaceAll(RelNode node) {
-            return RelNodeOperands.map(node, _ -> NEW_OPERAND, _ -> NEW_PREDICATE);
+            return RelNodeOperands.map(node, unused -> NEW_OPERAND, unused -> NEW_PREDICATE);
         }
 
         private static RelNode unchanged(RelNode node) {

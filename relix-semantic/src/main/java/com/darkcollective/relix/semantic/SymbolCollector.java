@@ -600,7 +600,7 @@ final class SymbolCollector {
         return switch (src.config()) {
             // Open / schema-on-read: a JSON source carries no declared columns;
             // its rows are nested documents navigated by path at query time.
-            case JsonFileSourceConfig _ -> Schema.open();
+            case JsonFileSourceConfig ignored -> Schema.open();
             // An HTTP source with no declared columns is open (schema-on-read),
             // exactly like a JSON file; a declared schema makes it closed + typed.
             case HttpSourceConfig     http -> http.isOpen() ? Schema.open() : closedSchema(http.columns());

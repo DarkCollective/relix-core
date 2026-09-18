@@ -93,7 +93,7 @@ final class DownsampleExecutor {
                 key.add(row.get(gk));
             }
             key.add(new TimestampValue(bucket));
-            groups.computeIfAbsent(key, _ -> new ArrayList<>()).add(row);
+            groups.computeIfAbsent(key, unused -> new ArrayList<>()).add(row);
         }
 
         // Consolidate each group into an output row

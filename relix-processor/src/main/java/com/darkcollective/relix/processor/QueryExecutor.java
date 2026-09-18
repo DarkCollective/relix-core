@@ -899,7 +899,7 @@ public final class QueryExecutor {
                     .map(RelationSymbol::schema)
                     .orElseThrow(() -> new EvaluationException(
                             "Unknown relation '" + named.name() + "' in query target"));
-            case ExpressionQueryTarget _ -> ctx.nodeSchemas()
+            case ExpressionQueryTarget ignored -> ctx.nodeSchemas()
                     .get(node)
                     .orElseThrow(() -> new EvaluationException(
                             "No schema annotation for query expression — "
@@ -915,7 +915,7 @@ public final class QueryExecutor {
     private static String resolveLabel(QueryStatement query, int index) {
         return switch (query.target()) {
             case NamedQueryTarget   named -> named.name();
-            case ExpressionQueryTarget _ -> "<expression " + index + ">";
+            case ExpressionQueryTarget ignored -> "<expression " + index + ">";
         };
     }
 }

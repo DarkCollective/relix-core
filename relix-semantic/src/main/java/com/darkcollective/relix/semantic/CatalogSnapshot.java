@@ -166,7 +166,7 @@ public final class CatalogSnapshot implements CatalogProvider {
         this.captured = Objects.requireNonNull(captured, "captured");
         Map<String, List<Entry>> index = new LinkedHashMap<>();
         for (Entry entry : this.entries) {
-            index.computeIfAbsent(entry.key(), _ -> new ArrayList<>()).add(entry);
+            index.computeIfAbsent(entry.key(), unused -> new ArrayList<>()).add(entry);
         }
         index.values().forEach(list -> list.sort(PRECEDENCE));
         this.byKey = index;

@@ -114,7 +114,7 @@ final class ConjunctBounds {
             Bound bound = boundOf(conjunct);
             bounds.add(bound);
             if (bound != null) {
-                byColumn.computeIfAbsent(bound.column, _ -> new Bounds()).add(bound);
+                byColumn.computeIfAbsent(bound.column, unused -> new Bounds()).add(bound);
             }
         }
 

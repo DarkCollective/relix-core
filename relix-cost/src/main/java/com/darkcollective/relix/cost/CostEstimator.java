@@ -290,11 +290,11 @@ public final class CostEstimator {
 
     private CostTier tierFor(RelationSymbol sym, int depth) {
         return switch (sym) {
-            case InlineRelationSymbol   _ -> CostTier.INLINE;
-            case SystemRelationSymbol   _ -> CostTier.INLINE;
+            case InlineRelationSymbol   ignored -> CostTier.INLINE;
+            case SystemRelationSymbol   ignored -> CostTier.INLINE;
             case QueryRelationSymbol   qr -> estimateAt(qr.body(), depth + 1);
-            case SourceRelationSymbol   _ -> CostTier.FILE;
-            case DatabaseRelationSymbol _ -> CostTier.REMOTE;
+            case SourceRelationSymbol   ignored -> CostTier.FILE;
+            case DatabaseRelationSymbol ignored -> CostTier.REMOTE;
         };
     }
 
@@ -314,7 +314,7 @@ public final class CostEstimator {
             // ∅ is exactly zero rows — the one place a zero estimate is a fact rather
             // than a fabrication. Its carried heading is inert and is not costed:
             // nothing in it is ever executed.
-            case EmptyRelationNode _ -> OptionalLong.of(0L);
+            case EmptyRelationNode ignored -> OptionalLong.of(0L);
 
             // A table-valued function is bound by substitution, so its cardinality is
             // that of its (un-substituted) body — substituting constants only narrows it.
@@ -330,10 +330,21 @@ public final class CostEstimator {
             // adjacency relation with no edges is all-roots), a serviceable upper bound.
             // WHY emits every input row unchanged plus a provenance column — one
             // output row per input row.
-            case ProjectionNode _, RenameNode _, SortNode _, DistinctNode _,
-                 UnnestNode _, ClusterNode _, PathNode _, SolveNode _, OptimizeNode _, CoverNode _,
-                 WindowNode _, SessionizeNode _, PivotNode _, TreeNode _, WhyNode _ ->
-                    rowsAt(node.children().get(0), depth + 1);
+            case ProjectionNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case RenameNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case SortNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case DistinctNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case UnnestNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case ClusterNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case PathNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case SolveNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case OptimizeNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case CoverNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case WindowNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case SessionizeNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case PivotNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case TreeNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case WhyNode ignored -> rowsAt(node.children().get(0), depth + 1);
 
             // A bounded closure (ADR-0020 endpoint pushdown) computes far fewer pairs
             // than the all-pairs form: both endpoints fixed is a single-pair check
@@ -383,17 +394,22 @@ public final class CostEstimator {
             // outer joins keep the ~max(sides) heuristic.
             case NaturalJoinNode j -> equiJoinRows(j.left(), j.right(), null, depth);
             case ThetaJoinNode j   -> equiJoinRows(j.left(), j.right(), j.condition(), depth);
-            case LeftOuterJoinNode _, RightOuterJoinNode _, FullOuterJoinNode _ ->
-                    max(rowsAt(node.children().get(0), depth + 1),
+            case LeftOuterJoinNode ignored -> max(rowsAt(node.children().get(0), depth + 1),
+                        rowsAt(node.children().get(1), depth + 1));
+            case RightOuterJoinNode ignored -> max(rowsAt(node.children().get(0), depth + 1),
+                        rowsAt(node.children().get(1), depth + 1));
+            case FullOuterJoinNode ignored -> max(rowsAt(node.children().get(0), depth + 1),
                         rowsAt(node.children().get(1), depth + 1));
 
             // Output ≤ left-input rows: ⋉/▷/pairwise-∀ are left-filter operators
             // (OperatorSemantics.isLeftFilterOperator); − and ÷ also output a left-input
             // subset but are set-producing (force deduplication) so PropertyDeriver
             // categorises them separately.
-            case SemiJoinNode _, AntiJoinNode _, PairwiseUniversalNode _,
-                 DifferenceNode _, DivisionNode _ ->
-                    rowsAt(node.children().get(0), depth + 1);
+            case SemiJoinNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case AntiJoinNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case PairwiseUniversalNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case DifferenceNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            case DivisionNode ignored -> rowsAt(node.children().get(0), depth + 1);
 
             // AS-OF join: left-outer = exactly |left| rows; inner = at most |left| rows.
             case AsOfJoinNode a -> rowsAt(a.left(), depth + 1);
@@ -418,7 +434,8 @@ public final class CostEstimator {
             // cardinality is generally unknown (O(n²) for closure-like shapes, worse
             // for richer bodies), so the honest estimate is empty; the recursive
             // reference's extent (the accumulator) is likewise unknown here.
-            case FixpointNode _, RecursiveRefNode _ -> OptionalLong.empty();
+            case FixpointNode ignored -> OptionalLong.empty();
+            case RecursiveRefNode ignored -> OptionalLong.empty();
 
             // Lateral TVF join: conservatively |left| × |TVF_body| rows.
             // (Each left row drives one TVF invocation; the TVF body may return many rows.)
@@ -535,7 +552,7 @@ public final class CostEstimator {
             case NullPredicate n -> nullSelectivity(n, relation);
             // LIKE has no statistic that speaks to it — a distinct count says nothing
             // about how many values match a pattern.
-            case PatternPredicate _ -> Optional.empty();
+            case PatternPredicate ignored -> Optional.empty();
         };
     }
 

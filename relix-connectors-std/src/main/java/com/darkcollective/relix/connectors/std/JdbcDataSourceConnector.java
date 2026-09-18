@@ -332,7 +332,7 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
             if (resource != null) {
                 try {
                     resource.close();
-                } catch (Exception _) {
+                } catch (Exception ignored) {
                     // best-effort cleanup; a close failure must not mask the real result/error
                 }
             }

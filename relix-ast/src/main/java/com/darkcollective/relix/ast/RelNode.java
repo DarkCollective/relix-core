@@ -108,32 +108,32 @@ public sealed interface RelNode permits
      */
     default MaterializationMode materializationMode() {
         return switch (this) {
-            case SortNode          _ -> MaterializationMode.SORTED;
-            case AggregationNode   _ -> MaterializationMode.BAG;
-            case UniversalNode     _ -> MaterializationMode.BAG;
-            case OptimizeNode      _ -> MaterializationMode.BAG;
-            case TopKNode          _ -> MaterializationMode.BAG;
-            case ReservoirSampleNode _ -> MaterializationMode.BAG;
-            case UnionAllNode      _ -> MaterializationMode.BAG;
-            case DivisionNode      _ -> MaterializationMode.BAG;
-            case FullOuterJoinNode _ -> MaterializationMode.BAG;
-            case UnionNode         _ -> MaterializationMode.SET;
-            case OuterUnionNode    _ -> MaterializationMode.SET;
-            case IntersectionNode  _ -> MaterializationMode.SET;
-            case DifferenceNode    _ -> MaterializationMode.SET;
-            case SymmetricDifferenceNode _ -> MaterializationMode.SET;
-            case ClosureNode       _ -> MaterializationMode.SET;
-            case ClusterNode       _ -> MaterializationMode.SET;
-            case PathNode          _ -> MaterializationMode.SET;
-            case TraceNode         _ -> MaterializationMode.BAG;
-            case FixpointNode      _ -> MaterializationMode.SET;
-            case CoverNode         _ -> MaterializationMode.BAG;
-            case DownsampleNode    _ -> MaterializationMode.BAG;
-            case WindowNode        _ -> MaterializationMode.BAG;
-            case SessionizeNode    _ -> MaterializationMode.BAG;
-            case PivotNode         _ -> MaterializationMode.BAG;
-            case TreeNode          _ -> MaterializationMode.BAG;
-            case WhyNode           _ -> MaterializationMode.BAG;
+            case SortNode          ignored -> MaterializationMode.SORTED;
+            case AggregationNode   ignored -> MaterializationMode.BAG;
+            case UniversalNode     ignored -> MaterializationMode.BAG;
+            case OptimizeNode      ignored -> MaterializationMode.BAG;
+            case TopKNode          ignored -> MaterializationMode.BAG;
+            case ReservoirSampleNode ignored -> MaterializationMode.BAG;
+            case UnionAllNode      ignored -> MaterializationMode.BAG;
+            case DivisionNode      ignored -> MaterializationMode.BAG;
+            case FullOuterJoinNode ignored -> MaterializationMode.BAG;
+            case UnionNode         ignored -> MaterializationMode.SET;
+            case OuterUnionNode    ignored -> MaterializationMode.SET;
+            case IntersectionNode  ignored -> MaterializationMode.SET;
+            case DifferenceNode    ignored -> MaterializationMode.SET;
+            case SymmetricDifferenceNode ignored -> MaterializationMode.SET;
+            case ClosureNode       ignored -> MaterializationMode.SET;
+            case ClusterNode       ignored -> MaterializationMode.SET;
+            case PathNode          ignored -> MaterializationMode.SET;
+            case TraceNode         ignored -> MaterializationMode.BAG;
+            case FixpointNode      ignored -> MaterializationMode.SET;
+            case CoverNode         ignored -> MaterializationMode.BAG;
+            case DownsampleNode    ignored -> MaterializationMode.BAG;
+            case WindowNode        ignored -> MaterializationMode.BAG;
+            case SessionizeNode    ignored -> MaterializationMode.BAG;
+            case PivotNode         ignored -> MaterializationMode.BAG;
+            case TreeNode          ignored -> MaterializationMode.BAG;
+            case WhyNode           ignored -> MaterializationMode.BAG;
             default                        -> MaterializationMode.STREAM;
         };
     }
@@ -154,11 +154,11 @@ public sealed interface RelNode permits
      */
     default List<RelNode> children() {
         return switch (this) {
-            case RelationNode _                -> List.of();
-            case RelationFunctionCall _        -> List.of();  // args are operands, not relations
-            case TruthRelationNode _           -> List.of();  // leaf — a nullary literal relation
-            case EmptyRelationNode _           -> List.of();  // leaf — its heading is inert, not a child
-            case RecursiveRefNode _            -> List.of();  // leaf — resolves to the enclosing FIX accumulator
+            case RelationNode ignored                -> List.of();
+            case RelationFunctionCall ignored        -> List.of();  // args are operands, not relations
+            case TruthRelationNode ignored           -> List.of();  // leaf — a nullary literal relation
+            case EmptyRelationNode ignored           -> List.of();  // leaf — its heading is inert, not a child
+            case RecursiveRefNode ignored            -> List.of();  // leaf — resolves to the enclosing FIX accumulator
             case ProjectionNode n      -> List.of(n.input());
             case SelectionNode n       -> List.of(n.input());
             case RenameNode n          -> List.of(n.input());

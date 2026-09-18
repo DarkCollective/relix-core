@@ -191,9 +191,9 @@ final class OuterJoinDemotionPass {
         ConditionalJoinNode demoted = switch (join) {
             // The rows a ⟕ pads carry NULL *right* columns, so it is a predicate on the
             // right that makes them unreachable.
-            case LeftOuterJoinNode _  -> rejectsRight ? theta(join) : join;
-            case RightOuterJoinNode _ -> rejectsLeft  ? theta(join) : join;
-            case FullOuterJoinNode _  -> {
+            case LeftOuterJoinNode ignored  -> rejectsRight ? theta(join) : join;
+            case RightOuterJoinNode ignored -> rejectsLeft  ? theta(join) : join;
+            case FullOuterJoinNode ignored  -> {
                 if (rejectsLeft && rejectsRight) yield theta(join);
                 if (rejectsRight) yield new RightOuterJoinNode(join.left(), join.right(),
                         join.condition(), join.location());
@@ -219,10 +219,10 @@ final class OuterJoinDemotionPass {
 
     private static String label(RelNode join) {
         return switch (join) {
-            case LeftOuterJoinNode _  -> "⟕";
-            case RightOuterJoinNode _ -> "⟖";
-            case FullOuterJoinNode _  -> "⟗";
-            case ThetaJoinNode _      -> "⨝";
+            case LeftOuterJoinNode ignored  -> "⟕";
+            case RightOuterJoinNode ignored -> "⟖";
+            case FullOuterJoinNode ignored  -> "⟗";
+            case ThetaJoinNode ignored      -> "⨝";
             default                   -> join.getClass().getSimpleName();
         };
     }

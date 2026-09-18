@@ -254,7 +254,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
             case HeaderBinding h -> headers.put(h.headerName(), value);
             case PathParamBinding p -> pathParams.put(p.paramName(), value);
             // An OUT-only binding on an IN column is a no-op (the validator owns shape checks).
-            case ExtractPathBinding _ -> { }
+            case ExtractPathBinding ignored -> { }
         }
     }
 
@@ -450,7 +450,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
                 case ANY -> {
                     try {
                         yield new NumberValue(new BigDecimal(text.strip()));
-                    } catch (NumberFormatException _) {
+                    } catch (NumberFormatException ignored) {
                         yield new StringValue(text);
                     }
                 }

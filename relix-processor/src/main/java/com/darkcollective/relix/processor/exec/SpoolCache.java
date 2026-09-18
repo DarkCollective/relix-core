@@ -65,7 +65,7 @@ final class SpoolCache {
 
     /** The buffer for spool {@code id}, created on first use. */
     SpoolBuffer buffer(int id, PhysicalNode input, ChildDispatch dispatch) {
-        return buffers.computeIfAbsent(id, _ -> new SpoolBuffer(input, dispatch, this));
+        return buffers.computeIfAbsent(id, unused -> new SpoolBuffer(input, dispatch, this));
     }
 
     /** How many more rows may be retained before the budget is spent. */

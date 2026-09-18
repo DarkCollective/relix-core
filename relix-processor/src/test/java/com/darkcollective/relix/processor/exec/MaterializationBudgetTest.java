@@ -105,7 +105,7 @@ final class MaterializationBudgetTest extends ProcessorTestSupport {
         ExecutionContext ctx = tune.apply(ExecutionContext.of(model, CONNECTOR));
         try (Stream<Row> stream = EXECUTOR.execute(
                 queryNode(model.rootQueries().getFirst()), ctx)) {
-            stream.forEach(_ -> { });
+            stream.forEach(unused -> { });
         }
     }
 
