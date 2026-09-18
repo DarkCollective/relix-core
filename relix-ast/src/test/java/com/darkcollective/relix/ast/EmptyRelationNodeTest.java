@@ -61,7 +61,7 @@ final class EmptyRelationNodeTest {
         assertThat(node.children()).isEmpty();
         // mapChildren must not reach the heading: a rewrite that changed the carried
         // expression's schema would silently change this node's heading.
-        assertThat(node.mapChildren(_ -> new RelationNode("Other"))).isSameAs(node);
+        assertThat(node.mapChildren(unused -> new RelationNode("Other"))).isSameAs(node);
     }
 
     @Test

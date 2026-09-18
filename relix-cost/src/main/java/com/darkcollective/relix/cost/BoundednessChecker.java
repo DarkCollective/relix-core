@@ -149,32 +149,32 @@ public final class BoundednessChecker {
      */
     private static String label(RelNode node) {
         return switch (node) {
-            case SortNode _                -> "τ (SORT)";
-            case AggregationNode _         -> "γ (GROUP)";
-            case UniversalNode _           -> "∀ (FORALL)";
-            case OptimizeNode _            -> "OPTIMIZE";
-            case TopKNode _                -> "TOP";
-            case ReservoirSampleNode _     -> "SAMPLE … ROWS";
-            case CoverNode _               -> "COVER";
-            case DownsampleNode _          -> "DOWNSAMPLE";
-            case UnionAllNode _            -> "⊎ (UALL)";
-            case DivisionNode _            -> "÷ (DIV)";
-            case FullOuterJoinNode _       -> "⟗ (full outer join)";
-            case UnionNode _               -> "∪ (UNION)";
-            case OuterUnionNode _          -> "⊔ (OUNION)";
-            case IntersectionNode _        -> "∩ (INTER)";
-            case DifferenceNode _          -> "− (DIFF)";
-            case SymmetricDifferenceNode _ -> "∆ (SYMDIFF)";
-            case ClosureNode _             -> "CLOSURE";
-            case ClusterNode _             -> "CLUSTER";
-            case PathNode _                -> "PATH";
-            case TraceNode _               -> "TRACE";
-            case FixpointNode _            -> "FIX (general recursion)";
-            case WindowNode _              -> "WINDOW (cumulative / ranking / offset)";
-            case SessionizeNode _          -> "SESSIONIZE";
-            case PivotNode _               -> "PIVOT";
-            case TreeNode _                -> "TREE";
-            case WhyNode _                 -> "ω (WHY)";
+            case SortNode ignored                -> "τ (SORT)";
+            case AggregationNode ignored         -> "γ (GROUP)";
+            case UniversalNode ignored           -> "∀ (FORALL)";
+            case OptimizeNode ignored            -> "OPTIMIZE";
+            case TopKNode ignored                -> "TOP";
+            case ReservoirSampleNode ignored     -> "SAMPLE … ROWS";
+            case CoverNode ignored               -> "COVER";
+            case DownsampleNode ignored          -> "DOWNSAMPLE";
+            case UnionAllNode ignored            -> "⊎ (UALL)";
+            case DivisionNode ignored            -> "÷ (DIV)";
+            case FullOuterJoinNode ignored       -> "⟗ (full outer join)";
+            case UnionNode ignored               -> "∪ (UNION)";
+            case OuterUnionNode ignored          -> "⊔ (OUNION)";
+            case IntersectionNode ignored        -> "∩ (INTER)";
+            case DifferenceNode ignored          -> "− (DIFF)";
+            case SymmetricDifferenceNode ignored -> "∆ (SYMDIFF)";
+            case ClosureNode ignored             -> "CLOSURE";
+            case ClusterNode ignored             -> "CLUSTER";
+            case PathNode ignored                -> "PATH";
+            case TraceNode ignored               -> "TRACE";
+            case FixpointNode ignored            -> "FIX (general recursion)";
+            case WindowNode ignored              -> "WINDOW (cumulative / ranking / offset)";
+            case SessionizeNode ignored          -> "SESSIONIZE";
+            case PivotNode ignored               -> "PIVOT";
+            case TreeNode ignored                -> "TREE";
+            case WhyNode ignored                 -> "ω (WHY)";
             default                              -> node.getClass().getSimpleName();
         };
     }

@@ -66,7 +66,7 @@ final class WindowReference {
     private static SequencedMap<String, List<Row>> partitions(List<Row> rows, boolean ascending) {
         SequencedMap<String, List<Row>> byKey = new LinkedHashMap<>();
         for (Row row : rows) {
-            byKey.computeIfAbsent(row.partition(), _ -> new ArrayList<>()).add(row);
+            byKey.computeIfAbsent(row.partition(), unused -> new ArrayList<>()).add(row);
         }
         Comparator<Row> order = Comparator.comparing(Row::sortKey);
         byKey.values().forEach(part -> part.sort(ascending ? order : order.reversed()));

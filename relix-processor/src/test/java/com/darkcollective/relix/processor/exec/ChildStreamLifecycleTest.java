@@ -166,7 +166,7 @@ final class ChildStreamLifecycleTest extends ProcessorTestSupport {
         QueryStatement query = model.rootQueries().getFirst();
 
         try (Stream<Row> stream = EXECUTOR.execute(queryNode(query), ctx)) {
-            stream.forEach(_ -> { });
+            stream.forEach(unused -> { });
         }
         return connector;
     }
@@ -420,7 +420,7 @@ final class ChildStreamLifecycleTest extends ProcessorTestSupport {
 
             assertThatThrownBy(() -> {
                 try (Stream<Row> stream = EXECUTOR.execute(queryNode(query), ctx)) {
-                    stream.forEach(_ -> { });
+                    stream.forEach(unused -> { });
                 }
             }).isInstanceOf(EvaluationException.class);
 
@@ -482,7 +482,7 @@ final class ChildStreamLifecycleTest extends ProcessorTestSupport {
 
             assertThatThrownBy(() -> {
                 try (Stream<Row> stream = EXECUTOR.execute(queryNode(query), ctx)) {
-                    stream.forEach(_ -> { });
+                    stream.forEach(unused -> { });
                 }
             }).isInstanceOf(EvaluationException.class)
               .hasMessageContaining("maxMaterializedRows");

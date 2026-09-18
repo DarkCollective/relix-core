@@ -143,7 +143,7 @@ final class LateralDecorrelationPass {
         boolean[] perRow = {false};
         for (Operand argument : lateral.arguments()) {
             OperandWalker.walk(argument,
-                    _ -> perRow[0] = true,
+                    unused -> perRow[0] = true,
                     (FunctionCall call) -> {
                         boolean declared = functions.scalar(call.functionName())
                                 .map(fn -> fn.signature().has(FunctionProperty.DETERMINISTIC))

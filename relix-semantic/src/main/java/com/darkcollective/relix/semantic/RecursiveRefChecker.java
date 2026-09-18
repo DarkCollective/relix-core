@@ -239,10 +239,10 @@ final class RecursiveRefChecker {
             case LateralJoinNode n -> countRecursiveRefs(n.left(), name, forbidden);
 
             // ── Leaves that can hold no recursive reference ──────────────────────
-            case RelationNode _         -> 0;
-            case RelationFunctionCall _ -> 0;
-            case TruthRelationNode _    -> 0;
-            case EmptyRelationNode _    -> 0;
+            case RelationNode ignored         -> 0;
+            case RelationFunctionCall ignored -> 0;
+            case TruthRelationNode ignored    -> 0;
+            case EmptyRelationNode ignored    -> 0;
         };
     }
 

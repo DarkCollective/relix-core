@@ -97,7 +97,7 @@ subprojects {
 
     java {
         toolchain {
-            languageVersion = JavaLanguageVersion.of(24)
+            languageVersion = JavaLanguageVersion.of(21)
         }
     }
 
@@ -266,10 +266,15 @@ subprojects {
     apply plugin: 'info.solidsoft.pitest'
 
     pitest {
-        pitestVersion = '1.30.0'   // the plugin's default bundles an ASM that cannot
-                                   // read Java 24 bytecode: "Unsupported class file
-                                   // major version 68". The plugin itself is dormant
-                                   // at 1.15.0; the engine is not, and is overridable.
+        pitestVersion = '1.30.0'   // the plugin's default bundles an ASM that fails with
+                                   // "Unsupported class file major version N". Note which
+                                   // N: PIT runs in the GRADLE DAEMON's JVM, not the
+                                   // toolchain's, and transforming a class makes ASM read
+                                   // that JVM's own java.lang.* too — so the bound is the
+                                   // daemon's Java, and targeting 21 does not lift it
+                                   // (probed: still fails on a 24 daemon). The plugin is
+                                   // dormant at 1.15.0; the engine is not, and is
+                                   // overridable.
         junit5PluginVersion = '1.2.1'
         targetClasses = ['com.darkcollective.relix.**']
         timestampedReports = false

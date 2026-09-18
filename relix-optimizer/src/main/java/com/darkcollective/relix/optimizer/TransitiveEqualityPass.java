@@ -282,7 +282,7 @@ final class TransitiveEqualityPass {
         Map<String, Operand> impliedBindings() {
             var byRoot = new LinkedHashMap<String, Set<String>>();
             for (String member : parent.keySet()) {
-                byRoot.computeIfAbsent(find(member), _ -> new LinkedHashSet<>()).add(member);
+                byRoot.computeIfAbsent(find(member), unused -> new LinkedHashSet<>()).add(member);
             }
             var implied = new LinkedHashMap<String, Operand>();
             for (Set<String> members : byRoot.values()) {

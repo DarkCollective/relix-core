@@ -120,7 +120,7 @@ final class LateralScalingBenchmarkTest extends ProcessorTestSupport {
         CountingConnector connector = new CountingConnector();
         ExecutionContext ctx = ExecutionContext.of(model, connector);
         try (Stream<Row> stream = new RelNodeExecutor().execute(logical, ctx)) {
-            stream.forEach(_ -> { });
+            stream.forEach(unused -> { });
         }
         return connector;
     }

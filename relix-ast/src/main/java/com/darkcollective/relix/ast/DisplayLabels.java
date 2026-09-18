@@ -132,8 +132,8 @@ public final class DisplayLabels {
         Objects.requireNonNull(frame, "frame");
         return switch (frame) {
             case WindowFrame.BoundedFrame b -> " OVER " + b.n() + " ROWS";
-            case WindowFrame.CumulativeFrame _ -> " OVER ALL ROWS";
-            case WindowFrame.PartitionFrame _ -> "";
+            case WindowFrame.CumulativeFrame ignored -> " OVER ALL ROWS";
+            case WindowFrame.PartitionFrame ignored -> "";
         };
     }
 

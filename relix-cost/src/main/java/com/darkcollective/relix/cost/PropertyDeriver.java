@@ -248,10 +248,21 @@ public final class PropertyDeriver {
             // A truth-relation literal holds at most one (empty) tuple, so it is
             // whole-row distinct without any source needing to say so; ∅ holds none
             // at all, which is duplicate-free for the same trivial reason.
-            case DistinctNode _, UnionNode _, OuterUnionNode _, IntersectionNode _,
-                 DifferenceNode _, SymmetricDifferenceNode _, DivisionNode _,
-                 ClosureNode _, ClusterNode _, PathNode _, TraceNode _, FixpointNode _,
-                 CoverNode _, TruthRelationNode _, EmptyRelationNode _ -> RelationProperties.wholeRow();
+            case DistinctNode ignored -> RelationProperties.wholeRow();
+            case UnionNode ignored -> RelationProperties.wholeRow();
+            case OuterUnionNode ignored -> RelationProperties.wholeRow();
+            case IntersectionNode ignored -> RelationProperties.wholeRow();
+            case DifferenceNode ignored -> RelationProperties.wholeRow();
+            case SymmetricDifferenceNode ignored -> RelationProperties.wholeRow();
+            case DivisionNode ignored -> RelationProperties.wholeRow();
+            case ClosureNode ignored -> RelationProperties.wholeRow();
+            case ClusterNode ignored -> RelationProperties.wholeRow();
+            case PathNode ignored -> RelationProperties.wholeRow();
+            case TraceNode ignored -> RelationProperties.wholeRow();
+            case FixpointNode ignored -> RelationProperties.wholeRow();
+            case CoverNode ignored -> RelationProperties.wholeRow();
+            case TruthRelationNode ignored -> RelationProperties.wholeRow();
+            case EmptyRelationNode ignored -> RelationProperties.wholeRow();
 
             // ── Establish a candidate key from grouping columns ─────────────────
             case AggregationNode a -> RelationProperties.key(
@@ -264,11 +275,17 @@ public final class PropertyDeriver {
             // they emit a row-subset of their left input so left's distinctness holds.
             // AS-OF emits exactly one (nearest) right row per left probe, so the
             // left's candidate keys still uniquely identify output rows.
-            case SelectionNode _, SortNode _, LimitNode _, SampleNode _,
-                 ReservoirSampleNode _, TopKNode _, OptimizeNode _,
-                 SemiJoinNode _, AntiJoinNode _, PairwiseUniversalNode _,
-                 AsOfJoinNode _ ->
-                    deriveAt(node.children().get(0), depth + 1, src);
+            case SelectionNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case SortNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case LimitNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case SampleNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case ReservoirSampleNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case TopKNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case OptimizeNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case SemiJoinNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case AntiJoinNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case PairwiseUniversalNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            case AsOfJoinNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
             case RenameNode r -> renameProperties(r, depth, src);
 
             // ── Leaf: duplicate-free iff the source says so (a generator that
@@ -286,13 +303,28 @@ public final class PropertyDeriver {
             // distinctness conservatively rather than tracking the key candidate key.
             // WHY appends a provenance column and is a hard barrier (ADR-0018); derive
             // distinctness conservatively rather than threading the input's keys across it.
-            case RelationFunctionCall _, ProjectionNode _, UnnestNode _, SolveNode _,
-                 DownsampleNode _, LateralJoinNode _, WindowNode _, SessionizeNode _,
-                 UnpivotNode _, PivotNode _, TreeNode _, WhyNode _,
-                 NaturalJoinNode _, ThetaJoinNode _, LeftOuterJoinNode _, RightOuterJoinNode _,
-                 FullOuterJoinNode _, ProductNode _, CompositionNode _, UnionAllNode _,
-                 IntervalJoinNode _,
-                 RecursiveRefNode _ -> RelationProperties.none();
+            case RelationFunctionCall ignored -> RelationProperties.none();
+            case ProjectionNode ignored -> RelationProperties.none();
+            case UnnestNode ignored -> RelationProperties.none();
+            case SolveNode ignored -> RelationProperties.none();
+            case DownsampleNode ignored -> RelationProperties.none();
+            case LateralJoinNode ignored -> RelationProperties.none();
+            case WindowNode ignored -> RelationProperties.none();
+            case SessionizeNode ignored -> RelationProperties.none();
+            case UnpivotNode ignored -> RelationProperties.none();
+            case PivotNode ignored -> RelationProperties.none();
+            case TreeNode ignored -> RelationProperties.none();
+            case WhyNode ignored -> RelationProperties.none();
+            case NaturalJoinNode ignored -> RelationProperties.none();
+            case ThetaJoinNode ignored -> RelationProperties.none();
+            case LeftOuterJoinNode ignored -> RelationProperties.none();
+            case RightOuterJoinNode ignored -> RelationProperties.none();
+            case FullOuterJoinNode ignored -> RelationProperties.none();
+            case ProductNode ignored -> RelationProperties.none();
+            case CompositionNode ignored -> RelationProperties.none();
+            case UnionAllNode ignored -> RelationProperties.none();
+            case IntervalJoinNode ignored -> RelationProperties.none();
+            case RecursiveRefNode ignored -> RelationProperties.none();
         };
     }
 

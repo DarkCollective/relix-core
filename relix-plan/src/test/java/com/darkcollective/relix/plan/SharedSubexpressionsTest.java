@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 final class SharedSubexpressionsTest {
 
     /** Everything is shareable unless a test says otherwise. */
-    private static final java.util.function.Predicate<RelNode> ANYTHING = _ -> true;
+    private static final java.util.function.Predicate<RelNode> ANYTHING = unused -> true;
 
     /**
      * Stands in for the planner's gate where a test needs one: a sub-expression that

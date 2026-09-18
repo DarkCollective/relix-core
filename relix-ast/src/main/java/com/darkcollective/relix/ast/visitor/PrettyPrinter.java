@@ -547,8 +547,8 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     private static String windowFrame(WindowFrame frame) {
         return switch (frame) {
             case WindowFrame.BoundedFrame b -> " OVER " + b.n() + " ROWS";
-            case WindowFrame.CumulativeFrame _ -> " OVER ALL ROWS";
-            case WindowFrame.PartitionFrame _ -> "";
+            case WindowFrame.CumulativeFrame ignored -> " OVER ALL ROWS";
+            case WindowFrame.PartitionFrame ignored -> "";
         };
     }
 

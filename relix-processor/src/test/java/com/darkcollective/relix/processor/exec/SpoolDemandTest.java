@@ -67,7 +67,7 @@ final class SpoolDemandTest extends ProcessorTestSupport {
             return IntStream.range(0, 1000)
                     .mapToObj(i -> (Row) ArrayRow.of(schema,
                             NumberValue.of(String.valueOf(i)), NumberValue.of("7")))
-                    .peek(_ -> pulled++)
+                    .peek(unused -> pulled++)
                     .onClose(() -> closed++);
         }
     }
@@ -79,7 +79,7 @@ final class SpoolDemandTest extends ProcessorTestSupport {
         RowCountingConnector connector = new RowCountingConnector();
         ExecutionContext ctx = ExecutionContext.of(model, connector);
         try (Stream<Row> stream = new RelNodeExecutor().execute(logical, ctx)) {
-            stream.forEach(_ -> { });
+            stream.forEach(unused -> { });
         }
         return connector;
     }
@@ -180,7 +180,7 @@ final class SpoolDemandTest extends ProcessorTestSupport {
                         .mapToObj(i -> (Row) ArrayRow.of(schema,
                                 NumberValue.of(String.valueOf(i)),
                                 NumberValue.of(String.valueOf(i + 1))))
-                        .peek(_ -> pulled++);
+                        .peek(unused -> pulled++);
             }
         }
 
@@ -191,7 +191,7 @@ final class SpoolDemandTest extends ProcessorTestSupport {
             ChainConnector connector = new ChainConnector();
             ExecutionContext ctx = ExecutionContext.of(model, connector);
             try (Stream<Row> stream = new RelNodeExecutor().execute(logical, ctx)) {
-                stream.forEach(_ -> { });
+                stream.forEach(unused -> { });
             }
             return connector;
         }
@@ -222,7 +222,7 @@ final class SpoolDemandTest extends ProcessorTestSupport {
             ExecutionContext ctx = ExecutionContext.of(model, new ChainConnector())
                     .withListener(events::add);
             try (Stream<Row> stream = new RelNodeExecutor().execute(logical, ctx)) {
-                stream.forEach(_ -> { });
+                stream.forEach(unused -> { });
             }
 
             assertThat(events)

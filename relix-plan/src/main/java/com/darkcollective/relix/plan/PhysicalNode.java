@@ -95,7 +95,11 @@ public sealed interface PhysicalNode {
         return switch (this) {
             // Leaves in the sense children() means. `Why` carries a *logical* sub-tree and
             // `Scan` a relation symbol, so neither has a physical child to hand to f.
-            case Scan _, Empty _, PushedScan _, RecursiveRef _, Why _ -> this;
+            case Scan ignored -> this;
+            case Empty ignored -> this;
+            case PushedScan ignored -> this;
+            case RecursiveRef ignored -> this;
+            case Why ignored -> this;
             case Spool n -> {
                 PhysicalNode in = f.apply(n.input());
                 yield in == n.input() ? n : new Spool(n.schema(), n.id(), in);

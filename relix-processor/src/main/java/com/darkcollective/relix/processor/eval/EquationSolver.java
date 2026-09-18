@@ -122,7 +122,7 @@ public final class EquationSolver {
      */
     private BigDecimal solveFor(Operand side, String unknown, BigDecimal target, Row row) {
         return switch (side) {
-            case AttributeOperand _ -> target; // base case: side is the unknown
+            case AttributeOperand ignored -> target; // base case: side is the unknown
             case UnaryOperand u -> solveFor(u.operand(), unknown, target.negate(), row);
             case BinaryArithmeticExpression b -> {
                 boolean inLeft = containsColumn(b.left(), unknown);

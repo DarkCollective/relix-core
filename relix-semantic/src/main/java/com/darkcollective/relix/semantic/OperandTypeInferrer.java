@@ -105,13 +105,13 @@ final class OperandTypeInferrer {
     Type infer(Operand expr, Schema inputSchema) {
         return switch (expr) {
             case AttributeOperand attr -> attributeType(attr, inputSchema);
-            case NumberOperand            _ -> ScalarType.NUMBER;
-            case StringOperand            _ -> ScalarType.STRING;
-            case BooleanOperand           _ -> ScalarType.BOOLEAN;
-            case DateOperand              _ -> ScalarType.DATE;
-            case TimeOperand              _ -> ScalarType.TIME;
-            case TimestampOperand         _ -> ScalarType.TIMESTAMP;
-            case DurationOperand          _ -> ScalarType.DURATION;
+            case NumberOperand            ignored -> ScalarType.NUMBER;
+            case StringOperand            ignored -> ScalarType.STRING;
+            case BooleanOperand           ignored -> ScalarType.BOOLEAN;
+            case DateOperand              ignored -> ScalarType.DATE;
+            case TimeOperand              ignored -> ScalarType.TIME;
+            case TimestampOperand         ignored -> ScalarType.TIMESTAMP;
+            case DurationOperand          ignored -> ScalarType.DURATION;
             case BinaryArithmeticExpression b ->
                     TemporalArithmetic.binary(
                             infer(b.left(), inputSchema), b.operator(),
@@ -126,7 +126,7 @@ final class OperandTypeInferrer {
                             .returnType(fn.arguments().stream()
                                     .map(arg -> scalar(infer(arg, inputSchema)))
                                     .toList());
-            case SetLiteralOperand        _ -> ScalarType.ANY;
+            case SetLiteralOperand        ignored -> ScalarType.ANY;
             // Nested constructions yield struct/array values with a recursively
             // inferred nested type (NF² — ADR-0001).
             case StructConstruction struct -> new StructType(struct.fields().stream()
@@ -135,7 +135,7 @@ final class OperandTypeInferrer {
             case ArrayConstruction array ->
                     new ArrayType(arrayElementType(array.elements(), inputSchema));
             // A predicate in operand position is a boolean value.
-            case ConditionOperand    _ -> ScalarType.BOOLEAN;
+            case ConditionOperand    ignored -> ScalarType.BOOLEAN;
         };
     }
 

@@ -171,7 +171,7 @@ public final class QueryGenerator {
         Map<Schema, List<String>> bySchema = new LinkedHashMap<>();
         for (String name : names) {
             baseSchema(name).ifPresent(s ->
-                    bySchema.computeIfAbsent(s, _ -> new ArrayList<>()).add(name));
+                    bySchema.computeIfAbsent(s, unused -> new ArrayList<>()).add(name));
         }
         return List.copyOf(bySchema.values());
     }
