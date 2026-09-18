@@ -378,7 +378,8 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String keyword = node.reflexive() ? "RCLOSURE" : "CLOSURE";
         return keyword + " " + node.fromColumn() + edgeSeparator(node.undirected())
                 + node.toColumn()
-                + boundAnnotation(node)
+                + boundAnnotation(node.fromColumn(), node.toColumn(),
+                        node.boundSource(), node.boundTarget())
                 + " (" + node.input().accept(this) + ")";
     }
 
@@ -390,23 +391,26 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         return undirected ? " ↔ " : ", ";
     }
 
+
     /**
-     * Renders the optimizer-folded endpoint bounds of a closure as a non-syntax
-     * annotation (e.g. {@code  ⟨from="X"⟩}), or {@code ""} when unbounded. These
-     * bounds never appear on a parsed tree, so round-trip output is unaffected.
+     * Renders the optimizer-folded endpoint bounds of a graph operator as a non-syntax
+     * annotation (e.g. {@code  ⟨from="X"⟩}), or {@code ""} when unbounded. These bounds
+     * never appear on a parsed tree, so round-trip output is unaffected.
      */
-    private String boundAnnotation(ClosureNode node) {
-        if (node.boundSource().isEmpty() && node.boundTarget().isEmpty()) {
+    private String boundAnnotation(String fromColumn, String toColumn,
+                                   java.util.Optional<Operand> boundSource,
+                                   java.util.Optional<Operand> boundTarget) {
+        if (boundSource.isEmpty() && boundTarget.isEmpty()) {
             return "";
         }
         StringBuilder sb = new StringBuilder(" ⟨");
-        node.boundSource().ifPresent(op ->
-                sb.append(node.fromColumn()).append('=').append(op.accept(operandPrinter)));
-        node.boundTarget().ifPresent(op -> {
-            if (node.boundSource().isPresent()) {
+        boundSource.ifPresent(op ->
+                sb.append(fromColumn).append('=').append(op.accept(operandPrinter)));
+        boundTarget.ifPresent(op -> {
+            if (boundSource.isPresent()) {
                 sb.append(", ");
             }
-            sb.append(node.toColumn()).append('=').append(op.accept(operandPrinter));
+            sb.append(toColumn).append('=').append(op.accept(operandPrinter));
         });
         return sb.append('⟩').toString();
     }
@@ -421,7 +425,10 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     public String visit(PathNode node) {
         return "PATH " + node.fromColumn() + edgeSeparator(node.undirected()) + node.toColumn()
                 + " HOPS " + node.minHops() + " TO " + node.maxHops()
-                + " AS " + node.depthColumn() + " (" + node.input().accept(this) + ")";
+                + " AS " + node.depthColumn()
+                + boundAnnotation(node.fromColumn(), node.toColumn(),
+                        node.boundSource(), node.boundTarget())
+                + " (" + node.input().accept(this) + ")";
     }
 
     @Override
@@ -429,30 +436,11 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         return "TRACE " + node.fromColumn() + edgeSeparator(node.undirected()) + node.toColumn()
                 + " VIA " + node.weightColumn() + " " + node.sense()
                 + " AS " + node.pathColumn()
-                + traceBoundAnnotation(node)
+                + boundAnnotation(node.fromColumn(), node.toColumn(),
+                        node.boundSource(), node.boundTarget())
                 + " (" + node.input().accept(this) + ")";
     }
 
-    /**
-     * Renders the optimizer-folded endpoint bounds of a trace as a non-syntax
-     * annotation (e.g. {@code  ⟨from="JFK"⟩}), or {@code ""} when unbounded. These
-     * bounds never appear on a parsed tree, so round-trip output is unaffected.
-     */
-    private String traceBoundAnnotation(TraceNode node) {
-        if (node.boundSource().isEmpty() && node.boundTarget().isEmpty()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder(" ⟨");
-        node.boundSource().ifPresent(op ->
-                sb.append(node.fromColumn()).append('=').append(op.accept(operandPrinter)));
-        node.boundTarget().ifPresent(op -> {
-            if (node.boundSource().isPresent()) {
-                sb.append(", ");
-            }
-            sb.append(node.toColumn()).append('=').append(op.accept(operandPrinter));
-        });
-        return sb.append('⟩').toString();
-    }
 
     @Override
     public String visit(CoverNode node) {

@@ -278,7 +278,8 @@ public sealed interface RelNode permits
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n
                         : new PathNode(in, n.fromColumn(), n.toColumn(), n.undirected(),
-                                       n.minHops(), n.maxHops(), n.depthColumn(), n.location());
+                                       n.minHops(), n.maxHops(), n.depthColumn(),
+                                       n.boundSource(), n.boundTarget(), n.location());
             }
             case TraceNode n -> {
                 RelNode in = f.apply(n.input());

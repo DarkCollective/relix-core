@@ -142,6 +142,15 @@ final class RelNodeOperandsTest extends AstTestSupport {
                     ObjectiveSense.MINIMIZE, "path", Optional.of(num("1")),
                     Optional.of(num("9")),A)))
                     .containsExactly(num("1"), num("9"));
+            assertThat(operandsOf(path("src", "dst", false, 1, 3, "depth",
+                    Optional.of(num("1")), Optional.of(num("9")), A)))
+                    .containsExactly(num("1"), num("9"));
+        }
+
+        @Test
+        @DisplayName("PATH with no bounds reports nothing")
+        void pathWithoutBounds() {
+            assertThat(operandsOf(path("src", "dst", 1, 3, "depth", A))).isEmpty();
         }
 
         @Test
@@ -463,6 +472,8 @@ final class RelNodeOperandsTest extends AstTestSupport {
                             TieBreak.FIRST),
                     closure("src", "dst", false, false, Optional.of(num("1")),
                             Optional.of(num("9")),A),
+                    path("src", "dst", false, 1, 3, "depth", Optional.of(num("1")),
+                            Optional.of(num("9")), A),
                     trace("src", "dst", false, "w", ObjectiveSense.MINIMIZE, "path",
                             Optional.of(num("1")), Optional.of(num("9")),A),
                     solve(attr("x"), num("10"), A),

@@ -395,6 +395,12 @@ final class RecursionExecutor {
         int maxHops = node.maxHops();
         boolean undirected = node.undirected();
 
+        Optional<Value> boundSource = node.boundSource().map(op -> literal(op, ctx));
+        Optional<Value> boundTarget = node.boundTarget().map(op -> literal(op, ctx));
+        // A target-only bound searches backwards, which is the same traversal over the
+        // reversed adjacency — the shortest distance to T is the shortest path length.
+        boolean backwards = boundSource.isEmpty() && boundTarget.isPresent();
+
         Map<Value, List<Value>> adjacency = new HashMap<>();
         Set<Pair> edges = new LinkedHashSet<>();
         try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
@@ -411,12 +417,71 @@ final class RecursionExecutor {
             });
         }
 
-        // Shortest hop distance for every (source, target) pair, discovered by BFS.
-        // The 1-step frontier is the edge set; each round extends every frontier pair
-        // by one hop, recording a derived pair only on first (shortest) discovery.
+        Set<Pair> searchEdges = edges;
+        Map<Value, List<Value>> searchAdjacency = adjacency;
+        if (backwards) {
+            searchEdges = new LinkedHashSet<>();
+            searchAdjacency = new HashMap<>();
+            for (Pair e : edges) {
+                addEdge(searchEdges, searchAdjacency, null, e.to(), e.from());
+            }
+        }
+        Map<Pair, Integer> shortest = shortestHops(searchEdges, searchAdjacency, maxHops,
+                backwards ? boundTarget : boundSource);
+
+        // Emit pairs whose shortest length is within the window, ordered by (from, to).
+        Comparator<Value> order = ValueComparator.NULLS_LAST;
+        List<Map.Entry<Pair, Integer>> emitted = new ArrayList<>();
+        for (Map.Entry<Pair, Integer> entry : shortest.entrySet()) {
+            int d = entry.getValue();
+            if (d < minHops || d > maxHops) {
+                continue;
+            }
+            Pair pair = backwards
+                    ? new Pair(entry.getKey().to(), entry.getKey().from())
+                    : entry.getKey();
+            // A forward search seeded at the source still has to honour a target bound:
+            // both bounds present is single-source reachability plus one equality, which
+            // is the asymptotic win without a second traversal.
+            if (!backwards && boundTarget.isPresent() && !boundTarget.get().equals(pair.to())) {
+                continue;
+            }
+            emitted.add(Map.entry(pair, d));
+        }
+        emitted.sort(Comparator
+                .<Map.Entry<Pair, Integer>, Value>comparing(e -> e.getKey().from(), order)
+                .thenComparing(e -> e.getKey().to(), order));
+
+        List<Row> outputRows = new ArrayList<>(emitted.size());
+        for (Map.Entry<Pair, Integer> entry : emitted) {
+            Pair p = entry.getKey();
+            outputRows.add(ArrayRow.of(outputSchema, List.of(
+                    p.from(), p.to(),
+                    new NumberValue(java.math.BigDecimal.valueOf(entry.getValue())))));
+        }
+        return BagRelation.of(outputSchema, outputRows).stream();
+    }
+
+    /**
+     * Shortest hop distance for each {@code (source, target)} pair reachable within
+     * {@code maxHops}, by breadth-first search over {@code adjacency}.
+     *
+     * <p>{@code seed}, when present, starts the search at that node alone rather than at
+     * every node ({@code PATH-001}). The distances are unchanged by that: the shortest
+     * path from one node does not depend on which other nodes were also searched from, so
+     * a seeded run gives exactly the slice of the unseeded one whose source is the seed.
+     */
+    private static Map<Pair, Integer> shortestHops(Set<Pair> edges,
+                                                   Map<Value, List<Value>> adjacency,
+                                                   int maxHops, Optional<Value> seed) {
+        // The 1-step frontier is the edge set; each round extends every frontier pair by
+        // one hop, recording a derived pair only on first (shortest) discovery.
         Map<Pair, Integer> shortest = new LinkedHashMap<>();
-        Set<Pair> frontier = new LinkedHashSet<>();   // (source, node) reached at the current depth
+        Set<Pair> frontier = new LinkedHashSet<>();   // (source, node) at the current depth
         for (Pair e : edges) {
+            if (seed.isPresent() && !seed.get().equals(e.from())) {
+                continue;
+            }
             if (shortest.putIfAbsent(e, 1) == null) {
                 frontier.add(e);
             }
@@ -438,28 +503,7 @@ final class RecursionExecutor {
             }
             frontier = next;
         }
-
-        // Emit pairs whose shortest length is within the window, ordered by (from, to).
-        Comparator<Value> order = ValueComparator.NULLS_LAST;
-        List<Map.Entry<Pair, Integer>> emitted = new ArrayList<>();
-        for (Map.Entry<Pair, Integer> entry : shortest.entrySet()) {
-            int d = entry.getValue();
-            if (d >= minHops && d <= maxHops) {
-                emitted.add(entry);
-            }
-        }
-        emitted.sort(Comparator
-                .<Map.Entry<Pair, Integer>, Value>comparing(e -> e.getKey().from(), order)
-                .thenComparing(e -> e.getKey().to(), order));
-
-        List<Row> outputRows = new ArrayList<>(emitted.size());
-        for (Map.Entry<Pair, Integer> entry : emitted) {
-            Pair p = entry.getKey();
-            outputRows.add(ArrayRow.of(outputSchema, List.of(
-                    p.from(), p.to(),
-                    new NumberValue(java.math.BigDecimal.valueOf(entry.getValue())))));
-        }
-        return BagRelation.of(outputSchema, outputRows).stream();
+        return shortest;
     }
 
     /** Union-find {@code find} with path compression over the {@code parent} map. */

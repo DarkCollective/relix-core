@@ -41,6 +41,7 @@ package com.darkcollective.relix.optimizer;
  *   <li>{@code NEST-nnn}     — nest/unnest (NF²) round-trip rules</li>
  *   <li>{@code CLOSURE-nnn}  — endpoint bounds folded into {@code CLOSURE}</li>
  *   <li>{@code TRACE-nnn}    — endpoint bounds folded into {@code TRACE}</li>
+ *   <li>{@code PATH-nnn}     — endpoint bounds folded into {@code PATH}</li>
  *   <li>{@code FIX-nnn}      — magic sets into a {@code FIX} recursion</li>
  *   <li>{@code GEN-nnn}      — production bounds folded into a generator</li>
  *   <li>{@code WINDOW-nnn}   — partition pruning into {@code WINDOW}</li>
@@ -403,6 +404,15 @@ public enum OptimizationCode {
      *  pushable). {@code σ from = c (TRACE from, to VIA w … (E))} →
      *  {@code TRACE from, to VIA w … ⟨from=c⟩ (E)}. */
     TRACE_001("TRACE-001", "Selection folded into TRACE endpoint bound (single-source path search)"),
+
+    /** Fold a constant endpoint equality above a {@code PATH} bounded-traversal operator
+     *  into the operator as a source/target bound, turning an all-pairs breadth-first
+     *  search into a single-source / single-target / single-pair one. The {@code depth}
+     *  column is unaffected: the shortest path from a seed does not depend on which other
+     *  nodes were searched from, so the bounded result is a slice of the unbounded one.
+     *  {@code σ from = c (PATH from, to HOPS m TO n AS d (E))} →
+     *  {@code PATH from, to HOPS m TO n AS d ⟨from=c⟩ (E)}. */
+    PATH_001("PATH-001", "Selection folded into PATH endpoint bound (single-source traversal)"),
 
     /** Push a selection over <em>frozen</em> columns into a {@code FIX} least-fixpoint —
      *  the general magic-sets / sideways-information-passing rewrite over arbitrary

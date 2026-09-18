@@ -623,6 +623,15 @@ public abstract class AstBuilders {
                 depthColumn, SourceLocation.UNKNOWN);
     }
 
+    /** Path with the endpoint bounds {@code PATH-001} pushes down. */
+    public static PathNode path(String fromColumn, String toColumn, boolean undirected,
+                                int minHops, int maxHops, String depthColumn,
+                                Optional<Operand> boundSource, Optional<Operand> boundTarget,
+                                RelNode input) {
+        return new PathNode(input, fromColumn, toColumn, undirected, minHops, maxHops,
+                depthColumn, boundSource, boundTarget, SourceLocation.UNKNOWN);
+    }
+
     /** Weighted shortest/longest path, appending {@code pathColumn}. */
     public static TraceNode trace(String from, String to, String weight, ObjectiveSense sense,
                                   String path, RelNode input) {

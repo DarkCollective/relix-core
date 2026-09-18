@@ -175,7 +175,9 @@ public final class PhysicalPlanPrinter {
             case PhysicalNode.Path p -> "PATH " + p.fromColumn()
                     + (p.undirected() ? " ↔ " : ", ") + p.toColumn()
                     + " HOPS " + p.minHops() + " TO " + p.maxHops()
-                    + " AS " + p.depthColumn();
+                    + " AS " + p.depthColumn()
+                    + p.boundSource().map(o -> " [" + p.fromColumn() + "=" + o.accept(OPND) + "]").orElse("")
+                    + p.boundTarget().map(o -> " [" + p.toColumn() + "=" + o.accept(OPND) + "]").orElse("");
             case PhysicalNode.Trace tr -> "TRACE " + tr.fromColumn()
                     + (tr.undirected() ? " ↔ " : ", ") + tr.toColumn()
                     + " VIA " + tr.weightColumn() + " " + tr.sense()
