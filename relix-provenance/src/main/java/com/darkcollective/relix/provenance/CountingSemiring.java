@@ -16,6 +16,7 @@
 package com.darkcollective.relix.provenance;
 
 import java.math.BigInteger;
+import java.math.BigDecimal;
 
 /**
  * The counting semiring {@code (ℕ, +, ×, 0, 1)} — <em>bag semantics</em> (row
@@ -54,4 +55,16 @@ public enum CountingSemiring implements Semiring<BigInteger> {
     public BigInteger times(BigInteger a, BigInteger b) {
         return a.multiply(b);
     }
+
+    /**
+     * {@return the tuple's multiplicity} A numeric weight is read as a whole number of
+     * occurrences, truncating any fractional part; a tuple with no numeric weight counts
+     * {@link #one() once}, which is what makes an unweighted graph's annotation its
+     * path count.
+     */
+    @Override
+    public BigInteger base(BaseTuple tuple) {
+        return tuple.weight().map(BigDecimal::toBigInteger).orElseGet(this::one);
+    }
+
 }

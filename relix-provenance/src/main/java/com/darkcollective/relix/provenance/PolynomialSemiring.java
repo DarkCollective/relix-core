@@ -136,4 +136,17 @@ public enum PolynomialSemiring implements Semiring<Polynomial> {
         }
         return new Polynomial(kept, true);
     }
+
+    /**
+     * {@return a fresh variable standing for this base-tuple occurrence} Lineage is the
+     * one built-in semiring that reads a tuple's identity rather than its weight: the
+     * variable is named {@code <source>#<ordinal>} and carries that occurrence's column
+     * values, which is what makes it addressable back to the row that produced it rather
+     * than merely nameable.
+     */
+    @Override
+    public Polynomial base(BaseTuple tuple) {
+        return variable(new SourceRef(tuple.source(), tuple.ordinal(), tuple.columns()));
+    }
+
 }

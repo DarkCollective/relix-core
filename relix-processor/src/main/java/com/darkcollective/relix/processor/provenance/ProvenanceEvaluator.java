@@ -109,15 +109,15 @@ public final class ProvenanceEvaluator {
      * @throws EvaluationException if a node's schema is unavailable or a data-level error occurs
      */
     public <K> AnnotatedRelation<K> evaluate(RelNode node, Semiring<K> semiring, ExecutionContext ctx) {
-        return evaluate(node, semiring, ctx, BaseAnnotator.constantOne(
-                Objects.requireNonNull(semiring, "semiring")));
+        return evaluate(node, semiring, ctx, BaseAnnotator.forSemiring(
+                Objects.requireNonNull(semiring, "semiring"), null));
     }
 
     /**
      * Evaluates {@code node} as a K-relation over {@code semiring}, using
-     * {@code baseAnnotator} to annotate each base-tuple occurrence. The lineage
-     * semiring {@code ℕ[X]} supplies a variable-minting annotator here; the cheap
-     * semirings use {@link BaseAnnotator#constantOne}.
+     * {@code baseAnnotator} to annotate each base-tuple occurrence — for a caller that
+     * has one already. The three-argument overload builds the one the semiring asks for,
+     * which is what an ordinary caller wants.
      *
      * @param node          the logical relational algebra tree to evaluate; must not be null
      * @param semiring      the annotation semiring; must not be null

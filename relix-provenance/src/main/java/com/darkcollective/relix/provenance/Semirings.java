@@ -15,84 +15,44 @@
  */
 package com.darkcollective.relix.provenance;
 
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 
 /**
- * Resolves a built-in {@link Semiring} by name — the lookup the surfacing layer
- * uses to turn a {@code --provenance=<name>} request into
- * a concrete semiring without the caller hard-wiring the singletons.
+ * Resolves a {@link Semiring} by name — the lookup the surfacing layer uses to turn a
+ * {@code --provenance=<name>} request into a concrete semiring without the caller
+ * hard-wiring the singletons.
  *
- * <p>Names are case-insensitive. The canonical names mirror the built-ins, with a
- * couple of friendly aliases:
- * <ul>
- *   <li>{@code boolean} (alias {@code set}) → {@link BooleanSemiring} — existence /
- *       set semantics, the default;</li>
- *   <li>{@code counting} (aliases {@code bag}, {@code natural}) →
- *       {@link CountingSemiring} — multiplicity / path count;</li>
- *   <li>{@code tropical} (alias {@code shortest-path}) → {@link TropicalSemiring} —
- *       cheapest derivation / shortest path;</li>
- *   <li>{@code security} (alias {@code lattice}) → {@link SecurityLattice} —
- *       trust / access-control level;</li>
- *   <li>{@code lineage} (aliases {@code polynomial}, {@code why}) →
- *       {@link PolynomialSemiring} — full why-provenance {@code ℕ[X]};</li>
- *   <li>{@code cheapest-route} (alias {@code best-path}) →
- *       {@link PathCostSemiring} — combined cheapest cost + the route(s) achieving it
- *       (a weighted closure with a witness).</li>
- * </ul>
+ * <p>It answers from {@link SemiringCatalog#installed()}, so the names it resolves are the
+ * bundled six <em>plus</em> every semiring an installed {@link SemiringLibrary} offers.
+ * Names are case-insensitive, and each bundled semiring carries a friendly alias:
+ * {@code set} → boolean, {@code bag}/{@code natural} → counting,
+ * {@code shortest-path} → tropical, {@code lattice} → security,
+ * {@code polynomial}/{@code why} → lineage, {@code best-path} → cheapest-route.
  *
- * <p>The lineage semiring requires per-base-tuple variable minting, so a consumer
- * that resolves it here must drive evaluation with a variable-minting lift rather
- * than the cheap {@code one()} lift (the cheap semirings need no such treatment).
+ * <p>Use {@link SemiringCatalog} directly to read a semiring's description, to assemble a
+ * catalog of your own, or to re-run discovery.
  */
 public final class Semirings {
-
-    /** Canonical-and-alias name → semiring, in canonical declaration order. */
-    private static final Map<String, Semiring<?>> BY_NAME = new LinkedHashMap<>();
-
-    static {
-        // Canonical names first so #names() lists them in a sensible order.
-        BY_NAME.put("boolean",  BooleanSemiring.INSTANCE);
-        BY_NAME.put("counting", CountingSemiring.INSTANCE);
-        BY_NAME.put("tropical", TropicalSemiring.INSTANCE);
-        BY_NAME.put("security", SecurityLattice.INSTANCE);
-        BY_NAME.put("lineage",  PolynomialSemiring.INSTANCE);
-        BY_NAME.put("cheapest-route", PathCostSemiring.INSTANCE);
-        // Aliases.
-        BY_NAME.put("set",           BooleanSemiring.INSTANCE);
-        BY_NAME.put("bag",           CountingSemiring.INSTANCE);
-        BY_NAME.put("natural",       CountingSemiring.INSTANCE);
-        BY_NAME.put("shortest-path", TropicalSemiring.INSTANCE);
-        BY_NAME.put("lattice",       SecurityLattice.INSTANCE);
-        BY_NAME.put("polynomial",    PolynomialSemiring.INSTANCE);
-        BY_NAME.put("why",           PolynomialSemiring.INSTANCE);
-        BY_NAME.put("best-path",     PathCostSemiring.INSTANCE);
-    }
 
     private Semirings() {
     }
 
     /**
-     * Resolves a built-in semiring by (case-insensitive) name.
+     * Resolves an installed semiring by (case-insensitive) name or alias.
      *
      * @param name the semiring name or alias; may be {@code null}
      * @return the matching semiring, or empty if {@code name} is null or unknown
      */
     public static Optional<Semiring<?>> byName(String name) {
-        if (name == null) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(BY_NAME.get(name.toLowerCase(Locale.ROOT)));
+        return SemiringCatalog.installed().byName(name);
     }
 
     /**
-     * {@return the canonical built-in semiring names, in declaration order} Aliases
-     * are omitted; this is the list to show in help and error messages.
+     * {@return the canonical names of every installed semiring} Aliases are omitted; this
+     * is the list to show in help and error messages.
      */
-    public static java.util.List<String> names() {
-        return java.util.List.of(
-                "boolean", "counting", "tropical", "security", "lineage", "cheapest-route");
+    public static List<String> names() {
+        return SemiringCatalog.installed().names();
     }
 }

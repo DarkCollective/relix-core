@@ -127,7 +127,7 @@ Row{region=North} true
 Row{region=South} true
 ```
 
-Five semirings ship, and they differ only in what `plus` and `times` mean:
+Six semirings ship, and they differ only in what `plus` and `times` mean:
 
 | Semiring | An annotation means |
 |---|---|
@@ -136,9 +136,7 @@ Five semirings ship, and they differ only in what `plus` and `times` mean:
 | `TropicalSemiring` | the cost of the cheapest derivation — shortest path |
 | `SecurityLattice` | the clearance a row's derivation requires |
 | `PolynomialSemiring` | the full lineage expression — which rows, in which combinations |
-
-The extension point is open: a `Semiring<K>` is four methods (`zero`, `one`, `plus`,
-`times`), and an implementation of your own is threaded exactly as a bundled one is.
+| `PathCostSemiring` | the cheapest cost together with the route that achieves it |
 
 A weighted variant reads each base row's cost from a column, which is what the tropical
 semiring needs to have anything to minimise. Customer 10 placed orders of 100 and 75, and
@@ -157,6 +155,100 @@ relix.relation("π customer_id (Orders)")
 Row{customer_id=10} 75.0
 Row{customer_id=11} 250.0
 ```
+
+## Writing your own
+
+A `Semiring<K>` is four operations and one reading. `zero`, `one`, `plus` and `times` say
+how annotations combine; `base` says what a source row is worth in the first place, and is
+where a weight column enters. Nothing else is needed, and nothing in the engine recognises
+a semiring by name — an implementation of your own is threaded exactly as a bundled one
+is, through every positive operator and through weighted transitive closure.
+
+The tropical example above minimised. The same query under a semiring that *adds* its
+derivations reports each customer's total instead, and the only difference is `plus`:
+
+```java
+import com.darkcollective.relix.provenance.BaseTuple;
+import com.darkcollective.relix.provenance.Semiring;
+
+import java.math.BigDecimal;
+
+// Alternative derivations add; joint requirements multiply; a base row is worth
+// whatever the weight column says, and one that carries no weight is neutral.
+class TotalSemiring implements Semiring<Double> {
+    public Double zero() {
+        return 0.0d;
+    }
+
+    public Double one() {
+        return 1.0d;
+    }
+
+    public Double plus(Double a, Double b) {
+        return a + b;
+    }
+
+    public Double times(Double a, Double b) {
+        return a * b;
+    }
+
+    public Double base(BaseTuple tuple) {
+        return tuple.weight().map(BigDecimal::doubleValue).orElse(one());
+    }
+}
+
+relix.relation("π customer_id (Orders)")
+        .provenance(new TotalSemiring(), "amount")
+        .stream()
+        .forEach(annotated -> System.out.println(annotated.row() + " " + annotated.annotation()));
+```
+
+```
+Row{customer_id=10} 175.0
+Row{customer_id=11} 250.0
+```
+
+`BaseTuple` is the source row as a semiring can read it: which leaf it came from, which
+occurrence it is within that leaf, its weight if it has one, and its column values. The
+last two are what let an annotation depend on the data — a cost, a multiplicity, a
+probability — and the first two are what let it name the row, which is how lineage mints a
+distinct variable per occurrence.
+
+An absent weight is the semiring's own decision rather than the engine's, and the two
+defensible answers differ: `one()` leaves a row neutral, while a fixed constant makes an
+unweighted graph a defined special case instead of a degenerate one. A kinship coefficient
+takes the second reading — every parent edge is half a generation whether or not anyone
+wrote a weight down — and gets the textbook answer over a bare `(parent, child)` relation.
+
+### Installing one by name
+
+Implementing the interface is enough to pass a semiring to `provenance(...)` yourself. To
+make one resolvable *by name* — so that `--provenance --semiring kinship` reaches it, and
+it appears in the list of installed semirings — publish a `SemiringLibrary`:
+
+```java
+import com.darkcollective.relix.provenance.NamedSemiring;
+import com.darkcollective.relix.provenance.SemiringLibrary;
+
+class KinshipLibrary implements SemiringLibrary {
+    public String name() {
+        return "kinship";
+    }
+
+    public List<NamedSemiring> semirings() {
+        return List.of(new NamedSemiring("kinship", List.of("consanguinity"),
+                new TotalSemiring(),
+                "Coefficient of relationship between two individuals."));
+    }
+}
+```
+
+Declare it as a service — `provides com.darkcollective.relix.provenance.SemiringLibrary`
+in your `module-info`, and a `META-INF/services` file of the same name — and it is
+discovered on startup. A module path reads the first and a class path the second, so
+declaring both is what makes the library work either way. Where two libraries offer the
+same name the higher `priority()` wins, and the loss is reported rather than resolved
+silently.
 
 ## Which to reach for
 

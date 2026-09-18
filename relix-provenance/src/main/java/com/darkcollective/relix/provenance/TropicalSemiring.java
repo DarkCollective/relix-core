@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.provenance;
 
+import java.math.BigDecimal;
+
 /**
  * The tropical (min-plus) semiring {@code (ℝ ∪ {+∞}, min, +, +∞, 0)} — the
  * <em>cheapest-derivation</em> algebra, i.e. <em>shortest path</em> when iterated
@@ -71,4 +73,17 @@ public enum TropicalSemiring implements Semiring<Double> {
     public Double times(Double a, Double b) {
         return a + b;
     }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>An edge's weight is its cost. An edge with no numeric weight costs
+     * {@link #one() 0}, making it free rather than impassable — the reading under which
+     * an unweighted graph's shortest path is its hop count of zero.
+     */
+    @Override
+    public Double base(BaseTuple tuple) {
+        return tuple.weight().map(BigDecimal::doubleValue).orElseGet(this::one);
+    }
+
 }
