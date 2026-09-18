@@ -76,7 +76,7 @@ final class SpoolExecutorTest {
         public Stream<Row> execute(PhysicalNode node, EvalCtx ctx) {
             executed++;
             return IntStream.range(0, rows).mapToObj(SpoolExecutorTest::row)
-                    .peek(_ -> pulled++)
+                    .peek(unused -> pulled++)
                     .onClose(() -> closed++);
         }
     }

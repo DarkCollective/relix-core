@@ -197,16 +197,16 @@ final class ValueTest {
             for (int i = 0; i < values.length; i++) {
                 Value v = values[i];
                 String kind = switch (v) {
-                    case StringValue    _ -> "string";
-                    case NumberValue    _ -> "number";
-                    case BooleanValue   _ -> "boolean";
-                    case NullValue      _ -> "null";
-                    case StructValue    _ -> "struct";
-                    case ArrayValue     _ -> "array";
-                    case DateValue      _ -> "date";
-                    case TimeValue      _ -> "time";
-                    case TimestampValue _ -> "timestamp";
-                    case DurationValue  _ -> "duration";
+                    case StringValue    ignored -> "string";
+                    case NumberValue    ignored -> "number";
+                    case BooleanValue   ignored -> "boolean";
+                    case NullValue      ignored -> "null";
+                    case StructValue    ignored -> "struct";
+                    case ArrayValue     ignored -> "array";
+                    case DateValue      ignored -> "date";
+                    case TimeValue      ignored -> "time";
+                    case TimestampValue ignored -> "timestamp";
+                    case DurationValue  ignored -> "duration";
                 };
                 assertThat(kind).isEqualTo(expected[i]);
             }

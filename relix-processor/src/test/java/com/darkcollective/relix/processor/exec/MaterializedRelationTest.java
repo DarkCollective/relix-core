@@ -218,10 +218,10 @@ final class MaterializedRelationTest extends ProcessorTestSupport {
 
             for (MaterializedRelation rel : relations) {
                 String kind = switch (rel) {
-                    case BagRelation      _ -> "bag";
-                    case SetRelation      _ -> "set";
-                    case SortedBagRelation _ -> "sortedBag";
-                    case IndexedRelation  _ -> "indexed";
+                    case BagRelation      ignored -> "bag";
+                    case SetRelation      ignored -> "set";
+                    case SortedBagRelation ignored -> "sortedBag";
+                    case IndexedRelation  ignored -> "indexed";
                 };
                 assertThat(kind).isNotBlank();
             }

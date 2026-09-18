@@ -130,7 +130,7 @@ more, which is what makes the arrangement a rule rather than a description.
 ```
 
 That is the gate: compilation, the fast hermetic tests, the documentation guards,
-and Javadoc. It needs a Java 24 toolchain and nothing else — no Docker, no
+and Javadoc. It needs a Java 21 toolchain and nothing else — no Docker, no
 network, no database.
 
 The heavier suites are tagged and excluded from it, because a gate that cannot run

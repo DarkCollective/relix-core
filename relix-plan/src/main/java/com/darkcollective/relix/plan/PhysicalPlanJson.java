@@ -440,8 +440,8 @@ public final class PhysicalPlanJson {
     private static String windowFrameLabel(WindowFrame frame) {
         return switch (frame) {
             case WindowFrame.BoundedFrame b -> b.n() + " ROWS";
-            case WindowFrame.CumulativeFrame _ -> "ALL ROWS";
-            case WindowFrame.PartitionFrame _ -> "PARTITION";
+            case WindowFrame.CumulativeFrame ignored -> "ALL ROWS";
+            case WindowFrame.PartitionFrame ignored -> "PARTITION";
         };
     }
 }

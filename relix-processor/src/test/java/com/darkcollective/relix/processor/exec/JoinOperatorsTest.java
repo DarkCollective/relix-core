@@ -79,7 +79,7 @@ final class JoinOperatorsTest extends ProcessorTestSupport {
          * A JSON-shaped source: no declared columns, and rows that carry their own
          * fields. The connector is asked for the relation under an open schema.
          */
-        private static final DataSourceConnector DOCS = (_, _) -> Stream.of(
+        private static final DataSourceConnector DOCS = (unused1, unused2) -> Stream.of(
                 document("account", 1002, "holder", "Ada"),
                 document("account", 1009, "holder", "Bo"));
 
@@ -131,7 +131,7 @@ final class JoinOperatorsTest extends ProcessorTestSupport {
     @DisplayName("a qualified reference above a join with a schema-on-read side (#970)")
     class QualifiedAboveOpenJoin {
 
-        private static final DataSourceConnector DOCS = (_, _) -> Stream.of(
+        private static final DataSourceConnector DOCS = (unused1, unused2) -> Stream.of(
                 document(1002, "Ada"),
                 document(1009, "Bo"),
                 document(1050, "Cy"));

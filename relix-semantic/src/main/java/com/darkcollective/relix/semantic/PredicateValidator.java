@@ -286,13 +286,13 @@ final class PredicateValidator implements PredicateVisitor<Void> {
                     validateOperand(elem);
                 }
             }
-            case NumberOperand  _ -> { /* literals need no validation */ }
-            case StringOperand  _ -> { /* literals need no validation */ }
-            case BooleanOperand _ -> { /* literals need no validation */ }
-            case DateOperand      _ -> { /* typed temporal literals are pre-validated at parse time */ }
-            case TimeOperand      _ -> { /* typed temporal literals are pre-validated at parse time */ }
-            case TimestampOperand _ -> { /* typed temporal literals are pre-validated at parse time */ }
-            case DurationOperand  _ -> { /* typed temporal literals are pre-validated at parse time */ }
+            case NumberOperand  ignored -> { /* literals need no validation */ }
+            case StringOperand  ignored -> { /* literals need no validation */ }
+            case BooleanOperand ignored -> { /* literals need no validation */ }
+            case DateOperand      ignored -> { /* typed temporal literals are pre-validated at parse time */ }
+            case TimeOperand      ignored -> { /* typed temporal literals are pre-validated at parse time */ }
+            case TimestampOperand ignored -> { /* typed temporal literals are pre-validated at parse time */ }
+            case DurationOperand  ignored -> { /* typed temporal literals are pre-validated at parse time */ }
         }
     }
 

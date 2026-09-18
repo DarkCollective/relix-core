@@ -50,9 +50,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><strong>Distinctness deletes work.</strong>  {@code DIST-001} reads
  *       {@link RelationProperties#isDuplicateFree()} to remove a {@code δ}.  A kind
  *       classified into the wrong arm is a wrong-rows bug — the optimizer drops a
- *       deduplication the query needed.  The arms here are wide multi-label groups
- *       ({@code case SelectionNode _, SortNode _, LimitNode _, …}), which is exactly the
- *       shape where a new kind gets appended to whichever group looks closest.</li>
+ *       deduplication the query needed.  The arms here fall into wide groups — runs of
+ *       consecutive kinds sharing one body, {@code case SelectionNode ignored -> …}
+ *       repeated — which is exactly the shape where a new kind gets appended to
+ *       whichever group looks closest.</li>
  *   <li><strong>Boundedness now refuses queries.</strong>  {@code QueryExecutor.requireBounded}
  *       reads {@link PropertyDeriver#boundedness} on the root and throws.  An arm that
  *       wrongly reports BOUNDED means the guard silently does not fire; one that wrongly

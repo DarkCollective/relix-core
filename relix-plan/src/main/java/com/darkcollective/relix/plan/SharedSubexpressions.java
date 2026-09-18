@@ -126,7 +126,7 @@ final class SharedSubexpressions {
          */
         void visit(RelNode node, boolean perRound, Map<String, Sharing> sites) {
             String digest = AstEquivalence.digest(node);
-            if (!shareableByDigest.computeIfAbsent(digest, _ -> shareable.test(node))) {
+            if (!shareableByDigest.computeIfAbsent(digest, unused -> shareable.test(node))) {
                 visitChildren(node, perRound, sites);
                 return;
             }

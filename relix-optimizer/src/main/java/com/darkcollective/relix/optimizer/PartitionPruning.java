@@ -234,7 +234,7 @@ final class PartitionPruning {
     /** An operand is constant when it references no attribute (column). */
     private static boolean isConstant(Operand op) {
         return switch (op) {
-            case AttributeOperand _ -> false;
+            case AttributeOperand ignored -> false;
             case BinaryArithmeticExpression b -> isConstant(b.left()) && isConstant(b.right());
             case UnaryOperand u -> isConstant(u.operand());
             case FunctionCall f -> f.arguments().stream().allMatch(PartitionPruning::isConstant);

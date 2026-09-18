@@ -38,11 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Java 24
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 24
+          java-version: 21
           cache: gradle
 
       # The whole gate: compilation, the fast hermetic tests, both manuals'
@@ -81,11 +81,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Java 24
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 24
+          java-version: 21
           cache: gradle
 
       - name: Run the integration tier
@@ -115,11 +115,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Java 24
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 24
+          java-version: 21
           cache: gradle
 
       # `pdfs` runs docsPdfTest first, so a renderer regression fails here rather

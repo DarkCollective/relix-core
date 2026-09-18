@@ -185,7 +185,7 @@ final class PhysicalNodeMapChildrenTest {
                     && childIndex < children.size()
                     && children.get(childIndex) == list.getFirst()) {
                 // A component that is a list of children, as COVER's factors are.
-                args[i] = list.stream().map(_ -> replacement).toList();
+                args[i] = list.stream().map(unused -> replacement).toList();
                 childIndex += list.size();
             } else {
                 args[i] = value;

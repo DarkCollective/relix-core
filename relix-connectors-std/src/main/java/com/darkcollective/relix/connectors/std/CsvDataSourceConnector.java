@@ -290,7 +290,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
             case ANY     -> {
                 try {
                     yield new NumberValue(new BigDecimal(cell.strip()));
-                } catch (NumberFormatException _) {
+                } catch (NumberFormatException ignored) {
                     yield new StringValue(cell);
                 }
             }

@@ -107,7 +107,7 @@ fence below it. A stale example fails the build by name.
 
 ## Requirements
 
-Java 24. `./gradlew build` needs nothing else — no Docker, no network, no
+Java 21. `./gradlew build` needs nothing else — no Docker, no network, no
 database. The heavier suites are tagged and excluded from that gate, because a
 gate that cannot run on a clean checkout is one people learn to skip;
 `./gradlew verifyAll` runs them where the machine can.

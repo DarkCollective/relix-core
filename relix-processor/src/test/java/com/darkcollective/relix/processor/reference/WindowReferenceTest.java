@@ -151,7 +151,7 @@ final class WindowReferenceTest extends ProcessorTestSupport {
         try {
             new BigDecimal(s);
             return true;
-        } catch (NumberFormatException _) {
+        } catch (NumberFormatException ignored) {
             return false;
         }
     }

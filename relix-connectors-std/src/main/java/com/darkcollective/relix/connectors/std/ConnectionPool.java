@@ -259,7 +259,7 @@ public final class ConnectionPool implements AutoCloseable {
     private static void closeQuietly(Connection conn) {
         try {
             conn.close();
-        } catch (SQLException _) {
+        } catch (SQLException ignored) {
             // best-effort cleanup
         }
     }

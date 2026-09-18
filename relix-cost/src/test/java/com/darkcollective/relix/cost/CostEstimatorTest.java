@@ -1316,7 +1316,7 @@ final class CostEstimatorTest {
             var stats = new RelationStatistics(OptionalLong.of(10_000L),
                     Map.of("host", new ColumnStatistics(OptionalLong.of(4L), OptionalLong.empty())),
                     List.of());
-            return new CostEstimator(table, name -> Optional.of(stats).filter(_ -> name.equals("M")));
+            return new CostEstimator(table, name -> Optional.of(stats).filter(unused -> name.equals("M")));
         }
 
         private static DownsampleNode downsample(List<String> keys, OptionalLong maxRows) {
