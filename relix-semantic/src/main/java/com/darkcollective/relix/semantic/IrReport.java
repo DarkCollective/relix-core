@@ -550,16 +550,18 @@ public final class IrReport {
                     + u.ordinalityColumn().map(c -> " WITH ORDINALITY " + c).orElse("");
 
             case ClosureNode c -> (c.reflexive() ? "RCLOSURE " : "CLOSURE ")
-                    + c.fromColumn() + "→" + c.toColumn();
+                    + c.fromColumn() + (c.undirected() ? "↔" : "→") + c.toColumn();
 
             case ClusterNode cl -> "CLUSTER " + cl.fromColumn() + ", " + cl.toColumn()
                     + " AS " + cl.labelColumn();
 
-            case PathNode p -> "PATH " + p.fromColumn() + ", " + p.toColumn()
+            case PathNode p -> "PATH " + p.fromColumn()
+                    + (p.undirected() ? " ↔ " : ", ") + p.toColumn()
                     + " HOPS " + p.minHops() + " TO " + p.maxHops()
                     + " AS " + p.depthColumn();
 
-            case TraceNode tr -> "TRACE " + tr.fromColumn() + ", " + tr.toColumn()
+            case TraceNode tr -> "TRACE " + tr.fromColumn()
+                    + (tr.undirected() ? " ↔ " : ", ") + tr.toColumn()
                     + " VIA " + tr.weightColumn() + " " + tr.sense()
                     + " AS " + tr.pathColumn();
 

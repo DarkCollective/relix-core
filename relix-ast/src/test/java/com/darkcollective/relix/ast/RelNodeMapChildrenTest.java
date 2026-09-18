@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * case PathNode n -> {
  *     RelNode in = f.apply(n.input());
  *     yield in == n.input() ? n
- *             : new PathNode(in, n.fromColumn(), n.toColumn(),
+ *             : new PathNode(in, n.fromColumn(), n.toColumn(), false,
  *                            n.minHops(), n.maxHops(), n.depthColumn(), n.location());
  * }
  * }

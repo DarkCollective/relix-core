@@ -135,10 +135,10 @@ final class RelNodeOperandsTest extends AstTestSupport {
         @Test
         @DisplayName("CLOSURE and TRACE report both endpoint bounds")
         void endpointBounds() {
-            assertThat(operandsOf(closure("src", "dst", false,
+            assertThat(operandsOf(closure("src", "dst", false, false,
                     Optional.of(num("1")), Optional.of(num("9")),A)))
                     .containsExactly(num("1"), num("9"));
-            assertThat(operandsOf(trace("src", "dst", "w",
+            assertThat(operandsOf(trace("src", "dst", false, "w",
                     ObjectiveSense.MINIMIZE, "path", Optional.of(num("1")),
                     Optional.of(num("9")),A)))
                     .containsExactly(num("1"), num("9"));
@@ -461,9 +461,9 @@ final class RelNodeOperandsTest extends AstTestSupport {
                     join(A, B, condition),
                     asOfJoin(A, B, condition, Optional.of(duration("PT1H")), true,
                             TieBreak.FIRST),
-                    closure("src", "dst", false, Optional.of(num("1")),
+                    closure("src", "dst", false, false, Optional.of(num("1")),
                             Optional.of(num("9")),A),
-                    trace("src", "dst", "w", ObjectiveSense.MINIMIZE, "path",
+                    trace("src", "dst", false, "w", ObjectiveSense.MINIMIZE, "path",
                             Optional.of(num("1")), Optional.of(num("9")),A),
                     solve(attr("x"), num("10"), A),
                     optimize(ObjectiveSense.MAXIMIZE, attr("profit"),
@@ -549,8 +549,8 @@ final class RelNodeOperandsTest extends AstTestSupport {
                     A,                                                   // no produce bound
                     tvf("now"),          // no arguments
                     lateral(A, "all"),
-                    closure("src", "dst", false, Optional.empty(), Optional.empty(),A),
-                    trace("src", "dst", "w", ObjectiveSense.MINIMIZE, "path",
+                    closure("src", "dst", false, false, Optional.empty(), Optional.empty(),A),
+                    trace("src", "dst", false, "w", ObjectiveSense.MINIMIZE, "path",
                             Optional.empty(), Optional.empty(),A),
                     new WindowNode(new WindowFunction.RankingWindow(
                                     RankingFunction.RANK, Optional.empty()),

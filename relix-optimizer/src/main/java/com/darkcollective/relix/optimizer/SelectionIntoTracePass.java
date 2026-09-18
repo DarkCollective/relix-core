@@ -155,7 +155,7 @@ final class SelectionIntoTracePass {
         }
 
         TraceNode bounded = new TraceNode(newInput, trace.fromColumn(), trace.toColumn(),
-                trace.weightColumn(), trace.sense(), trace.pathColumn(),
+                trace.undirected(), trace.weightColumn(), trace.sense(), trace.pathColumn(),
                 boundSource, boundTarget, trace.location());
 
         ctx.record(OptimizationCode.TRACE_001, queryName,
@@ -169,7 +169,7 @@ final class SelectionIntoTracePass {
 
     private static TraceNode withInput(TraceNode trace, RelNode input) {
         return new TraceNode(input, trace.fromColumn(), trace.toColumn(),
-                trace.weightColumn(), trace.sense(), trace.pathColumn(),
+                trace.undirected(), trace.weightColumn(), trace.sense(), trace.pathColumn(),
                 trace.boundSource(), trace.boundTarget(), trace.location());
     }
 

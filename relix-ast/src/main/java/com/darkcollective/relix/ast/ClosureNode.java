@@ -56,6 +56,9 @@ import java.util.Optional;
  * @param fromColumn  the source-endpoint column; must not be blank
  * @param toColumn    the target-endpoint column; must not be blank
  * @param reflexive   {@code true} for {@code R*} (adds identity pairs), {@code false} for {@code R⁺}
+ * @param undirected  {@code true} reads the two endpoint columns as     an undirected edge, so the relation is read both ways from one edge set
+ *                    ({@code a ↔ b}); {@code false} reads it as a directed edge
+ *                    ({@code a, b})
  * @param boundSource optional literal bound on the {@code fromColumn} endpoint
  *                    (single-source); never null, possibly empty
  * @param boundTarget optional literal bound on the {@code toColumn} endpoint
@@ -63,6 +66,7 @@ import java.util.Optional;
  * @param location    the source location of this node; never null
  */
 public record ClosureNode(RelNode input, String fromColumn, String toColumn,
+                          boolean undirected,
                           boolean reflexive,
                           Optional<Operand> boundSource, Optional<Operand> boundTarget,
                           SourceLocation location)
@@ -94,7 +98,7 @@ public record ClosureNode(RelNode input, String fromColumn, String toColumn,
      */
     public ClosureNode(RelNode input, String fromColumn, String toColumn,
                        boolean reflexive, SourceLocation location) {
-        this(input, fromColumn, toColumn, reflexive,
+        this(input, fromColumn, toColumn, false, reflexive,
                 Optional.empty(), Optional.empty(), location);
     }
 
@@ -117,7 +121,7 @@ public record ClosureNode(RelNode input, String fromColumn, String toColumn,
      * @return a bounded copy
      */
     public ClosureNode withBounds(Optional<Operand> newSource, Optional<Operand> newTarget) {
-        return new ClosureNode(input, fromColumn, toColumn, reflexive,
+        return new ClosureNode(input, fromColumn, toColumn, undirected, reflexive,
                 newSource, newTarget, location);
     }
 

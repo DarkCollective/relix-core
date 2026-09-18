@@ -75,10 +75,10 @@ final class TraceNodeTest {
     @Test
     void rejectsNullBounds() {
         assertThatNullPointerException().isThrownBy(() ->
-                new TraceNode(INPUT, "src", "dst", "cost", ObjectiveSense.MINIMIZE, "route",
+                new TraceNode(INPUT, "src", "dst", false, "cost", ObjectiveSense.MINIMIZE, "route",
                         null, Optional.empty(), SourceLocation.UNKNOWN));
         assertThatNullPointerException().isThrownBy(() ->
-                new TraceNode(INPUT, "src", "dst", "cost", ObjectiveSense.MINIMIZE, "route",
+                new TraceNode(INPUT, "src", "dst", false, "cost", ObjectiveSense.MINIMIZE, "route",
                         Optional.empty(), null, SourceLocation.UNKNOWN));
     }
 }

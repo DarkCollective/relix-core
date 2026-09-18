@@ -264,7 +264,8 @@ public sealed interface RelNode permits
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n
                         : new ClosureNode(in, n.fromColumn(), n.toColumn(),
-                                          n.reflexive(), n.boundSource(), n.boundTarget(),
+                                          n.undirected(), n.reflexive(),
+                                          n.boundSource(), n.boundTarget(),
                                           n.location());
             }
             case ClusterNode n -> {
@@ -276,13 +277,13 @@ public sealed interface RelNode permits
             case PathNode n -> {
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n
-                        : new PathNode(in, n.fromColumn(), n.toColumn(),
+                        : new PathNode(in, n.fromColumn(), n.toColumn(), n.undirected(),
                                        n.minHops(), n.maxHops(), n.depthColumn(), n.location());
             }
             case TraceNode n -> {
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n
-                        : new TraceNode(in, n.fromColumn(), n.toColumn(),
+                        : new TraceNode(in, n.fromColumn(), n.toColumn(), n.undirected(),
                                         n.weightColumn(), n.sense(),
                                         n.pathColumn(), n.boundSource(), n.boundTarget(),
                                         n.location());

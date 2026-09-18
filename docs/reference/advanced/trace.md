@@ -3,6 +3,8 @@
 # Syntax:
 TRACE <from>, <to> VIA <weight> MINIMIZE|MAXIMIZE AS <path> (Edges)
 
+TRACE <from> ↔ <to> VIA <weight> MINIMIZE|MAXIMIZE AS <path> (Edges)  -- both ways
+
 TRACE origin, dest VIA cost MINIMIZE AS route (Flights)
 
 # Description:
@@ -24,6 +26,11 @@ optimal paths using an iterative relaxation algorithm (Bellman-Ford style):
    update `best[(origin, w)]` and record the extended path.
 3. **Iterate** until no improvement occurs.
 
+Writing `↔` (ASCII `<->`) in place of the comma reads the two columns as an
+**undirected** edge: each edge is traversable in either direction at the same cost,
+so a route may run against the direction the row was written in. The `(from, to)`
+pairs are then symmetric, and a pair's `weight` is the same either way.
+
 Cycle avoidance: a node is never revisited within a single path, so the algorithm
 terminates on graphs that contain cycles.
 
@@ -36,7 +43,9 @@ guard applies to the relaxation loop.
 
 # Examples:
 Find the cheapest flight itinerary between all connected airport pairs:
-  TRACE origin, dest VIA cost MINIMIZE AS route (Flights)
+  TRACE <from> ↔ <to> VIA <weight> MINIMIZE|MAXIMIZE AS <path> (Edges)  -- both ways
+
+TRACE origin, dest VIA cost MINIMIZE AS route (Flights)
 
 Find the highest-scoring game route between levels:
   TRACE src, dst VIA score MAXIMIZE AS path (Graph)

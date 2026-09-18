@@ -400,14 +400,14 @@ public final class RelNodeOperands {
                 Optional<Operand> target = mapOptional(n.boundTarget(), onOperand);
                 yield source == n.boundSource() && target == n.boundTarget() ? n
                         : new ClosureNode(n.input(), n.fromColumn(), n.toColumn(),
-                                n.reflexive(), source, target, n.location());
+                                n.undirected(), n.reflexive(), source, target, n.location());
             }
             case TraceNode n -> {
                 Optional<Operand> source = mapOptional(n.boundSource(), onOperand);
                 Optional<Operand> target = mapOptional(n.boundTarget(), onOperand);
                 yield source == n.boundSource() && target == n.boundTarget() ? n
                         : new TraceNode(n.input(), n.fromColumn(), n.toColumn(),
-                                n.weightColumn(), n.sense(), n.pathColumn(),
+                                n.undirected(), n.weightColumn(), n.sense(), n.pathColumn(),
                                 source, target, n.location());
             }
             case SolveNode n -> {

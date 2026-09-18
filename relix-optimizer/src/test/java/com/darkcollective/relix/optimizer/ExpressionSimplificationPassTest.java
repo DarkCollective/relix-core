@@ -370,7 +370,7 @@ final class ExpressionSimplificationPassTest {
 
         @Test @DisplayName("CLOSURE — both endpoint bounds")
         void closureBounds() {
-            var node = closure("src", "dst", false,
+            var node = closure("src", "dst", false, false,
                     Optional.of(foldable()), Optional.of(foldable()),base);
 
             var result = (ClosureNode) folded(node, 2);
@@ -380,7 +380,7 @@ final class ExpressionSimplificationPassTest {
 
         @Test @DisplayName("TRACE — both endpoint bounds")
         void traceBounds() {
-            var node = trace("src", "dst", "w", ObjectiveSense.MINIMIZE, "path",
+            var node = trace("src", "dst", false, "w", ObjectiveSense.MINIMIZE, "path",
                     Optional.of(foldable()), Optional.of(foldable()),base);
 
             var result = (TraceNode) folded(node, 2);

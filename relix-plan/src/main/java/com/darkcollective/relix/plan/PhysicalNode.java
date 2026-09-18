@@ -126,7 +126,7 @@ public sealed interface PhysicalNode {
             }
             case Closure n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Closure(n.schema(), n.fromColumn(), n.toColumn(), n.reflexive(), n.boundSource(), n.boundTarget(), in);
+                yield in == n.input() ? n : new Closure(n.schema(), n.fromColumn(), n.toColumn(), n.undirected(), n.reflexive(), n.boundSource(), n.boundTarget(), in);
             }
             case Cluster n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -134,11 +134,11 @@ public sealed interface PhysicalNode {
             }
             case Path n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Path(n.schema(), n.fromColumn(), n.toColumn(), n.minHops(), n.maxHops(), n.depthColumn(), in);
+                yield in == n.input() ? n : new Path(n.schema(), n.fromColumn(), n.toColumn(), n.undirected(), n.minHops(), n.maxHops(), n.depthColumn(), in);
             }
             case Trace n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Trace(n.schema(), n.fromColumn(), n.toColumn(), n.weightColumn(), n.sense(), n.pathColumn(), n.algorithm(), n.boundSource(), n.boundTarget(), in);
+                yield in == n.input() ? n : new Trace(n.schema(), n.fromColumn(), n.toColumn(), n.undirected(), n.weightColumn(), n.sense(), n.pathColumn(), n.algorithm(), n.boundSource(), n.boundTarget(), in);
             }
             case Limit n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -509,14 +509,14 @@ public sealed interface PhysicalNode {
      * a <em>literal</em> {@link Operand}; the output schema is unchanged.
      */
     record Closure(Schema schema, String fromColumn, String toColumn,
-                   boolean reflexive,
+                   boolean undirected, boolean reflexive,
                    Optional<Operand> boundSource, Optional<Operand> boundTarget,
                    PhysicalNode input) implements PhysicalNode {
 
         /** Unbounded closure (no endpoint pushdown) — both bounds empty. */
         Closure(Schema schema, String fromColumn, String toColumn,
-                boolean reflexive, PhysicalNode input) {
-            this(schema, fromColumn, toColumn, reflexive,
+                boolean undirected, boolean reflexive, PhysicalNode input) {
+            this(schema, fromColumn, toColumn, undirected, reflexive,
                     Optional.empty(), Optional.empty(), input);
         }
 
@@ -537,39 +537,40 @@ public sealed interface PhysicalNode {
     }
 
     /**
-     * Bounded variable-length path reachability (PATH) over the {@code input}
-     * directed edge relation, read as edges over {@link #fromColumn()}/{@link #toColumn()}.
+     * Bounded variable-length path reachability (PATH) over the {@code input} edge
+     * relation, read over {@link #fromColumn()}/{@link #toColumn()} as directed edges, or
+     * as undirected ones when {@link #undirected()}.
      * Emits one row {@code (from, to, depth)} for every pair connected by a directed
      * path whose length lies within {@code [minHops, maxHops]}, where {@code depth}
      * is the shortest such length ({@link #depthColumn()}, a NUMBER).  Evaluated
      * in-engine by a bounded breadth-first traversal over the whole edge set; never
      * pushed to a source.
      */
-    record Path(Schema schema, String fromColumn, String toColumn,
+    record Path(Schema schema, String fromColumn, String toColumn, boolean undirected,
                 int minHops, int maxHops, String depthColumn,
                 PhysicalNode input) implements PhysicalNode {
         @Override public List<PhysicalNode> children() { return List.of(input); }
     }
 
     /**
-     * Optimal-path extraction (TRACE) over the {@code input} directed weighted edge
-     * relation. Computes, for every reachable {@code (from, to)} pair, the path that
+     * Optimal-path extraction (TRACE) over the {@code input} weighted edge relation, read
+     * as directed edges or, when {@link #undirected()}, as undirected ones. Computes, for every reachable {@code (from, to)} pair, the path that
      * minimises or maximises the total edge weight, returning the traversed node
      * sequence as an ordered array in {@link #pathColumn()}. Evaluated in-engine via a
      * Bellman-Ford–style all-pairs fixpoint; never pushed to a source.
      */
-    record Trace(Schema schema, String fromColumn, String toColumn,
+    record Trace(Schema schema, String fromColumn, String toColumn, boolean undirected,
                  String weightColumn, ObjectiveSense sense, String pathColumn,
                  TraceAlgorithm algorithm,
                  Optional<Operand> boundSource, Optional<Operand> boundTarget,
                  PhysicalNode input) implements PhysicalNode {
 
         /** Bounded trace evaluated by the default relaxation fixpoint. */
-        Trace(Schema schema, String fromColumn, String toColumn,
+        Trace(Schema schema, String fromColumn, String toColumn, boolean undirected,
               String weightColumn, ObjectiveSense sense, String pathColumn,
               Optional<Operand> boundSource, Optional<Operand> boundTarget,
               PhysicalNode input) {
-            this(schema, fromColumn, toColumn, weightColumn, sense, pathColumn,
+            this(schema, fromColumn, toColumn, undirected, weightColumn, sense, pathColumn,
                     TraceAlgorithm.RELAXATION, boundSource, boundTarget, input);
         }
 
