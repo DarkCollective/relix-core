@@ -81,7 +81,11 @@ final class LeafExecutor {
         Stream<Row> rows = switch (symbol) {
             case InlineRelationSymbol   inline -> streamRows(inline.schema(), inline.rows());
             case SystemRelationSymbol   sys    -> streamRows(sys.schema(), sys.rows());
-            case SourceRelationSymbol   src    -> ctx.connector().open(src.canonicalName(), src.schema());
+            // The plan's schema, not the symbol's: the planner may have narrowed this scan to
+            // the columns the query reads, and a connector that resolves each column
+            // independently then fetches only those. The two are the same heading wherever
+            // nothing narrowed it, which is everywhere else.
+            case SourceRelationSymbol   src    -> ctx.connector().open(src.canonicalName(), scan.schema());
             case DatabaseRelationSymbol db     -> ctx.connector().open(db.canonicalName(), db.schema());
             // Views are inlined by the planner and never reach the executor.
             case QueryRelationSymbol    view   -> throw new EvaluationException(

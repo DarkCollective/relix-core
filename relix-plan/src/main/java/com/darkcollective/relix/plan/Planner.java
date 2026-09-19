@@ -98,6 +98,8 @@ import com.darkcollective.relix.function.FunctionCatalog;
 import com.darkcollective.relix.function.FunctionContext;
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
 import com.darkcollective.relix.lang.ast.SourceDeclaration;
+import com.darkcollective.relix.lang.ast.source.HttpSourceConfig;
+
 import com.darkcollective.relix.plan.PhysicalNode.BuildSide;
 import com.darkcollective.relix.plan.PhysicalNode.JoinAlgorithm;
 import com.darkcollective.relix.plan.PhysicalNode.JoinKeys;
@@ -122,6 +124,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -181,6 +184,9 @@ public final class Planner {
     private final StatisticsSource statistics;   // candidate keys for index-backed merge
     private final List<PushdownRenderer> pushdowns;   // empty when pushdown is disabled; tried in turn
     private final QueryEventListener listener;
+
+    /** Canonical name → source declaration, for the leaves whose scan can be narrowed. */
+    private final Map<String, SourceDeclaration> sources;
     private final BoundednessSource boundedness; // per-leaf boundedness for the build-side rule (ADR-0008)
     private boolean boundednessChecked;          // the root-tree materialisation-safety check runs once
     private int nextSpoolId = 1;                 // spool ids are unique within one planned root
@@ -318,7 +324,7 @@ public final class Planner {
         this.functions = Objects.requireNonNull(functions, "functions");
         this.schemas = Objects.requireNonNull(schemas, "schemas");
         Objects.requireNonNull(statistics, "statistics");
-        Objects.requireNonNull(sources, "sources");
+        this.sources = Map.copyOf(Objects.requireNonNull(sources, "sources"));
         Objects.requireNonNull(connections, "connections");
         this.listener = Objects.requireNonNull(listener, "listener");
         this.boundedness = Objects.requireNonNull(boundedness, "boundedness");
@@ -513,7 +519,7 @@ public final class Planner {
             case EmptyRelationNode e -> new PhysicalNode.Empty(schemaOf(e));
 
             case SelectionNode s  -> new PhysicalNode.Select(schemaOf(s), s.predicate(), plan(s.input()));
-            case ProjectionNode p -> new PhysicalNode.Project(schemaOf(p), p.attributes(), plan(p.input()));
+            case ProjectionNode p -> planProjection(p);
             case RenameNode r     -> new PhysicalNode.Rename(
                     schemaOf(r), r.relationName(), r.pairs(), plan(r.input()));
             case DistinctNode d   -> planDistinct(d);
@@ -712,6 +718,67 @@ public final class Planner {
                 "builtin", node.keyword(), Provenance.BUILTIN, ShadowPolicy.FORBIDDEN,
                 Schema.empty(), rows);
         return new PhysicalNode.Scan(Schema.empty(), literal);
+    }
+
+    /**
+     * Plans a projection, narrowing the scan beneath it when that scan can be asked for
+     * fewer columns than the relation declares.
+     *
+     * <p>This is projection pushdown for a source whose <em>selection is its schema</em>.
+     * A SQL backend needs a rendered {@code SELECT} list and an aggregation pipeline needs
+     * a {@code $project}, so both go through a {@link PushdownRenderer} and a native query.
+     * A GraphQL endpoint needs neither: its selection set is the field list, and a connector
+     * is already handed one as the schema it must produce. So the fold is to hand it a
+     * smaller schema, and the {@code π} stays above — it costs nothing once the scan is
+     * narrow, and it is what still decides the output's column <em>order</em>.
+     *
+     * <p>Only an HTTP source is narrowed, and deliberately: narrowing is safe exactly where
+     * a connector resolves each column independently by name or path. A generator's heading
+     * comes from a registry that the analyser read too, and an inline relation's rows are
+     * stored whole — for those, a narrower request is a different relation rather than a
+     * cheaper one.
+     */
+    private PhysicalNode planProjection(ProjectionNode node) {
+        PhysicalNode input = narrowedScan(node).orElseGet(() -> plan(node.input()));
+        return new PhysicalNode.Project(schemaOf(node), node.attributes(), input);
+    }
+
+    /** {@return the narrowed scan for {@code node}'s input, when there is one to narrow} */
+    private Optional<PhysicalNode> narrowedScan(ProjectionNode node) {
+        if (!node.isColumnPruning() || !(node.input() instanceof RelationNode relation)) {
+            return Optional.empty();
+        }
+        SourceDeclaration declaration = sources.get(relation.name().toLowerCase(Locale.ROOT));
+        if (declaration == null || !(declaration.config() instanceof HttpSourceConfig)) {
+            return Optional.empty();
+        }
+        // Chained rather than branched: an unresolvable relation is not a case to handle
+        // here — planRelation raises on one — and schema-on-read has no declared columns to
+        // drop, so both simply fall out of the Optional.
+        return symbols.resolveRelation(relation.name())
+                .filter(symbol -> !symbol.schema().isOpen())
+                .flatMap(symbol -> narrowTo(symbol, relation, wantedColumns(node)));
+    }
+
+    /** {@return the column names a column-pruning projection reads} */
+    private static List<String> wantedColumns(ProjectionNode node) {
+        return node.attributes().stream()
+                .map(a -> ((AttributeOperand) a.expression()).name())
+                .toList();
+    }
+
+    /** {@return a scan over {@code wanted} alone, or empty when that is every column} */
+    private static Optional<PhysicalNode> narrowTo(RelationSymbol symbol, RelationNode relation,
+                                                   List<String> wanted) {
+        Schema declared = symbol.schema();
+        List<ColumnDefinition> kept = declared.columns().stream()
+                .filter(c -> wanted.stream().anyMatch(w -> w.equalsIgnoreCase(c.name())))
+                .toList();
+        if (kept.size() == declared.columns().size()) {
+            return Optional.empty();   // the query reads all of them; there is nothing to drop
+        }
+        return Optional.of(new PhysicalNode.Scan(new Schema(kept), symbol,
+                relation.produceBound(), Optional.of(relation.name())));
     }
 
     private PhysicalNode planRelation(RelationNode node) {
