@@ -433,4 +433,170 @@ final class HttpDataSourceConnectorTest extends ProcessorTestSupport {
             assertThat(HttpDataSourceConnector.normalisePath("$")).isEmpty();
         }
     }
+
+    @Nested
+    @DisplayName("GraphQL projection pushdown")
+    class GraphQlProjection {
+
+        /** A GraphQL endpoint's response, wrapped in the envelope the spec requires. */
+        private static final String RESPONSE = """
+                {"data": {"users": [
+                    {"id": 1, "name": "Ada", "email": "ada@x", "bio": "…"},
+                    {"id": 2, "name": "Bob", "email": "bob@x", "bio": "…"}
+                ]}}
+                """;
+
+        private static final String SOURCE = """
+                source Api from http {
+                    url: "https://x/graphql",
+                    method: POST,
+                    extract: json("$.data.users"),
+                    schema: { id: NUMBER, name: STRING, email: STRING, bio: STRING }
+                };
+                """;
+
+        @Test
+        @DisplayName("a query reading two of four columns asks for two fields")
+        void projectionNarrowsTheSelectionSet() {
+            // The whole point: the selection set is the field list, so a narrower scan is a
+            // narrower request rather than a narrower result.
+            var t = new RecordingTransport(200, RESPONSE);
+            var rows = exec(SOURCE + "query { π id, name (Api) };", t);
+
+            assertThat(t.lastRequest.body().orElseThrow()).contains("{\"query\":\"{ users { id name } }\"}");
+            assertThat(rows).hasSize(2);
+            assertThat(rows.get(0)).hasValue("id", "1").hasValue("name", "Ada");
+        }
+
+        @Test
+        @DisplayName("a query reading everything asks for everything")
+        void noProjectionAsksForAll() {
+            var t = new RecordingTransport(200, RESPONSE);
+            exec(SOURCE + "query Api;", t);
+
+            assertThat(t.lastRequest.body().orElseThrow())
+                    .contains("{ users { id name email bio } }");
+        }
+
+        @Test
+        @DisplayName("a declared body is sent verbatim — the user's query is not rewritten")
+        void aDeclaredBodyIsUntouched() {
+            // Sending a different query than the one someone wrote is the failure this
+            // feature must not have, so generation only ever fills an absence.
+            var t = new RecordingTransport(200, RESPONSE);
+            exec("""
+                    source Api from http {
+                        url: "https://x/graphql",
+                        method: POST,
+                        body: "{ users { id name email bio } }",
+                        extract: json("$.data.users"),
+                        schema: { id: NUMBER, name: STRING, email: STRING, bio: STRING }
+                    };
+                    query { π id (Api) };
+                    """, t);
+
+            assertThat(t.lastRequest.body().orElseThrow()).contains("{ users { id name email bio } }");
+            assertThat(t.lastRequest.body().orElseThrow()).doesNotContain("\"query\"");
+        }
+
+        @Test
+        @DisplayName("a GET source sends no body, projection or not")
+        void getIsUnaffected() {
+            var t = new RecordingTransport(200, "[ {\"id\": 1, \"name\": \"Ada\"} ]");
+            exec("""
+                    source Api from http {
+                        url: "https://x/users",
+                        schema: { id: NUMBER, name: STRING }
+                    };
+                    query { π id (Api) };
+                    """, t);
+
+            assertThat(t.lastRequest.body()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("without an extract path there is nowhere to select from, so nothing is sent")
+        void noExtractDeclinesRatherThanGuessing() {
+            var t = new RecordingTransport(200, "[ {\"id\": 1} ]");
+            exec("""
+                    source Api from http {
+                        url: "https://x/graphql",
+                        method: POST,
+                        schema: { id: NUMBER }
+                    };
+                    query Api;
+                    """, t);
+
+            assertThat(t.lastRequest.body()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("naming every column explicitly asks for the same thing as naming none")
+        void projectingAllColumnsChangesNothing() {
+            // There is nothing to drop, so the scan is not narrowed and the request is the
+            // one an unprojected query sends.
+            var t = new RecordingTransport(200, RESPONSE);
+            exec(SOURCE + "query { π id, name, email, bio (Api) };", t);
+
+            assertThat(t.lastRequest.body().orElseThrow())
+                    .contains("{ users { id name email bio } }");
+        }
+
+        @Test
+        @DisplayName("an open source has no declared columns, so there is nothing to select")
+        void openSourceGeneratesNothing() {
+            // Schema-on-read means the heading is whatever the document turns out to hold,
+            // and a GraphQL request has to name its fields up front. The two are
+            // incompatible, so this declines rather than sending a guess.
+            var t = new RecordingTransport(200, RESPONSE);
+            exec("""
+                    source Api from http {
+                        url: "https://x/graphql",
+                        method: POST,
+                        extract: json("$.data.users")
+                    };
+                    query { π id (Api) };
+                    """, t);
+
+            assertThat(t.lastRequest.body()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("an IN column is a request parameter, not a field to select")
+        void inColumnsAreNotSelected() {
+            var t = new RecordingTransport(200, RESPONSE);
+            exec("""
+                    source Api from http {
+                        url: "https://x/graphql",
+                        method: POST,
+                        extract: json("$.data.users"),
+                        schema: { team: in STRING [default: "core"],
+                                  id: NUMBER, name: STRING }
+                    };
+                    query Api;
+                    """, t);
+
+            assertThat(t.lastRequest.body().orElseThrow()).contains("{ users { id name } }");
+        }
+
+        @Test
+        @DisplayName("a dotted column binding becomes a nested selection")
+        void nestedBinding() {
+            var t = new RecordingTransport(200, """
+                    {"data": {"posts": [ {"id": 1, "author": {"name": "Ada"}} ]}}
+                    """);
+            var rows = exec("""
+                    source Posts from http {
+                        url: "https://x/graphql",
+                        method: POST,
+                        extract: json("$.data.posts"),
+                        schema: { id: NUMBER, author_name: STRING at "$.author.name" }
+                    };
+                    query Posts;
+                    """, t);
+
+            assertThat(t.lastRequest.body().orElseThrow()).contains("{ posts { id author { name } } }");
+            assertThat(rows.get(0)).hasValue("author_name", "Ada");
+        }
+    }
 }
