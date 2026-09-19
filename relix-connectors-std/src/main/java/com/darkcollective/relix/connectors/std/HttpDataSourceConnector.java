@@ -28,6 +28,7 @@ import com.darkcollective.relix.lang.ast.source.CsvExtractSpec;
 import com.darkcollective.relix.lang.ast.source.ExtractPathBinding;
 import com.darkcollective.relix.lang.ast.source.ExtractSpec;
 import com.darkcollective.relix.lang.ast.source.HeaderBinding;
+import com.darkcollective.relix.json.JsonWriter;
 import com.darkcollective.relix.lang.ast.source.HttpMethod;
 import com.darkcollective.relix.lang.ast.source.HttpSourceConfig;
 import com.darkcollective.relix.lang.ast.source.JsonExtractSpec;
@@ -56,6 +57,7 @@ import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.ArrayType;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.StructType;
+import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.Schema;
 
 import java.io.IOException;
@@ -171,7 +173,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
             throw new EvaluationException(
                     "No HTTP source declaration for external relation '" + relationName + "'");
         }
-        HttpRequestSpec request = buildRequest(relationName, http);
+        HttpRequestSpec request = buildRequest(relationName, http, schema);
         HttpFetchResult result = send(request, relationName);
         if (result.statusCode() < 200 || result.statusCode() >= 300) {
             throw new EvaluationException(
@@ -184,7 +186,8 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
 
     // ── Request building ──────────────────────────────────────────────────────
 
-    private HttpRequestSpec buildRequest(String relationName, HttpSourceConfig http) {
+    private HttpRequestSpec buildRequest(String relationName, HttpSourceConfig http,
+                                         Schema schema) {
         Map<String, String> headers = new LinkedHashMap<>(http.headers());
         Map<String, String> pathParams = new LinkedHashMap<>();
         List<String> queryParams = new ArrayList<>();
@@ -211,7 +214,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
 
         String url = substitutePathParams(http.url(), pathParams);
         url = appendQuery(url, queryParams);
-        return new HttpRequestSpec(http.method(), url, headers, http.body());
+        return new HttpRequestSpec(http.method(), url, headers, body(http, schema));
     }
 
     /** Resolves an IN column's value: its default, or empty (required-without-default errors). */
@@ -375,9 +378,16 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
     }
 
     private Row closedRow(String relationName, HttpSourceConfig http, Schema schema, StructValue record) {
-        List<Value> values = new ArrayList<>(http.columns().size());
-        for (ColumnSpec col : http.columns()) {
-            if (col.direction() == ColumnDirection.IN) {
+        // Driven by the schema rather than by the declaration, because the two can differ:
+        // a planner that narrowed this scan asks for a subset, and a row has to be what it
+        // was asked for. A column the declaration does not carry is NULL rather than an
+        // error, which is the same rule an undeclared column already got.
+        List<Value> values = new ArrayList<>(schema.columns().size());
+        for (ColumnDefinition column : schema.columns()) {
+            ColumnSpec col = declaredColumn(http, column.name());
+            if (col == null) {
+                values.add(NullValue.INSTANCE);
+            } else if (col.direction() == ColumnDirection.IN) {
                 // The input value echoed back as a column (constant across rows).
                 values.add(resolveInputValue(relationName, http, col)
                         .map(v -> coerceString(relationName, v, col))
@@ -388,6 +398,56 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
             }
         }
         return ArrayRow.of(schema, values);
+    }
+
+    /** {@return the declared column of this name, or {@code null} when there is none} */
+    private static ColumnSpec declaredColumn(HttpSourceConfig http, String name) {
+        for (ColumnSpec col : http.columns()) {
+            if (col.name().equalsIgnoreCase(name)) {
+                return col;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@return the request body to send} A declared {@code body} is sent verbatim: the user
+     * wrote a query, and sending a different one is the failure this must not have.
+     *
+     * <p>When there is none and the method is {@code POST}, the body is generated as a
+     * GraphQL document selecting exactly the columns this scan was asked for — which is
+     * where projection pushdown happens, the selection set being the field list. A
+     * {@code POST} with no body cannot have been reaching a GraphQL endpoint before, so no
+     * configuration that worked changes meaning.
+     *
+     * <p>Generation needs the {@code extract} path to say where the records sit, and
+     * declines rather than guesses when it cannot build a valid selection.
+     */
+    private static Optional<String> body(HttpSourceConfig http, Schema schema) {
+        if (http.body().isPresent() || http.method() != HttpMethod.POST) {
+            return http.body();
+        }
+        Optional<String> records = http.extract()
+                .filter(JsonExtractSpec.class::isInstance)
+                .map(JsonExtractSpec.class::cast)
+                .map(JsonExtractSpec::jsonPath)
+                .flatMap(HttpDataSourceConnector::normalisePath);
+        if (records.isEmpty()) {
+            return Optional.empty();
+        }
+        // Driven by the declaration and filtered by the schema, rather than the other way
+        // round: an IN column is a request parameter and not a field to select, so it is
+        // skipped here even when the query reads it back.
+        List<String> fields = new ArrayList<>();
+        for (ColumnSpec col : http.columns()) {
+            if (col.direction() != ColumnDirection.IN && schema.indexOf(col.name()) >= 0) {
+                fields.add(outputPath(col));
+            }
+        }
+        return GraphQlQuery.build(records.get(), fields)
+                .map(document -> new JsonWriter()
+                        .beginObject().name("query").value(document).endObject()
+                        .toJson());
     }
 
     /** The dotted path an OUT column reads from each record: its {@code at} binding, else its name. */
