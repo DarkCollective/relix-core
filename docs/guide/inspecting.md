@@ -27,6 +27,10 @@ the second shows what the rewriter made of it. `stream()` and `optimized().strea
 So `optimized()` exists to let you **see** the rewrite, never to switch it on. Nothing is
 gained by calling it before running a query, and nothing is lost by not calling it.
 
+The one way out is named at the call site rather than implied: `asWritten()` runs the tree
+you wrote, which is what comparing the two trees needs. See
+[Running the tree you wrote](results.md#running-the-tree-you-wrote).
+
 ## The expression
 
 `render()` prints the tree back as Relix text, and `schema()` gives its heading.

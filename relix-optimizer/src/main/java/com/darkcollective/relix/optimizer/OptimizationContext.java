@@ -61,6 +61,7 @@ public final class OptimizationContext {
     private final DistinctnessSource distinctness;
     private final MonotoneGeneratorSource monotoneGenerators;
     private final FunctionCatalog functions;
+    private final DeterminismSource determinism;
 
     /** Creates a context that records transformations but emits no events. */
     public OptimizationContext() {
@@ -131,11 +132,37 @@ public final class OptimizationContext {
     public OptimizationContext(QueryEventListener listener, DistinctnessSource distinctness,
                                MonotoneGeneratorSource monotoneGenerators,
                                FunctionCatalog functions) {
+        this(listener, distinctness, monotoneGenerators, functions, DeterminismSource.NONE);
+    }
+
+    /**
+     * Creates a context that additionally carries a {@link DeterminismSource} — what a
+     * rule asks before it changes how many times a sub-expression is evaluated.
+     *
+     * <p>It arrives here for the same reason the catalogue does: this is the per-run
+     * bundle every rule is handed, and the authoritative answer needs a
+     * {@link com.darkcollective.relix.symbol.table.SymbolTable} that no rule in
+     * {@link OptimizationPipeline} may take.
+     *
+     * <p>The determinism-free constructors default to {@link DeterminismSource#NONE},
+     * which vouches for nothing, so {@code SEL-010} and the {@code SET} family decline
+     * rather than guess.
+     *
+     * @param listener           the listener to notify on every {@link #record}; must not be null
+     * @param distinctness       the per-leaf duplicate-free lookup; must not be null
+     * @param monotoneGenerators the per-leaf ascending-generator lookup; must not be null
+     * @param functions          the functions this query was analysed against; must not be null
+     * @param determinism        the reproducibility lookup; must not be null
+     */
+    public OptimizationContext(QueryEventListener listener, DistinctnessSource distinctness,
+                               MonotoneGeneratorSource monotoneGenerators,
+                               FunctionCatalog functions, DeterminismSource determinism) {
         this.listener = Objects.requireNonNull(listener, "listener");
         this.distinctness = Objects.requireNonNull(distinctness, "distinctness");
         this.monotoneGenerators =
                 Objects.requireNonNull(monotoneGenerators, "monotoneGenerators");
         this.functions = Objects.requireNonNull(functions, "functions");
+        this.determinism = Objects.requireNonNull(determinism, "determinism");
     }
 
     /**
@@ -144,6 +171,17 @@ public final class OptimizationContext {
      */
     public FunctionCatalog functions() {
         return functions;
+    }
+
+    /**
+     * Returns the reproducibility lookup a rule consults before it changes how many times
+     * a sub-expression is evaluated.
+     *
+     * @return the source (default {@link DeterminismSource#NONE}, which vouches for
+     *         nothing); never null
+     */
+    public DeterminismSource determinism() {
+        return determinism;
     }
 
     /**

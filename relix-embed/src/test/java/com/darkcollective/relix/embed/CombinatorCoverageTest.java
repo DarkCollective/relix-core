@@ -89,10 +89,11 @@ final class CombinatorCoverageTest {
      *
      * <p>{@code optimized()} is a terminal: it hands back the same relation rewritten, so
      * it produces whatever kind it was given and would otherwise be counted as covering
-     * it. The distinction is real rather than bookkeeping — a combinator adds an operator,
-     * this one adds none.
+     * it. {@code asWritten()} is the same shape from the other side — it settles how the
+     * relation is executed and touches the tree not at all. The distinction is real rather
+     * than bookkeeping — a combinator adds an operator, neither of these adds one.
      */
-    private static final Set<String> TERMINALS = Set.of("optimized");
+    private static final Set<String> TERMINALS = Set.of("optimized", "asWritten");
 
     private static Relation base() {
         Relix relix = Relix.open();

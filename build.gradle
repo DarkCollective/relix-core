@@ -93,7 +93,7 @@ subprojects {
     apply plugin: 'jacoco'
 
     group = 'com.darkcollective.relix'
-    version = findProperty('relixVersion') ?: '1.0-SNAPSHOT'
+    version = findProperty('relixVersion') ?: '1.0.0-rc2'
 
     java {
         toolchain {

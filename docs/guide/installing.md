@@ -5,33 +5,22 @@ default function library, the CSV/JSON/HTTP/JDBC connectors, the bundled solver 
 inside it, so a program that queries a database needs this dependency and a driver,
 and nothing else.
 
-<!-- Editorial note (not rendered): the artifact resolves from mavenLocal because it is
-     built from source. If it is ever hosted, replace the `mavenLocal()` half of this
-     page with the repository and drop the build step — the coordinate does not change. -->
-
 ## The coordinate
 
-The artifact is `com.darkcollective.relix:relix`. It is built from this repository and
-resolves from your local Maven repository:
+The artifact is `com.darkcollective.relix:relix`, on Maven Central. That is one
+coordinate: the twenty-one modules the engine is assembled from are internal to the
+build and are not published separately — the module graph is a claim this build
+enforces about itself, not a set of names a program should depend on.
 
-```bash
-./gradlew publishToMavenLocal
-```
-
-That publishes one coordinate. The twenty-one modules the engine is assembled from are
-internal to the build and are not published separately — the module graph is a claim
-this build enforces about itself, not a set of names a program should depend on.
-
-A consuming Gradle build then names it:
+A consuming Gradle build names it:
 
 ```gradle
 repositories {
-    mavenLocal()
-    mavenCentral()      // for ojalgo, the one dependency not merged into the jar
+    mavenCentral()
 }
 
 dependencies {
-    implementation 'com.darkcollective.relix:relix:1.0-SNAPSHOT'
+    implementation 'com.darkcollective.relix:relix:1.0.0-rc2'
 }
 ```
 
@@ -41,7 +30,7 @@ and a Maven build the same way:
 <dependency>
     <groupId>com.darkcollective.relix</groupId>
     <artifactId>relix</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.0-rc2</version>
 </dependency>
 ```
 
@@ -49,6 +38,11 @@ and a Maven build the same way:
 jar. Shading it would hide it from your dependency report and from whatever scans that
 report for vulnerabilities, which is a worse trade than one visible transitive
 dependency.
+
+To work on Relix itself, or to depend on a change that is not released,
+`./gradlew publishToMavenLocal` publishes the same coordinate to your local Maven
+repository under the version in the build; a consuming build reaches it by adding
+`mavenLocal()` to the repositories above.
 
 ## Java 21
 

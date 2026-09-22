@@ -37,6 +37,7 @@ package com.darkcollective.relix.optimizer;
  *   <li>{@code DIST-nnn}     — redundant-{@code δ} elimination</li>
  *   <li>{@code SORT-nnn}     — redundant-{@code τ} elimination</li>
  *   <li>{@code PROD-nnn}     — Cartesian-product identity elimination</li>
+ *   <li>{@code SET-nnn}      — set-operation identities and common-operator hoisting</li>
  *   <li>{@code EMPTY-nnn}    — empty-relation introduction and propagation</li>
  *   <li>{@code NEST-nnn}     — nest/unnest (NF²) round-trip rules</li>
  *   <li>{@code CLOSURE-nnn}  — endpoint bounds folded into {@code CLOSURE}</li>
@@ -170,13 +171,28 @@ public enum OptimizationCode {
     SEL_008("SEL-008", "Selection pushed below DISTINCT / SORT"),
 
     /** Distribute a selection over a set operation so each branch filters early:
-     *  replicated into both branches of {@code ∪}, {@code ∩} and {@code ∆}, and into
-     *  the <em>left</em> branch only of {@code −} — filtering the subtrahend would
-     *  remove rows from it and so <em>add</em> rows to the result.  {@code ⊎} is
-     *  {@link #SEL_006}; {@code ⊔} (outer union) is excluded because its branches
-     *  have different schemas, so a predicate valid against one may reference a
-     *  column absent from the other. */
+     *  replicated into <em>both</em> branches of {@code ∪}, {@code ∩}, {@code ∆} and
+     *  {@code −}. The subtrahend is included because the same predicate is applied to
+     *  the minuend: a row the filtered subtrahend no longer removes is a row the
+     *  filtered minuend no longer offers, so
+     *  {@code σp(A − B) = σpA − σpB} exactly.  {@code ⊎} is {@link #SEL_006};
+     *  {@code ⊔} (outer union) is excluded because its branches have different
+     *  schemas, so a predicate valid against one may reference a column absent from
+     *  the other. */
     SEL_009("SEL-009", "Selection distributed over set operation"),
+
+    /** Merge a set operation over two selections of the <em>same</em> input into one
+     *  selection ({@code σi(A) ∪ σq(A)} → {@code δ σ(i ∨ q)(A)},
+     *  {@code σi(A) ∩ σq(A)} → {@code δ σ(i ∧ q)(A)}), the inverse of
+     *  {@link #SEL_009} and so registered in a later phase. It deletes a blocking
+     *  operator outright and leaves one filtered read where there were two, which is
+     *  also what lets the backend fold the whole thing into a single {@code WHERE}.
+     *  The {@code δ} is dropped when the input is provably duplicate-free. The
+     *  {@code −} arm is {@code i ∧ (¬q ∨ q IS UNKNOWN)} rather than the
+     *  {@code i ∧ ¬q} it looks like: the subtrahend also fails to hold a row whose
+     *  {@code q} is UNKNOWN, so the difference keeps one where a bare {@code ¬q}
+     *  drops it — see {@code SelectionComplement}. */
+    SEL_010("SEL-010", "Set operation over two selections of one input merged"),
 
     // ── Projection ────────────────────────────────────────────────────────────
 
@@ -342,6 +358,55 @@ public enum OptimizationCode {
      *  is empty but keeps {@code R}'s heading, so it cannot be rewritten to the
      *  zero-column {@code EMPTY}. */
     PROD_001("PROD-001", "Product against UNIT removed (× identity)"),
+
+    // ── Set-operation identities ──────────────────────────────────────────────
+
+    /** Remove a set operation whose two sides are the <em>same</em> expression
+     *  ({@code R ∪ R} → {@code δ R}, {@code R ∩ R} → {@code δ R},
+     *   {@code R − R} → {@code ∅}, {@code R ∆ R} → {@code ∅}). Structural equality is
+     *  {@code AstEquivalence}, so the two sides match however far apart they were
+     *  written. The {@code δ} is not decoration: {@code ∪} and {@code ∩} declare
+     *  {@code SET}, and handing back a bare {@code R} would make a distinctness claim
+     *  the input need not honour. It is dropped when {@code R} is provably
+     *  duplicate-free. Gated on {@code R} being reproducible — {@code X ∆ X} over an
+     *  unseeded {@code SAMPLE} is a query about two draws. */
+    SET_001("SET-001", "Set operation over two copies of one expression removed"),
+
+    /** Remove a set operation between a selection and its own input
+     *  ({@code σk(R) ∪ R} → {@code δ R}, {@code σk(R) ∩ R} → {@code δ σk(R)},
+     *   {@code σk(R) − R} → {@code ∅}), in either operand order for the commutative
+     *  arms. Same {@code δ} rule and same reproducibility gate as {@link #SET_001}.
+     *  The other direction is the selection's <em>complement</em> —
+     *  {@code R − σk(R)} → {@code δ σ (¬k ∨ k IS UNKNOWN) (R)}, and
+     *  {@code σk(R) ∆ R} is that same difference written another way — where a plain
+     *  {@code σ¬k(R)} would drop every row whose {@code k} could not be decided. */
+    SET_002("SET-002", "Selection absorbed into a set operation with its own input"),
+
+    /** Hoist a {@code ρ} both branches of a set operation apply identically
+     *  ({@code ρ spec (R) ∪ ρ spec (Q)} → {@code ρ spec (R ∪ Q)}; likewise
+     *  {@code ∩}, {@code −}, {@code ∆}, {@code ⊎}). Unlike the two arms below this one
+     *  needs no distinctness argument: a rename changes no value and drops no column,
+     *  and the whole-row set operations match positionally and name-blind, so the rows
+     *  being de-duplicated are the same before and after. */
+    SET_003("SET-003", "Common rename hoisted out of a set operation"),
+
+    /** Hoist a {@code π} both branches of a {@code ∪} apply identically
+     *  ({@code π cols (A) ∪ π cols (B)} → {@code δ π cols (A ∪ B)}). The {@code δ} is
+     *  what keeps it sound: {@code π} does not de-duplicate, so hoisting moves the
+     *  {@code ∪}'s de-duplication from after the narrowing to before it. Fires only
+     *  when both inputs carry an inferred heading and the two headings agree name for
+     *  name in order, since the {@code ∪} pairs their columns by position while the
+     *  {@code π} names them. */
+    SET_004("SET-004", "Common projection hoisted out of a union"),
+
+    /** Hoist a {@code ×} both branches of a {@code ∪} apply to the same operand on the
+     *  same side ({@code A × B ∪ A × C} → {@code δ (A × (B ∪ C))},
+     *  {@code A × C ∪ B × C} → {@code δ ((A ∪ B) × C)}). {@code δ} for
+     *  {@link #SET_004}'s reason. The <em>same side</em> condition is not a
+     *  simplification: {@code A × B ∪ C × A} has the common operand at opposite ends,
+     *  so factoring it would permute the ordered heading the positional consumers
+     *  read — which is what {@code JOIN-003} was removed for. */
+    SET_005("SET-005", "Common product operand hoisted out of a union"),
 
     // ── Empty-relation propagation ────────────────────────────────────────────
 
@@ -517,7 +582,24 @@ public enum OptimizationCode {
      *  when a whole-tree sweep finds neither {@code V} nor any relation name
      *  {@code X} would re-expose used as a qualifier, since a relation-qualified
      *  reference resolves by column provenance ({@link RenameEliminationPass}). */
-    RENAME_002("RENAME-002", "Unreferenced rename removed (ρ alias names nothing)");
+    RENAME_002("RENAME-002", "Unreferenced rename removed (ρ alias names nothing)"),
+
+    /** Drop a column rename that renames a column to the name it already has
+     *  ({@code ρ id→id, a→q (A)} → {@code ρ a→q (A)}). Dropping the <em>pairs</em> is
+     *  unconditional; dropping the node is not, since it may still carry a relation
+     *  name something references — so the node is reduced to its relation-only form
+     *  and {@link #RENAME_002} decides whether it lives
+     *  ({@link RenameEliminationPass}). */
+    RENAME_003("RENAME-003", "Identity column-rename pairs dropped (a → a)"),
+
+    /** Compose a pair-form {@code ρ} with the pair-form {@code ρ} beneath it
+     *  ({@code ρ b→c (ρ a→b (R))} → {@code ρ a→c (R)}). Each inner pair's target is
+     *  looked up among the outer's sources and the chain is collapsed; an outer pair
+     *  that renames a pass-through column is carried over unchanged. Declines when the
+     *  two rename the same source column, where the outer pair names a column the
+     *  inner has already consumed. A rename cycle needs no arm of its own — it
+     *  composes to an identity pair, which {@link #RENAME_003} then drops. */
+    RENAME_004("RENAME-004", "Stacked column renames composed (ρ over ρ)");
 
     // ── Enum infrastructure ───────────────────────────────────────────────────
 

@@ -49,4 +49,33 @@ final class OptimizerFixtures {
         return new OptimizationContext(QueryEventListener.NONE, distinctness,
                 MonotoneGeneratorSource.NONE, FUNCTIONS);
     }
+
+    /**
+     * A source that vouches for every expression.
+     *
+     * <p>The production answer is {@code RelationDeterminism} bound to the query's symbol
+     * table, which a pass test has no model to build. For a fixture tree of base
+     * relations and literal predicates that walk answers {@code true} throughout, so
+     * stating it here is not a weaker claim — it is the same one, made without a symbol
+     * table. A test that is <em>about</em> the gate supplies
+     * {@link DeterminismSource#NONE} or a source of its own instead.
+     */
+    static final DeterminismSource REPRODUCIBLE = expression -> true;
+
+    /** A context whose determinism source vouches for everything. */
+    static OptimizationContext reproducible() {
+        return reproducible(DistinctnessSource.NONE);
+    }
+
+    /** A context whose determinism source vouches for everything, plus a distinctness source. */
+    static OptimizationContext reproducible(DistinctnessSource distinctness) {
+        return context(distinctness, REPRODUCIBLE);
+    }
+
+    /** A context over the installed libraries, with both per-run lookups stated. */
+    static OptimizationContext context(DistinctnessSource distinctness,
+                                       DeterminismSource determinism) {
+        return new OptimizationContext(QueryEventListener.NONE, distinctness,
+                MonotoneGeneratorSource.NONE, FUNCTIONS, determinism);
+    }
 }

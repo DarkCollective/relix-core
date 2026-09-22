@@ -437,7 +437,7 @@ final class ProgrammingGuideTest {
      *
      * <p>The one value on these pages that no page can state. {@code relix.version}
      * reports the version the engine was <em>built</em> at, so an example printing it
-     * prints {@code 1.0-SNAPSHOT} here, a release number under
+     * prints {@code 1.0.0-rc2} here, a release number under
      * {@code -PrelixVersion=1.0.0}, and whatever the reader installed for the reader —
      * three different correct answers to one query. Pasting any of them makes the page
      * wrong for everybody else, and pinning one fails the release build, which is how

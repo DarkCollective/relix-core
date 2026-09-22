@@ -83,7 +83,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.darkcollective.relix:relix:1.0-SNAPSHOT'
+    implementation 'com.darkcollective.relix:relix:1.0.0-rc2'
 }
 ```
 

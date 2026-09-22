@@ -168,9 +168,14 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
 
     @Override
     public String visit(ConditionOperand node) {
-        // Render the wrapped predicate with the shared predicate printer, so a
-        // condition operand round-trips as the comparison it was parsed from
-        // (e.g. IIf(price > 100, …)).
-        return node.predicate().accept(new PredicatePrettyPrinter());
+        // Parenthesised, because this is an *operand*: a condition and its truth
+        // value are different things in every position but a function argument, and
+        // `a > b = ⊥` does not say which one it means. The grammar reads a
+        // parenthesis here as opening a condition, so the parenthesised form
+        // round-trips in all four positions a condition can occupy — a function
+        // argument (`IIf((price > 100), …)`), a projected column, and either side of
+        // a comparison or null test. The redundant pair inside a function call is
+        // the price of one rule instead of a context-sensitive one.
+        return "(" + node.predicate().accept(new PredicatePrettyPrinter()) + ")";
     }
 }

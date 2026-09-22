@@ -101,7 +101,7 @@ final class OptimizationCodeTest {
                 "EXPR-007", "EXPR-008",
                 "PRED-001", "PRED-002", "PRED-003", "PRED-004", "PRED-005", "PRED-006",
                 "SEL-001",  "SEL-002",  "SEL-003",  "SEL-004",  "SEL-005",  "SEL-006",
-                "SEL-007",  "SEL-008",  "SEL-009",
+                "SEL-007",  "SEL-008",  "SEL-009",  "SEL-010",
                 "PROJ-001", "PROJ-002", "PROJ-003", "PROJ-004",
                 "JOIN-001", "JOIN-002", "JOIN-004",
                 "LATERAL-001",
@@ -111,6 +111,7 @@ final class OptimizationCodeTest {
                 "DIST-001", "DIST-002",
                 "SORT-001",
                 "PROD-001",
+                "SET-001", "SET-002", "SET-003", "SET-004", "SET-005",
                 "EMPTY-001", "EMPTY-002", "EMPTY-003",
                 "NEST-001", "NEST-002", "NEST-003",
                 "CLOSURE-001",
@@ -122,14 +123,14 @@ final class OptimizationCodeTest {
                 "OPTIMIZE-001",
                 "SESSION-001", "DOWNSAMPLE-001",
                 "INLINE-001",
-                "RENAME-001", "RENAME-002"
+                "RENAME-001", "RENAME-002", "RENAME-003", "RENAME-004"
         );
     }
 
     @Test
-    @DisplayName("total count is 60 rules")
+    @DisplayName("total count is 68 rules")
     void totalCount() {
-        assertThat(OptimizationCode.values()).hasSize(60);
+        assertThat(OptimizationCode.values()).hasSize(68);
     }
 
     /**
@@ -146,7 +147,7 @@ final class OptimizationCodeTest {
                 .collect(Collectors.toSet());
         assertThat(declared).containsExactlyInAnyOrder(
                 "EXPR", "PRED", "SEL", "PROJ", "JOIN", "LATERAL", "EQ", "LIM", "AGG", "DIST", "SORT",
-                "PROD", "EMPTY", "NEST", "CLOSURE", "TRACE", "PATH", "FIX", "GEN", "WINDOW", "TOPK", "OPTIMIZE",
+                "PROD", "SET", "EMPTY", "NEST", "CLOSURE", "TRACE", "PATH", "FIX", "GEN", "WINDOW", "TOPK", "OPTIMIZE",
                 "SESSION", "DOWNSAMPLE", "INLINE", "RENAME");
     }
 

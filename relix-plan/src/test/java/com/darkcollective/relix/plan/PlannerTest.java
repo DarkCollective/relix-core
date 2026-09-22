@@ -2096,16 +2096,45 @@ final class PlannerTest {
         }
 
         @Test
-        @DisplayName("a join whose input is not a bare scan is not pushed as a join")
-        void joinWithFilteredInputNotPushed() {
+        @DisplayName("a σ on a join input is peeled into the joined statement's WHERE")
+        void joinWithFilteredInputStillPushes() {
+            // This used to decline, and the optimizer is what made that expensive:
+            // SEL-005 pushes a conjunct into the input it belongs to, which is the right
+            // rewrite for an in-engine join and used to cost a same-connection join its
+            // whole-statement fold. An inner join commutes with a filter on either side.
+            PhysicalNode.PushedScan s = assertThat(planPushed(JOIN_SETUP
+                    + "query { (σ amount > 0 (Orders)) ⨝ Orders.id = Customers.cid Customers };"))
+                    .asNode(PhysicalNode.PushedScan.class);
+            assertThat(s.nativeQuery()).isEqualTo(
+                    "SELECT Orders.id, Orders.amount, Customers.cid, Customers.name "
+                    + "FROM orders Orders JOIN customers Customers "
+                    + "ON (Orders.id = Customers.cid) WHERE (Orders.amount > 0)");
+        }
+
+        @Test
+        @DisplayName("a σ on each side folds into one WHERE")
+        void joinWithBothInputsFilteredStillPushes() {
+            PhysicalNode.PushedScan s = assertThat(planPushed(JOIN_SETUP
+                    + "query { (σ amount > 0 (Orders)) ⨝ Orders.id = Customers.cid "
+                    + "(σ name = \"acme\" (Customers)) };"))
+                    .asNode(PhysicalNode.PushedScan.class);
+            assertThat(s.nativeQuery())
+                    .contains("WHERE (Orders.amount > 0) AND (Customers.name = 'acme')");
+        }
+
+        @Test
+        @DisplayName("only σ is peeled — a λ on an input still declines the join fold")
+        void joinWithLimitedInputNotPushed() {
+            // The limitation that remains, and it is a different one: the folded
+            // statement reads each side's table directly, so an operator that changes
+            // what the side *is* cannot be peeled the way a filter can. A λ is the
+            // clearest case — it commutes with nothing.
+            //
+            // A *column-pruning* π is deliberately not the example: it never stopped the
+            // fold, since isColumnPruning() already leaves the side a bare scan.
             PhysicalNode plan = planPushed(JOIN_SETUP
-                    + "query { (σ amount > 0 (Orders)) ⨝ Orders.id = Customers.cid Customers };");
+                    + "query { (λ 5 (Orders)) ⨝ Orders.id = Customers.cid Customers };");
             assertThat(plan).isNode(PhysicalNode.Join.class);
-            // the filtered side is still pushed individually
-            PhysicalNode.Join j = (PhysicalNode.Join) plan;
-            assertThat(j.left()).isNode(PhysicalNode.PushedScan.class);
-            assertThat(((PhysicalNode.PushedScan) j.left()).nativeQuery())
-                    .isEqualTo("SELECT id, amount FROM orders WHERE (amount > 0)");
         }
 
         @Test

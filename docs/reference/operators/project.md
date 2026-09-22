@@ -25,6 +25,12 @@ Under set semantics projection can introduce duplicates (two distinct input rows
 may project to the same output row); relix preserves bag semantics unless a
 DISTINCT (δ) is applied. It is a streaming operator and pushes down to SQL/Mongo.
 
+A **parenthesised condition** is an operand like any other, so a boolean can be
+projected directly rather than through IIf(): `π (amount > 100) → big (Orders)`
+yields a BOOLEAN column. It carries three-valued logic with it — the column is
+NULL, not false, for a row whose amount is missing, because that is what the
+comparison is worth there.
+
 # Examples:
 Keep only a couple of columns:
   π name, email (Users)
