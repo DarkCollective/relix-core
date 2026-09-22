@@ -140,10 +140,55 @@ subprojects {
 
     dependencies {
         testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
-        testImplementation 'org.assertj:assertj-core:3.24.2'
+        testImplementation 'org.assertj:assertj-core:3.27.7'
         testImplementation 'org.mockito:mockito-core:5.5.0'
         // Required by Gradle 8+ to discover and run JUnit Platform tests
         testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.0'
+
+        // Floors under two libraries this build never names. They arrive beneath
+        // something it does — protobuf-java under the MySQL driver, commons-compress
+        // under Testcontainers — and a constraint raises the floor without moving the
+        // dependency that carries it.
+        //
+        // That is the whole reason it is a constraint rather than a bump. Raising the
+        // parent changes which driver and which container runtime the agreement suites
+        // run against, and those suites exist precisely to pin down what a *real*
+        // MySQL or Postgres does; their dependency versions are a claim about the test,
+        // not about the advisory. Testcontainers makes the point plainly: 1.21.3 pins
+        // commons-compress 1.24.0 and the next release is a 2.x major, which is a
+        // container-stack migration to answer a denial-of-service issue in an archive
+        // reader no test unpacks.
+        //
+        // The floor is 1.27.1 rather than the 1.26.0 the advisories name, and the
+        // reason is worth keeping: 1.26.0 declares commons-codec `optional`, so a
+        // resolver correctly leaves it out, and `TarArchiveOutputStream` then dies with
+        // NoClassDefFoundError the first time Testcontainers builds an image context.
+        // The gate cannot see that — it has no Docker — so this was found by running
+        // `integrationTest`, which is the tier's whole argument restated: a version is
+        // a claim about what runs, and only running it settles one.
+        //
+        // commons-lang3 is here because raising one floor can dig another: 1.27.1 brings
+        // commons-lang3 3.16.0, which carries an advisory of its own that 1.24.0 never
+        // exposed. So the check that matters is run over the *resolved* tree afterwards,
+        // not over the versions this file names — a fix is only a fix once nothing
+        // beneath it is vulnerable either.
+        //
+        // Both are test-only, on both counts that matter: neither reaches the published
+        // `relix` artifact, whose one unmerged dependency is ojalgo, nor the console
+        // distribution, which carries h2, picocli and jline. A constraint for a module
+        // a configuration does not resolve is a no-op, so these sit in one place rather
+        // than in each module that happens to pull one.
+        constraints {
+            testImplementation('org.apache.commons:commons-compress:1.27.1') {
+                because 'GHSA-4265-ccf5-phj5 and GHSA-4g9r-vxhx-9pgx are fixed in 1.26.0; 1.27.1 is the first release that also declares commons-codec non-optional, which 1.26.0 needs at runtime and does not bring'
+            }
+            testImplementation('org.apache.commons:commons-lang3:3.18.0') {
+                because 'GHSA-j288-q9x7-2f5v is fixed in 3.18.0; commons-compress 1.27.1 brings 3.16.0'
+            }
+            testRuntimeOnly('com.google.protobuf:protobuf-java:3.25.5') {
+                because 'GHSA-735f-pc8j-v9w8 is fixed in 3.25.5; mysql-connector-j 8.4.0 pins 3.25.1'
+            }
+        }
     }
 
     // Default `./gradlew test` runs only fast, deterministic, hermetic unit tests.
