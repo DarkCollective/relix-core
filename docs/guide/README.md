@@ -54,7 +54,7 @@ itself wherever an expression reads better as text.
 
 | Page | What it covers |
 |---|---|
-| [Reading results](results.md) | The terminals and who closes what; typed row accessors; nested values; streaming; what a drained read teaches the engine |
+| [Reading results](results.md) | The terminals and who closes what; typed row accessors; nested values; streaming; running the tree as written; what a drained read teaches the engine |
 | [Looking at what the engine did](inspecting.md) | Rendering, the rewrite and why it fired, the physical plan and its estimates, the session's own report |
 | [The engine describes itself](introspection.md) | The `relix.*` catalogs as relations: what is installed, what the session knows, dependencies, functions, and the last run's feed |
 | [Provenance: where a row came from](provenance.md) | Lineage as a column; annotating a relation over a semiring; which to reach for |

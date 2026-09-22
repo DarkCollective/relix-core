@@ -30,6 +30,11 @@ dependencies {
     // The shared value/schema/row factories the connector tests build fixtures with.
     testImplementation testFixtures(project(':relix-processor'))
     testImplementation testFixtures(project(':relix-semantic'))  // analyze()/model()
+    testImplementation project(':relix-optimizer')
+    // #1043 — the two plan helpers go through the embedding API rather than reassembling
+    // the production stack by hand. Not a cycle: relix-embed's jar does not need this
+    // module's tests. Test-only, and the *runs* deliberately stay on their own connector.
+    testImplementation project(':relix-embed')
     testImplementation 'com.h2database:h2:2.2.224'  // in-memory JDBC database for connector tests
 
     // The `integration` tier: the pushdown-agreement corpus against a real MySQL

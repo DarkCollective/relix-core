@@ -86,8 +86,14 @@ CODE_BORDER = HexColor("#E0E0E0")
 RULE = HexColor("#BFBFBF")        # footer rule
 TBL_HEADER_BG = ACCENT                # table header band (logo violet)
 TBL_HEADER_FG = colors.white
+# A code span carries a tint of the surface behind it, so on the header band it
+# has to be a tint of the violet: the body's near-white chip drawn there put
+# white text on a near-white ground, which is how `boundedness` came to be
+# unreadable in the one table whose header cells are column names.
+TBL_HEADER_CODE_BG = HexColor("#8350CE")
 TBL_GRID = HexColor("#CCCCCC")
 TBL_ZEBRA = HexColor("#F6F2FB")       # alternating body row (faint violet)
+TBL_CELL_PAD = 6                      # left/right cell padding, in points
 
 # --------------------------------------------------------------------------- #
 # Manual profiles                                                             #
@@ -261,6 +267,18 @@ def build_styles() -> dict:
 # --------------------------------------------------------------------------- #
 LINK_RE = re.compile(r"\[(?P<text>[^\]]+)\]\((?P<href>[^)]+)\)")
 
+# An href this manual cannot resolve to a page of its own, but a reader can still
+# follow. Deliberately narrow -- it recognises the one form that is safe rather
+# than excluding the forms that are not, which is the rule that fails in the safe
+# direction. Two things ride on the narrowness. A bare ``#anchor`` must never
+# reach ReportLab as an href: it would be read as a destination inside the
+# document, and an undefined destination is a *save-time* failure, so one
+# in-page link would take the whole manual down. And the href is interpolated
+# into an attribute of already-escaped markup, where ``esc`` leaves a double
+# quote alone (``quote=False``), so a character that could close the attribute
+# early must not be in the set this matches.
+EXTERNAL_URL_RE = re.compile(r"https?://[^\s\"'<>]+\Z")
+
 
 def parse_readme(ref_dir: str):
     """Return (preface_lines, [(title, intro_text, table_lines, [page_relpath, …]), …]).
@@ -390,6 +408,12 @@ def parse_narrative_page(path: str):
 # Inline markdown -> ReportLab mini-HTML                                       #
 # --------------------------------------------------------------------------- #
 _CODE_TOKEN = "\x00CODE%d\x00"
+# A span opened by n backticks closes on a run of exactly n, which is what lets a
+# name containing a backtick be written ``  `order`  ``. One definition, because
+# the width measurement and the renderer must agree about what a span is.
+CODE_SPAN_RE = re.compile(r"(`+)(.+?)(?<!`)\1(?!`)")
+CODE_SPAN_SIZE = 9        # the size a restored span is drawn at, and measured at
+CODE_SPAN_BG = "#EFEFEF"
 
 
 def needs_fallback(ch: str) -> bool:
@@ -443,21 +467,23 @@ def esc(s: str) -> str:
     return fontify(html.escape(s, quote=False))
 
 
-def inline(text: str, link_resolver=None) -> str:
+def code_span(m) -> str:
+    """The text a code span draws, with the one pad that lets it begin with a backtick."""
+    span = m.group(2)
+    if len(span) > 1 and span.startswith(" ") and span.endswith(" "):
+        span = span[1:-1]
+    return span
+
+
+def inline(text: str, link_resolver=None, on_dark: bool = False) -> str:
     # protect inline code spans
     spans: list[str] = []
 
     def _grab(m):
-        # A span opened by n backticks closes on a run of exactly n, which is what lets
-        # a name containing a backtick be written ``  `order`  ``. Matching a single one
-        # instead split that into three spans, two of them empty.
-        span = m.group(2)
-        if len(span) > 1 and span.startswith(" ") and span.endswith(" "):
-            span = span[1:-1]   # the one pad that lets a span begin with a backtick
-        spans.append(span)
+        spans.append(code_span(m))
         return _CODE_TOKEN % (len(spans) - 1)
 
-    text = re.sub(r"(`+)(.+?)(?<!`)\1(?!`)", _grab, text)
+    text = CODE_SPAN_RE.sub(_grab, text)
     text = esc(text)
 
     # links [text](href)
@@ -466,7 +492,21 @@ def inline(text: str, link_resolver=None) -> str:
         href = m.group("href")
         target = link_resolver(href) if link_resolver else None
         if target:
-            return f'<a href="{target}" color="{LINK_HEX}">{label}</a>'
+            # The leading ``#`` is what makes this a jump within the document.
+            # ReportLab decides between an internal destination and a web address
+            # from the href alone (``_doLink``): ``#name`` is a destination, and
+            # anything else is handed to ``linkURL`` as a URI. A bare bookmark
+            # name therefore rendered as a clickable link to a relative *URL* that
+            # exists nowhere -- every cross-reference in both manuals, and silent,
+            # because the text was still coloured and still had a hit rectangle.
+            return f'<a href="#{target}" color="{LINK_HEX}">{label}</a>'
+        if EXTERNAL_URL_RE.match(href):
+            # A web address is the other thing a reader can follow, and it needs
+            # no ``#``: ReportLab reads the scheme and hands it to ``linkURL``.
+            return f'<a href="{href}" color="{LINK_HEX}">{label}</a>'
+        # Everything else -- an in-page anchor, a page this manual does not
+        # render -- is drawn as the label alone. A link that goes nowhere is
+        # worse than no link, because it looks like one that goes somewhere.
         return f'<font color="{LINK_HEX}">{label}</font>'
 
     text = LINK_RE.sub(_link, text)
@@ -476,15 +516,58 @@ def inline(text: str, link_resolver=None) -> str:
     text = re.sub(r"(?<![\w_])_([^_\n]+?)_(?![\w_])", r"<i>\1</i>", text)
 
     # restore code spans as monospace
+    back = "#" + TBL_HEADER_CODE_BG.hexval()[2:] if on_dark else CODE_SPAN_BG
+
     def _restore(m):
         idx = int(m.group(1))
         return (
-            '<font face="Mono" size="9" backColor="#EFEFEF">'
+            f'<font face="Mono" size="{CODE_SPAN_SIZE}" backColor="{back}">'
             + esc(spans[idx])
             + "</font>"
         )
 
     return re.sub(r"\x00CODE(\d+)\x00", _restore, text)
+
+
+def bookmark_name(href: str) -> str:
+    """The PDF destination a registered page's entry is bookmarked under.
+
+    One recipe, because the name is needed twice -- once when the entry is drawn
+    and bookmarked, once when a cross-reference on another page resolves to it --
+    and two copies that disagree produce links that point at nothing, silently.
+    """
+    return "pg-" + re.sub(r"[^A-Za-z0-9]", "-", href)
+
+
+def page_bookmarks(chapters) -> dict[str, str]:
+    """Map every page the index registers to its destination name.
+
+    Keyed by the page's path relative to the index, normalised, which is the form
+    ``resolver_for`` produces from an href written on any page in the tree.
+    """
+    return {
+        os.path.normpath(href): bookmark_name(href)
+        for _t, _i, _tbl, pages in chapters
+        for href in pages
+    }
+
+
+def resolver_for(page_dir: str, ref_dir: str, bookmark_of: dict[str, str]):
+    """Resolve a Markdown href written on a page in ``page_dir`` to a destination.
+
+    Returns ``None`` for anything this manual does not render -- an external URL,
+    a bare ``#anchor``, or a page the index does not register -- and ``inline``
+    then draws the label unlinked rather than linked to nowhere. A ``#fragment``
+    on a page href is dropped: the PDF bookmarks whole entries, so the link lands
+    on the page the section is part of.
+    """
+
+    def resolve(href):
+        tgt = os.path.normpath(os.path.join(page_dir, href.split("#")[0]))
+        rel = os.path.relpath(tgt, ref_dir)
+        return bookmark_of.get(os.path.normpath(rel))
+
+    return resolve
 
 
 def heading_paragraph(text, style_name, styles, link_resolver=None):
@@ -629,30 +712,113 @@ def parse_clean_table(buf: list[str]):
     return rows if len(rows) >= 1 else None
 
 
-def table_flowable(rows, styles, avail_width, link_resolver):
+def drawn_text(cell: str) -> str:
+    """A cell's prose with its markup removed -- what is measured is what is drawn.
+
+    A link's href, the backticks around a name and the emphasis markers are all
+    characters the page never shows.
+    """
+    cell = LINK_RE.sub(lambda m: m.group("text"), cell)
+    cell = re.sub(r"\*\*(.+?)\*\*", r"\1", cell)
+    cell = re.sub(r"(?<![\w*])\*([^*\n]+?)\*(?![\w*])", r"\1", cell)
+    cell = re.sub(r"(?<![\w_])_([^_\n]+?)_(?![\w_])", r"\1", cell)
+    return cell
+
+
+def cell_width(cell: str, style) -> float:
+    """Points the cell needs to be drawn on one line, in the faces it is drawn in.
+
+    Counting characters was near enough while a cell was prose in one face, and
+    wrong the moment one was not: a code span is monospace and wider per
+    character than the body font at the same size, so a header cell that is a
+    column *name* was given a column sized as if the name were prose, and wrapped
+    mid-word. Measuring asks the same question of every cell instead of assuming
+    an average character.
+    """
+    width = 0.0
+    pos = 0
+    for m in CODE_SPAN_RE.finditer(cell):
+        width += pdfmetrics.stringWidth(
+            drawn_text(cell[pos:m.start()]), style.fontName, style.fontSize)
+        width += pdfmetrics.stringWidth(code_span(m), "Mono", CODE_SPAN_SIZE)
+        pos = m.end()
+    width += pdfmetrics.stringWidth(
+        drawn_text(cell[pos:]), style.fontName, style.fontSize)
+    return width
+
+
+def unbreakable_width(cell: str, style) -> float:
+    """The widest piece of the cell no wrap can break: one word, or one code span.
+
+    A span is atomic because breaking a name is the one wrap a reader reads as a
+    fault rather than as a line ending.
+    """
+    widest = 0.0
+    pos = 0
+    for m in CODE_SPAN_RE.finditer(cell):
+        for word in drawn_text(cell[pos:m.start()]).split():
+            widest = max(widest, pdfmetrics.stringWidth(
+                word, style.fontName, style.fontSize))
+        widest = max(widest, pdfmetrics.stringWidth(
+            code_span(m), "Mono", CODE_SPAN_SIZE))
+        pos = m.end()
+    for word in drawn_text(cell[pos:]).split():
+        widest = max(widest, pdfmetrics.stringWidth(
+            word, style.fontName, style.fontSize))
+    return widest
+
+
+def table_columns(rows, styles, avail_width):
+    """Column widths: what each column needs, and where the shortfall comes from.
+
+    The padding is taken off the top rather than shared out -- it is the same on
+    every column and none of it is available to text, so leaving it in the
+    proportion gives a narrow column less room than its share says it has. When
+    the table is wider than the frame the shortfall is taken from the columns
+    that can *wrap*: a prose column gives up a word to the next line, while a
+    column of names has nothing to break, so sharing the shortfall by size breaks
+    the one cell that cannot afford it.
+    """
     ncol = len(rows[0])
-    # proportional column widths from the longest cell per column (wrapped)
-    weights = [1] * ncol
-    for r in rows:
+    pad = 2 * TBL_CELL_PAD
+    need = [pad] * ncol           # the whole cell on one line
+    floor = [pad] * ncol          # its widest unbreakable piece
+    for ri, r in enumerate(rows):
+        style = styles["th"] if ri == 0 else styles["td"]
         for c in range(ncol):
-            weights[c] = max(weights[c], len(r[c]) or 1)
-    total = sum(weights)
-    col_widths = [max(1.6 * cm, avail_width * w / total) for w in weights]
-    scale = avail_width / sum(col_widths)
-    col_widths = [w * scale for w in col_widths]
+            need[c] = max(need[c], pad + cell_width(r[c], style))
+            floor[c] = max(floor[c], pad + unbreakable_width(r[c], style))
+
+    total = sum(need)
+    if total <= avail_width:      # hand out the slack, so the table fills the frame
+        text = max(total - ncol * pad, 1.0)
+        extra = avail_width - total
+        return [n + extra * (n - pad) / text for n in need]
+
+    give = [n - f for n, f in zip(need, floor)]
+    short = total - avail_width
+    if sum(give) >= short:
+        return [n - short * g / sum(give) for n, g in zip(need, give)]
+    # Nothing left to give: the table cannot fit, so every column shrinks alike.
+    return [avail_width * n / total for n in need]
+
+
+def table_flowable(rows, styles, avail_width, link_resolver):
+    col_widths = table_columns(rows, styles, avail_width)
 
     data = []
     for ri, r in enumerate(rows):
         style = styles["th"] if ri == 0 else styles["td"]
-        data.append([Paragraph(inline(c, link_resolver), style) for c in r])
+        data.append(
+            [Paragraph(inline(c, link_resolver, on_dark=ri == 0), style) for c in r])
 
     t = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
     ts = [
         ("BACKGROUND", (0, 0), (-1, 0), TBL_HEADER_BG),
         ("GRID", (0, 0), (-1, -1), 0.5, TBL_GRID),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), TBL_CELL_PAD),
+        ("RIGHTPADDING", (0, 0), (-1, -1), TBL_CELL_PAD),
         ("TOPPADDING", (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]
@@ -964,12 +1130,7 @@ def build(ref_dir: str, out_path: str, manual: str = "reference") -> None:
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(ref_dir)))
 
     # bookmark name for each page (relative href), so See-Also can link to it
-    bookmark_of = {}
-    for _t, _i, _tbl, pages in chapters:
-        for href in pages:
-            bookmark_of[os.path.normpath(href)] = "pg-" + re.sub(
-                r"[^A-Za-z0-9]", "-", href
-            )
+    bookmark_of = page_bookmarks(chapters)
 
     doc = RefDoc(
         out_path,
@@ -1037,14 +1198,7 @@ def build(ref_dir: str, out_path: str, manual: str = "reference") -> None:
         story.append(PageBreak())
 
     # ---- chapters / pages -------------------------------------------------
-    def resolver_for(page_dir):
-        def resolve(href):
-            tgt = os.path.normpath(os.path.join(page_dir, href.split("#")[0]))
-            rel = os.path.relpath(tgt, ref_dir)
-            return bookmark_of.get(os.path.normpath(rel))
-        return resolve
-
-    index_resolver = resolver_for(ref_dir)
+    index_resolver = resolver_for(ref_dir, ref_dir, bookmark_of)
 
     for ci, (title, intro, table_lines, pages) in enumerate(chapters, start=1):
         # each major chapter starts on a fresh page
@@ -1071,13 +1225,13 @@ def build(ref_dir: str, out_path: str, manual: str = "reference") -> None:
         for href in pages:
             full = os.path.normpath(os.path.join(ref_dir, href))
             name, sections = read_page(full)
-            resolver = resolver_for(os.path.dirname(full))
+            resolver = resolver_for(os.path.dirname(full), ref_dir, bookmark_of)
             # The visible entry renders its markup; the PDF outline takes the plain text
             # reportlab derives from it (getPlainText), and the table of contents keeps
             # the markup, as _toctext already did for chapters.
             entry = heading_paragraph(name, "entry", styles, resolver)
             entry_text = entry.text
-            entry._bm = "pg-" + re.sub(r"[^A-Za-z0-9]", "-", href)
+            entry._bm = bookmark_name(href)
             story.append(entry)
             for label, body in sections:
                 # A narrative page has no labels: its own `##` headings are the

@@ -100,9 +100,11 @@ import java.util.stream.IntStream;
  *       respect to a filter, and both are <em>blocking</em>, so a σ left above one
  *       deduplicates or sorts rows that are about to be discarded.</li>
  *   <li><b>SEL-009</b> — Distribute a selection over a set operation: replicated
- *       into both branches of {@link UnionNode}, {@link IntersectionNode} and
- *       {@link SymmetricDifferenceNode}, and into the <em>left</em> branch only of
- *       {@link DifferenceNode}.  {@link com.darkcollective.relix.ast.OuterUnionNode}
+ *       into both branches of {@link UnionNode}, {@link IntersectionNode},
+ *       {@link SymmetricDifferenceNode} and {@link DifferenceNode} — the subtrahend
+ *       included, because the same predicate goes into the minuend, so a row the
+ *       filtered subtrahend stops removing is one the filtered minuend no longer
+ *       offers.  {@link com.darkcollective.relix.ast.OuterUnionNode}
  *       is deliberately excluded — its branches have different schemas, so a
  *       predicate valid against one may reference a column absent from the other —
  *       as are {@code ÷} and {@code ∘}, neither of which is a row filter with
@@ -391,9 +393,19 @@ final class SelectionPushdownPass {
             }
 
             // ── SEL-009: distribute over the set operations ───────────────────
-            // σ distributes into both branches of ∪ / ∩ / ∆, and into the LEFT
-            // branch only of −: filtering the subtrahend removes rows from it, which
-            // would *add* rows to the difference.
+            // σ distributes into both branches of ∪ / ∩ / ∆ / −.  The subtrahend looks
+            // like the exception and is not: the SAME predicate goes into the minuend,
+            // so a row the filtered subtrahend stops removing is a row the filtered
+            // minuend no longer offers.
+            //
+            //   σp(A − B)  = { r : r ∈ A, r ∉ B, p(r) }
+            //   σpA − σpB  = { r : r ∈ A, p(r), ¬(r ∈ B ∧ p(r)) }
+            //              = { r : r ∈ A, p(r), r ∉ B }        -- p(r) holds
+            //
+            // Three-valued logic needs no separate argument: where p(r) is UNKNOWN the
+            // row is dropped by the σ on one form and absent from σpA on the other.
+            // Pushing into the subtrahend *alone* is the unsound thing, and that is not
+            // what distribution does.
             case UnionNode u -> {
                 ctx.record(OptimizationCode.SEL_009, queryName,
                         "selection replicated into both branches of union", s.location());
@@ -416,9 +428,9 @@ final class SelectionPushdownPass {
             }
             case DifferenceNode d -> {
                 ctx.record(OptimizationCode.SEL_009, queryName,
-                        "selection pushed into the left branch of difference", s.location());
+                        "selection replicated into both branches of difference", s.location());
                 yield new DifferenceNode(pushInto(pred, d.left(), s, queryName, schemas, ctx),
-                        rewriteNode(d.right(), queryName, schemas, ctx), d.location());
+                        pushInto(pred, d.right(), s, queryName, schemas, ctx), d.location());
             }
 
             // ── Look through a σ-chain ────────────────────────────────────────

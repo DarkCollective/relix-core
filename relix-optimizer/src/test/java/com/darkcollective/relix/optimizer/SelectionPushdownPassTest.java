@@ -896,14 +896,17 @@ final class SelectionPushdownPassTest {
             assertThat(ctx).fired(OptimizationCode.SEL_009, 1);
         }
 
-        @Test @DisplayName("σ p (A − B) → (σ p A) − B: the subtrahend is left alone")
-        void overDifferenceLeftOnly() {
+        @Test @DisplayName("σ p (A − B) → (σ p A) − (σ p B): the subtrahend too")
+        void overDifferenceBothBranches() {
             var result = apply(sel(on("l_id"), difference(left, right)));
 
             assertThat(result).isNode(DifferenceNode.class);
             var d = (DifferenceNode) result;
             assertThat(d.left()).isNode(SelectionNode.class);
-            assertThat(d.right()).isSameAs(right);
+            // The subtrahend is filtered as well. Filtering it *alone* would keep rows the
+            // difference was meant to remove; filtering both keeps the same set, because a
+            // row the subtrahend stops removing is one the minuend no longer offers.
+            assertThat(d.right()).isNode(SelectionNode.class);
             assertThat(ctx).fired(OptimizationCode.SEL_009, 1);
         }
 

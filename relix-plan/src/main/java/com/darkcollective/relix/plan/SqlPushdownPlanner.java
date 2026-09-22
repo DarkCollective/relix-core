@@ -993,8 +993,12 @@ final class SqlPushdownPlanner implements PushdownRenderer {
     }
 
     private Optional<Pushed> join(ThetaJoinNode node) {
-        Optional<Pushed> leftOpt = build(node.left());
-        Optional<Pushed> rightOpt = build(node.right());
+        // A σ between the join and either scan is peeled off and re-rendered into the
+        // joined statement's WHERE: an inner join commutes with a filter on either side.
+        Peeled leftPeel = peelFilters(node.left());
+        Peeled rightPeel = peelFilters(node.right());
+        Optional<Pushed> leftOpt = build(leftPeel.scan());
+        Optional<Pushed> rightOpt = build(rightPeel.scan());
         if (leftOpt.isEmpty() || rightOpt.isEmpty()) {
             return Optional.empty();
         }
@@ -1030,8 +1034,16 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         String from = dialect.table(left.tableName) + " " + dialect.quote(aliases.left())
                 + " JOIN " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
                 + " ON " + condition.get();
+        List<Predicate> peeled = new ArrayList<>(leftPeel.filters());
+        peeled.addAll(rightPeel.filters());
+        Optional<List<String>> filters = renderPeeled(peeled, comparing, ordering, dialect);
+        if (filters.isEmpty()) {
+            return Optional.empty();
+        }
+
         Pushed joined = new Pushed(left.connectorType, left.connection, from, selectList,
                 schemaOf(node), renderer, dialect);
+        joined.where.addAll(filters.get());
         // The collation answers belong to the connection, and both sides share one, so
         // they carry over — without which a σ or a τ folded *above* the join would
         // render its strings uncollated where the join's own condition did not.
@@ -1058,8 +1070,10 @@ final class SqlPushdownPlanner implements PushdownRenderer {
      * and a database's follows others.
      */
     private Optional<Pushed> naturalJoin(NaturalJoinNode node) {
-        Optional<Pushed> leftOpt = build(node.left());
-        Optional<Pushed> rightOpt = build(node.right());
+        Peeled leftPeel = peelFilters(node.left());
+        Peeled rightPeel = peelFilters(node.right());
+        Optional<Pushed> leftOpt = build(leftPeel.scan());
+        Optional<Pushed> rightOpt = build(rightPeel.scan());
         if (leftOpt.isEmpty() || rightOpt.isEmpty()) {
             return Optional.empty();
         }
@@ -1111,14 +1125,24 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         String from = dialect.table(left.tableName) + " " + dialect.quote(aliases.left())
                 + " JOIN " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
                 + " ON " + String.join(" AND ", condition);
+        ColumnRenderer natComparing = comparingRenderer(renderer, joinStrings,
+                left.exactStrings, dialect, dialect::exactStringComparison);
+        ColumnRenderer natOrdering = comparingRenderer(renderer, joinStrings,
+                left.ordersExactly, dialect, dialect::exactStringOrder);
+        List<Predicate> peeled = new ArrayList<>(leftPeel.filters());
+        peeled.addAll(rightPeel.filters());
+        Optional<List<String>> filters = renderPeeled(peeled, natComparing, natOrdering, dialect);
+        if (filters.isEmpty()) {
+            return Optional.empty();
+        }
+
         Pushed joined = new Pushed(left.connectorType, left.connection, from, selectList,
                 schema, renderer, dialect);
+        joined.where.addAll(filters.get());
         joined.exactStrings = left.exactStrings;
-        joined.comparing = comparingRenderer(renderer, joinStrings,
-                left.exactStrings, dialect, dialect::exactStringComparison);
+        joined.comparing = natComparing;
         joined.ordersExactly = left.ordersExactly;
-        joined.ordering = comparingRenderer(renderer, joinStrings,
-                left.ordersExactly, dialect, dialect::exactStringOrder);
+        joined.ordering = natOrdering;
         return Optional.of(joined);
     }
 
@@ -1151,6 +1175,68 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             }
             return Optional.empty();
         };
+    }
+
+    /**
+     * A join input split into the scan beneath it and the filters stacked on top.
+     *
+     * <p>An inner join commutes with a filter on either side — {@code (σp A) ⋈ (σq B)}
+     * is {@code σ(p ∧ q)(A ⋈ B)} — so a σ between the join and its scan does not have to
+     * stop the fold. It did, because {@link #bareJoinable} asks whether each side is a
+     * <em>bare</em> scan and a folded σ is not one.
+     *
+     * <p>That mattered more than it looks, because the optimizer <em>creates</em> this
+     * shape: {@code SEL-005} pushes a conjunct into the join input it belongs to, which
+     * is the right rewrite for an in-engine join and, before this, silently cost a
+     * same-connection join its whole-statement fold. The query went from one
+     * {@code SELECT … JOIN … WHERE} to two scans, one of them unfiltered, and a hash join
+     * here.
+     *
+     * @param scan    the input with every σ stripped off it
+     * @param filters those σ's predicates, outermost first
+     */
+    private record Peeled(RelNode scan, List<Predicate> filters) {}
+
+    /**
+     * Strips the σ chain off a join input.
+     *
+     * <p>Only σ: a π, τ, λ or γ between the join and the scan changes what the side
+     * <em>is</em>, and the folded statement reads each side's table directly.
+     */
+    private static Peeled peelFilters(RelNode input) {
+        List<Predicate> filters = new ArrayList<>();
+        RelNode current = input;
+        while (current instanceof SelectionNode s) {
+            filters.add(s.predicate());
+            current = s.input();
+        }
+        return new Peeled(current, filters);
+    }
+
+    /**
+     * Renders the peeled filters into the joined statement's {@code WHERE}, or empty if
+     * any of them declines.
+     *
+     * <p>Declining the whole fold on one unrenderable filter is not a loss: the planner
+     * then plans each side on its own, and each re-folds its own σ exactly as it did
+     * before this method existed. So the worst case is what used to be the only case.
+     *
+     * <p>The ambiguity a reader expects to have to guard against — a bare column name
+     * that both sides have — needs no guard here, because {@code joinRenderer} already
+     * answers empty for one, which lands in the same decline.
+     */
+    private Optional<List<String>> renderPeeled(List<Predicate> filters, ColumnRenderer comparing,
+                                                ColumnRenderer ordering, Dialect dialect) {
+        List<String> rendered = new ArrayList<>(filters.size());
+        for (Predicate filter : filters) {
+            Optional<String> sql =
+                    SqlExpressions.predicate(filter, comparing, ordering, dialect, functions);
+            if (sql.isEmpty()) {
+                return Optional.empty();
+            }
+            rendered.add(sql.get());
+        }
+        return Optional.of(rendered);
     }
 
     /**

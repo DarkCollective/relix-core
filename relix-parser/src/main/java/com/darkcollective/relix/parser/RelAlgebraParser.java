@@ -1862,7 +1862,7 @@ public final class RelAlgebraParser {
         TokenType t = current.type();
         if (isComparison(t)) return true;
         if (t == TokenType.ELEMENT_OF || t == TokenType.NOT_ELEMENT_OF
-                || t == TokenType.LIKE) return true;
+                || t == TokenType.LIKE || t == TokenType.IS) return true;
         return t == TokenType.NOT
                 && (peek(1).type() == TokenType.ELEMENT_OF
                     || peek(1).type() == TokenType.LIKE);
@@ -1921,9 +1921,19 @@ public final class RelAlgebraParser {
 
     private Predicate parsePrimaryPredicate(Operand seed) {
         if (seed == null && current.type() == TokenType.LPAREN && isParenthesizedPredicate()) {
+            Token open = current;
             advance();
             Predicate predicate = parsePredicate();
             expect(TokenType.RPAREN, "Expected ')' after predicate");
+            // A parenthesised predicate followed by a condition tail is not the
+            // predicate itself but its *truth value* in operand position:
+            // `(a > b) = ⊥` asks whether the comparison came out UNKNOWN, which is
+            // a different question from `a > b`. This is the same escalation
+            // parseArgument already performs for a function argument, and without it
+            // the grammar cannot read back a tree AstBuilders can build.
+            if (startsConditionTail()) {
+                return parsePrimaryPredicate(new ConditionOperand(predicate, loc(open)));
+            }
             return predicate;
         }
 
@@ -2118,6 +2128,18 @@ public final class RelAlgebraParser {
                 yield new BooleanOperand(false, loc(falseTok));
             }
             case LPAREN -> {
+                // `(a > b)` in operand position is a condition, not an arithmetic
+                // parenthesis — so a boolean can be projected (`π (a > b) → flag`)
+                // and handed to an operator that takes an operand. The lookahead is
+                // the one parseArgument uses, so the two positions agree about what
+                // a parenthesis opens.
+                if (isParenthesizedPredicate()) {
+                    Token open = current;
+                    advance();
+                    Predicate predicate = parsePredicate();
+                    expect(TokenType.RPAREN, "Expected ')' after predicate");
+                    yield new ConditionOperand(predicate, loc(open));
+                }
                 advance();
                 Operand expression = parseArithmeticExpression(0);
                 expect(TokenType.RPAREN, "Expected ')' after arithmetic expression");

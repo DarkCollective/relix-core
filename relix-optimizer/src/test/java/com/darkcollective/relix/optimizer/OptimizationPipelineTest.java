@@ -83,15 +83,15 @@ final class OptimizationPipelineTest {
         }
 
         @Test
-        @DisplayName("every optimization code except the pre-pipeline four is registered")
+        @DisplayName("every optimization code except the pre-pipeline six is registered")
         void everyCodeIsRegistered() {
             var registered = new ArrayList<OptimizationCode>();
             pipeline.rules().forEach(r -> registered.addAll(r.codes()));
 
-            // Four codes belong to the per-query preamble in QueryOptimizer, not to the
-            // pipeline, and all four for the same reason — each needs the symbol table,
+            // Six codes belong to the per-query preamble in QueryOptimizer, not to the
+            // pipeline, and all six for the same reason — each needs the symbol table,
             // which the pipeline deliberately does not take. INLINE-001 is ViewInliner's
-            // (it expands a view body); RENAME-001/002 clean up after it, before the
+            // (it expands a view body); RENAME-001..004 clean up after it, before the
             // schema re-inference, since removing a node drops the annotations above it;
             // LATERAL-001 resolves a TVF and classifies its body as deterministic.
             //
@@ -104,6 +104,8 @@ final class OptimizationPipelineTest {
                                     OptimizationCode.INLINE_001,
                                     OptimizationCode.RENAME_001,
                                     OptimizationCode.RENAME_002,
+                                    OptimizationCode.RENAME_003,
+                                    OptimizationCode.RENAME_004,
                                     OptimizationCode.LATERAL_001)),
                             SHARED_WITH_EXPRESSION_PASS));
         }

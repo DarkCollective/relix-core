@@ -35,7 +35,9 @@ import java.util.Objects;
  * <ul>
  *   <li>{@code SEL-003} (σ below π) and {@code PROJ-003} (π below σ);</li>
  *   <li>{@code SEL-001} (split a conjunction) and {@code SEL-002} (merge adjacent
- *       selections).</li>
+ *       selections);</li>
+ *   <li>{@code SEL-009} (distribute a σ over a set operation) and {@code SEL-010}
+ *       (merge a set operation over two selections of one input).</li>
  * </ul>
  * <p>Each such pair is split across two phases, and phases run once each in order —
  * only the rules <em>within</em> a phase are iterated.  That is why the pushdown
@@ -256,11 +258,17 @@ public final class OptimizationPipeline {
      * <p>{@code PROD-001} belongs here rather than in {@code pushdown}: it only ever
      * <em>removes</em> a node, and no rule in this phase reintroduces a {@code ×}, so
      * it cannot oscillate against a phase-mate.
+     *
+     * <p>{@code SEL-010} and the {@code SET} family are here for the placement rule
+     * above.  {@code SEL-010} is the exact inverse of {@code SEL-009}, which is in
+     * {@code pushdown}; the {@code SET} rules hoist an operator <em>out</em> of a set
+     * operation, and nothing in this phase pushes one in — {@code SEL-009} is the only
+     * rule that distributes into a set operation's branches at all, and it is a σ.
      */
     private static Phase cleanupPhase() {
         return new Phase("cleanup", List.of(
                 PassRule.of("selection-merge", SelectionMergePass::apply,
-                        OptimizationCode.SEL_002),
+                        OptimizationCode.SEL_002, OptimizationCode.SEL_010),
                 PassRule.of("projection", ProjectionPass::apply,
                         OptimizationCode.PROJ_001, OptimizationCode.PROJ_002,
                         OptimizationCode.PROJ_003),
@@ -268,6 +276,14 @@ public final class OptimizationPipeline {
                         OptimizationCode.AGG_001),
                 PassRule.of("distinct-elimination", DistinctEliminationPass::apply,
                         OptimizationCode.DIST_001, OptimizationCode.DIST_002),
+                // Before product-identity and empty propagation, both of which consume
+                // what it produces: SET-001 turns `R − R` into ∅ for EMPTY-002 to
+                // propagate, and the δ it may leave behind is DIST-001's to reconsider
+                // on the next sweep.
+                PassRule.of("set-operation-rules", SetOperationRulesPass::apply,
+                        OptimizationCode.SET_001, OptimizationCode.SET_002,
+                        OptimizationCode.SET_003, OptimizationCode.SET_004,
+                        OptimizationCode.SET_005),
                 PassRule.of("product-identity", ProductIdentityPass::apply,
                         OptimizationCode.PROD_001),
                 // Alongside PROD-001, and for the same reason: it only ever *removes*

@@ -13,11 +13,15 @@ rendered into something other than what it said.
 
 from __future__ import annotations
 
+import io
 import os
 import unittest
 
+from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.pdfmetrics import Font, registerFont, registerFontFamily
+from reportlab.pdfgen.canvas import Canvas
+from reportlab.platypus import Paragraph
 
 import generate_pdf as G
 
@@ -170,6 +174,76 @@ class CodeBoxWidth(unittest.TestCase):
         )
 
 
+class TableColumnWidths(unittest.TestCase):
+    """A column was sized by counting characters, which is not what it is drawn in."""
+
+    NAMES = [
+        ["`boundedness`", "`row_count`", "What it means"],
+        ["`bounded`", "a number", "finite, and counted"],
+        ["`bounded`", "NULL",
+         "finite, but nobody has counted it \u2014 a CSV file nothing has read"],
+    ]
+
+    def _text_room(self, rows, col):
+        widths = G.table_columns(rows, STYLES, AVAIL)
+        return widths[col] - 2 * G.TBL_CELL_PAD
+
+    def test_a_header_of_column_names_is_sized_for_monospace(self):
+        """`boundedness` wrapped to "boundednes/s": mono is wider than the prose
+        the character count assumed, and a name is the one wrap a reader reads as
+        a fault."""
+        name = pdfmetrics.stringWidth("boundedness", "Mono", G.CODE_SPAN_SIZE)
+        self.assertGreaterEqual(self._text_room(self.NAMES, 0), name)
+
+    def test_an_href_is_counted_as_nothing_because_it_is_drawn_as_nothing(self):
+        """A link's target is characters the page never shows."""
+        bare = [["Page", "What it does"], ["Getting started", "Your first script"]]
+        linked = [["Page", "What it does"],
+                  ["[Getting started](language/getting-started.md)",
+                   "Your first script"]]
+        self.assertAlmostEqual(self._text_room(bare, 0),
+                               self._text_room(linked, 0), places=3)
+
+    def test_the_shortfall_comes_from_the_column_that_can_wrap(self):
+        """A prose column gives up a word to the next line; a column of commands
+        has nothing to break, so sharing the shortfall by size breaks the one
+        cell that cannot afford it."""
+        rows = [["Command", "Effect"],
+                ['`:rels name <n> "Name"`',
+                 "Rename learned relationship n, so it can be named in a question "
+                 "and so that this table is wider than the frame it is drawn in"]]
+        command = pdfmetrics.stringWidth(':rels name <n> "Name"', "Mono",
+                                         G.CODE_SPAN_SIZE)
+        widths = G.table_columns(rows, STYLES, AVAIL)
+        self.assertGreater(sum(widths), AVAIL - 0.5)   # it did not fit
+        self.assertGreaterEqual(widths[0] - 2 * G.TBL_CELL_PAD, command)
+
+    def test_the_columns_fill_the_frame(self):
+        for rows in (self.NAMES, [["A", "B"], ["x", "y"]]):
+            self.assertAlmostEqual(sum(G.table_columns(rows, STYLES, AVAIL)),
+                                   AVAIL, places=3)
+
+
+class CodeSpansOnTheHeaderBand(unittest.TestCase):
+    """The chip is a tint of what is behind it, and the header band is violet."""
+
+    def test_a_body_span_keeps_the_near_white_chip(self):
+        self.assertIn(f'backColor="{G.CODE_SPAN_BG}"', G.inline("a `name` here"))
+
+    def test_a_header_span_is_not_drawn_in_the_body_chip(self):
+        """White text on a near-white chip is how `boundedness` became unreadable."""
+        rendered = G.inline("a `name` here", on_dark=True)
+        self.assertNotIn(G.CODE_SPAN_BG, rendered)
+        self.assertIn(G.TBL_HEADER_CODE_BG.hexval()[2:], rendered)
+
+    def test_the_header_row_is_the_only_row_drawn_on_the_band(self):
+        flows = G.table_flowable(TableColumnWidths.NAMES, STYLES, AVAIL, None)
+        table = next(f for f in flows if hasattr(f, "_cellvalues"))
+        header, body = table._cellvalues[0], table._cellvalues[1]
+        self.assertNotIn(G.CODE_SPAN_BG, header[0].text)
+        self.assertIn(G.CODE_SPAN_BG, body[0].text)
+
+
 class TableParsing(unittest.TestCase):
 
     def test_escaped_pipes_do_not_break_a_row(self):
@@ -319,6 +393,226 @@ class ManualProfiles(unittest.TestCase):
                                "would render its chapters and nothing else")
         for href in pages:
             self.assertTrue(os.path.isfile(os.path.join(GUIDE_DIR, href)), href)
+
+
+class _LinkSpy(Canvas):
+    """A canvas that records which kind of link each hotspot turned out to be.
+
+    Both kinds draw the same coloured text over the same rectangle, so the only
+    way to tell a jump to page 84 from a dead web address is to ask which call
+    ReportLab made. That is the whole reason this is a spy rather than an
+    assertion on the markup: ``_doLink`` decides from the href, and the claim
+    worth pinning is the decision, not the string we hand it.
+    """
+
+    def __init__(self):
+        super().__init__(io.BytesIO(), pagesize=A4)
+        self.destinations: list[str] = []
+        self.urls: list[str] = []
+
+    def linkRect(self, contents, destinationname, *args, **kwargs):
+        self.destinations.append(destinationname)
+        return super().linkRect(contents, destinationname, *args, **kwargs)
+
+    def linkURL(self, url, *args, **kwargs):
+        self.urls.append(url)
+        return super().linkURL(url, *args, **kwargs)
+
+
+def _draw(markup):
+    """Render one line of paragraph markup and report the links it laid down."""
+    para = Paragraph(markup, STYLES["body"])
+    canvas = _LinkSpy()
+    para.wrapOn(canvas, AVAIL, 200)
+    para.drawOn(canvas, 0, 400)
+    return canvas
+
+
+class CrossReferenceLinks(unittest.TestCase):
+    """Every cross-reference in both manuals was a link to a URL that is not one.
+
+    ReportLab reads an href starting with ``#`` as a destination inside the
+    document and hands anything else to ``linkURL``. The renderer emitted the
+    bare bookmark name, so all 1546 cross-references in the reference manual and
+    all 80 in the guide were annotated as web addresses like
+    ``pg-operators-group-md`` -- coloured, clickable, and going nowhere. Nothing
+    caught it because a broken link renders exactly like a working one.
+    """
+
+    RESOLVED = "pg-operators-group-md"
+
+    def _markup(self, text, target=RESOLVED):
+        return G.inline(text, lambda _href: target)
+
+    def test_a_cross_reference_is_a_jump_within_the_document(self):
+        canvas = _draw(self._markup("see [group](operators/group.md)"))
+        self.assertEqual(canvas.destinations, [self.RESOLVED])
+        self.assertEqual(canvas.urls, [])
+
+    def test_the_destination_is_the_one_the_entry_is_bookmarked_under(self):
+        """The link and the bookmark are two uses of one name; they must agree."""
+        canvas = _draw(G.inline("see [group](operators/group.md)",
+                                G.resolver_for("docs/reference", "docs/reference",
+                                               {"operators/group.md": G.bookmark_name(
+                                                   "operators/group.md")})))
+        self.assertEqual(canvas.destinations, [G.bookmark_name("operators/group.md")])
+
+    def test_an_unresolved_target_is_not_a_link_at_all(self):
+        """A label the manual cannot reach is coloured prose, never a dead hotspot."""
+        canvas = _draw(G.inline("see [elsewhere](../design/adr-0011.md)",
+                                lambda _href: None))
+        self.assertEqual(canvas.destinations, [])
+        self.assertEqual(canvas.urls, [])
+
+
+class HrefResolution(unittest.TestCase):
+    """Which entry a Markdown href names, from wherever the href was written."""
+
+    def setUp(self):
+        chapters = [
+            ("Operators", "", [], ["operators/group.md", "operators/select.md"]),
+            ("Joins", "", [], ["joins/theta-join.md"]),
+        ]
+        self.bookmarks = G.page_bookmarks(chapters)
+
+    def _resolve(self, page_dir, href, ref_dir="."):
+        return G.resolver_for(page_dir, ref_dir, self.bookmarks)(href)
+
+    def test_a_sibling_page_resolves(self):
+        self.assertEqual(self._resolve("operators", "select.md"),
+                         G.bookmark_name("operators/select.md"))
+
+    def test_a_page_in_another_chapter_resolves_through_the_relative_path(self):
+        """Pages are nested one directory deep, so most links climb and descend."""
+        self.assertEqual(self._resolve("operators", "../joins/theta-join.md"),
+                         G.bookmark_name("joins/theta-join.md"))
+
+    def test_a_fragment_lands_on_the_page_that_holds_the_section(self):
+        """The PDF bookmarks entries, not sections; dropping it beats dropping the link."""
+        self.assertEqual(self._resolve("operators", "../joins/theta-join.md#syntax"),
+                         G.bookmark_name("joins/theta-join.md"))
+
+    def test_an_external_url_resolves_to_nothing(self):
+        self.assertIsNone(self._resolve("operators", "https://no-color.org/"))
+
+    def test_an_unregistered_page_resolves_to_nothing(self):
+        """A page the index does not list is not in the PDF, so nothing can point at it."""
+        self.assertIsNone(self._resolve("operators", "../README.md"))
+
+    def test_one_recipe_names_the_destination(self):
+        """bookmark_name is the single home; the entry and the link both read it."""
+        for href in ("operators/group.md", "joins/theta-join.md"):
+            self.assertEqual(self.bookmarks[os.path.normpath(href)],
+                             G.bookmark_name(href))
+
+
+class RenderedManualLinks(unittest.TestCase):
+    """The end-to-end claim, over a manual small enough to render in a test."""
+
+    def _render(self, tmp):
+        os.makedirs(os.path.join(tmp, "operators"), exist_ok=True)
+        with open(os.path.join(tmp, "README.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Index\n\nHow to read this.\n\n## 1. Operators\n\n"
+                     "- [Selection](operators/select.md)\n"
+                     "- [Projection](operators/project.md)\n")
+        with open(os.path.join(tmp, "operators", "select.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Name: Selection\n\n# Description:\n"
+                     "Keeps rows. See [Projection](project.md).\n")
+        with open(os.path.join(tmp, "operators", "project.md"), "w", encoding="utf-8") as fh:
+            fh.write("# Name: Projection\n\n# Description:\nKeeps columns.\n")
+        out = os.path.join(tmp, "manual.pdf")
+        G.build(tmp, out, "reference")
+        with open(out, "rb") as fh:
+            return fh.read()
+
+    def test_the_pdf_carries_destinations_and_no_bookmark_shaped_urls(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf = self._render(tmp)
+        self.assertIn(b"/Dest", pdf, "no internal destination was written at all")
+        # A URI annotation naming a bookmark is the defect: the reader is offered
+        # a web address spelled like a destination.
+        self.assertNotIn(b"/URI (pg-", pdf)
+        self.assertNotIn(b"/URI (ch-", pdf)
+
+
+class ExternalLinks(unittest.TestCase):
+    """A web address is the other thing a reader can follow, and it was dropped.
+
+    The resolver answers only for pages this manual renders, so an ``https://``
+    href fell through to the unlinked branch beside the genuinely unreachable
+    ones: the two the reference manual carries were coloured like links and were
+    not links. ReportLab needs no ``#`` here -- it reads the scheme.
+    """
+
+    def test_a_web_address_is_a_link_to_that_address(self):
+        canvas = _draw(G.inline("honours [NO_COLOR](https://no-color.org/)"))
+        self.assertEqual(canvas.urls, ["https://no-color.org/"])
+        self.assertEqual(canvas.destinations, [])
+
+    def test_a_query_string_survives_the_escaping(self):
+        """The href is escaped with the rest of the line before it is read back."""
+        canvas = _draw(G.inline("see [it](https://x.test/p?a=1&b=2)"))
+        self.assertEqual(canvas.urls, ["https://x.test/p?a=1&b=2"])
+
+    def test_an_in_page_anchor_is_not_a_link(self):
+        """It cannot be one: ReportLab fails the *save* on an undefined
+        destination, so one in-page anchor would take the whole manual down."""
+        canvas = _draw(G.inline("see [below](#rows-as-your-own-types)"))
+        self.assertEqual(canvas.urls, [])
+        self.assertEqual(canvas.destinations, [])
+
+    def test_a_page_this_manual_does_not_render_is_not_a_link(self):
+        canvas = _draw(G.inline("see [ADR-0011](../../design/adr-0011.md)"))
+        self.assertEqual(canvas.urls, [])
+        self.assertEqual(canvas.destinations, [])
+
+    def test_an_href_that_could_break_out_of_the_attribute_is_declined(self):
+        """``esc`` leaves a double quote alone, so the pattern must not admit one."""
+        for href in ('https://x.test/"a', "https://x.test/a b", "https://x.test/<b>"):
+            self.assertIsNone(G.EXTERNAL_URL_RE.match(href), href)
+
+    def test_a_resolved_page_beats_a_look_alike_scheme(self):
+        """Resolution runs first; an external form only ever fills an absence."""
+        canvas = _draw(G.inline("see [group](operators/group.md)",
+                                lambda _h: "pg-operators-group-md"))
+        self.assertEqual(canvas.destinations, ["pg-operators-group-md"])
+        self.assertEqual(canvas.urls, [])
+
+
+class ManualExternalLinks(unittest.TestCase):
+    """Every web address the reference manual carries renders as a link."""
+
+    def test_the_corpus_links_are_recognised(self):
+        """The non-vacuity claim is about the *walk*, not about the manual.
+
+        A manual carrying no external link at all is a legal state, and one tree
+        is in it: the public export withholds ``advanced/repl.md``, which is
+        where both of this manual's web addresses live, so an assertion that
+        some external link exists passes here and can only ever fail there.
+        What must not go quiet is the instrument — a walk reading the wrong
+        directory, or a ``LINK_RE`` that stopped matching, would report an empty
+        list and be indistinguishable from a manual that simply links nowhere.
+        So the count that has to be non-zero is every link on the page.
+        """
+        if not os.path.isdir(REF_DIR):
+            self.skipTest(f"{REF_DIR} not present")
+        links, external = 0, []
+        for root, _dirs, files in os.walk(REF_DIR):
+            for name in files:
+                if not name.endswith(".md"):
+                    continue
+                with open(os.path.join(root, name), encoding="utf-8") as fh:
+                    for m in G.LINK_RE.finditer(fh.read()):
+                        links += 1
+                        href = m.group("href")
+                        if href.startswith(("http://", "https://")):
+                            external.append(href)
+        self.assertTrue(links, f"no link of any kind found under {REF_DIR}")
+        for href in external:
+            self.assertIsNotNone(G.EXTERNAL_URL_RE.match(href),
+                                 f"{href} would render unlinked")
 
 
 if __name__ == "__main__":

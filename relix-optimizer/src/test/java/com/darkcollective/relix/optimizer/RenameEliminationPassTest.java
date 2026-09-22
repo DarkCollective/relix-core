@@ -41,7 +41,7 @@ import java.util.Optional;
 import static com.darkcollective.relix.ast.AstBuilders.*;
 import static com.darkcollective.relix.optimizer.OptimizerAssertions.assertThat;
 
-@DisplayName("Rename elimination — RENAME-001 / RENAME-002 (#534)")
+@DisplayName("Rename elimination — RENAME-001..004")
 final class RenameEliminationPassTest {
 
     private OptimizationContext ctx;
@@ -59,6 +59,25 @@ final class RenameEliminationPassTest {
 
     private boolean removed() {
         return !ctx.recordsFor(OptimizationCode.RENAME_002).isEmpty();
+    }
+
+    private int firings(OptimizationCode code) {
+        return ctx.recordsFor(code).size();
+    }
+
+    /** A pair-form ρ with no relation name — the textbook ρ_{a→b}(R). */
+    private static RenameNode pairs(RelNode input, String... fromTo) {
+        var list = new java.util.ArrayList<RenameNode.RenamePair>();
+        for (int i = 0; i < fromTo.length; i += 2) {
+            list.add(new RenameNode.RenamePair(fromTo[i], fromTo[i + 1]));
+        }
+        return rename(Optional.empty(), List.of(), list, input);
+    }
+
+    /** A pair-form ρ that also re-anchors provenance to {@code name}. */
+    private static RenameNode namedPairs(String name, RelNode input, String... fromTo) {
+        RenameNode bare = pairs(input, fromTo);
+        return rename(Optional.of(name), List.of(), bare.pairs(), input);
     }
 
     // ── fixtures ───────────────────────────────────────────────────────────
@@ -430,6 +449,183 @@ final class RenameEliminationPassTest {
 
             assertThat(((DistinctNode) result).input()).isEqualTo(rel("Orders"));
             assertThat(removed()).isTrue();
+        }
+    }
+
+    // =========================================================================
+    // RENAME-003 — identity pairs
+    // =========================================================================
+
+    @Nested
+    @DisplayName("RENAME-003 — identity column-rename pairs")
+    class Rename003 {
+
+        @Test
+        @DisplayName("ρ id→id, a→q (R) → ρ a→q (R)")
+        void identityPairDropped() {
+            RelNode result = apply(pairs(rel("Orders"), "id", "id", "a", "q"));
+
+            RenameNode r = (RenameNode) result;
+            assertThat(r.pairs()).containsExactly(new RenameNode.RenamePair("a", "q"));
+            assertThat(firings(OptimizationCode.RENAME_003)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("a ρ whose pairs all cancel and which names no relation goes entirely")
+        void wholeNodeDropped() {
+            RelNode base = rel("Orders");
+
+            assertThat(apply(pairs(base, "id", "id"))).isSameAs(base);
+            assertThat(firings(OptimizationCode.RENAME_003)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("a cancelled ρ that still names a relation is handed to RENAME-002")
+        void cancelledButNamedGoesThroughTheSweep() {
+            // Nothing references V here, so the sweep removes it — but it is RENAME-002
+            // that decides, not RENAME-003.
+            RelNode result = apply(namedPairs("V", rel("Orders"), "id", "id"));
+
+            assertThat(result).isEqualTo(rel("Orders"));
+            assertThat(firings(OptimizationCode.RENAME_003)).isEqualTo(1);
+            assertThat(removed()).isTrue();
+        }
+
+        @Test
+        @DisplayName("a cancelled ρ whose alias IS referenced keeps its relation name")
+        void cancelledButReferencedSurvives() {
+            RelNode tree = select(eq("V.amount", "1"),
+                    namedPairs("V", rel("Orders"), "id", "id"));
+
+            RelNode result = apply(tree);
+
+            RenameNode kept = (RenameNode) ((SelectionNode) result).input();
+            assertThat(kept.relationName()).contains("V");
+            assertThat(kept.pairs()).isEmpty();
+            assertThat(firings(OptimizationCode.RENAME_003)).isEqualTo(1);
+            assertThat(removed()).isFalse();
+        }
+
+        @Test
+        @DisplayName("a → A is not an identity — the heading is printed with the new spelling")
+        void caseChangeIsARealRename() {
+            RelNode node = pairs(rel("Orders"), "a", "A");
+
+            assertThat(apply(node)).isSameAs(node);
+            assertThat(firings(OptimizationCode.RENAME_003)).isZero();
+        }
+
+        @Test
+        @DisplayName("a ρ with no identity pair is left alone")
+        void noIdentityPair() {
+            RelNode node = pairs(rel("Orders"), "a", "b");
+
+            assertThat(apply(node)).isSameAs(node);
+            assertThat(firings(OptimizationCode.RENAME_003)).isZero();
+        }
+    }
+
+    // =========================================================================
+    // RENAME-004 — composing stacked pair-form renames
+    // =========================================================================
+
+    @Nested
+    @DisplayName("RENAME-004 — stacked column renames composed")
+    class Rename004 {
+
+        @Test
+        @DisplayName("ρ b→c (ρ a→b (R)) → ρ a→c (R)")
+        void chainComposed() {
+            RelNode result = apply(pairs(pairs(rel("Orders"), "a", "b"), "b", "c"));
+
+            RenameNode r = (RenameNode) result;
+            assertThat(r.pairs()).containsExactly(new RenameNode.RenamePair("a", "c"));
+            assertThat(r.input()).isEqualTo(rel("Orders"));
+            assertThat(firings(OptimizationCode.RENAME_004)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("an outer pair that matches no inner target is carried over")
+        void unrelatedOuterPairKept() {
+            RelNode result = apply(pairs(pairs(rel("Orders"), "a", "b"), "x", "y"));
+
+            RenameNode r = (RenameNode) result;
+            assertThat(r.pairs()).containsExactly(
+                    new RenameNode.RenamePair("a", "b"),
+                    new RenameNode.RenamePair("x", "y"));
+            assertThat(firings(OptimizationCode.RENAME_004)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("a rename cycle composes to an identity pair, which RENAME-003 drops")
+        void cycleCancels() {
+            RelNode base = rel("Orders");
+
+            assertThat(apply(pairs(pairs(base, "a", "b"), "b", "a"))).isSameAs(base);
+            assertThat(firings(OptimizationCode.RENAME_004)).isEqualTo(1);
+            assertThat(firings(OptimizationCode.RENAME_003)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("a swap inside ONE ρ is a real rename and is left alone")
+        void swapIsNotACycle() {
+            // ρ (a→b, b→a) exchanges two column names. Cancelling it — which is what
+            // conflating this with the stacked case would do — deletes the swap.
+            RelNode node = pairs(rel("Orders"), "a", "b", "b", "a");
+
+            assertThat(apply(node)).isSameAs(node);
+            assertThat(firings(OptimizationCode.RENAME_003)).isZero();
+            assertThat(firings(OptimizationCode.RENAME_004)).isZero();
+        }
+
+        @Test
+        @DisplayName("declines when the outer renames a column the inner has consumed")
+        void overlappingSourcesDecline() {
+            // After ρ a→b there is no `a` left, so the outer a→c renames nothing today;
+            // composing naively would produce a ρ carrying both a→b and a→c.
+            RelNode node = pairs(pairs(rel("Orders"), "a", "b"), "a", "c");
+
+            assertThat(apply(node)).isSameAs(node);
+            assertThat(firings(OptimizationCode.RENAME_004)).isZero();
+        }
+
+        @Test
+        @DisplayName("the outer relation name wins, the inner alias goes (RENAME-001's argument)")
+        void outerRelationNameWins() {
+            RelNode tree = select(eq("V.c", "1"),
+                    namedPairs("V", namedPairs("W", rel("Orders"), "a", "b"), "b", "c"));
+
+            RelNode result = apply(tree);
+
+            RenameNode composed = (RenameNode) ((SelectionNode) result).input();
+            assertThat(composed.relationName()).contains("V");
+            assertThat(composed.pairs()).containsExactly(new RenameNode.RenamePair("a", "c"));
+            assertThat(firings(OptimizationCode.RENAME_004)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("an unnamed outer keeps the inner's relation name, so nothing resolvable is lost")
+        void innerRelationNameSurvives() {
+            RelNode tree = select(eq("W.c", "1"),
+                    pairs(namedPairs("W", rel("Orders"), "a", "b"), "b", "c"));
+
+            RelNode result = apply(tree);
+
+            RenameNode composed = (RenameNode) ((SelectionNode) result).input();
+            assertThat(composed.relationName()).contains("W");
+            assertThat(composed.pairs()).containsExactly(new RenameNode.RenamePair("a", "c"));
+            assertThat(firings(OptimizationCode.RENAME_004)).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("the positional form is out of scope — it renames by position")
+        void positionalFormDeclines() {
+            RelNode node = pairs(rename("E", List.of("x", "y"), rel("Orders")), "x", "z");
+
+            RelNode result = apply(node);
+
+            assertThat(firings(OptimizationCode.RENAME_004)).isZero();
+            assertThat(result).isNode(RenameNode.class);
         }
     }
 }

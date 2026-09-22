@@ -513,6 +513,48 @@ feed.forEach(event -> System.out.println(event.stage() + " " + event.code()));
 EXECUTE SCAN
 ```
 
+## Running the tree you wrote
+
+Every terminal above optimises before it plans. That is deliberate — a library call that
+quietly skipped the rewriter would hand back a correct answer by a worse plan, with nothing
+to say it had — and `asWritten()` is how you opt out when you mean to:
+
+```java
+Relation summed = relix.relation("γ SUM(amount * 1) (Orders)");
+
+System.out.println(summed.toList().getFirst());
+System.out.println(summed.asWritten().toList().getFirst());
+```
+
+```
+(sum_amount=425)
+(sum_expr=425)
+```
+
+One number, two column names, and that is the two trees showing through the rows rather
+than through a plan: the rewriter folds `amount * 1` to `amount`, and an unaliased aggregate
+takes its output name from the shape of its argument.
+
+What it is for is comparing the two. That a rewrite preserves the answer is a claim, and
+the only way to test a claim about two trees is to run both of them over the same data —
+which needs both reachable from one relation:
+
+```java
+Relation revenue = relix.relation("γ customer, SUM(amount) → total (Orders)");
+
+System.out.println(revenue.asWritten().count() == revenue.count());
+```
+
+```
+true
+```
+
+It settles execution only. `render()`, `explain()` and `plan()` already describe the
+relation as written, so they are unaffected, and on a relation that came from `optimized()`
+it changes nothing — that tree has been rewritten and nothing can un-rewrite it. It does
+survive composition, because it says how *you* want your query run rather than something
+about one tree: `asWritten().limit(5)` still runs as written.
+
 ## Where the time went
 
 An embedded engine has no profiler attached to it, so the feed is the profiler. Every event

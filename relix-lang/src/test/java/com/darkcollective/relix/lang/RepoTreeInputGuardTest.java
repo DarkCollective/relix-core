@@ -70,7 +70,7 @@ final class RepoTreeInputGuardTest {
      * task that writes it.
      */
     private static final Set<String> ROOTS =
-            Set.of("docs", "tools", "examples", ".claude", "relix-site");
+            Set.of("docs", "tools", "examples", ".claude", "relix-site", "infra");
 
     /**
      * A string literal that opens with one of {@link #ROOTS}.
@@ -172,7 +172,7 @@ final class RepoTreeInputGuardTest {
     /**
      * Repository-root paths a module's tests name, which {@link #ROOTS} cannot see.
      *
-     * <p>{@code ROOTS} is an allowlist of five directories, so a file at the repository
+     * <p>{@code ROOTS} is an allowlist of six directories, so a file at the repository
      * root is not judged and passed — it is never looked at. {@code settings.gradle} was
      * read by four tests and declared by nobody, and {@code ARCHITECTURE.md} was declared
      * only because a guard that read it was found vacuous by hand.

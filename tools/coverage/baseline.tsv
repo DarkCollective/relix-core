@@ -89,7 +89,6 @@
 1	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/SpoolCache.java
 3	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/TreeExecutor.java
 1	relix-processor/src/main/java/com/darkcollective/relix/processor/generator/GeneratorDataSourceConnector.java
-1	relix-processor/src/main/java/com/darkcollective/relix/processor/generator/GeneratorDistinctnessSource.java
 1	relix-processor/src/main/java/com/darkcollective/relix/processor/provenance/ProvenanceEvaluator.java
 2	relix-semantic/src/main/java/com/darkcollective/relix/semantic/CatalogBuilder.java
 1	relix-semantic/src/main/java/com/darkcollective/relix/semantic/CatalogSnapshot.java

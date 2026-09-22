@@ -54,3 +54,29 @@ __pycache__/
 ### relix-ask :ask failure log (issue #470) — local debugging artifact, never committed
 ask-log.jsonl
 ask-log.jsonl.*
+
+# Terraform state — never commit this (contains secrets + resource IDs)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform working directory
+.terraform/
+
+# .terraform.lock.hcl is deliberately NOT ignored: it pins the provider
+# versions and their checksums, which is only worth anything if it is committed.
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Sensitive variable files
+*.tfvars
+!example.tfvars
+
