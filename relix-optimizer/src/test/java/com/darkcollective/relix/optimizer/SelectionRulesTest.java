@@ -16,9 +16,16 @@
 package com.darkcollective.relix.optimizer;
 
 import com.darkcollective.relix.ast.AndPredicate;
+import com.darkcollective.relix.ast.AstEquivalence;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.ComparisonPredicate;
+import com.darkcollective.relix.ast.ConditionOperand;
+import com.darkcollective.relix.ast.NotPredicate;
+import com.darkcollective.relix.ast.NullPredicate;
+import com.darkcollective.relix.ast.DistinctNode;
+import com.darkcollective.relix.ast.OrPredicate;
+import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.Operand;
@@ -32,6 +39,7 @@ import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.PairwiseUniversalNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.UnionAllNode;
+import com.darkcollective.relix.cost.DistinctnessSource;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
@@ -49,7 +57,7 @@ import java.util.Optional;
 import static com.darkcollective.relix.ast.AstBuilders.*;
 import static com.darkcollective.relix.optimizer.OptimizerAssertions.assertThat;
 
-@DisplayName("Selection rules — SEL-001..006")
+@DisplayName("Selection rules — SEL-001..006, SEL-010")
 final class SelectionRulesTest {
 
     private OptimizationContext ctx;
@@ -255,6 +263,143 @@ final class SelectionRulesTest {
             var and = (AndPredicate) result.predicate();
             assertThat(and.left()).isSameAs(pA);
             assertThat(and.right()).isSameAs(pB);
+        }
+    }
+
+    // =========================================================================
+    // SEL-010 — a set operation over two selections of one input
+    // =========================================================================
+
+    @Nested
+    @DisplayName("SEL-010 — set operation over two selections of one input")
+    class Sel010 {
+
+        /** The rule is gated on reproducibility, so the context has to vouch for it. */
+        private RelNode applyOver(RelNode node) {
+            ctx = OptimizerFixtures.reproducible();
+            return SelectionMergePass.apply(node, "Q", SchemaAnnotations.empty(), ctx);
+        }
+
+        private Predicate west() {
+            return cmp(attr("region"), ComparisonOperator.EQUAL, str("west"));
+        }
+
+        private Predicate large() {
+            return cmp(attr("amount"), ComparisonOperator.GREATER, num("100"));
+        }
+
+        @Test @DisplayName("σ i (A) ∪ σ q (A) → δ σ (i ∨ q) (A)")
+        void unionBecomesADisjunction() {
+            RelNode result = applyOver(
+                    union(select(west(), rel("Orders")), select(large(), rel("Orders"))));
+
+            assertThat(result).isNode(DistinctNode.class);
+            var merged = (SelectionNode) ((DistinctNode) result).input();
+            assertThat(merged.predicate()).isInstanceOf(OrPredicate.class);
+            assertThat(merged.input()).isNode(RelationNode.class);
+            assertThat(ctx).fired(OptimizationCode.SEL_010, 1);
+        }
+
+        @Test @DisplayName("σ i (A) ∩ σ q (A) → δ σ (i ∧ q) (A)")
+        void intersectionBecomesAConjunction() {
+            RelNode result = applyOver(
+                    intersection(select(west(), rel("Orders")), select(large(), rel("Orders"))));
+
+            assertThat(result).isNode(DistinctNode.class);
+            var merged = (SelectionNode) ((DistinctNode) result).input();
+            assertThat(merged.predicate()).isInstanceOf(AndPredicate.class);
+            assertThat(ctx).fired(OptimizationCode.SEL_010, 1);
+        }
+
+        @Test @DisplayName("the δ is dropped when the input is already duplicate-free")
+        void distinctInputNeedsNoDelta() {
+            RelNode result = applyOver(union(
+                    select(west(), distinct(rel("Orders"))),
+                    select(large(), distinct(rel("Orders")))));
+
+            assertThat(result).isNode(SelectionNode.class);
+            assertThat(ctx).fired(OptimizationCode.SEL_010, 1);
+        }
+
+        @Test @DisplayName("SEL-002 settles each branch first, so a σ-chain still matches")
+        void branchesAreMergedFirst() {
+            RelNode result = applyOver(union(
+                    select(west(), select(large(), rel("Orders"))),
+                    select(large(), rel("Orders"))));
+
+            assertThat(result).isNode(DistinctNode.class);
+            assertThat(ctx).fired(OptimizationCode.SEL_002, 1);
+            assertThat(ctx).fired(OptimizationCode.SEL_010, 1);
+        }
+
+        @Test @DisplayName("two different inputs are left alone")
+        void differentInputsDecline() {
+            RelNode node = union(
+                    select(west(), rel("Orders")), select(large(), rel("Recent")));
+
+            assertThat(applyOver(node)).isSameAs(node);
+            assertThat(ctx).didNotFire(OptimizationCode.SEL_010);
+        }
+
+        @Test @DisplayName("a bare branch is SET-002's business, not this rule's")
+        void bareBranchDeclines() {
+            RelNode node = union(select(west(), rel("Orders")), rel("Orders"));
+
+            assertThat(applyOver(node)).isSameAs(node);
+            assertThat(ctx).didNotFire(OptimizationCode.SEL_010);
+        }
+
+        @Test @DisplayName("σ i (A) − σ q (A) → δ σ (i ∧ (¬q ∨ q IS UNKNOWN)) (A)")
+        void differenceBecomesAComplement() {
+            RelNode result = applyOver(difference(
+                    select(west(), rel("Orders")), select(large(), rel("Orders"))));
+
+            assertThat(result).isNode(DistinctNode.class);
+            var merged = (SelectionNode) ((DistinctNode) result).input();
+            var conjunction = (AndPredicate) merged.predicate();
+            assertThat(conjunction.left()).isEqualTo(west());
+
+            // The right conjunct is the complement, NOT a bare ¬q: a row whose q is
+            // UNKNOWN is one the subtrahend failed to hold, so the difference keeps it.
+            var complement = (OrPredicate) conjunction.right();
+            assertThat(complement.left()).isInstanceOf(NotPredicate.class);
+            assertThat(complement.right()).isInstanceOf(NullPredicate.class);
+            assertThat(((NullPredicate) complement.right()).operand())
+                    .isInstanceOf(ConditionOperand.class);
+            assertThat(ctx).fired(OptimizationCode.SEL_010, 1);
+        }
+
+        @Test @DisplayName("⊎ is excluded — a bag union's multiplicities are the answer")
+        void bagUnionExcluded() {
+            RelNode node = unionAll(
+                    select(west(), rel("Orders")), select(large(), rel("Orders")));
+
+            assertThat(applyOver(node)).isSameAs(node);
+            assertThat(ctx).didNotFire(OptimizationCode.SEL_010);
+        }
+
+        @Test @DisplayName("a volatile RIGHT branch declines though the left is reproducible")
+        void oneVolatileBranchDeclines() {
+            RelNode irreproducible = select(large(), rel("Orders"));
+            ctx = OptimizerFixtures.context(DistinctnessSource.NONE,
+                    expression -> !AstEquivalence.equivalent(expression, irreproducible));
+            RelNode node = union(select(west(), rel("Orders")), irreproducible);
+
+            assertThat(SelectionMergePass.apply(node, "Q", SchemaAnnotations.empty(), ctx))
+                    .isSameAs(node);
+            assertThat(ctx).didNotFire(OptimizationCode.SEL_010);
+        }
+
+        @Test @DisplayName("a context that vouches for nothing declines")
+        void unvouchedDeclines() {
+            RelNode node = union(
+                    select(west(), rel("Orders")), select(large(), rel("Orders")));
+
+            // The default context carries DeterminismSource.NONE.
+            ctx = new OptimizationContext();
+            assertThat(SelectionMergePass.apply(node, "Q", SchemaAnnotations.empty(), ctx))
+                    .isSameAs(node);
+            assertThat(ctx).didNotFire(OptimizationCode.SEL_010);
         }
     }
 

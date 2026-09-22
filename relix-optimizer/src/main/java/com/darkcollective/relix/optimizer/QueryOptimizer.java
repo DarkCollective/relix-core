@@ -23,6 +23,7 @@ import com.darkcollective.relix.events.QueryEventListener;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.lang.ast.NamedQueryTarget;
 import com.darkcollective.relix.lang.ast.QueryStatement;
+import com.darkcollective.relix.semantic.RelationDeterminism;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
 import com.darkcollective.relix.semantic.SchemaInference;
 import com.darkcollective.relix.semantic.SemanticModel;
@@ -70,8 +71,8 @@ import java.util.Objects;
  * per-query preamble, because each needs the model's {@link SymbolTable} and every rule
  * <em>in</em> the pipeline is a pure syntactic rewrite: {@link ViewInliner}
  * ({@code INLINE-001}) expands view references, {@link RenameEliminationPass}
- * ({@code RENAME-001}/{@code RENAME-002}) removes the alias wrappers inlining leaves
- * behind, and {@link LateralDecorrelationPass} ({@code LATERAL-001}) turns an uncorrelated
+ * ({@code RENAME-001}..{@code RENAME-004}) removes the alias wrappers inlining leaves
+ * behind and tidies the column renames, and {@link LateralDecorrelationPass} ({@code LATERAL-001}) turns an uncorrelated
  * {@code LATERAL} into a {@code ×} — which needs the table to resolve the function and
  * classify its body as deterministic. All three run before schemas are re-inferred for the
  * expanded tree.
@@ -288,7 +289,7 @@ public final class QueryOptimizer {
                     var sym = symTable.lookupRelation(name);
                     if (sym.isPresent() && sym.get() instanceof QueryRelationSymbol qr) {
                         var ctx = new OptimizationContext(listener, distinctness, monotoneGenerators,
-                                model.functions());
+                                model.functions(), determinism(model));
                         RelNode original  = qr.body();
                         RelNode optimized = inlineThenOptimize(original, name, ctx, model);
                         results.add(new OptimizationResult(name, original, optimized,
@@ -305,7 +306,7 @@ public final class QueryOptimizer {
                     inlineCount++;
                     String name = "query[" + inlineCount + "]";
                     var ctx = new OptimizationContext(listener, distinctness, monotoneGenerators,
-                                model.functions());
+                                model.functions(), determinism(model));
                     RelNode original  = eqt.expression();
                     RelNode optimized = inlineThenOptimize(original, name, ctx, model);
                     results.add(new OptimizationResult(name, original, optimized,
@@ -315,6 +316,23 @@ public final class QueryOptimizer {
         }
 
         return Collections.unmodifiableList(results);
+    }
+
+    /**
+     * The reproducibility lookup the pipeline's rules consult, bound to this model's
+     * symbol table.
+     *
+     * <p>{@code SEL-010} and the {@code SET} family collapse two evaluations of a
+     * sub-expression into one, which is answer-preserving exactly when that expression is
+     * reproducible. The question is {@link RelationDeterminism}'s and needs the symbol
+     * table to see through a view or a table-valued function — which is why it reaches a
+     * rule as a lookup on the context rather than as a parameter: no rule in
+     * {@link OptimizationPipeline} takes a {@link SymbolTable}, and this keeps it that
+     * way.
+     */
+    private static DeterminismSource determinism(SemanticModel model) {
+        return expression -> RelationDeterminism.isDeterministic(
+                expression, model.symbolTable(), model.functions());
     }
 
     /**

@@ -284,8 +284,30 @@ jobs:
       # An existing release is updated rather than refused, for the same reason the tag
       # step above resumes: this job gets re-attempted, and `gh release create` against
       # an existing tag stops the run dead.
+      # The body is the one part of a release that is written rather than derived.
+      # `--generate-notes` alone produces the list of merged pull requests since the
+      # last release, which is a commit log: accurate, and no help to someone deciding
+      # whether to take the version. A file under `.github/release-notes/` is prepended
+      # to that list when one exists for this version, so the prose leads and the
+      # generated list stays beneath it as the detail.
+      #
+      # It is tested for rather than passed unconditionally, because a version nobody
+      # wrote notes for is a thinner release and not a failed one — the generated list
+      # is still a release body.
+      #
+      # Note what the resume path below does *not* do: `gh release upload --clobber`
+      # replaces assets and leaves the body untouched, so a re-attempt keeps whatever
+      # the first one published. Changing it afterwards is `gh release edit
+      # --notes-file`, not a second run.
       - name: Create the GitHub release
         run: |
+          notes=()
+          if [ -f ".github/release-notes/${VERSION}.md" ]; then
+            notes=(--notes-file ".github/release-notes/${VERSION}.md")
+          else
+            echo "::notice::no .github/release-notes/${VERSION}.md — publishing the generated notes alone."
+          fi
+
           # A regex, not a glob: a glob's `*` matches dots as happily as digits, so
           # `[0-9]*.[0-9]*.[0-9]` accepts `1.0.0-alpha.1` — the exact class of version
           # this rule exists to catch. Found by trying the rule on the versions it would
@@ -302,6 +324,7 @@ jobs:
             gh release create "v${VERSION}" \
               --title "Relix v${VERSION}" \
               --generate-notes \
+              "${notes[@]}" \
               ${prerelease} \
               assets/*
           fi

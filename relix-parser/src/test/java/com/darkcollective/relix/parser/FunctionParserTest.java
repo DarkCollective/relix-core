@@ -170,7 +170,10 @@ final class FunctionParserTest extends ParserTestSupport {
                                 ComparisonOperator.GREATER, num("100"))),
                         str("e"), str("c")))),
                 rel("R"));
-        assertPrettyPrints(node, "π IIf(price > 100, \"e\", \"c\") (R)");
+        // Parenthesised: a condition in operand position always is, so that the one
+        // rule covers the positions where the bare form is ambiguous. The bare form
+        // still parses here, and to the identical tree.
+        assertPrettyPrints(node, "π IIf((price > 100), \"e\", \"c\") (R)");
     }
 
     // ==================== Error Cases ====================

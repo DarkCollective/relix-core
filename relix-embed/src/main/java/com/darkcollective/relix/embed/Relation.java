@@ -107,6 +107,12 @@ import java.util.stream.StreamSupport;
  * correct answer by a worse plan with no signal that it had. {@link #optimized()} exists
  * so a caller can <em>see</em> and serialise the rewritten form, not to enable it.
  *
+ * <p>{@link #asWritten()} is how a caller opts out, and the reasoning above is what shapes
+ * it: what must not happen silently is skipping the rewriter, so the escape is a method
+ * whose name says so at the call site. It makes both trees executable from one relation,
+ * which is what comparing them needs — the rewriter preserving the answer is a claim, and
+ * running only one of the two trees cannot test it.
+ *
  * @since 1.0
  */
 public final class Relation {
@@ -142,22 +148,42 @@ public final class Relation {
     /** What the rewriter did, as records; empty unless this came from {@link #optimized()}. */
     private final List<TransformationRecord> rewrites;
 
+    /**
+     * What an execution terminal does about the rewriter before it plans this relation.
+     *
+     * <p>Three states rather than a flag, because two of them mean "do not rewrite" for
+     * opposite reasons and composition has to tell them apart: a combinator adds an
+     * expression that has been through no rewriter, so it must undo {@link #REWRITTEN}
+     * while leaving {@link #AS_WRITTEN} — the caller's own instruction — alone.
+     */
+    private enum Rewriting {
+        /** Nobody has decided: the terminal runs the rewriter. The default, and every composed relation. */
+        REWRITE,
+        /** The tree already <em>is</em> the rewriter's output ({@link #optimized()}), so running it again would be a second, empty pass. */
+        REWRITTEN,
+        /** The caller asked for the tree as they wrote it ({@link #asWritten()}). */
+        AS_WRITTEN
+    }
+
+    private final Rewriting rewriting;
+
     Relation(Relix session, SemanticModel model, RelNode node) {
-        this(session, model, node, List.of(), List.of(), null);
+        this(session, model, node, List.of(), List.of(), null, Rewriting.REWRITE);
     }
 
     Relation(Relix session, SemanticModel model, RelNode node, String label) {
-        this(session, model, node, List.of(), List.of(), label);
+        this(session, model, node, List.of(), List.of(), label, Rewriting.REWRITE);
     }
 
     private Relation(Relix session, SemanticModel model, RelNode node, List<QueryEvent> events,
-                     List<TransformationRecord> rewrites, String label) {
+                     List<TransformationRecord> rewrites, String label, Rewriting rewriting) {
         this.session = Objects.requireNonNull(session, "session");
         this.model = Objects.requireNonNull(model, "model");
         this.node = Objects.requireNonNull(node, "node");
         this.events = List.copyOf(events);
         this.rewrites = List.copyOf(rewrites);
         this.label = label;
+        this.rewriting = Objects.requireNonNull(rewriting, "rewriting");
     }
 
     /**
@@ -234,6 +260,9 @@ public final class Relation {
 
     /** As {@link #derive(RelNode)}, over an environment that is not necessarily this one's. */
     private Relation derive(RelNode composed, SemanticModel environment) {
+        // A combinator adds an expression nothing has rewritten, so REWRITTEN cannot
+        // survive it — the added structure would never be seen by a rule. AS_WRITTEN is
+        // the caller's instruction rather than a fact about the tree, so it does.
         return new Relation(
                 session,
                 new SemanticModel(
@@ -243,7 +272,11 @@ public final class Relation {
                                 environment.nodeSchemas(), environment.functions()),
                         environment.schemaGraph(), environment.rootQueries(),
                         environment.functions()),
-                composed);
+                composed,
+                List.of(),
+                List.of(),
+                null,
+                rewriting == Rewriting.AS_WRITTEN ? Rewriting.AS_WRITTEN : Rewriting.REWRITE);
     }
 
     /**
@@ -1096,7 +1129,12 @@ public final class Relation {
      * more than "the tree, but different": {@link #events()} names each rule that fired.
      *
      * <p>Calling it is not what makes execution optimised — every execution terminal runs
-     * the rewriter regardless. This is how a caller sees the result.
+     * the rewriter regardless, unless {@link #asWritten()} says otherwise. This is how a
+     * caller sees the result.
+     *
+     * <p>Executing what it returns runs <em>this</em> tree: the rewriter is not run a
+     * second time over its own output, so the tree {@link #node()} shows is the tree that
+     * runs, and {@link #stream(QueryEventListener)} reports the rewrite that produced it.
      *
      * @return the rewritten relation
      * @since 1.0
@@ -1109,7 +1147,49 @@ public final class Relation {
         List<TransformationRecord> applied =
                 results.isEmpty() ? List.of() : results.getFirst().applied();
         Relation derived = derive(rewritten);
-        return new Relation(session, derived.model, rewritten, collected, applied, label);
+        return new Relation(
+                session, derived.model, rewritten, collected, applied, label, Rewriting.REWRITTEN);
+    }
+
+    /**
+     * This relation, to be executed as it is written — the rewriter is not run.
+     *
+     * <p>The counterpart of {@link #optimized()} on the execution side, and the only way
+     * to reach the unrewritten tree with rows: every terminal otherwise optimises first,
+     * because a library call that quietly ran a worse plan would give a correct answer
+     * with no signal that a phase had been skipped. Naming this method <em>is</em> that
+     * signal, which is why the capability is here and not a default.
+     *
+     * <p>What it is for is comparing the two — that a rewrite preserves the answer is a
+     * claim, and the only way to test it is to run both trees over the same data:
+     *
+     * {@snippet lang = "java":
+     * assert query.asWritten().toList().equals(query.toList());
+     * }
+     *
+     * <p>It is also how a harness measures the rewriter rather than being measured through
+     * it: a pushdown that holds for the query as written and not after the rules have run
+     * is a pessimisation, and seeing it needs both plans from one relation.
+     *
+     * <p>It settles <em>execution</em> only. {@link #render()}, {@link #explain()} and
+     * {@link #plan()} already describe the relation as written, so they are unchanged, and
+     * on a relation that came from {@link #optimized()} this is a no-op — that tree has
+     * been rewritten already and nothing can un-rewrite it.
+     *
+     * <p>It survives composition — {@code asWritten().limit(5).stream()} still runs the
+     * tree as written — because it is an instruction about how this caller wants their
+     * query run rather than a fact about one tree. {@link #optimized()} is the opposite
+     * and behaves accordingly: what it marks <em>is</em> a fact about its tree, so a
+     * combinator on it goes back to rewriting, the added expression having been through no
+     * rule.
+     *
+     * @return this relation, with the rewriter off for its execution terminals
+     * @since 1.0
+     */
+    public Relation asWritten() {
+        return rewriting == Rewriting.AS_WRITTEN
+                ? this
+                : new Relation(session, model, node, events, rewrites, label, Rewriting.AS_WRITTEN);
     }
 
     /**
@@ -1254,10 +1334,10 @@ public final class Relation {
      * @since 1.0
      */
     public List<Tuple> toList() {
-        Relation optimised = optimized();
-        optimised.requireBounded();
+        Relation planned = forExecution();
+        planned.requireBounded();
         List<Tuple> rows;
-        try (Stream<Tuple> stream = optimised.open(QueryEventListener.NONE)) {
+        try (Stream<Tuple> stream = planned.open(QueryEventListener.NONE)) {
             rows = stream.toList();
         }
         // Drained, so the count is this relation's cardinality rather than a number about
@@ -1340,7 +1420,7 @@ public final class Relation {
      * @since 1.0
      */
     public Stream<Tuple> stream() {
-        return optimized().open(QueryEventListener.NONE);
+        return forExecution().open(QueryEventListener.NONE);
     }
 
     /**
@@ -1362,9 +1442,9 @@ public final class Relation {
      */
     public Stream<Tuple> stream(QueryEventListener listener) {
         Objects.requireNonNull(listener, "listener");
-        Relation optimised = optimized();
-        optimised.events().forEach(listener::onEvent);
-        return optimised.open(listener);
+        Relation planned = forExecution();
+        planned.events().forEach(listener::onEvent);
+        return planned.open(listener);
     }
 
     /**
@@ -1398,15 +1478,15 @@ public final class Relation {
      * @since 1.0
      */
     public Rows run() {
-        Relation optimised = optimized();
-        optimised.requireBounded();
-        List<QueryEvent> collected = new ArrayList<>(optimised.events());
+        Relation planned = forExecution();
+        planned.requireBounded();
+        List<QueryEvent> collected = new ArrayList<>(planned.events());
         List<Tuple> rows;
         // Wall clock over the drain — the run's own elapsed time, which is what a caller
         // asking "how long did this take?" means. A scan's duration is self time and
         // answers a different question; see EventMetrics.duration.
         long start = System.nanoTime();
-        try (Stream<Tuple> stream = optimised.open(collected::add)) {
+        try (Stream<Tuple> stream = planned.open(collected::add)) {
             rows = stream.toList();
         }
         Duration elapsed = Duration.ofNanos(System.nanoTime() - start);
@@ -1421,7 +1501,7 @@ public final class Relation {
                         "query delivered " + rows.size() + " row" + (rows.size() == 1 ? "" : "s"))
                 .withMetrics(EventMetrics.of(rows.size(), elapsed)));
         observe(rows.size());
-        return new Rows(optimised.schema(), rows, collected);
+        return new Rows(planned.schema(), rows, collected);
     }
 
     /**
@@ -1473,6 +1553,16 @@ public final class Relation {
     // -------------------------------------------------------------------------
     // Execution internals
     // -------------------------------------------------------------------------
+
+    /**
+     * The relation an execution terminal plans: the rewriter's output, or this one.
+     *
+     * <p>One place, so the choice cannot be made differently by two terminals — and the
+     * whole of what {@link #asWritten()} and {@link #optimized()} settle.
+     */
+    private Relation forExecution() {
+        return rewriting == Rewriting.REWRITE ? optimized() : this;
+    }
 
     private <K> AnnotatedRelation<K> annotate(Semiring<K> semiring, String weightColumn) {
         Objects.requireNonNull(semiring, "semiring");

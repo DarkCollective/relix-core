@@ -178,15 +178,20 @@ final class RewriteEquivalenceTest {
         }
 
         @Test
-        @DisplayName("σ p (A − B) ≡ (σ p A) − B — the subtrahend must NOT be filtered")
+        @DisplayName("σ p (A − B) ≡ (σ p A) − (σ p B) — the subtrahend is filtered too")
         void overDifferenceEquivalent() {
-            // The regression this guards: filtering B too would keep rows of A that B
-            // was supposed to remove.  Here `B    east 5` is removed from Orders by the
-            // difference, and `region = "west"` would have filtered it out of the
-            // subtrahend — so a wrong push shows up as an extra row.
+            // The predicate has to discriminate rows of B, or the case is not exercised:
+            // `amount > 4` keeps all three rows of Recent, so filtering the subtrahend or
+            // not makes no difference and the run proves nothing.
+            //
+            // `amount > 20` drops `B east 5` from Recent — the row the old "the
+            // subtrahend must not be filtered" reading was written around, since Orders
+            // holds it too and the difference is what removes it. The answer is unchanged
+            // because the same predicate drops it from the minuend as well, which is the
+            // whole of why distribution into both branches is sound.
             assertEquivalent(
                     ORDERS + RECENT
-                  + "query { σ amount > 4 (Orders − Recent) };\n",
+                  + "query { σ amount > 20 (Orders − Recent) };\n",
                     OptimizationCode.SEL_009);
         }
     }

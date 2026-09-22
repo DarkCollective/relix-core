@@ -119,6 +119,32 @@ SQL-prior `IS [NOT] NULL` are interchangeable.
 The IsNull() scalar function returns a BOOLEAN you can use in expressions; Nz()
 and Coalesce() substitute a default for a NULL.
 
+A null test also applies to a **parenthesised condition**, and that is how you ask
+whether a comparison came out UNKNOWN rather than false:
+
+    (amount > 100) = ⊥        -- the comparison could not be decided
+
+A null test on a *value* asks whether the value is missing; a null test on a
+*condition* asks about its truth value, which is NULL exactly when the condition is
+UNKNOWN. The two stop being the same question as soon as the condition reads more
+than one column. `IsNull((amount > 100))` is the same test written as a function
+call, for a place that wants a BOOLEAN rather than a predicate.
+
+It matters because negation does not give back the rows a filter dropped.
+`σ ¬(amount > 100)` keeps the rows whose amount is 100 or less and **not** the
+rows whose amount is missing, because ¬UNKNOWN is UNKNOWN and a selection keeps
+only what is true. To keep both:
+
+```relix
+σ ¬(amount > 100) ∨ (amount > 100) = ⊥ (Orders)
+```
+
+For a condition over one column you can spell the same thing with a null test on
+that column (`amount = NULL ∨ ¬(amount > 100)`). Testing the condition itself is
+the general form, and the one that stays right as the condition grows: a comparison
+between two columns is UNKNOWN when *either* side is missing, and a conjunction is
+UNKNOWN in more cases than either of its parts.
+
 # See Also:
 [comparison](comparison.md), [isnull](../functions/typecheck/isnull.md), [nz](../functions/conditional/nz.md), [coalesce](../functions/conditional/coalesce.md), [left-outer-join](../joins/left-outer-join.md)
 

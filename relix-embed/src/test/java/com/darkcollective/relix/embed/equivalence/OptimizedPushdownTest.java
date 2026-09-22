@@ -232,4 +232,72 @@ final class OptimizedPushdownTest {
                     .contains("SELECT cust, SUM(amount) FROM orders GROUP BY cust");
         }
     }
+
+    @Nested
+    @DisplayName("SEL-010 / SET — a set operation the optimizer removes becomes one SELECT")
+    class SetOperations {
+
+        /*
+         * Why this section is not covered by the agreement suites.
+         *
+         * PushdownAgreement plans "the resolved root tree with no optimizer pass", so
+         * every corpus case measures the query AS WRITTEN. A shape that only exists
+         * AFTER a rewrite is invisible to it — on H2 and in the container suites alike.
+         * These rules produce exactly such shapes, so this file is the only place the
+         * claim can be made at all.
+         */
+
+        private static final String UNION =
+                ORDERS + "query { σ cust = \"acme\" (Orders) ∪ σ amount > 100 (Orders) };\n";
+
+        @Test
+        @DisplayName("un-optimized: a UNION is a boundary the renderer cannot cross")
+        void withoutRewrite() {
+            // The renderer folds σ but has no spelling for ∪, so each branch would be its
+            // own scan with the de-duplication done in the engine. The root is not a
+            // pushed scan, which is what "nothing folded" means here.
+            assertThat(unoptimizedSql(UNION)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("optimized: two filtered reads become one WHERE with an OR")
+        void unionOfTwoSelections() {
+            assertThat(optimizedSql(UNION)).contains(
+                    "SELECT DISTINCT id, cust, amount FROM orders "
+                            + "WHERE ((cust = 'acme') OR (amount > 100))");
+        }
+
+        @Test
+        @DisplayName("the ∩ arm is the same query with an AND")
+        void intersectionOfTwoSelections() {
+            assertThat(optimizedSql(
+                    ORDERS + "query { σ cust = \"acme\" (Orders) ∩ σ amount > 100 (Orders) };\n"))
+                    .contains("SELECT DISTINCT id, cust, amount FROM orders "
+                            + "WHERE ((cust = 'acme') AND (amount > 100))");
+        }
+
+        @Test
+        @DisplayName("SET-001 — R ∪ R is one SELECT DISTINCT, not two scans and a hash set")
+        void idempotentUnion() {
+            assertThat(optimizedSql(ORDERS + "query { Orders ∪ Orders };\n"))
+                    .contains("SELECT DISTINCT id, cust, amount FROM orders");
+        }
+
+        @Test
+        @DisplayName("the − arms stay in-engine: no dialect spells a condition's truth value")
+        void complementDoesNotPush() {
+            // `R − σk(R)` rewrites to σ (¬k ∨ k IS UNKNOWN) (R), whose second disjunct is
+            // a null test over a ConditionOperand — and SqlExpressions.operand has no arm
+            // for one, so it declines and the σ runs here. A slower plan, never a wrong
+            // one, and the rows are covered by SetOperationEquivalenceTest.
+            //
+            // Asserted rather than left unsaid because the alternative is a reader
+            // assuming the whole family folds: two of these arms do and two do not.
+            assertThat(optimizedSql(ORDERS + "query { Orders − σ amount > 100 (Orders) };\n"))
+                    .isEmpty();
+            assertThat(optimizedSql(ORDERS
+                    + "query { σ cust = \"acme\" (Orders) − σ amount > 100 (Orders) };\n"))
+                    .isEmpty();
+        }
+    }
 }

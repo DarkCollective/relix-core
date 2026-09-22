@@ -153,7 +153,8 @@ The σ rules move a filter as close to the data as it can legally get.
 | `SEL-006` | Replicate σ into both branches of `⊎` |
 | `SEL-007` | Push σ below γ — SQL's `HAVING` → `WHERE` demotion |
 | `SEL-008` | Push σ below δ or τ |
-| `SEL-009` | Distribute σ over `∪`, `∩`, `∆` (both branches) and `−` (left branch only) |
+| `SEL-009` | Distribute σ over `∪`, `∩`, `∆` and `−` — both branches, subtrahend included |
+| `SEL-010` | Merge `∪`/`∩` over two selections of the same input into one selection (cleanup) |
 
 ### `SEL-007` — `HAVING` → `WHERE`
 
@@ -181,17 +182,81 @@ makes the engine sort or dedupe rows it is about to discard.
 
 ### `SEL-009` — over the set operations
 
-    σ p (A ∪ B)  ≡  (σ p A) ∪ (σ p B)        likewise ∩ and ∆
-    σ p (A − B)  ≡  (σ p A) − B
+    σ p (A ∪ B)  ≡  (σ p A) ∪ (σ p B)        likewise ∩, ∆ and −
 
-For `−` the predicate goes into the **left** branch only. Filtering the
-subtrahend would take rows *out* of it, and a row the subtrahend no longer
-removes is a row *added* to the result — the one direction of this family that is
-not symmetric.
+The predicate goes into **both** branches, the subtrahend of `−` included. That
+looks like it should be the exception — filtering the subtrahend takes rows out of
+it, and a row the subtrahend no longer removes sounds like a row added to the
+result. It is not, because the *same* predicate goes into the minuend:
+
+    σp(A − B)  = { r : r ∈ A, r ∉ B, p(r) }
+    σpA − σpB  = { r : r ∈ A, p(r), ¬(r ∈ B ∧ p(r)) }
+               = { r : r ∈ A, p(r), r ∉ B }          -- p(r) holds
+
+A row the filtered `B` stops removing is a row the filtered `A` no longer offers.
+What *is* unsound is pushing a predicate into the subtrahend **alone**, which is
+not what distribution does.
+
+Three-valued logic needs no separate argument. Where `p(r)` is UNKNOWN the row is
+dropped by the σ on the left-hand form and is absent from `σpA` on the right-hand
+one, so it is missing from both.
+
+The gain is a real filter on the subtrahend: over a database source that is a
+`WHERE` on the right-hand scan rather than a whole-table read.
 
 `⊔` (outer union) is excluded: its branches have different schemas, so a
 predicate valid against one may name a column the other does not have. `÷` and
 `∘` are excluded too — neither is a row filter with respect to σ.
+
+### `SEL-010` — a set operation over two selections of one input
+
+    σ i (A) ∪ σ q (A)   ≡   δ σ (i ∨ q) (A)
+    σ i (A) ∩ σ q (A)   ≡   δ σ (i ∧ q) (A)
+    σ i (A) − σ q (A)   ≡   δ σ (i ∧ (¬q ∨ q IS UNKNOWN)) (A)
+
+When both branches filter the **same** input, the operation is doing by
+row-matching what one predicate does by evaluation. This is the inverse of
+`SEL-009`, so the two live in different phases — `SEL-009` in `pushdown`, this one
+in `cleanup` — and that is also the useful order: a σ that was distributed and
+could then be carried no further is merged back into one.
+
+It is worth more than the comparisons it saves, for two reasons:
+
+- **`∪` and `∩` block.** Each buffers a hash set of one side. The rewrite removes
+  the buffer, not some of the probing.
+- **It restores pushdown.** `σ i (Orders) ∪ σ q (Orders)` over a database source is
+  two `SELECT`s and an in-engine de-duplication, because the SQL renderer folds σ
+  but not `UNION`. One `WHERE` crosses the boundary the set operation was.
+
+```relix
+Orders := [
+| cust | region | amount |
+|------|--------|--------|
+| A    | west   | 10     |
+| B    | east   | 5      |
+| C    | west   | 70     |
+];
+query { σ region = "west" (Orders) ∪ σ amount > 50 (Orders) };
+```
+
+becomes `δ σ (region = "west" ∨ amount > 50) (Orders)` — one scan, one filter.
+
+**The δ is part of the rewrite, not decoration.** `∪` and `∩` de-duplicate; a
+merged σ over a bag input does not. Handing back the bare selection would state a
+distinctness the input need not have, and a `δ` that `DIST-001` removed on the
+strength of it would not come back. The δ is dropped only where the input is
+provably duplicate-free — either way the set operation is gone.
+
+**The `−` arm is not `i ∧ ¬q`, and the difference is rows.** A row whose `q` is
+UNKNOWN is absent from `σ q (A)`, so the difference *keeps* it — while `¬UNKNOWN`
+is UNKNOWN and a selection keeps only what is true, so a bare `¬q` drops it. The
+correction is the selection's **complement**, `¬q ∨ q IS UNKNOWN`, written with a
+null test over the condition's own truth value. See *Reading a condition's truth
+value* below. `⊎` is excluded as a bag operation, and `∆` would need an XOR.
+
+**Volatility.** The rewrite reads the input once where the query read it twice, so
+a branch that is not reproducible — an unseeded `SAMPLE`, a `Rand()` in the
+predicate — declines.
 
 ## Projection rules (`PROJ-nnn`)
 
@@ -612,6 +677,113 @@ cannot change which rows arrive. A `λ`, a sample, or a `TOP` is **not**
 transparent that way — how many rows they keep depends on how many they are
 given, which is exactly what the `δ` changes.
 
+## Set-operation identities (`SET-nnn`)
+
+Nothing else in the optimizer compares the **two sides of a binary operator** for
+structural equality. This family does, and what it finds is queries that ask for
+work whose answer is already in front of them:
+
+| Code | Rewrite |
+|------|---------|
+| `SET-001` | `R ∪ R`, `R ∩ R` → `δ R`; `R − R`, `R ∆ R` → `∅` |
+| `SET-002` | `σ k (R) ∪ R` → `δ R`; `σ k (R) ∩ R` → `δ σ k (R)`; `σ k (R) − R` → `∅`; `R − σ k (R)` and `σ k (R) ∆ R` → `δ σ (¬k ∨ k IS UNKNOWN) (R)` |
+| `SET-003` | `ρ s (R) ⊕ ρ s (Q)` → `ρ s (R ⊕ Q)` for `⊕` in `∪ ∩ − ∆ ⊎` |
+| `SET-004` | `π c (A) ∪ π c (B)` → `δ π c (A ∪ B)` |
+| `SET-005` | `A × B ∪ A × C` → `δ (A × (B ∪ C))`; likewise a shared right operand |
+
+The sides are compared with the same structural equivalence the planner uses to
+find shared sub-expressions. It ignores source positions, so the same expression
+written out twice in two places matches — which is what makes these fire on
+queries people actually write rather than on contrived ones.
+
+### What sharing already buys, and what it does not
+
+A repeated sub-expression is already **planned once** and read twice, under a
+spool. That is the expensive half and it needs no rule. What survives is the set
+operation itself: `∪` and `∩` each buffer a hash set of one side and probe it with
+the other, so `R ∪ R` builds a whole-relation hash table in order to discover it
+already had every row. These rules make that vanish rather than make it cheaper —
+and once one fires the spool goes too, there being one reader left.
+
+### The δ is the rewrite, not decoration
+
+`∪`, `∩` and `−` de-duplicate. `π` and `×` do not, and neither does a bare
+relation. So a rewrite that removes a set operation has to say what happened to the
+de-duplication it was doing:
+
+```relix
+A := [
+| id | note |
+|----|------|
+| 1  | x    |
+];
+B := [
+| id | note |
+|----|------|
+| 1  | y    |
+];
+query { δ (π id (A ∪ B)) };
+```
+
+`π id (A) ∪ π id (B)` is `[1]`; hoisting the π without a δ would give `[1, 1]`,
+because the union can no longer see that the rows differ. The δ is dropped only
+where the result is provably duplicate-free, which is the better outcome and not
+always available.
+
+**`SET-003` is the exception, and the reason is worth keeping.** A rename changes
+no value and drops no column, and the whole-row set operations match rows
+**positionally and name-blind** — so the set being de-duplicated is identical
+before and after, and hoisting a ρ moves no de-duplication anywhere. That is also
+why `SET-003` covers `⊎`, which the other two arms cannot: with nothing to
+de-duplicate, a bag union's multiplicities are untouched.
+
+### `SET-005` factors on the same side only
+
+`A × B ∪ C × A` has the common operand at opposite ends. The headings are
+`A ++ B` and `C ++ A`, so factoring `A` out would permute the **ordered** heading
+that the positional form of ρ and the whole-row set operations read — the same trap
+that got a join-commuting rule withdrawn. The rule matches a shared *left* operand
+or a shared *right* one, and nothing else.
+
+### What is deliberately left out
+
+- **A self-join** — `R ⋈ R` → `R` — is not offered. A natural join's keys are every
+  column and the engine's joins skip NULL keys, so a row with a NULL anywhere would
+  not match itself and would be **dropped**; and a row present twice matches itself
+  four ways. Nullability is not something a heading states, so there is nothing to
+  decide it on. The outer forms inherit the first problem and `R ⨝ R.x = R.x R`
+  inherits it too.
+- **`⊔`** (outer union), whose branches have different headings by construction.
+
+### Reading a condition's truth value
+
+Three of these rewrites have to name *the rows a selection did not keep*, and that
+is not `¬p`. A selection keeps a row only when its predicate is TRUE, so the rows it
+drops are those where the predicate is FALSE **or** UNKNOWN — and `¬UNKNOWN` is
+UNKNOWN, which a selection also drops. The complement is `¬p ∨ p IS UNKNOWN`, and
+the second disjunct is a null test over the condition itself:
+
+```relix
+σ ¬(amount > 100) ∨ (amount > 100) = ⊥ (Orders)
+```
+
+A parenthesised predicate in operand position reads its **truth value**, which is
+NULL exactly when the condition is UNKNOWN. So `(amount > 100) = ⊥` is true for the
+rows where the amount is missing — the rows `σ amount > 100` silently dropped and
+`σ ¬(amount > 100)` does not give back.
+
+The optimizer writes this form itself; you rarely need to. It is documented because
+it is what `:opt` and `--explain` will show you for these rules, and because reading
+`(p) = ⊥` as "p was UNKNOWN" is not obvious the first time.
+
+### Volatility
+
+`SET-001`, `SET-002` and `SET-005` each collapse two evaluations of one expression
+into one, so each asks whether that expression is **reproducible** first. `X ∆ X`
+over an unseeded `SAMPLE` is a query *about* two draws, and the answer is not
+`∅`. `SET-003` and `SET-004` need no such question — both branches are still
+evaluated exactly once.
+
 ## Contradiction and the empty relation (`PRED-004..006`, `EMPTY-nnn`)
 
 A filter can be unsatisfiable — `amount > 50 ∧ amount < 20` admits no row of any
@@ -712,6 +884,8 @@ Neither table is read, and `:explain` shows a single `Empty` node.
 |------|---------|
 | `RENAME-001` | Collapse a relation-only ρ into the ρ directly beneath it |
 | `RENAME-002` | Drop a relation-only ρ whose alias nothing in the query names |
+| `RENAME-003` | Drop rename pairs that give a column the name it already has |
+| `RENAME-004` | Compose a pair-form ρ with the pair-form ρ beneath it |
 
 Inlining a view `V` produces `ρ V (body)`. The wrapper is needed at that moment —
 it keeps `V` a resolvable alias, so a qualified `V.col` still finds the right side
@@ -750,6 +924,46 @@ is the one that is easy to miss:
 own name, so the inner alias is already unresolvable one level up — collapsing
 loses a name that was invisible anyway.
 
+### `RENAME-003` / `RENAME-004` — the column renames
+
+`RENAME-001` and `RENAME-002` are about the *relation* name. Two more rules tidy
+the **column** renames:
+
+    ρ (id → id, a → q) (A)        →   ρ (a → q) (A)          RENAME-003
+    ρ (b → c) (ρ (a → b) (R))     →   ρ (a → c) (R)          RENAME-004
+
+Neither changes what a query returns; what they buy is adjacency. A ρ sitting
+between two operators is a tax every shape-matching rule pays, which is why
+pushdown into a recursion grew explicit logic to peel renames out of the prefix it
+matches on.
+
+`RENAME-003` drops the pairs unconditionally. Dropping the **node** is a different
+question — a ρ whose pairs all cancel may still carry a relation name something
+resolves against — so what it does is reduce the node to its relation-only form and
+let `RENAME-002`'s reference sweep decide whether it lives. The comparison is
+exact, not case-insensitive: `a → A` changes the spelling a result's heading is
+printed with, which is an answer rather than a detail.
+
+`RENAME-004` chases each inner pair's target through the outer's sources, so
+`a → b` under `b → c` becomes `a → c`, while an outer pair renaming a
+pass-through column is carried over as it stands. The merged ρ keeps the outer's
+relation name where it has one and the inner's otherwise, so nothing a qualified
+reference could resolve against is lost; where both carry one the inner's goes, for
+`RENAME-001`'s reason exactly.
+
+It **declines** when the two renames name the same source column. With the inner
+renaming `a → b`, an outer `a → c` renames nothing today — there is no `a` left —
+and composing them naively would produce a single ρ carrying both `a → b` and
+`a → c`.
+
+There is deliberately no rule that cancels `a → b, b → a` *within one ρ*: that is a
+**swap** of two column names, not a no-op. A rename cycle written as two stacked ρ
+composes to an identity pair here, which `RENAME-003` then drops — so the cycle is
+handled without a rule that would have deleted a real rename.
+
+Both rules are **pair-form only**. The positional form (`ρ E (a, b, c)`) renames by
+position and is arity-bound, which makes composing it a different question.
+
 ## How the rules are ordered: phases
 
 The rules are not one flat list. They are grouped into six **phases**, which run
@@ -759,7 +973,7 @@ once each, in this order:
 |-------|-------|----------------|
 | `simplify` | `EXPR-001..008`, `PRED-001..006` | Fold constants and normalise comparisons, so every later rule matches against settled expressions |
 | `pushdown` | `SEL-001`, `JOIN-004`, `EQ-001`, `SEL-003..009`, `NEST-001..003`, `WINDOW-001`, `TOPK-001`, `OPTIMIZE-001`, `SESSION-001`, `DOWNSAMPLE-001`, `JOIN-001..002` | Move filters toward the data and shape the joins |
-| `cleanup` | `SEL-002`, `PROJ-001..003`, `AGG-001`, `DIST-001..002`, `PROD-001`, `EMPTY-001..003`, `SORT-001` | Put conjunctions back together and drop what a rewrite made redundant |
+| `cleanup` | `SEL-002`, `SEL-010`, `PROJ-001..003`, `AGG-001`, `DIST-001..002`, `SET-001..005`, `PROD-001`, `EMPTY-001..003`, `SORT-001` | Put conjunctions back together and drop what a rewrite made redundant |
 | `sip` | `CLOSURE-001`, `TRACE-001`, `PATH-001`, `FIX-001`, `GEN-001` | Fold a constraint into an expensive operator, once the σ above it has settled |
 | `limit` | `LIM-001..004` | Move limits down, and fuse `λ ∘ τ` into `TOP` |
 | `prune` | `PROJ-004` | Narrow every leaf to the columns the query reads |
@@ -769,7 +983,8 @@ so one rule's rewrite can expose the pattern another matches on. Across phases
 there is no loop — and that separation is load-bearing, not tidiness:
 
 - `SEL-003` pushes σ below π and `PROJ-003` pushes π below σ;
-- `SEL-001` splits a conjunction and `SEL-002` merges it back.
+- `SEL-001` splits a conjunction and `SEL-002` merges it back;
+- `SEL-009` distributes a σ over a set operation and `SEL-010` merges one back.
 
 Each pair is deliberately split across two phases. Iterating either pair together
 would never terminate — it would just trade the two operators' positions forever.
@@ -779,9 +994,9 @@ work rather than hanging the optimizer.
 Phase order is also why `:opt` lists rules in the order it does: a `SEL-001` split
 always precedes the `SEL-002` merge that undoes it, and `PROJ-004` is always last.
 
-Four rules run *before* the phases, in a per-query preamble, and all four for the
+Six rules run *before* the phases, in a per-query preamble, and all six for the
 same reason — each needs the symbol table, which the phases deliberately do without:
-`INLINE-001` expands the views, `RENAME-001`/`RENAME-002` clear up after it, and
+`INLINE-001` expands the views, `RENAME-001`..`RENAME-004` clear up after it, and
 `LATERAL-001` resolves a TVF and classifies its body. They sit outside the loop
 because they run before schemas are re-inferred for the expanded tree.
 

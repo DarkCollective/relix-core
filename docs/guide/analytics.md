@@ -97,7 +97,7 @@ banded.toList().forEach(System.out::println);
 ```
 
 ```
-γ IIf(amount > 100, "large", "small") → band, SUM(amount * 2) (Sales)
+γ IIf((amount > 100), "large", "small") → band, SUM(amount * 2) (Sales)
 (band=small, sum_expr=430)
 (band=large, sum_expr=1340)
 ```

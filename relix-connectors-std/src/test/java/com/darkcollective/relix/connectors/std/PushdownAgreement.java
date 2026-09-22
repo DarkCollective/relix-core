@@ -16,6 +16,8 @@
 package com.darkcollective.relix.connectors.std;
 
 import com.darkcollective.relix.events.QueryEventListener;
+import com.darkcollective.relix.embed.Relation;
+import com.darkcollective.relix.embed.Relix;
 import com.darkcollective.relix.plan.Dialect;
 import com.darkcollective.relix.processor.DataSourceConnector;
 import com.darkcollective.relix.processor.ExecutionContext;
@@ -165,6 +167,7 @@ final class PushdownAgreement {
      */
     void assertAgrees(String expression, boolean expectedToFold, String knownDivergence) {
         String script = preamble + "query { " + expression + " };";
+        Plans plans = plans(script);
         SemanticResult analysis = SemanticFixtures.analyze(script, CATALOG);
         assertThat(analysis.errors()).as("analysis of: %s", expression).isEmpty();
         SemanticModel model = analysis.model().orElseThrow();
@@ -173,11 +176,35 @@ final class PushdownAgreement {
                         + "to be testing — otherwise every dialect-specific expectation "
                         + "below is asserted against the wrong renderer")
                 .containsOnly(dialect);
-        assertThat(foldedWholly(model))
+        assertThat(foldedWholly(plans.written()))
                 .as("on %s the planner was expected to %s this expression as a whole.%n"
                         + "The plan it produced was:%n%s",
-                        dialect, expectedToFold ? "fold" : "decline", plan(model))
+                        dialect, expectedToFold ? "fold" : "decline", plans.written())
                 .isEqualTo(expectedToFold);
+
+        // Optimizing must never COST a pushdown.
+        //
+        // Everything above this line measures the query as written, because that is the
+        // tree `executeStreaming` runs. It is not the tree a user gets: every terminal on
+        // the embedding API optimises first, and both front ends are built on it. So a
+        // rewrite that turns a foldable query into one the renderer declines is a
+        // pessimisation no corpus case could see — the optimizer would be shipping a
+        // slower plan than the text it was handed.
+        //
+        // Stated as "at least as well" rather than by re-expecting every case against the
+        // optimized tree, which is the stronger claim and the wrong one to make here: of
+        // 270 cases the two trees agree on 251, and where they differ the rewrite is
+        // normally an improvement (a folded constant makes a predicate pushable, a
+        // HAVING becomes a WHERE). Re-expecting would bake those improvements into
+        // expectations that say nothing; this asks the one question with a wrong answer.
+        if (expectedToFold) {
+            assertThat(foldedWholly(plans.optimized()))
+                    .as("on %s this expression folds as written and NOT after the "
+                            + "optimizer ran — the rewrite cost it its pushdown.%n"
+                            + "Written plan:%n%s%nOptimized plan:%n%s",
+                            dialect, expression, plans.written(), plans.optimized())
+                    .isTrue();
+        }
 
         SemanticModel unpushed = withoutConnections(model);
         assertThat(foldedWholly(unpushed))
@@ -291,18 +318,70 @@ final class PushdownAgreement {
     }
 
     /**
-     * Whether the planner folded the query's <em>entire</em> tree into one backend
-     * query — that is, whether the plan's root is a pushed scan.
+     * The two plans a case is asserted against: the query as written, and the same query
+     * after the rewriter has run.
+     *
+     * @param written   the plan for the tree the author wrote
+     * @param optimized the plan for the tree the optimizer produced from it
      */
-    private static boolean foldedWholly(SemanticModel model) {
-        return plan(model).stripLeading().startsWith("PushedScan");
+    private record Plans(String written, String optimized) { }
+
+    /**
+     * Both plans, from one relation, through the embedding API.
+     *
+     * <p>Planned through the facade rather than by assembling the stack here (#1043) — and
+     * that is a correctness point rather than a tidiness one, because this helper has been
+     * wrong twice in the characteristic way a reimplementation is wrong: it leaves
+     * something out, and then measures its own omission. It shipped without
+     * {@code withFunctionContext}, so every expression naming {@code NOW()} read as a
+     * pessimisation the optimizer had not caused — nine of them, loudly. It then optimised
+     * with {@code DistinctnessSource.NONE} and {@code MonotoneGeneratorSource.NONE} while
+     * the production pipeline passes real ones, so {@code DIST-001} and {@code GEN-001}
+     * could not fire over a corpus whose catalog does supply the statistics the first of
+     * them reads. That one was silent, and it pointed the unsafe way: a rule that fires
+     * only in production could cost a pushdown this guard would never see.
+     *
+     * <p>{@code explain()} is staged and {@code optimized().explain()} is not, so one
+     * relation answers both questions and neither can drift from what a user gets.
+     *
+     * <p>The session is closed here because nothing below needs it: planning asks the
+     * catalog and the cost model and reads no rows, so what comes back is two strings. The
+     * <em>runs</em> keep their own connector — see the note below on why that lifecycle is
+     * not the facade's to own here.
+     */
+    private Plans plans(String script) {
+        try (Relix session = Relix.builder().catalog(CATALOG).build()) {
+            Relation relation = session.script(script).getFirst();
+            return new Plans(relation.explain(), relation.optimized().explain());
+        }
     }
 
-    /** The query's physical plan, rendered as {@code --explain} renders it. */
-    private static String plan(SemanticModel model) {
+    /**
+     * Whether the planner folded the query's <em>entire</em> tree into one backend
+     * query — that is, whether the plan's root is a pushed scan.
+     *
+     * <p>The claim has to be about the <strong>root</strong>. A {@code PUSHDOWN} event
+     * fires for every sub-tree that folds and a bare connection table is always one, so an
+     * expression whose top operator has no spelling still fires it, still passes, and
+     * compares an in-engine evaluation against an in-engine evaluation.
+     */
+    private static boolean foldedWholly(String plan) {
+        return plan.stripLeading().startsWith("PushedScan");
+    }
+
+    /**
+     * The same question of a model this suite built by hand — the connection-stripped
+     * variant the in-engine run uses, which is model surgery and so has no script to
+     * analyse.
+     *
+     * <p>{@code QueryExecutor.explain} is the engine's own entry point rather than a
+     * reassembly of one, and it plans the tree as written, so the hazard {@link #plans}
+     * describes does not arise here: there is no optimizer to configure differently.
+     */
+    private static boolean foldedWholly(SemanticModel model) {
         StringBuilder rendered = new StringBuilder();
         new QueryExecutor().explain(model, (label, planText) -> rendered.append(planText));
-        return rendered.toString();
+        return foldedWholly(rendered.toString());
     }
 
     /*
