@@ -8,5 +8,5 @@ plugins {
 
 dependencies {
     // Expose AssertJ to consumers of the test fixtures (e.g. relix-parser tests)
-    testFixturesApi 'org.assertj:assertj-core:3.24.2'
+    testFixturesApi 'org.assertj:assertj-core:3.27.7'
 }
