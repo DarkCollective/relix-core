@@ -582,23 +582,35 @@ class ExternalLinks(unittest.TestCase):
 
 
 class ManualExternalLinks(unittest.TestCase):
-    """The two web addresses the reference manual actually carries."""
+    """Every web address the reference manual carries renders as a link."""
 
     def test_the_corpus_links_are_recognised(self):
+        """The non-vacuity claim is about the *walk*, not about the manual.
+
+        A manual carrying no external link at all is a legal state, and one tree
+        is in it: the public export withholds ``advanced/repl.md``, which is
+        where both of this manual's web addresses live, so an assertion that
+        some external link exists passes here and can only ever fail there.
+        What must not go quiet is the instrument — a walk reading the wrong
+        directory, or a ``LINK_RE`` that stopped matching, would report an empty
+        list and be indistinguishable from a manual that simply links nowhere.
+        So the count that has to be non-zero is every link on the page.
+        """
         if not os.path.isdir(REF_DIR):
             self.skipTest(f"{REF_DIR} not present")
-        found = []
+        links, external = 0, []
         for root, _dirs, files in os.walk(REF_DIR):
             for name in files:
                 if not name.endswith(".md"):
                     continue
                 with open(os.path.join(root, name), encoding="utf-8") as fh:
                     for m in G.LINK_RE.finditer(fh.read()):
+                        links += 1
                         href = m.group("href")
                         if href.startswith(("http://", "https://")):
-                            found.append(href)
-        self.assertTrue(found, "no external link in the manual to check")
-        for href in found:
+                            external.append(href)
+        self.assertTrue(links, f"no link of any kind found under {REF_DIR}")
+        for href in external:
             self.assertIsNotNone(G.EXTERNAL_URL_RE.match(href),
                                  f"{href} would render unlinked")
 
