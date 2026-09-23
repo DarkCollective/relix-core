@@ -4,7 +4,8 @@
 // from relix-parser.
 
 // ReferenceExampleParseTest parses every fenced block in docs/reference and
-// .claude; ProjectDocsGuardTest checks the same tree against the code;
+// .claude; GrammarReferenceTest holds the EBNF on language/grammar.md to the parser over
+// the same blocks; ProjectDocsGuardTest checks the same tree against the code;
 // CoreModuleListTest checks the root build's ext.coreModules against the module
 // declarations it names; AssertionSurfaceGuardTest and BuilderSurfaceGuardTest read every
 // module's test sources — the latter against the three published authoring surfaces — and

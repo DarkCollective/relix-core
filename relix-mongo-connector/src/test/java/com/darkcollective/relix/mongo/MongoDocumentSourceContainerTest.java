@@ -50,7 +50,7 @@ final class MongoDocumentSourceContainerTest {
     private static final String COLLECTION = "documents";
 
     @Container
-    static final MongoDBContainer MONGO = MongoContainers.loopbackBound();
+    static final MongoDBContainer MONGO = MongoContainers.hostBound();
 
     private final MongoDocumentSource source = new MongoDocumentSource();
 

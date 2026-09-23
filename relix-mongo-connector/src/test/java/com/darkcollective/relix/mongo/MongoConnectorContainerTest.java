@@ -57,7 +57,7 @@ final class MongoConnectorContainerTest {
     private static final String COLLECTION = "users";
 
     @Container
-    static final MongoDBContainer MONGO = MongoContainers.loopbackBound();
+    static final MongoDBContainer MONGO = MongoContainers.hostBound();
 
     @BeforeAll
     static void seed() {

@@ -906,7 +906,7 @@ def render_section_body(label, body, styles, link_resolver, avail_width, diagram
         stripped = line.strip()
 
         # fenced block
-        fence = re.match(r"^\s*```(\w*)\s*$", line)
+        fence = re.match(r"^\s*```([\w-]*)\s*$", line)  # a language may be hyphenated: relix-invalid
         if fence:
             flush_para()
             lang = fence.group(1)
