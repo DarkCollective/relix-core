@@ -884,6 +884,83 @@ tasks.register('coverageAuditTest', Exec) {
     commandLine 'python3', 'tools/coverage/test_audit.py'
 }
 
+// The tier register's own tests. verify_tiers.py decides whether a publish may
+// proceed, which puts it exactly where audit.py was before test_audit.py existed —
+// and it is the one tool here whose rules cannot be probed by running the build,
+// since what it reads is a commit's workflow jobs rather than this tree.
+//
+// Run from its own directory, because the test imports the module beside it rather
+// than reaching for a package that would have to exist for one caller.
+//
+// Registered only where the script is, exactly as exportCore is. This build file
+// travels to the public tree and tools/ci does not, so there `check` must not name
+// a test it cannot run — which is not hypothetical: the first version of this task
+// was unguarded and broke the exported tree's build, found by building it rather
+// than by any gate here.
+def tierRegisterPresent = file('tools/ci/test_verify_tiers.py').exists()
+if (tierRegisterPresent) {
+    tasks.register('tierRegisterTest', Exec) {
+        group = 'verification'
+        description = "Run the tier register's own tests."
+        workingDir file('tools/ci')
+        commandLine 'python3', 'test_verify_tiers.py'
+    }
+}
+
+// ---------------------------------------------------------------------------
+// installHooks — the gate, before a branch reaches anyone else
+//
+//   ./gradlew installHooks    point core.hooksPath at tools/hooks
+//
+// `CLAUDE.md` has always said a local `./gradlew clean build` is the real gate.
+// That made it a convention, and this makes it a mechanism — tools/hooks/pre-push
+// runs the gate, plus the container tier when a Docker daemon answers.
+//
+// It is a repository-local setting on purpose. A hook cannot travel in a clone
+// (git will not run code someone else's fetch installed), so the alternative to
+// an explicit task is no hook at all.
+//
+// The hook is deliberately NOT evidence: `--no-verify` skips it, so it cannot
+// record its own bypass. What a publish is allowed to trust is the tier register
+// (#1064), which reads check-runs rather than anything a laptop wrote.
+//
+// Both tasks exist only where the hook does. This build file travels to the public
+// tree and tools/hooks does not, so there `check` must not name a test it cannot run
+// — the rule exportCore already follows.
+// ---------------------------------------------------------------------------
+def prePushHookPresent = file('tools/hooks/pre-push').exists()
+if (prePushHookPresent) {
+    tasks.register('installHooks', Exec) {
+        group = 'build setup'
+        description = 'Point core.hooksPath at tools/hooks, so the gate runs on push.'
+        workingDir projectDir
+        commandLine 'git', 'config', 'core.hooksPath', 'tools/hooks'
+        doLast {
+            logger.lifecycle('hooks installed: tools/hooks (pre-push runs `build`, ' +
+                    'plus integrationTest when Docker answers)')
+        }
+    }
+
+    tasks.register('prePushHookTest', Exec) {
+        group = 'verification'
+        description = "Run the pre-push hook's own tests."
+        workingDir projectDir
+        commandLine 'python3', 'tools/hooks/test_prepush.py'
+    }
+}
+
+// Whether the hook is installed, asked at execution time rather than during
+// configuration — it shells out, and configuration runs for every task.
+def prePushHookInstalled = {
+    try {
+        def proc = ['git', 'config', '--get', 'core.hooksPath'].execute(null, rootDir)
+        proc.waitFor()
+        return proc.inputStream.text.trim() == 'tools/hooks'
+    } catch (ignored) {
+        return true   // not a git checkout, or no git: nothing to say
+    }
+}
+
 // ---------------------------------------------------------------------------
 // exportCore — assemble the public engine tree (relix-core)
 //
@@ -938,8 +1015,27 @@ tasks.register('check') {
     description = 'Repository-wide checks that no single subproject can run.'
     dependsOn tasks.named('jacocoAggregateReport'), tasks.named('coverageAudit'),
             tasks.named('coverageAuditTest')
+    if (tierRegisterPresent) {
+        dependsOn tasks.named('tierRegisterTest')
+    }
     if (exportScriptPresent) {
         dependsOn tasks.named('exportCoreTest')
+    }
+    if (prePushHookPresent) {
+        dependsOn tasks.named('prePushHookTest')
+
+        // A warning, never a failure. core.hooksPath does not travel in a clone, so a
+        // first-time contributor has no hook — refusing to build for that would trade
+        // their whole first impression for a convenience. CI is skipped because there
+        // is nothing there for a hook to do.
+        doFirst {
+            if (System.getenv('CI') == null && !prePushHookInstalled()) {
+                logger.warn('')
+                logger.warn('  The pre-push hook is not installed, so nothing runs the gate on push.')
+                logger.warn('  Install it with:  ./gradlew installHooks')
+                logger.warn('')
+            }
+        }
     }
 }
 
