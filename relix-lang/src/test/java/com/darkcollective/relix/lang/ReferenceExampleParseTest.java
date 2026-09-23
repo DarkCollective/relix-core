@@ -27,8 +27,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -100,7 +98,8 @@ final class ReferenceExampleParseTest {
         // relix-site/content is the third: the landing page shows the language before a
         // reader has read a word of the manual, so a sample that does not parse is the
         // worst place in the project to have one.
-        List<Example> examples = extractAll(root.resolve("docs/reference"), root.resolve(".claude"),
+        List<ReferenceExamples.Example> examples = ReferenceExamples.extractAll(
+                root.resolve("docs/reference"), root.resolve(".claude"),
                 root.resolve("relix-site/content"));
         assertThat(examples).as("documented examples were found").isNotEmpty();
         // Each extra tree is asserted to have been reached, so that a sweep quietly
@@ -115,7 +114,7 @@ final class ReferenceExampleParseTest {
         List<String> nowParses = new ArrayList<>();
         Set<String> quarantineHits = new LinkedHashSet<>();
         Set<String> seenQuarantined = new LinkedHashSet<>();
-        for (Example ex : examples) {
+        for (ReferenceExamples.Example ex : examples) {
             boolean parses = parses(ex.parseInput());
             if (!ex.expectParses()) {
                 // A ```relix-invalid block: the doc claims this form is rejected.
@@ -195,12 +194,12 @@ final class ReferenceExampleParseTest {
                 i++;
                 continue;
             }
-            if (inFence || !inExamples || !startsIndented(line) || s.isEmpty()) {
+            if (inFence || !inExamples || !ReferenceExamples.startsIndented(line) || s.isEmpty()) {
                 i++;
                 continue;
             }
             int start = i;
-            while (i < lines.length && startsIndented(lines[i]) && !lines[i].isBlank()) {
+            while (i < lines.length && ReferenceExamples.startsIndented(lines[i]) && !lines[i].isBlank()) {
                 i++;
             }
             if (i - start > 1) {
@@ -247,170 +246,10 @@ final class ReferenceExampleParseTest {
         }
     }
 
-    // ── extraction ────────────────────────────────────────────────────────────
-
-    private record Example(Path page, String desc, String unit, boolean statement,
-                           boolean expectParses) {
-        /** A statement snippet parses as-is; a bare expression is wrapped in a query. */
-        String parseInput() {
-            if (statement) {
-                return ensureTerminated(unit);
-            }
-            String u = unit.strip();
-            // A brace-wrapped body (e.g. a REPL `{ … }` snippet) becomes `query { … };`.
-            return u.startsWith("{") ? "query " + u + ";" : "query {\n" + unit + "\n};";
-        }
-        String location() {
-            return page.getFileName() + "  [" + desc + "]";
-        }
-    }
-
-    private static String ensureTerminated(String s) {
-        String t = s.stripTrailing();
-        return t.endsWith(";") ? t : t + ";";
-    }
-
-    /** A snippet that must parse. The trailing \\s excludes ```relix-invalid. */
-    private static final Pattern FENCE =
-            Pattern.compile("```relix\\s*\\n(.*?)```", Pattern.DOTALL);
-
-    /** A snippet that must NOT parse — a checked "this form is rejected" claim. */
-    private static final Pattern INVALID_FENCE =
-            Pattern.compile("```relix-invalid\\s*\\n(.*?)```", Pattern.DOTALL);
-
-    private static List<Example> extractAll(Path... roots) {
-        List<Example> out = new ArrayList<>();
-        for (Path root : roots) {
-            if (!Files.isDirectory(root)) {
-                continue;
-            }
-            try (Stream<Path> paths = Files.walk(root)) {
-                paths.filter(p -> p.toString().endsWith(".md"))
-                     .filter(p -> !p.toString().endsWith(".template.md"))
-                     .filter(p -> !p.getFileName().toString().equals("README.md"))
-                     .sorted()
-                     .forEach(p -> extractPage(p, out));
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }
-        return out;
-    }
-
-    private static void extractPage(Path page, List<Example> out) {
-        String md;
-        try {
-            md = Files.readString(page);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-
-        // Fenced ```relix blocks — complete, self-contained snippets.
-        Matcher fm = FENCE.matcher(md);
-        while (fm.find()) {
-            String unit = stripAnnotations(fm.group(1));
-            if (isParseable(unit)) {
-                out.add(new Example(page, "fenced", unit, looksLikeStatement(unit), true));
-            }
-        }
-
-        // Fenced ```relix-invalid blocks — forms the docs claim are rejected.
-        Matcher im = INVALID_FENCE.matcher(md);
-        while (im.find()) {
-            String unit = stripAnnotations(im.group(1));
-            if (!unit.isBlank()) {
-                out.add(new Example(page, "fenced-invalid", unit, looksLikeStatement(unit), false));
-            }
-        }
-
-        // Single-line entries in the "# Examples:" section.
-        for (String[] descLines : exampleSection(md)) {
-            String desc = descLines[0];
-            String unit = stripAnnotations(descLines[1]);
-            if (!unit.contains("\n") && isParseable(unit)) {
-                out.add(new Example(page, desc, unit, looksLikeStatement(unit), true));
-            }
-        }
-    }
-
-    /** Returns [description, single-code-line] for each single-line example entry. */
-    private static List<String[]> exampleSection(String md) {
-        List<String[]> result = new ArrayList<>();
-        Matcher sec = Pattern.compile("(?m)^#\\s*Examples\\s*:?[ \\t]*\\n(.*?)(?=^#\\s|\\Z)",
-                Pattern.DOTALL).matcher(md);
-        if (!sec.find()) {
-            return result;
-        }
-        String[] lines = sec.group(1).split("\n", -1);
-        int i = 0;
-        boolean inFence = false;
-        while (i < lines.length) {
-            String line = lines[i];
-            String s = line.strip();
-            // Fenced blocks are extracted whole by FENCE/INVALID_FENCE; scanning
-            // into them here would also read their contents as loose one-liners.
-            if (s.startsWith("```")) {
-                inFence = !inFence;
-                i++;
-                continue;
-            }
-            if (inFence) {
-                i++;
-                continue;
-            }
-            boolean isDesc = s.endsWith(":") && !startsIndented(line) && s.length() > 1;
-            if (isDesc) {
-                String desc = s.substring(0, s.length() - 1).strip();
-                List<String> code = new ArrayList<>();
-                i++;
-                while (i < lines.length && startsIndented(lines[i])) {
-                    if (!lines[i].strip().isEmpty()) {
-                        code.add(lines[i].strip());
-                    }
-                    i++;
-                }
-                if (!desc.isEmpty() && code.size() == 1) {   // single-line only (unambiguous)
-                    result.add(new String[]{desc, code.get(0)});
-                }
-            } else {
-                i++;
-            }
-        }
-        return result;
-    }
-
-    private static boolean startsIndented(String line) {
-        return line.startsWith(" ") || line.startsWith("\t");
-    }
-
-    /** Strips trailing {@code -- prose} annotations (— not a Relix comment) line by line. */
-    private static String stripAnnotations(String block) {
-        return Stream.of(block.split("\n", -1))
-                .map(l -> l.replaceAll("\\s+--\\s.*$", "").stripTrailing())
-                .filter(l -> !l.strip().startsWith("--"))
-                .reduce((a, b) -> a + "\n" + b)
-                .orElse("")
-                .strip();
-    }
-
-    /** Skips content that is not a Relix snippet: CLI commands, syntax placeholders, empties. */
-    private static boolean isParseable(String unit) {
-        if (unit.isBlank()) return false;
-        if (unit.startsWith("relix ")) return false;        // shell/CLI invocation
-        if (Pattern.compile("<[A-Za-z]").matcher(unit).find()) return false;  // <placeholder>
-        return true;
-    }
-
-    private static boolean looksLikeStatement(String unit) {
-        return unit.contains(";")
-                || unit.matches("(?s)^(source|import|def|namespace|connection|private|query)\\b.*")
-                || unit.matches("(?s)^\\w+\\s*:=.*");
-    }
-
     // ── repo-root discovery ─────────────────────────────────────────────────────
 
     /** Asserts that {@code tree} contributed at least one example, when this tree has it. */
-    private static void wasScanned(List<Example> examples, Path root, String tree) {
+    private static void wasScanned(List<ReferenceExamples.Example> examples, Path root, String tree) {
         if (!Files.exists(root.resolve(tree))) {
             return;
         }

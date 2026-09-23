@@ -83,7 +83,7 @@ final class MongoPushdownAgreementTest {
     private static final String COLLECTION = "orders";
 
     @Container
-    static final MongoDBContainer MONGO = MongoContainers.loopbackBound();
+    static final MongoDBContainer MONGO = MongoContainers.hostBound();
 
     /**
      * Documents chosen so every field has a missing-or-null somewhere and every predicate

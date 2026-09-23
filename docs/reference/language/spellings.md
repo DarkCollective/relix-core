@@ -189,6 +189,8 @@ rather than operators, so they are written the same way whichever spelling the
 surrounding expression uses.
 
 # See Also:
+- [grammar (EBNF)](grammar.md) — every spelling on this page in its place in the
+  whole language, one rule at a time
 - [comments](comments.md) — the other lexical rule worth knowing before writing a
   script, and the one place `//` will surprise you
 - [delimited identifier](delimited-identifier.md) — backticking a name that

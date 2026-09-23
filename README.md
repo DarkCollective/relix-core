@@ -2,94 +2,92 @@
 
 > A relational algebra engine you can embed in a Java program.
 
+[![Maven Central](https://img.shields.io/maven-central/v/com.darkcollective.relix/relix?include_prereleases)](https://central.sonatype.com/artifact/com.darkcollective.relix/relix)
 [![CI](https://github.com/DarkCollective/relix-core/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkCollective/relix-core/actions/workflows/ci.yml)
 
-Relix takes a query written in **relational algebra** — filter, project, join,
-group — infers its schema, rewrites it, works out how much of it your database can
-run, and runs the rest itself.
+Relix takes a query written in **relational algebra** (filter, project, join,
+group), infers its schema, rewrites it, works out how much of it your database can
+run, and runs the rest itself. A source can be a database table, a CSV or JSON
+file, or an HTTP endpoint, and one query can read several.
+
+**[relix.darkcollective.com](https://relix.darkcollective.com)** has the manuals,
+the language reference and worked examples.
+
+## Install
+
+Relix needs Java 21. It is one artifact on Maven Central, carrying the engine, the
+function library and the CSV, JSON, HTTP and JDBC connectors. Use the version on the
+badge above.
+
+```gradle
+dependencies {
+    implementation 'com.darkcollective.relix:relix:<version>'
+}
+```
+
+```xml
+<dependency>
+    <groupId>com.darkcollective.relix</groupId>
+    <artifactId>relix</artifactId>
+    <version><!-- the version on the badge --></version>
+</dependency>
+```
+
+## A first query
 
 ```java
 try (Relix relix = Relix.open()) {
     relix.define("""
-        source Orders from csv("orders.csv") {
-            header: true,
-            schema: { order_id: NUMBER, product_id: NUMBER, amount: NUMBER, status: STRING }
-        };
+        Orders := [
+        | order_id | product | amount | status    |
+        |----------|---------|--------|-----------|
+        | 1        | lamp    | 40     | completed |
+        | 2        | desk    | 250    | completed |
+        | 3        | lamp    | 40     | completed |
+        | 4        | chair   | 90     | pending   |
+        ];
         """);
 
     Relation best = relix.relation("""
-        λ 10 (τ revenue DESC (
-            γ product_id, SUM(amount) → revenue (σ status = "completed" (Orders))
+        LIMIT 2 (SORT revenue DESC (
+            GROUP product, SUM(amount) -> revenue (SELECT status = 'completed' (Orders))
         ))
         """);
 
     for (Tuple row : best.toList()) {
-        System.out.println(row.longValue("product_id") + ": " + row.decimal("revenue"));
+        System.out.println(row.string("product") + ": " + row.decimal("revenue"));
     }
+    System.out.println(best.render());
 }
 ```
 
-Every operator has an ASCII spelling too, so that query can equally be written
-`LIMIT 10 (SORT revenue DESC (GROUP product_id, SUM(amount) -> revenue (...)))`.
+```
+desk: 250
+lamp: 80
+λ 2 (τ revenue DESC (γ product, SUM(amount) → revenue (σ status = "completed" (Orders))))
+```
 
----
+`SELECT` here is relational selection, what SQL calls `WHERE`. Every operator also
+has its symbol from the algebra, and the two spellings mean the same thing:
+`render()` prints the query back in symbols.
 
 ## Why relational algebra
 
-SQL is the lingua franca, and parts of it are genuinely awkward. "The row with the
-maximum value per group" needs a window function or a self-join. "Rows matching
-*every* row over there" becomes a double-negated `NOT EXISTS`. Reachability needs a
-recursive CTE. None of these is hard in the algebra underneath — they are hard in
-the surface syntax that grew on top of it.
+SQL is the lingua franca, and parts of it are awkward. "The row with the maximum
+value per group" needs a window function or a self-join. "Rows matching *every* row
+over there" becomes a double-negated `NOT EXISTS`. Reachability needs a recursive
+CTE. None of these is hard in the algebra underneath; they are hard in the syntax
+that grew on top of it.
 
 Relix exposes the algebra. A query is an expression, every expression is a
-relation, and relations compose without special cases. That buys operators SQL
-makes painful or cannot express at all: transitive closure, symmetric difference,
-universal quantification, top-*k* per group, argmax, temporal joins, sessionization,
-goal-seek, and constrained optimization — each a first-class operator rather than a
-pattern you reassemble each time.
+relation, and relations compose without special cases. That gives first-class
+operators for transitive closure, universal quantification, top-*k* per group,
+argmax, temporal joins, sessionization, goal-seek and constrained optimization, and
+lets any result say *why* each row is there.
 
-It also buys provenance. Annotate a result and each row can tell you *why* it is
-there: which base tuples contributed, how many derivations produced it, or the
-cheapest path that reached it.
-
-## What it does with your database
-
-A source can be a CSV file, a JSON document, an HTTP endpoint, or a database
-table. Where a sub-tree of your query is something the backend can evaluate, Relix
-folds it into a single native query — `SELECT … WHERE … GROUP BY … ORDER BY …
-LIMIT` for SQL, an aggregation pipeline for MongoDB — and evaluates the remainder
-itself. What could not be pushed down still runs; it just runs here.
-
-You can see exactly what happened. A plan reports which rules fired, what it
-pushed down, and what it estimated.
-
-## Getting started
-
-Relix is not yet published to a repository. Build it from source:
-
-```bash
-./gradlew publishToMavenLocal
-```
-
-That publishes one coordinate, `com.darkcollective.relix:relix`, carrying the
-engine, the default function library, the CSV/JSON/HTTP/JDBC connectors and the
-bundled solver. A consuming build names it and a JDBC driver, and nothing else.
-
-```gradle
-repositories {
-    mavenLocal()
-    mavenCentral()      // for ojalgo, the one dependency not merged into the jar
-}
-
-dependencies {
-    implementation 'com.darkcollective.relix:relix:1.0.0-rc2'
-}
-```
-
-Then read **[the programming guide](docs/guide/README.md)**, which is written as
-one worked example and whose every snippet is compiled and run as part of the
-build.
+Where part of a query is something the database can evaluate, Relix folds it into a
+single native query and runs the remainder itself. A plan shows which rules fired
+and what was pushed down.
 
 ## Documentation
 
@@ -97,36 +95,36 @@ build.
 |---|---|
 | [Programming guide](docs/guide/README.md) | Building, inspecting and running queries from Java |
 | [Language reference](docs/reference/README.md) | Every operator, predicate, function and literal |
-| [Architecture](ARCHITECTURE.md) | How the engine is put together, and the boundaries inside it |
+| [Coming from SQL](https://relix.darkcollective.com/sql.html) | Everyday SQL beside its Relix, each pair checked against a real database |
+| [Beyond SQL](https://relix.darkcollective.com/beyond-sql.html) | Questions SQL makes hard, each with its Relix answer |
+| [Grammar](https://relix.darkcollective.com/reference/language/grammar.ebnf.txt) | The whole language as plain-text EBNF |
+| [llms.txt](https://relix.darkcollective.com/llms.txt) | A primer for language models writing Relix |
+| [Architecture](ARCHITECTURE.md) | How the engine is put together |
 
-Both manuals are **executed rather than proofread**. Every algebra example is
-parsed and analysed against a real schema; every worked example is run and its
-output compared against the result the page prints; every Java snippet is compiled
-against the real classpath and run, with its printed output compared against the
-fence below it. A stale example fails the build by name.
+Every example in the manuals is executed on each build rather than proofread, and
+so is the one above.
 
-## Requirements
+## Building from source
 
-Java 21. `./gradlew build` needs nothing else — no Docker, no network, no
-database. The heavier suites are tagged and excluded from that gate, because a
-gate that cannot run on a clean checkout is one people learn to skip;
-`./gradlew verifyAll` runs them where the machine can.
+```bash
+./gradlew build
+```
+
+It needs Java 21 and nothing else: no Docker, no network, no database.
 
 ## Status
 
-Relix is under active development and has not had a stable release. The embedding
-API carries `@since` tags and a backward-compatible-per-major promise, checked by a
-compatibility gate; the rest of the module graph is internal to this build and not
-a surface to depend on.
+Relix is under active development and has not had a stable release. Release
+candidates are on Maven Central. The embedding API carries `@since` tags and a
+backward-compatible-per-major promise, checked by a compatibility gate.
 
 ## Contributing
 
-Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md). To report a
-security problem, follow [`SECURITY.md`](SECURITY.md) rather than opening an issue.
-Everyone taking part is expected to follow the
-[code of conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md), report
+security problems as [`SECURITY.md`](SECURITY.md) describes rather than in an issue,
+and follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-Apache License 2.0 — see [`LICENSE.txt`](LICENSE.txt) and [`NOTICE`](NOTICE).
+Apache License 2.0. See [`LICENSE.txt`](LICENSE.txt) and [`NOTICE`](NOTICE).
 © 2026 Darkcollective, LLC.

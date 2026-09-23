@@ -64,7 +64,7 @@
 3	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/SelectionIntoFixpointPass.java
 1	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/TransitiveEqualityPass.java
 4	relix-parser/src/main/java/com/darkcollective/relix/parser/Lexer.java
-10	relix-parser/src/main/java/com/darkcollective/relix/parser/RelAlgebraParser.java
+9	relix-parser/src/main/java/com/darkcollective/relix/parser/RelAlgebraParser.java
 5	relix-plan/src/main/java/com/darkcollective/relix/plan/JoinPlanning.java
 3	relix-plan/src/main/java/com/darkcollective/relix/plan/MongoExpressions.java
 4	relix-plan/src/main/java/com/darkcollective/relix/plan/MongoPushdownPlanner.java
