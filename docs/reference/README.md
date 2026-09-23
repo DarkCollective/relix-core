@@ -47,6 +47,7 @@ The shape of a `.relix` file — declaring data, naming results, and reusing cod
 | [delimited identifier](language/delimited-identifier.md) | Backtick a name that collides with a reserved word (`` `order` ``) |
 | [comments](language/comments.md) | `--` to end of line, `/* … */` for a block |
 | [operator spellings](language/spellings.md) | Every operator's Unicode glyph and its ASCII equivalent |
+| [grammar (EBNF)](language/grammar.md) | The whole language as one EBNF grammar — every statement, operator and token |
 | [namespace](language/namespace.md) | Declare the script's namespace |
 | [import](language/import.md) | Reuse symbols defined in another file |
 | [def](language/def.md) | Define a scalar (per-value) function |

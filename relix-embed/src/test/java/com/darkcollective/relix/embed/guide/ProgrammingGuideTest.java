@@ -507,15 +507,34 @@ final class ProgrammingGuideTest {
 
     // ── the guide ───────────────────────────────────────────────────────────────
 
+    /**
+     * Every guide page, and the public repository's README.
+     *
+     * <p>The README is the first page of the API most readers see, and its example is
+     * the one they copy first, so it is held to the guide's contract. It had been held to
+     * nothing, and said the artifact was unpublished for as long as it was on Maven
+     * Central. It is found in two places because it lives in two: here it is the export's
+     * overlay, which the public tree does not carry, and there it is the root README.
+     */
     private static List<Path> guidePages() {
+        List<Path> pages = new ArrayList<>();
         try (Stream<Path> walk = Files.walk(guideRoot())) {
-            return walk.filter(Files::isRegularFile)
+            walk.filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".md"))
                     .sorted(Comparator.comparing(Path::toString))
-                    .toList();
+                    .forEach(pages::add);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        pages.add(publicReadme());
+        return pages;
+    }
+
+    /** The public README: the export's overlay here, the root README in the public tree. */
+    private static Path publicReadme() {
+        Path root = guideRoot().getParent().getParent();
+        Path overlay = root.resolve("tools/export/public/README.md");
+        return Files.isRegularFile(overlay) ? overlay : root.resolve("README.md");
     }
 
     private static String read(Path page) {
