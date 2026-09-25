@@ -102,6 +102,9 @@ final class DateTimeFunctions {
      */
     private static final String SQLSERVER = "sqlserver";
 
+    /** A dialect with {@code DATE_TRUNC} in relix's argument order, since Db2 11.1. */
+    private static final String DB2 = "db2";
+
     private DateTimeFunctions() {
     }
 
@@ -339,7 +342,7 @@ final class DateTimeFunctions {
         String unit = arguments.get(0);
         String timestamp = arguments.get(1);
         if (target.isFamily(PushdownTarget.SQL)) {
-            if (target.isVariant(POSTGRES) || target.isVariant(DUCKDB)) {
+            if (target.isVariant(POSTGRES) || target.isVariant(DUCKDB) || target.isVariant(DB2)) {
                 return Optional.of("date_trunc(" + unit + ", " + timestamp + ")");
             }
             if (target.isVariant(MYSQL)) {

@@ -66,7 +66,7 @@ final class PushdownCorpus {
      */
     private static final Set<Dialect> ALL =
             EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB,
-                    Dialect.SQLITE, Dialect.SQLSERVER);
+                    Dialect.SQLITE, Dialect.SQLSERVER, Dialect.DB2);
 
     /**
      * The dialects confirmed to count and slice a string by code point, as relix does.
@@ -79,7 +79,7 @@ final class PushdownCorpus {
      * character, not what a manual claims.
      */
     private static final Set<Dialect> COUNTS_CODE_POINTS =
-            EnumSet.of(Dialect.MYSQL, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE);
+            EnumSet.of(Dialect.MYSQL, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE, Dialect.DB2);
 
     /**
      * The dialects offered {@code DATE_TRUNC}, whose spelling is chosen per dialect.
@@ -89,7 +89,7 @@ final class PushdownCorpus {
      * cannot confirm.
      */
     private static final Set<Dialect> TRUNCATES_DATES =
-            EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
+            EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB, Dialect.DB2);
 
     /**
      * The dialects offered {@code Fix}, truncation towards zero, which has a different
@@ -97,7 +97,7 @@ final class PushdownCorpus {
      * is a floating-point function behind a compile-time option.
      */
     private static final Set<Dialect> TRUNCATES_NUMBERS =
-            EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB, Dialect.SQLSERVER);
+            EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB, Dialect.SQLSERVER, Dialect.DB2);
 
     /**
      * The dialects that fold a limit with nothing ordering it — every one but SQL Server,
@@ -106,7 +106,7 @@ final class PushdownCorpus {
      */
     private static final Set<Dialect> LIMITS_UNORDERED =
             EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB,
-                    Dialect.SQLITE);
+                    Dialect.SQLITE, Dialect.DB2);
 
     /**
      * The dialects with date and time types, and so the ones a temporal literal or a
@@ -120,7 +120,7 @@ final class PushdownCorpus {
      */
     private static final Set<Dialect> HAS_TEMPORAL_TYPES =
             EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB,
-                    Dialect.SQLSERVER);
+                    Dialect.SQLSERVER, Dialect.DB2);
 
     /**
      * The dialects that round in decimal, as the engine does — every one but SQLite,
@@ -129,7 +129,7 @@ final class PushdownCorpus {
      */
     private static final Set<Dialect> ROUNDS_IN_DECIMAL =
             EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB,
-                    Dialect.SQLSERVER);
+                    Dialect.SQLSERVER, Dialect.DB2);
 
     /**
      * The dialects that fold an AS-OF join: Postgres, DuckDB, which spells
@@ -142,7 +142,7 @@ final class PushdownCorpus {
      * gate rather than behind a container.
      */
     private static final Set<Dialect> FOLDS_LATERAL_ASOF =
-            EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLSERVER);
+            EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLSERVER, Dialect.DB2);
 
     /**
      * The dialects that execute a pushed {@code OVER} clause — see
@@ -150,7 +150,7 @@ final class PushdownCorpus {
      */
     private static final Set<Dialect> FOLDS_WINDOWS =
             EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE,
-                    Dialect.SQLSERVER);
+                    Dialect.SQLSERVER, Dialect.DB2);
 
     /**
      * A backend that folds a case and is accepted to answer it differently.

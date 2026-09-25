@@ -60,6 +60,18 @@ final class Spellings {
     /** @see #POSTGRES */
     static final String SQLSERVER = "sqlserver";
 
+    /** @see #POSTGRES */
+    static final String DB2 = "db2";
+
+    /**
+     * The string unit a Db2 function counts in when told to count characters. Db2's
+     * {@code LEFT}, {@code RIGHT} and {@code LENGTH} count bytes by default, and its
+     * {@code LEFT} pads with spaces when asked for more than the string holds, so the
+     * counting and slicing spellings all go through {@code CHARACTER_LENGTH} and
+     * {@code SUBSTRING} in this unit.
+     */
+    static final String DB2_CHARACTERS = "CODEUNITS32";
+
     /**
      * SQL Server's binary collation. A string function whose answer depends on case —
      * {@code REPLACE} — is handed its argument under it, since the default collation
