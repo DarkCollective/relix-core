@@ -38,10 +38,17 @@ value is the decoded text (backticks stripped, doubled backticks collapsed), so
 every downstream consumer treats it exactly like a normal name — there is no
 distinct AST node and no semantic difference from an unreserved bare name. An
 unterminated identifier (end of input or a newline before the closing backtick)
-or an empty `` `` `` is a parse error. An empty name:
+or an empty `` `` `` is a parse error, and so is one that holds only whitespace. An
+empty name:
 
 ```relix-invalid
 query { π `` (Orders) };
+```
+
+A name of only spaces:
+
+```relix-invalid
+query { π ` ` (Orders) };
 ```
 
 A name that reaches the end of the line before its closing backtick:

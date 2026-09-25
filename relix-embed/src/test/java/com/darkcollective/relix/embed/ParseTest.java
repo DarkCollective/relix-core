@@ -46,12 +46,13 @@ final class ParseTest {
     }
 
     @Test
-    @DisplayName("a failure the grammar does not report as its own is still a parse failure")
-    void otherFailures() {
-        // The grammar reads a limit as an int and lets NumberFormatException escape.
+    @DisplayName("a literal of the right shape but the wrong value is placed at its token")
+    void malformedLiteral() {
         assertThatThrownBy(() -> Relix.parse("query { λ 1.5 (R) };"))
-                .isInstanceOf(ScriptParseException.class)
-                .hasCauseInstanceOf(NumberFormatException.class);
+                .isInstanceOfSatisfying(ScriptParseException.class, e -> {
+                    assertThat(e.line()).isEqualTo(1);
+                    assertThat(e.column()).isEqualTo(11);
+                });
     }
 
     @Test

@@ -287,7 +287,14 @@ GraphQL request must name its fields up front, so nothing is generated for one.
 # Limitations:
 Predicates are not pushed into request parameters: a `[required]` `IN` column
 with no `[default: …]` is an error. Provide a default, or filter the result with
-`σ` after the fetch. The response is read fully into memory (no streaming
+`σ` after the fetch. A pagination default is a whole number:
+
+```relix-invalid
+source Products from http { url: "https://dummyjson.com/products",
+    paginate: { limit: query("limit") [default: 2.5] } };
+```
+
+The response is read fully into memory (no streaming
 cursor). `extract: csv(…)` over HTTP parses but does not execute — use JSON.
 PUT/PATCH/DELETE/HEAD are not available (Relix never mutates data). A generated
 GraphQL request carries no arguments — no filter, no page size, no variables — so a
