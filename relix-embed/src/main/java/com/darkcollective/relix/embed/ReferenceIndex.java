@@ -19,11 +19,17 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The language reference bundled in this module: every page, and how to find it.
@@ -39,7 +45,18 @@ final class ReferenceIndex {
     /** Where the pages are, among this module's resources. */
     static final String ROOT = "/com/darkcollective/relix/embed/reference/";
 
-    static final List<ReferencePage> ALL = buildAll();
+    /** A backticked span in a spellings-table cell. */
+    private static final Pattern SPAN = Pattern.compile("`([^`]+)`");
+
+    /** An operand placeholder, making a span a usage ({@code x IS NULL}), not a spelling. */
+    private static final Pattern OPERAND = Pattern.compile("(^|\\s)x(\\s|$)");
+
+    /** A cell boundary: a pipe the table has not escaped with a backslash. */
+    private static final Pattern CELL = Pattern.compile("(?<!\\\\)\\|");
+
+    // After the patterns, which building it reads.
+    static final List<ReferencePage> ALL =
+            withSpellings(buildAll(), read("language/spellings.md").orElseThrow());
 
     private ReferenceIndex() {
     }
@@ -54,6 +71,98 @@ final class ReferenceIndex {
                     : Optional.of(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Adds to each page the spellings {@code language/spellings.md} gives its construct.
+     *
+     * <p>A page is keyed by its glyph and its names, but an operator whose ASCII keyword
+     * is not its name — {@code ANTI}, {@code ><}, {@code LJOIN} — would otherwise be
+     * found by nothing, and that keyword is the spelling recommended for generated code.
+     * The spellings page is already the checked list of them, held to the parser, so the
+     * keys are read from it rather than kept as a second list here.
+     *
+     * <p>Each table row names one construct in its first two columns, which a row either
+     * resolves to one page — any of its spellings already being that page's key — or,
+     * when its columns list several constructs side by side ({@code LJOIN / RJOIN /
+     * FJOIN} against {@code |>< / ><| / |><|}), resolves pair by pair. A row naming no
+     * page, such as the alias arrow, adds nothing. Rows are read in order, so an alias
+     * row can resolve through a spelling an earlier row added.
+     */
+    static List<ReferencePage> withSpellings(List<ReferencePage> pages, String spellings) {
+        Map<String, Integer> owner = new HashMap<>();
+        List<Set<String>> keys = new ArrayList<>();
+        for (int i = 0; i < pages.size(); i++) {
+            keys.add(new LinkedHashSet<>(pages.get(i).keys()));
+            for (String key : pages.get(i).keys()) {
+                owner.put(key, i);
+            }
+        }
+        for (String line : spellings.split("\\R")) {
+            if (!line.startsWith("|")) {
+                continue;
+            }
+            String[] cells = CELL.split(line);
+            List<String> left = spans(cells[1]);
+            List<String> right = spans(cells[2]);
+            List<String> all = new ArrayList<>(left);
+            all.addAll(right);
+            Set<Integer> named = owners(all, owner);
+            if (named.size() == 1) {
+                addKeys(named.iterator().next(), all, keys, owner);
+            } else if (left.size() == right.size()) {
+                for (int i = 0; i < left.size(); i++) {
+                    List<String> pair = List.of(left.get(i), right.get(i));
+                    Set<Integer> one = owners(pair, owner);
+                    if (one.size() == 1) {
+                        addKeys(one.iterator().next(), pair, keys, owner);
+                    }
+                }
+            }
+        }
+        List<ReferencePage> result = new ArrayList<>();
+        for (int i = 0; i < pages.size(); i++) {
+            ReferencePage page = pages.get(i);
+            result.add(new ReferencePage(page.path(), page.category(), page.title(),
+                    page.symbol(), page.summary(), List.copyOf(keys.get(i))));
+        }
+        return List.copyOf(result);
+    }
+
+    /**
+     * The spellings a cell writes, lower-cased as keys are, with escaped pipes restored. A
+     * span showing an operand is how the construct is used, not a way to look it up, and
+     * is left out.
+     */
+    private static List<String> spans(String cell) {
+        List<String> found = new ArrayList<>();
+        Matcher m = SPAN.matcher(cell);
+        while (m.find()) {
+            String span = m.group(1).replace("\\|", "|").toLowerCase(Locale.ROOT);
+            if (!OPERAND.matcher(span).find()) {
+                found.add(span);
+            }
+        }
+        return found;
+    }
+
+    private static Set<Integer> owners(List<String> spellings, Map<String, Integer> owner) {
+        Set<Integer> found = new HashSet<>();
+        for (String spelling : spellings) {
+            Integer page = owner.get(spelling);
+            if (page != null) {
+                found.add(page);
+            }
+        }
+        return found;
+    }
+
+    private static void addKeys(int page, List<String> spellings, List<Set<String>> keys,
+                                Map<String, Integer> owner) {
+        for (String spelling : spellings) {
+            keys.get(page).add(spelling);
+            owner.put(spelling, page);
         }
     }
 
