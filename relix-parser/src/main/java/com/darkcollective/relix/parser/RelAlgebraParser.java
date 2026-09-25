@@ -343,6 +343,7 @@ public final class RelAlgebraParser {
                 operator.type() == TokenType.SEMI_JOIN ||
                 operator.type() == TokenType.ANTI_JOIN ||
                 operator.type() == TokenType.UNIVERSAL_SEMI_JOIN) {
+                requireJoinCondition(operator, left);
                 condition = parsePredicate();
             } else if (operator.type() == TokenType.ASOF_JOIN) {
                 // Optional INNER keyword switches from left-outer to inner mode.
@@ -350,6 +351,7 @@ public final class RelAlgebraParser {
                     asofInner = true;
                     advance();
                 }
+                requireJoinCondition(operator, left);
                 condition = parsePredicate();
                 // Optional WITHIN <durExpr> tolerance clause.
                 if (current.type() == TokenType.WITHIN) {
@@ -414,6 +416,14 @@ public final class RelAlgebraParser {
             }
 
             RelNode right = parseExpression(precedence + 1);
+            if (operator.type() == TokenType.NATURAL_JOIN && isComparison(current.type())) {
+                // `A ⋈ A.x = B.y B`: the condition was read as the right input, and the
+                // comparison after it is where parsing stops. Say what went wrong, at
+                // the operator, rather than that the input should have ended there.
+                throw ParseException.at("'" + operator.lexeme() + "' is the natural join: it joins"
+                        + " on the columns both inputs share and takes no condition; for an"
+                        + " explicit condition use ⨝ (><)", lexer.input(), operator);
+            }
             left = switch (operator.type()) {
                 case NATURAL_JOIN    -> new NaturalJoinNode(left, right, loc(operator));
                 case THETA_JOIN      -> new ThetaJoinNode(left, right, condition, loc(operator));
@@ -2281,6 +2291,35 @@ public final class RelAlgebraParser {
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /**
+     * Refuses a conditioned join written with no condition, such as
+     * {@code Customers ANTI Orders}, naming the operator and what it lacks.
+     *
+     * <p>Left alone, the right input is read as the start of the condition and parsing
+     * stops at whatever follows it — "expected comparison operator; found end of input",
+     * placed at the end of the expression. A name followed directly by the end of the
+     * expression, a closing parenthesis or another operator cannot begin a condition,
+     * which always compares something, so it can only be the right input.
+     */
+    private void requireJoinCondition(Token operator, RelNode left) {
+        if (current.type() != TokenType.IDENTIFIER) {
+            return;
+        }
+        StringBuilder right = new StringBuilder(current.lexeme());
+        int next = 1;
+        while (peek(next).type() == TokenType.DOT && peek(next + 1).type() == TokenType.IDENTIFIER) {
+            right.append('.').append(peek(next + 1).lexeme());
+            next += 2;
+        }
+        TokenType after = peek(next).type();
+        if (after == TokenType.EOF || after == TokenType.RPAREN || isBinaryRelOperator(after)) {
+            String leftName = left instanceof RelationNode named ? named.name() : "…";
+            throw ParseException.at("'" + operator.lexeme() + "' needs a join condition"
+                    + " between its two inputs, written after the operator: " + leftName + " "
+                    + operator.lexeme() + " <condition> " + right, lexer.input(), operator);
+        }
+    }
 
     private static boolean isBinaryRelOperator(TokenType type) {
         return switch (type) {

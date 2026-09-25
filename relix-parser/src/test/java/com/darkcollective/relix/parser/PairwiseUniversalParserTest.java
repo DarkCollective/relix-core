@@ -115,7 +115,8 @@ final class PairwiseUniversalParserTest extends ParserTestSupport {
     @Test
     void failsOnMissingPredicate() {
         assertParseError("L USEMI R")
-                .hasMessageContaining("Expected comparison operator");
+                .hasMessageContaining("'USEMI' needs a join condition")
+                .at(1, 3);
     }
 
     @Test
