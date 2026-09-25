@@ -26,7 +26,8 @@ Round to the nearest hundred (negative places not supported — scale instead):
   π Round(amount, 0) → whole (Orders)
 
 # Pushdown:
-SQL: folds to `ROUND(<e>)` and `ROUND(<e>, <places>)` on every dialect but SQLite.
+SQL: folds to `ROUND(<e>)` and `ROUND(<e>, <places>)` on every dialect but SQLite —
+on SQL Server, whose `ROUND` always takes its places, as `ROUND(<e>, 0)`.
 Both round half away from zero over an exact numeric column, which is what the engine
 does. SQLite has no decimal type and rounds the nearest double instead — `-49.555`
 rounds to `-49.55` there and `-49.56` here — so on SQLite the call runs in the engine.

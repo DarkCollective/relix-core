@@ -43,7 +43,7 @@ blocking over a provably-unbounded input.
 ## SQL pushdown
 
 When the source is backed by a JDBC connection and the dialect supports window
-functions (PostgreSQL, DuckDB, SQLite and the GENERIC H2 dialect; MySQL is conservative), the
+functions (PostgreSQL, DuckDB, SQLite, SQL Server and the GENERIC H2 dialect; MySQL is conservative), the
 offset window is folded into the SQL scan:
 
   SELECT region, month, revenue, LAG(revenue, 1) OVER (PARTITION BY region ORDER BY month ASC) AS prev
@@ -166,7 +166,7 @@ field of that name, the added column replaces it.
 `LAG`/`LEAD` take an optional positive-integer-literal offset (default `1`) and an
 optional default value (default `NULL`); `FIRST_VALUE`/`LAST_VALUE` take only the
 value expression. The `AS` column must not clash with an existing input column.
-SQL pushdown is supported on PostgreSQL, DuckDB, SQLite and GENERIC (H2) backends; MySQL and
+SQL pushdown is supported on PostgreSQL, DuckDB, SQLite, SQL Server and GENERIC (H2) backends; MySQL and
 MongoDB always evaluate offset windows in-engine.
 
 # Alternatives:

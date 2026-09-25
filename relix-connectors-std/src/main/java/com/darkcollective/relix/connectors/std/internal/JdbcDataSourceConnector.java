@@ -441,19 +441,26 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
      * The type names a driver uses for a timestamp that carries its own offset, where
      * it does not also report {@link java.sql.Types#TIMESTAMP_WITH_TIMEZONE}.
      *
-     * <p>There is exactly one, and it is PostgreSQL's: pgjdbc maps {@code timestamptz}
-     * to {@code Types.TIMESTAMP} — the same code it gives {@code timestamp without time
+     * <p>PostgreSQL's is the first: pgjdbc maps {@code timestamptz} to
+     * {@code Types.TIMESTAMP} — the same code it gives {@code timestamp without time
      * zone} — so the type code alone cannot tell the two apart on the database where the
      * distinction matters most. Read as a {@code LocalDateTime}, which is what the
      * zone-less branch does, the driver refuses the column outright rather than
      * answering wrongly, so before this list a declared {@code TIMESTAMP} over a
      * {@code timestamptz} column was a query that could not run at all.
      *
+     * <p>SQL Server's {@code datetimeoffset} is the second, and the worse of the two
+     * because it does not refuse: mssql-jdbc reports it under its own code,
+     * {@code -155}, and asked for a {@code LocalDateTime} it converts the instant to the
+     * <em>client JVM's</em> zone — {@code 10:00 -05:00} came back as {@code 15:00} on a
+     * JVM at UTC, and would come back as something else on any other. Read as the
+     * {@code OffsetDateTime} it is, it is the same instant everywhere.
+     *
      * <p>It holds what has been observed against a real driver and nothing else. A name
      * added from documentation would be the same claim this list exists to stop being
      * made.
      */
-    private static final Set<String> OFFSET_BEARING_TYPE_NAMES = Set.of("timestamptz");
+    static final Set<String> OFFSET_BEARING_TYPE_NAMES = Set.of("timestamptz", "datetimeoffset");
 
     /**
      * Whether column {@code idx} carries its own UTC offset, as opposed to being a civil

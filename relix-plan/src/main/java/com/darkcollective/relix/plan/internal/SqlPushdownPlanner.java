@@ -953,6 +953,12 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         if (p.limitApplied || p.windowApplied) {
             return Optional.empty();
         }
+        // A limit with nothing ordering it is legal SQL almost everywhere, and not where
+        // the row limiting is OFFSET … FETCH, which SQL Server accepts only after an
+        // ORDER BY. Declining leaves the λ in the engine over whatever else folded.
+        if (p.dialect.limitNeedsOrderBy() && p.orderBy.isEmpty()) {
+            return Optional.empty();
+        }
         p.limit = node.count();
         p.offset = node.offset().orElse(0L);
         p.limitApplied = true;
@@ -1358,19 +1364,20 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         String orderBy = qualified(dialect, aliases.right(), matchColumn)
                 + (match.backward() ? " DESC" : " ASC");
 
-        String subquery = "SELECT " + String.join(", ", qualifiedColumns(dialect, aliases.right(), right.baseColumns))
-                + " FROM " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
-                + " WHERE " + condition.get()
-                + " ORDER BY " + orderBy
-                + " LIMIT 1";
-        String lateral = node.inner() ? "JOIN LATERAL" : "LEFT JOIN LATERAL";
-        String from = dialect.table(left.tableName) + " " + dialect.quote(aliases.left())
-                + " " + lateral + " (" + subquery + ") " + dialect.quote(aliases.right()) + " ON TRUE";
+        Optional<String> from = dialect.nearestRowJoin(
+                dialect.table(left.tableName) + " " + dialect.quote(aliases.left()),
+                String.join(", ", qualifiedColumns(dialect, aliases.right(), right.baseColumns)),
+                "FROM " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
+                        + " WHERE " + condition.get(),
+                orderBy, dialect.quote(aliases.right()), node.inner());
+        if (from.isEmpty()) {
+            return Optional.empty();
+        }
 
         List<String> selectList = new ArrayList<>();
         selectList.addAll(qualifiedColumns(dialect, aliases.left(), left.baseColumns));
         selectList.addAll(qualifiedColumns(dialect, aliases.right(), right.baseColumns));
-        return Optional.of(new Pushed(left.connectorType, left.connection, from, selectList,
+        return Optional.of(new Pushed(left.connectorType, left.connection, from.get(), selectList,
                 schemaOf(node), renderer, dialect));
     }
 

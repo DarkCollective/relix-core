@@ -44,6 +44,8 @@ rather than in name.
     than the string `DATE_FORMAT` returns. The unit must be a literal: a call
     whose unit is a column or an expression is evaluated in-engine, since the
     unit is what chooses the pattern.
+  - **SQL Server**: not pushed. Its `DATETRUNC` arrived in SQL Server 2022, and a
+    declared dialect cannot confirm the server is that new.
   - **SQLite**: not pushed. SQLite has no date type, and `strftime` reads whatever
     text a column holds.
   - **GENERIC**: not pushed; the call is evaluated in-engine, and everything

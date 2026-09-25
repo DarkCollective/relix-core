@@ -19,7 +19,9 @@ First-of-the-month invoices:
 
 # Pushdown:
 SQL: folds to `EXTRACT(DAY FROM <col>)` on every dialect but SQLite,
-which has no date type to extract from.
+which has no date type to extract from. On SQL Server, which has no
+`EXTRACT`, it is `DATEPART(DAY, SWITCHOFFSET(<col>, '+00:00'))` — the value
+switched to UTC first, so a `DATETIMEOFFSET` is read at UTC as the engine reads it.
 MongoDB: folds to `{"$dayOfMonth": "$<col>"}` inside a `$project` stage (requires
 alias). Note: MongoDB uses `$dayOfMonth`, not `$day`.
 

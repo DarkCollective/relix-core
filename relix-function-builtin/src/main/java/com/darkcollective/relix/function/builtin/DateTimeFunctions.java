@@ -96,6 +96,12 @@ final class DateTimeFunctions {
      */
     private static final String SQLITE = "sqlite";
 
+    /**
+     * The dialect with no {@code EXTRACT}, whose {@code DATEPART} reads a
+     * {@code DATETIMEOFFSET} in its own offset rather than at UTC.
+     */
+    private static final String SQLSERVER = "sqlserver";
+
     private DateTimeFunctions() {
     }
 
@@ -299,6 +305,14 @@ final class DateTimeFunctions {
                 // parses whatever text the column holds, which is a different function.
                 if (target.isVariant(SQLITE)) {
                     return Optional.empty();
+                }
+                // SQL Server spells it DATEPART, which reads a DATETIMEOFFSET's hour in
+                // the offset it was stored with. SWITCHOFFSET to +00:00 first makes it
+                // UTC's, as the engine's is, and leaves a zone-less DATETIME2, a DATE or
+                // a TIME as it was — all four checked against a running server.
+                if (target.isVariant(SQLSERVER)) {
+                    return Optional.of("DATEPART(" + sqlUnit + ", SWITCHOFFSET(" + argument
+                            + ", '+00:00'))");
                 }
                 return Optional.of("EXTRACT(" + sqlUnit + " FROM " + argument + ")");
             }

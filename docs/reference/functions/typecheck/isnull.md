@@ -23,7 +23,9 @@ Combine with IIf to derive a label:
   π id, IIf(IsNull(phone), "no phone", phone) → contact (Users)
 
 # Pushdown:
-SQL: folds to `(<e> IS NULL)` on all dialects — an operator rather than a call.
+SQL: folds to `(<e> IS NULL)` on all dialects — an operator rather than a call. SQL
+Server has no boolean value for it to produce, so there it is
+`(CASE WHEN <e> IS NULL THEN 1 ELSE 0 END)`, the `BIT` the question answers as.
 SQL asks the same question of the same three-valued world, so there is no NULL
 rule to reconcile.
 

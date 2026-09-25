@@ -66,7 +66,7 @@ final class PushdownCorpus {
      */
     private static final Set<Dialect> ALL =
             EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB,
-                    Dialect.SQLITE);
+                    Dialect.SQLITE, Dialect.SQLSERVER);
 
     /**
      * The dialects confirmed to count and slice a string by code point, as relix does.
@@ -82,14 +82,31 @@ final class PushdownCorpus {
             EnumSet.of(Dialect.MYSQL, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE);
 
     /**
-     * The dialects offered {@code Fix} and {@code DATE_TRUNC}, the two functions whose
-     * spelling is chosen per dialect. GENERIC is not one of them: an unidentified backend
-     * is one no spelling has been confirmed against. Nor is SQLite, though it names a
-     * backend — it has no date type to truncate, and its {@code TRUNC} is a floating-point
-     * function behind a compile-time option.
+     * The dialects offered {@code DATE_TRUNC}, whose spelling is chosen per dialect.
+     * GENERIC is not one of them: an unidentified backend is one no spelling has been
+     * confirmed against. Nor is SQLite, which has no date type to truncate, nor SQL
+     * Server, whose {@code DATETRUNC} arrived in 2022 — a version a declared dialect
+     * cannot confirm.
      */
-    private static final Set<Dialect> IDENTIFIED =
+    private static final Set<Dialect> TRUNCATES_DATES =
             EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
+
+    /**
+     * The dialects offered {@code Fix}, truncation towards zero, which has a different
+     * name on each. Not GENERIC, for the reason above, and not SQLite, whose {@code TRUNC}
+     * is a floating-point function behind a compile-time option.
+     */
+    private static final Set<Dialect> TRUNCATES_NUMBERS =
+            EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB, Dialect.SQLSERVER);
+
+    /**
+     * The dialects that fold a limit with nothing ordering it — every one but SQL Server,
+     * whose {@code OFFSET … FETCH} is legal only after an {@code ORDER BY}
+     * ({@code Dialect.limitNeedsOrderBy}).
+     */
+    private static final Set<Dialect> LIMITS_UNORDERED =
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB,
+                    Dialect.SQLITE);
 
     /**
      * The dialects with date and time types, and so the ones a temporal literal or a
@@ -102,7 +119,8 @@ final class PushdownCorpus {
      * stored text — and those cases stay in {@link #ALL}.
      */
     private static final Set<Dialect> HAS_TEMPORAL_TYPES =
-            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB,
+                    Dialect.SQLSERVER);
 
     /**
      * The dialects that round in decimal, as the engine does — every one but SQLite,
@@ -110,11 +128,12 @@ final class PushdownCorpus {
      * point.
      */
     private static final Set<Dialect> ROUNDS_IN_DECIMAL =
-            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB,
+                    Dialect.SQLSERVER);
 
     /**
-     * The dialects that fold an AS-OF join: Postgres, and DuckDB, which spells
-     * {@code LATERAL} the same way.
+     * The dialects that fold an AS-OF join: Postgres, DuckDB, which spells
+     * {@code LATERAL} the same way, and SQL Server, which spells it {@code APPLY}.
      *
      * <p>{@code Dialect.supportsLateralAsOf} is the answer, and it is a claim about
      * {@code LATERAL} rather than about the operator: H2 2.x has none, and MySQL grew one
@@ -123,14 +142,15 @@ final class PushdownCorpus {
      * gate rather than behind a container.
      */
     private static final Set<Dialect> FOLDS_LATERAL_ASOF =
-            EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB);
+            EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLSERVER);
 
     /**
      * The dialects that execute a pushed {@code OVER} clause — see
      * {@code Dialect.supportsWindowFunctions}. MySQL is excluded there and so here.
      */
     private static final Set<Dialect> FOLDS_WINDOWS =
-            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE);
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE,
+                    Dialect.SQLSERVER);
 
     /**
      * A backend that folds a case and is accepted to answer it differently.
@@ -145,10 +165,17 @@ final class PushdownCorpus {
      * reason is the whole record, so write it for someone deciding whether it is still
      * the right call.
      *
-     * @param dialects the dialects whose answer is not compared
-     * @param reason   why, and why that is acceptable
+     * @param reasons each dialect whose answer is not compared, and why that is acceptable
      */
-    record Divergence(Set<Dialect> dialects, String reason) {}
+    record Divergence(Map<Dialect, String> reasons) {
+
+        /** One reason, shared by every dialect it names. */
+        static Divergence of(Set<Dialect> dialects, String reason) {
+            Map<Dialect, String> reasons = new java.util.EnumMap<>(Dialect.class);
+            dialects.forEach(d -> reasons.put(d, reason));
+            return new Divergence(reasons);
+        }
+    }
 
     /**
      * {@link Dialect#GENERIC} is an <em>unidentified</em> backend, so what it does with a
@@ -164,6 +191,17 @@ final class PushdownCorpus {
      * read, so the fold stays and the difference is written down: here, and in
      * {@code docs/reference/advanced/pushdown.md} where a user can find it.
      */
+    /**
+     * SQL Server's binary collation orders by UTF-16 code unit, as H2 does — the same
+     * narrow difference, reached by a named backend rather than an unidentified one.
+     */
+    private static final String SQLSERVER_ORDERS_BY_CODE_UNIT =
+            "SQL Server's binary collation (Latin1_General_100_BIN2) orders strings by UTF-16 "
+            + "code unit where relix orders by code point. They differ only for a "
+            + "supplementary character compared against U+E000..U+FFFF, and a code-point "
+            + "order there needs a VARCHAR under a _UTF8 collation, which would change what "
+            + "MIN returns. The fold is still asserted; only the answers are not compared.";
+
     private static final String GENERIC_ORDERS_BY_CODE_UNIT =
             "GENERIC is an unidentified backend and H2, which stands in for one here, orders "
             + "strings by UTF-16 code unit where relix orders by code point. They differ only "
@@ -241,14 +279,20 @@ final class PushdownCorpus {
         static Case diverging(String expression, Set<Dialect> foldsOn, Set<Dialect> dialects,
                               String reason) {
             return new Case(expression, foldsOn, false,
-                    Optional.of(new Divergence(dialects, reason)));
+                    Optional.of(Divergence.of(dialects, reason)));
+        }
+
+        /** The same, for two sets of dialects diverging for two different reasons. */
+        static Case diverging(String expression, Set<Dialect> dialects, String reason,
+                              Set<Dialect> others, String otherReason) {
+            Map<Dialect, String> reasons = new java.util.EnumMap<>(Divergence.of(dialects, reason).reasons());
+            reasons.putAll(Divergence.of(others, otherReason).reasons());
+            return new Case(expression, ALL, false, Optional.of(new Divergence(reasons)));
         }
 
         /** Why this dialect's answer is not compared, or null when it is. */
         String divergenceOn(Dialect dialect) {
-            return divergence.filter(d -> d.dialects().contains(dialect))
-                    .map(Divergence::reason)
-                    .orElse(null);
+            return divergence.map(d -> d.reasons().get(dialect)).orElse(null);
         }
 
         /** Whether {@code agreement}'s connection is expected to fold this case. */
@@ -436,13 +480,13 @@ final class PushdownCorpus {
         for (String column : List.of("placed", "stamped")) {
             for (String unit : List.of("year", "month", "day", "hour", "minute", "second")) {
                 cases.add(Case.of("π oid, DATE_TRUNC('" + unit + "', " + column + ") → t (Orders)",
-                        IDENTIFIED));
+                        TRUNCATES_DATES));
             }
         }
         cases.add(Case.of("σ DATE_TRUNC('month', placed) = TIMESTAMP '2024-02-01T00:00:00Z' (Orders)",
-                IDENTIFIED));
+                TRUNCATES_DATES));
         cases.add(Case.of("σ DATE_TRUNC('day', stamped) ≥ TIMESTAMP '2024-01-15T00:00:00Z' (Orders)",
-                IDENTIFIED));
+                TRUNCATES_DATES));
         // A unit the spelling cannot read back out of the rendered literal declines,
         // but that claim has no agreement case behind it: the engine rejects an unknown
         // unit too, so both runs raise rather than answering. It is asserted where the
@@ -517,7 +561,7 @@ final class PushdownCorpus {
                 // Truncation towards zero has no single SQL name — MySQL spells it
                 // TRUNCATE(x, 0) and Postgres TRUNC(x) — so it is offered only to the
                 // dialects that name a backend.
-                Case.of("π oid, Fix(99.5 - amount) → a (Orders)", IDENTIFIED));
+                Case.of("π oid, Fix(99.5 - amount) → a (Orders)", TRUNCATES_NUMBERS));
     }
 
     /**
@@ -656,7 +700,7 @@ final class PushdownCorpus {
     }
 
     private static List<Case> sortAndLimit() {
-        return cases(
+        List<Case> cases = new ArrayList<>(cases(
                 // amount holds a NULL, and the engine sorts NULLs last in *both*
                 // directions — a placement no SQL dialect's default matches in both.
                 "τ amount ASC, oid ASC (Orders)",
@@ -664,7 +708,14 @@ final class PushdownCorpus {
                 "τ placed DESC, oid ASC (Orders)",
                 "λ 3 (τ oid ASC (Orders))",
                 "λ 2, 2 (τ oid ASC (Orders))",
-                "λ 10 (τ oid ASC (Orders))");
+                "λ 10 (τ oid ASC (Orders))"));
+        // A limit with nothing ordering it, over more rows than it keeps would be two
+        // correct answers; over fewer it is one, whatever order the rows arrive in. That
+        // is what lets these ask SQL Server's side of the question — its limit needs an
+        // ORDER BY to be legal SQL, so it declines — without a tie deciding the answer.
+        cases.add(Case.of("λ 10 (Orders)", LIMITS_UNORDERED));
+        cases.add(Case.of("λ 10 (σ amount > 50 (Orders))", LIMITS_UNORDERED));
+        return cases;
     }
 
     /** The same, keyed on a string — collated, so the database still does the sorting. */
@@ -994,11 +1045,14 @@ final class PushdownCorpus {
                 // point, which is the order a binary collation gives.
                 Case.of("σ name > 'B' (Customers)"),
                 Case.diverging("τ name ASC, cid ASC (Customers)",
-                        EnumSet.of(Dialect.GENERIC), GENERIC_ORDERS_BY_CODE_UNIT),
+                        EnumSet.of(Dialect.GENERIC), GENERIC_ORDERS_BY_CODE_UNIT,
+                        EnumSet.of(Dialect.SQLSERVER), SQLSERVER_ORDERS_BY_CODE_UNIT),
                 Case.diverging("τ name DESC, cid ASC (Customers)",
-                        EnumSet.of(Dialect.GENERIC), GENERIC_ORDERS_BY_CODE_UNIT),
+                        EnumSet.of(Dialect.GENERIC), GENERIC_ORDERS_BY_CODE_UNIT,
+                        EnumSet.of(Dialect.SQLSERVER), SQLSERVER_ORDERS_BY_CODE_UNIT),
                 Case.diverging("γ MIN(name) → lo, MAX(name) → hi (Customers)",
-                        EnumSet.of(Dialect.GENERIC), GENERIC_ORDERS_BY_CODE_UNIT));
+                        EnumSet.of(Dialect.GENERIC), GENERIC_ORDERS_BY_CODE_UNIT,
+                        EnumSet.of(Dialect.SQLSERVER), SQLSERVER_ORDERS_BY_CODE_UNIT));
     }
 
     /**

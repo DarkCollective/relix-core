@@ -146,7 +146,7 @@ public final class SqlExpressions {
             case AttributeOperand a -> cols.render(a.name());
             case NumberOperand n -> Optional.of(n.value());
             case StringOperand s -> Optional.of(dialect.stringLiteral(s.value()));
-            case BooleanOperand b -> Optional.of(b.value() ? "TRUE" : "FALSE");
+            case BooleanOperand b -> Optional.of(dialect.booleanLiteral(b.value()));
             // Temporal literals render per-dialect (ADR-0013), and a dialect with no
             // date types declines them.
             case DateOperand d -> dialect.dateLiteral(d.value());
