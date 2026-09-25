@@ -209,6 +209,9 @@ public final class DataSourceRegistry implements ConnectionProvider {
         if (lower.contains("duckdb")) {
             return Optional.of("duckdb");
         }
+        if (lower.contains("sqlite")) {
+            return Optional.of("sqlite");
+        }
         return Optional.empty();
     }
 

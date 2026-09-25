@@ -65,7 +65,8 @@ final class PushdownCorpus {
      * these questions, which is a thing a reviewer should have to see.
      */
     private static final Set<Dialect> ALL =
-            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB,
+                    Dialect.SQLITE);
 
     /**
      * The dialects confirmed to count and slice a string by code point, as relix does.
@@ -78,15 +79,38 @@ final class PushdownCorpus {
      * character, not what a manual claims.
      */
     private static final Set<Dialect> COUNTS_CODE_POINTS =
-            EnumSet.of(Dialect.MYSQL, Dialect.POSTGRES, Dialect.DUCKDB);
+            EnumSet.of(Dialect.MYSQL, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE);
 
     /**
-     * The dialects that name a specific backend. GENERIC is not one of them, and a
-     * spelling that has to be chosen per dialect is therefore never offered to it: an
-     * unidentified backend is one no spelling has been confirmed against.
+     * The dialects offered {@code Fix} and {@code DATE_TRUNC}, the two functions whose
+     * spelling is chosen per dialect. GENERIC is not one of them: an unidentified backend
+     * is one no spelling has been confirmed against. Nor is SQLite, though it names a
+     * backend — it has no date type to truncate, and its {@code TRUNC} is a floating-point
+     * function behind a compile-time option.
      */
     private static final Set<Dialect> IDENTIFIED =
             EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
+
+    /**
+     * The dialects with date and time types, and so the ones a temporal literal or a
+     * temporal function folds on.
+     *
+     * <p>SQLite is the one without: its "dates" are TEXT, a REAL or an INTEGER by the
+     * application's convention, so {@code Dialect.dateLiteral} and its siblings decline
+     * there, and so do {@code EXTRACT} and {@code DATE_TRUNC}. A temporal <em>column</em>
+     * compared with another, sorted or grouped still folds — both sides are the same
+     * stored text — and those cases stay in {@link #ALL}.
+     */
+    private static final Set<Dialect> HAS_TEMPORAL_TYPES =
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
+
+    /**
+     * The dialects that round in decimal, as the engine does — every one but SQLite,
+     * whose {@code ROUND}, {@code FLOOR} and {@code CEILING} answer in binary floating
+     * point.
+     */
+    private static final Set<Dialect> ROUNDS_IN_DECIMAL =
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
 
     /**
      * The dialects that fold an AS-OF join: Postgres, and DuckDB, which spells
@@ -106,7 +130,7 @@ final class PushdownCorpus {
      * {@code Dialect.supportsWindowFunctions}. MySQL is excluded there and so here.
      */
     private static final Set<Dialect> FOLDS_WINDOWS =
-            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DUCKDB);
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE);
 
     /**
      * A backend that folds a case and is accepted to answer it differently.
@@ -177,6 +201,11 @@ final class PushdownCorpus {
             return new Case(expression, ALL, false, Optional.empty());
         }
 
+        /** A case only the dialects with temporal types fold. */
+        static Case temporal(String expression) {
+            return new Case(expression, HAS_TEMPORAL_TYPES, false, Optional.empty());
+        }
+
         /** A case only some dialects fold. */
         static Case of(String expression, Set<Dialect> foldsOn) {
             return new Case(expression, foldsOn, false, Optional.empty());
@@ -205,7 +234,13 @@ final class PushdownCorpus {
          * some backends — see {@link Divergence}.
          */
         static Case diverging(String expression, Set<Dialect> dialects, String reason) {
-            return new Case(expression, ALL, false,
+            return diverging(expression, ALL, dialects, reason);
+        }
+
+        /** The same, for a case only {@code foldsOn} fold. */
+        static Case diverging(String expression, Set<Dialect> foldsOn, Set<Dialect> dialects,
+                              String reason) {
+            return new Case(expression, foldsOn, false,
                     Optional.of(new Divergence(dialects, reason)));
         }
 
@@ -360,18 +395,20 @@ final class PushdownCorpus {
     }
 
     private static List<Case> temporal() {
-        return cases(
-                "σ placed ≥ TIMESTAMP '2024-01-01T00:00:00Z' (Orders)",
-                "σ placed < TIMESTAMP '2024-02-15T23:45:10Z' (Orders)",
-                "σ placed ≥ TIMESTAMP '2024-01-01T00:00:00Z' "
-                        + "∧ placed < TIMESTAMP '2024-03-01T00:00:00Z' (Orders)",
-                "τ placed ASC, oid ASC (σ placed ≠ NULL (Orders))",
-                "σ joined ≥ DATE '2021-01-01' (Customers)",
-                "σ joined = NULL (Customers)");
+        return List.of(
+                Case.temporal("σ placed ≥ TIMESTAMP '2024-01-01T00:00:00Z' (Orders)"),
+                Case.temporal("σ placed < TIMESTAMP '2024-02-15T23:45:10Z' (Orders)"),
+                Case.temporal("σ placed ≥ TIMESTAMP '2024-01-01T00:00:00Z' "
+                        + "∧ placed < TIMESTAMP '2024-03-01T00:00:00Z' (Orders)"),
+                // A column against itself or a NULL test needs no literal, so these fold
+                // on SQLite too — both sides are the text the column holds.
+                Case.of("τ placed ASC, oid ASC (σ placed ≠ NULL (Orders))"),
+                Case.temporal("σ joined ≥ DATE '2021-01-01' (Customers)"),
+                Case.of("σ joined = NULL (Customers)"));
     }
 
     private static List<Case> functions() {
-        return cases(
+        return temporalCases(
                 // The extraction family is what the built-in library currently spells
                 // for SQL; everything else declines and evaluates in-engine, which is
                 // why an unspelled function is not a corpus case but a fold that fails.
@@ -472,11 +509,11 @@ final class PushdownCorpus {
                 // quotients there are 50, 250 and 25 — every one of them whole, so Int,
                 // Ceil and Round were being asked to round nothing. A decimal literal gives
                 // them 0.5, 150.5 and -49.5 without reaching for an operator that declines.
-                Case.of("π oid, Int(amount - 99.5) → a (Orders)"),
-                Case.of("π oid, Ceil(amount - 99.5) → a (Orders)"),
-                Case.of("π oid, Round(amount - 99.5) → a (Orders)"),
-                Case.of("π oid, Round(amount - 99.5, 2) → a (Orders)"),
-                Case.of("π oid, Abs(Int(99.5 - amount)) → a (Orders)"),
+                Case.of("π oid, Int(amount - 99.5) → a (Orders)", ROUNDS_IN_DECIMAL),
+                Case.of("π oid, Ceil(amount - 99.5) → a (Orders)", ROUNDS_IN_DECIMAL),
+                Case.of("π oid, Round(amount - 99.5) → a (Orders)", ROUNDS_IN_DECIMAL),
+                Case.of("π oid, Round(amount - 99.5, 2) → a (Orders)", ROUNDS_IN_DECIMAL),
+                Case.of("π oid, Abs(Int(99.5 - amount)) → a (Orders)", ROUNDS_IN_DECIMAL),
                 // Truncation towards zero has no single SQL name — MySQL spells it
                 // TRUNCATE(x, 0) and Postgres TRUNC(x) — so it is offered only to the
                 // dialects that name a backend.
@@ -555,7 +592,7 @@ final class PushdownCorpus {
      * against as the engine does.
      */
     private static List<Case> clockCalls() {
-        List<Case> cases = new ArrayList<>(cases(
+        List<Case> cases = new ArrayList<>(temporalCases(
                 // A predicate against the instant: every row of the fixture is in the
                 // past, so both runs agree on which rows survive however far apart their
                 // two instants are — the answer is stable even though the value is not.
@@ -573,7 +610,7 @@ final class PushdownCorpus {
         // as a TIMESTAMP — the half SessionClockTest, which pins a clock, does not check.
         for (String projection : List.of("π oid, NOW() → t (Orders)",
                 "π cid, CURRENT_DATE() → d (Customers)")) {
-            cases.add(Case.diverging(projection, ALL, TWO_RUNS_TWO_INSTANTS));
+            cases.add(Case.diverging(projection, HAS_TEMPORAL_TYPES, ALL, TWO_RUNS_TWO_INSTANTS));
         }
         return cases;
     }
@@ -797,16 +834,18 @@ final class PushdownCorpus {
     }
 
     private static List<Case> combinations() {
-        return cases(
+        List<Case> cases = new ArrayList<>(cases(
                 // The sort key is made total on purpose: `amount` alone ties rows 1 and 3,
                 // and a limit over a tie has more than one correct answer — the engine's
                 // sort is stable and a database's need not be, so such a case would agree
                 // or disagree by luck and prove nothing either way.
                 "λ 2 (τ amount DESC, oid ASC (π oid, amount (σ region ≠ NULL (Orders))))",
                 "δ (π region (σ amount > 50 ∧ code LIKE 'AB-%' (Orders)))",
-                "τ oid ASC (σ YEAR(placed) = 2024 (π oid, placed, amount (Orders)))",
                 "λ 3 (τ amount DESC, oid ASC (σ code LIKE 'AB-%' (Orders)))",
-                "δ (π region, qty (σ ¬(amount = NULL) ∧ qty ∈ {1, 2, 3} (Orders)))");
+                "δ (π region, qty (σ ¬(amount = NULL) ∧ qty ∈ {1, 2, 3} (Orders)))"));
+        // An extraction, so only where the dialect has a date type to extract from.
+        cases.add(Case.temporal("τ oid ASC (σ YEAR(placed) = 2024 (π oid, placed, amount (Orders)))"));
+        return cases;
     }
 
     /**
@@ -1078,6 +1117,15 @@ final class PushdownCorpus {
                 // Postgres does not admit in HAVING. So this one still needs a connection
                 // that needs no collating.
                 Case.needsExactStrings("σ region = 'west' (γ region, COUNT(*) → n (Orders))"));
+    }
+
+    /** Wraps expressions only the dialects with temporal types are expected to fold. */
+    private static List<Case> temporalCases(String... expressions) {
+        List<Case> list = new ArrayList<>(expressions.length);
+        for (String expression : expressions) {
+            list.add(Case.temporal(expression));
+        }
+        return list;
     }
 
     /** Wraps expressions every dialect is expected to fold. */

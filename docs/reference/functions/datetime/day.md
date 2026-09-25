@@ -18,7 +18,8 @@ First-of-the-month invoices:
   σ DAY(invoice_date) = 1 (Invoices)
 
 # Pushdown:
-SQL: folds to `EXTRACT(DAY FROM <col>)` on all dialects.
+SQL: folds to `EXTRACT(DAY FROM <col>)` on every dialect but SQLite,
+which has no date type to extract from.
 MongoDB: folds to `{"$dayOfMonth": "$<col>"}` inside a `$project` stage (requires
 alias). Note: MongoDB uses `$dayOfMonth`, not `$day`.
 

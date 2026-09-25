@@ -22,8 +22,9 @@ Boxes needed (round any remainder up):
   π Ceil(units / box_size) → boxes (Shipments)
 
 # Pushdown:
-SQL: folds to `CEILING(<e>)` on all dialects — the SQL standard's spelling, which
-every dialect relix targets accepts. Exact on an exact numeric column.
+SQL: folds to `CEILING(<e>)` on every dialect but SQLite — the SQL standard's
+spelling. Exact on an exact numeric column. On SQLite it is a floating-point function
+and an optional part of the build, so the call runs in the engine.
 
 # Limitations:
 NUMBER only; NULL in → NULL out. Always rounds upward, including for negatives

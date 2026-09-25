@@ -13,7 +13,8 @@ it to compare against time-of-day columns or to compute time offsets.
 # Technical Description:
 `TIME '…'` parses an ISO-8601 local time into a zone-less civil java.time.LocalTime
 at parse time; a malformed payload is a positioned parse error. It infers as the
-TIME scalar type. TIME literals push down to SQL (per dialect). Single- or
+TIME scalar type. TIME literals push down to SQL (per dialect),
+except to SQLite, which has no time type. Single- or
 double-quoted payloads are both accepted.
 
 # Examples:

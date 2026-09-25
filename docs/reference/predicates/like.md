@@ -138,7 +138,11 @@ or alternation, the InStr() function can test for substring presence.
 [comparison](comparison.md), [in](in.md), [and](and.md), [select](../operators/select.md), [instr](../functions/string/instr.md), [ucase](../functions/string/ucase.md), [lcase](../functions/string/lcase.md)
 
 # Notes:
-LIKE predicates push down to SQL backends as native `LIKE` / `NOT LIKE` clauses.
+LIKE predicates push down to SQL backends as native `LIKE` / `NOT LIKE` clauses —
+except on SQLite, whose `LIKE` ignores case for ASCII letters whatever the column's
+collation. There a literal pattern is rewritten as the case-sensitive `GLOB`, `%`
+becoming `*` and `_` becoming `?` (`code LIKE 'AB-%'` is sent as `code GLOB 'AB-*'`),
+and a pattern that is not a literal runs in the engine.
 For MongoDB connections the pattern is converted to an anchored regular expression
 and pushed as a `$regex` / `$not $regex` aggregation filter — the negated form
 paired with a null check, since `$not` alone also matches a document that has no

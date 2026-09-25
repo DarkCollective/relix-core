@@ -118,14 +118,34 @@ final class PushdownFixture {
          * decides. Unlike pgjdbc, its driver reports the column as
          * {@code TIMESTAMP_WITH_TIMEZONE}, so the connector recognises it by type code.
          */
-        DUCKDB("TIMESTAMP", "TIMESTAMPTZ");
+        DUCKDB("TIMESTAMP", "TIMESTAMPTZ"),
+
+        /**
+         * SQLite, which has no temporal types at all: both columns hold the text they are
+         * given, and the declared type names are there for the driver, which reads them to
+         * decide how to hand a value back. Nor does it read a typed {@code DATE '…'}
+         * literal, so its dates are written as plain strings — the same text, stored the
+         * same way the other backends' implicit casts would have stored it.
+         */
+        SQLITE("DATETIME", "TIMESTAMP", "");
 
         private final String unconverted;
         private final String converted;
+        private final String dateKeyword;
 
         Flavour(String unconverted, String converted) {
+            this(unconverted, converted, "DATE ");
+        }
+
+        Flavour(String unconverted, String converted, String dateKeyword) {
             this.unconverted = unconverted;
             this.converted = converted;
+            this.dateKeyword = dateKeyword;
+        }
+
+        /** A date as this backend's seed script writes one. */
+        String date(String iso) {
+            return dateKeyword + "'" + iso + "'";
         }
     }
 
@@ -212,23 +232,23 @@ final class PushdownFixture {
             // fixture using one would seed two different tables and every disagreement
             // after it would be its fault.
             st.execute("INSERT INTO " + customers + " VALUES "
-                    + "(10, 'Ada',      'gold',   DATE '2020-03-01'), "
-                    + "(20, 'grace',    NULL,     DATE '2021-07-14'), "
+                    + "(10, 'Ada',      'gold',   " + flavour.date("2020-03-01") + "), "
+                    + "(20, 'grace',    NULL,     " + flavour.date("2021-07-14") + "), "
                     + "(30, 'Alan',     'silver', NULL), "
-                    + "(40, '\tAda\t',   'Gold',   DATE '2022-01-01'), "
-                    + "(50, 'Straße',   'GOLD',   DATE '2022-06-30'), "
-                    + "(60, 'a\uD83D\uDE00b',    '',       DATE '2023-02-02'), "
+                    + "(40, '\tAda\t',   'Gold',   " + flavour.date("2022-01-01") + "), "
+                    + "(50, 'Straße',   'GOLD',   " + flavour.date("2022-06-30") + "), "
+                    + "(60, 'a\uD83D\uDE00b',    '',       " + flavour.date("2023-02-02") + "), "
                     // U+FF5E, next to the emoji above, is the pair that tells code-point
                     // order from UTF-16 order: 0xFF5E is below the emoji by code point
                     // and ABOVE the emoji's leading surrogate 0xD83D as a code unit, so
                     // the two orders put these two rows the opposite way round. Without
                     // this row every ordering case passes under either rule.
-                    + "(70, '\uFF5E',        'bronze', DATE '2023-05-05'), "
+                    + "(70, '\uFF5E',        'bronze', " + flavour.date("2023-05-05") + "), "
                     // Bare, so that comparing rows 70 and 80 compares these two
                     // characters and nothing before them — which is what makes an
                     // ORDER BY here tell code-point order from UTF-16 order. In row 60
                     // the leading 'a' decides and the emoji is never reached.
-                    + "(80, '\uD83D\uDE00',    'bronze', DATE '2023-06-06')");
+                    + "(80, '\uD83D\uDE00',    'bronze', " + flavour.date("2023-06-06") + ")");
 
             // The AS-OF pair. `ts` takes the unconverted type, the one the server hands
             // back as written: which wall clock a converted column presents is the

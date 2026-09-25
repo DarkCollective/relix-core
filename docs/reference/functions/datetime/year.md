@@ -21,7 +21,8 @@ Filter to one year:
   σ YEAR(created_at) = 2026 (Accounts)
 
 # Pushdown:
-SQL: folds to `EXTRACT(YEAR FROM <col>)` on all dialects (GENERIC, Postgres, MySQL).
+SQL: folds to `EXTRACT(YEAR FROM <col>)` on every dialect but SQLite, which has
+no date type to extract from.
 MongoDB: folds to `{"$year": "$<col>"}` inside a `$project` pipeline stage when the
 argument is an attribute and an alias is supplied (e.g. `π YEAR(at) → yr (Events)`).
 

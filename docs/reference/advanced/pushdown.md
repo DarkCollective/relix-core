@@ -155,7 +155,8 @@ Inside a folded operator, an expression folds if every part of it does.
 | Folds | Does not fold |
 |---|---|
 | column references | struct `{…}` and array `[…]` construction |
-| number, string, boolean, `DATE`, `TIME`, `TIMESTAMP` literals | a predicate used as a value |
+| number, string, boolean literals | a predicate used as a value |
+| `DATE`, `TIME`, `TIMESTAMP` literals, on every dialect but SQLite | temporal literals on SQLite, which has no date type |
 | `DURATION` literals, on PostgreSQL and DuckDB | `DURATION` literals on other dialects |
 | `= ≠ < ≤ > ≥`, `∧ ∨ ¬`, `IS [NOT] NULL`, `IN`, `LIKE` | |
 | `+ - *` and unary minus | division `/` |
@@ -190,14 +191,14 @@ large table. Of the built-in scalar functions, **twenty-one** have a SQL spellin
 
 | Function | SQL |
 |---|---|
-| `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND` | `EXTRACT(unit FROM e)` |
+| `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND` | `EXTRACT(unit FROM e)`; SQLite declines them |
 | `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL and DuckDB, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect declines it |
-| `Abs`, `Int`, `Ceil`, `Sgn`, `Round` | `ABS`, `FLOOR`, `CEILING`, `SIGN`, `ROUND` |
+| `Abs`, `Int`, `Ceil`, `Sgn`, `Round` | `ABS`, `FLOOR`, `CEILING`, `SIGN`, `ROUND`; SQLite, which rounds in floating point, declines `Int`, `Ceil` and `Round` |
 | `Fix` | `TRUNCATE(e, 0)` on MySQL, `TRUNC(e)` on PostgreSQL and DuckDB; the generic dialect declines it |
 | `Coalesce`, `Nz` (two-argument form) | `COALESCE(…)` |
 | `IsNull` | `(e IS NULL)` |
 | `Replace` | `REPLACE(s, find, replacement)` |
-| `Len`, `Left`, `Right`, `Mid` | `CHAR_LENGTH`, `LEFT`, `RIGHT`, `SUBSTRING` — **MySQL, PostgreSQL and DuckDB only** |
+| `Len`, `Left`, `Right`, `Mid` | `CHAR_LENGTH`, `LEFT`, `RIGHT`, `SUBSTRING` on **MySQL, PostgreSQL and DuckDB**; `LENGTH` and `SUBSTR` on **SQLite**; nowhere else |
 
 Everything else is evaluated in the engine, and two families are worth knowing by
 name because SQL has a same-named function for every one of them and answers
@@ -228,7 +229,7 @@ cause. A slower plan is the deliberate trade.
 `Len`, `Left`, `Right` and `Mid` are the four that are offered to **named**
 dialects rather than to SQL at large, and the reason is worth knowing because it
 is not about the functions. relix counts and slices a string in **code points**,
-and so do MySQL, PostgreSQL and DuckDB — but H2, which resolves to the generic dialect,
+and so do MySQL, PostgreSQL, DuckDB and SQLite — but H2, which resolves to the generic dialect,
 counts UTF-16 code units, so its `CHAR_LENGTH` and `LEFT` are different functions
 wearing familiar names and disagree on any text holding a character outside the
 basic multilingual plane. "SQL counts characters" is exactly the kind of claim
@@ -297,7 +298,7 @@ pushed query can answer differently from the same query run in the engine, and
 these are the two known places:
 
 - **String ordering.** relix orders strings by code point. A backend that orders by
-  UTF-8 bytes (SQLite) or by a binary collation agrees. One that orders by a locale
+  UTF-8 bytes or by a binary collation agrees. One that orders by a locale
   collation does not — PostgreSQL under `en_US.UTF-8` sorts `'a'` before `'B'`,
   where relix sorts every uppercase letter first. H2 orders by UTF-16 code unit,
   which agrees with relix except when a character outside the basic multilingual
@@ -312,7 +313,7 @@ number and the orders agree exactly. The difference needs both an unusual backen
 and unusual data.
 
 Two things make it avoidable when it matters. Naming the dialect (`dialect: mysql`,
-`dialect: postgres`, `dialect: duckdb`) moves the connection off `generic` and onto a checked answer.
+`dialect: postgres`, `dialect: duckdb`, `dialect: sqlite`) moves the connection off `generic` and onto a checked answer.
 Declaring `collation: database` tells relix to make no assumption about string
 comparison at all, at the cost of computing those in the engine — see
 [connection](../language/connection.md).
@@ -322,6 +323,7 @@ comparison at all, at the cost of computing those in the engine — see
 | `generic` (default) | unquoted, unless not a plain identifier | no `DATE_TRUNC`; relies on the backend folding unquoted identifiers, and on its string comparison being the common one — see below |
 | `postgres` | `"quoted"` | with DuckDB, the only dialects that fold an `ASOF` join, `DURATION` literals and `NULLS LAST`; string *ordering* is collated, string equality is not |
 | `mysql` | `` `quoted` `` | no window functions, so those are computed in the engine; `DATE_TRUNC` folds through `DATE_FORMAT`; string comparison and ordering are collated |
+| `sqlite` | `"quoted"` | no date or time types, so no temporal literal, `EXTRACT` or `DATE_TRUNC` folds; `LIKE` is sent as `GLOB`; rounding runs in the engine; strings compare and order exactly |
 | `duckdb` | `"quoted"` | PostgreSQL's SQL — `NULLS LAST`, `date_trunc`, an `ASOF` join through `LATERAL`, window functions — with a binary default collation, so neither string comparison nor string ordering is collated |
 
 Each dialect writes a table name one part at a time, so a schema-qualified
@@ -346,6 +348,30 @@ fresh, empty database — name a file. The dialect is recognised from the `jdbc:
 prefix, or can be named with `dialect: duckdb`. Its SQL is PostgreSQL's in every place
 relix renders differently, and its default collation is binary, so a DuckDB
 connection folds every string comparison and ordering as written.
+
+### SQLite, and the dates it does not have
+
+SQLite has no date or time types. A column declared `DATETIME` holds whatever the
+application wrote into it — text, a Julian day number, seconds since the epoch — and a
+comparison against it compares that text or number. A `TIMESTAMP '…'` sent as a string
+would agree with relix only while every stored value was written in exactly the form
+the literal is, which nothing relix can see reports. So on a SQLite connection no
+temporal literal, `EXTRACT` or `DATE_TRUNC` is folded: those predicates read their rows
+and are decided in the engine, over the values the driver read, where they mean what
+they say whatever the storage convention.
+
+Two things still fold, and both rest on one assumption worth knowing: that a column
+holds its dates in *one* form. Sorting on a temporal column, and comparing two of them,
+compare the stored text or numbers directly — which is right for a column written
+consistently, as SQLite's own date functions also assume, and wrong for one that mixes
+forms.
+
+SQLite's `LIKE` ignores the case of ASCII letters, and no collation changes that, so a
+pattern is sent as the case-sensitive `GLOB` instead — see [like](../predicates/like.md).
+Its `ROUND`, `FLOOR` and `CEILING` answer in binary floating point, so `Round`, `Int`
+and `Ceil` are computed here. It has no `LATERAL`, so an `ASOF` join runs in the
+engine. A SQLite connection, like a DuckDB one, names a file: `jdbc:sqlite::memory:` is
+private to the JDBC connection that opened it.
 
 ### Strings, and the collation they are compared under
 
