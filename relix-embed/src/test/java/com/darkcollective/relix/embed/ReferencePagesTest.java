@@ -61,6 +61,29 @@ final class ReferencePagesTest {
     }
 
     @Test
+    @DisplayName("a page is keyed by its symbol, so looking up what the index prints finds it")
+    void symbolIsAKey() {
+        assertThat(Relix.referencePages()).allSatisfy(page -> assertThat(page.keys())
+                .as(page.path())
+                .contains(page.symbol().toLowerCase(Locale.ROOT)));
+
+        assertThat(lookup("top")).isEqualTo("advanced/top.md");
+        assertThat(lookup("window rank")).isEqualTo("operators/window-ranking.md");
+        assertThat(lookup("window lag")).isEqualTo("operators/window-offset.md");
+        assertThat(lookup("limit")).isEqualTo("operators/limit.md");
+    }
+
+    /** The page a key finds, as a reader of the index would look it up. */
+    static String lookup(String key) {
+        String wanted = key.toLowerCase(Locale.ROOT);
+        return Relix.referencePages().stream()
+                .filter(page -> page.keys().contains(wanted))
+                .map(ReferencePage::path)
+                .findFirst()
+                .orElse("(none)");
+    }
+
+    @Test
     @DisplayName("a path the reference has no page at answers empty")
     void unknownPaths() {
         assertThat(Relix.referencePage("operators/nothing.md")).isEmpty();

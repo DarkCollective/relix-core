@@ -19,8 +19,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * The language reference bundled in this module: every page, and how to find it.
@@ -82,7 +85,7 @@ final class ReferenceIndex {
               "τ", "sort", "order"),
             e("operators/limit.md",        "operator", "Limit",             "λ",
               "Restrict row count (TOP N / OFFSET)",
-              "λ", "limit", "top"),
+              "λ", "limit"),
             e("operators/distinct.md",     "operator", "Distinct",          "δ",
               "Eliminate duplicate rows",
               "δ", "distinct"),
@@ -349,8 +352,18 @@ final class ReferenceIndex {
         );
     }
 
+    /**
+     * One page, keyed by its symbol as well as by {@code keys}.
+     *
+     * <p>The symbol is what an index prints beside a page's title, so it is the likeliest
+     * thing to be looked up next; leaving it to each row to repeat it is how {@code TOP}
+     * came to find the Limit page instead of Top-K.
+     */
     private static ReferencePage e(String path, String category, String title, String symbol,
                                    String summary, String... keys) {
-        return new ReferencePage(path, category, title, symbol, summary, List.of(keys));
+        Set<String> all = new LinkedHashSet<>();
+        all.add(symbol.toLowerCase(Locale.ROOT));
+        all.addAll(List.of(keys));
+        return new ReferencePage(path, category, title, symbol, summary, List.copyOf(all));
     }
 }
