@@ -19,6 +19,7 @@ import com.darkcollective.relix.semantic.ScriptLoader;
 import com.darkcollective.relix.semantic.SemanticError;
 import com.darkcollective.relix.lang.ast.ImportStatement;
 import com.darkcollective.relix.lang.ast.Script;
+import com.darkcollective.relix.lang.ast.ScriptParseException;
 import com.darkcollective.relix.lang.ast.Statement;
 
 import java.io.IOException;
@@ -36,7 +37,8 @@ import java.util.Set;
  * Directed dependency graph of all {@code .relix} files reachable from a root.
  *
  * <p>Built by {@link #build} which loads files transitively via a
- * {@link ScriptLoader}, detects import cycles, and records missing-file errors.
+ * {@link ScriptLoader}, detects import cycles, and records missing-file and
+ * syntax errors, the latter at the position the frontend reports.
  * After construction the graph is immutable.
  *
  * <p>Use {@link #processingOrder()} to obtain the files in dependency-first
@@ -64,7 +66,7 @@ public final class ImportGraph {
     /** For each loaded file: the set of resolved paths it directly imports. */
     private final Map<String, Set<String>> dependencies;
 
-    /** Errors accumulated during loading (cycles, missing files). */
+    /** Errors accumulated during loading (cycles, missing files, syntax errors). */
     private final List<SemanticError> loadErrors;
 
     private ImportGraph(String rootPath,
@@ -150,6 +152,11 @@ public final class ImportGraph {
             } catch (IOException e) {
                 errors.add(SemanticError.error(path, 0, 0,
                         "Cannot load '" + path + "': " + e.getMessage()));
+                return;
+            } catch (ScriptParseException e) {
+                // A file that does not parse is an error in that file, placed where the
+                // frontend says, like any other error the analysis reports.
+                errors.add(SemanticError.error(path, e.line(), e.column(), e.description()));
                 return;
             }
         }

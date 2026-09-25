@@ -82,4 +82,18 @@ public class ScriptParseException extends RuntimeException {
     public final int column() {
         return column;
     }
+
+    /**
+     * Returns the description of the problem without any position a subclass
+     * appended to the message.
+     *
+     * <p>A caller that reports the position itself — beside a file name, say —
+     * would otherwise state it twice. The default is the message verbatim, which
+     * is right for a frontend that decorates nothing.
+     *
+     * @return the message without its position text; never null
+     */
+    public String description() {
+        return getMessage();
+    }
 }

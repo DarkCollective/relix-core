@@ -73,6 +73,18 @@ public final class LangParseException extends ScriptParseException {
         return " (line " + line + ", col " + column + ")";
     }
 
+    /**
+     * Returns the message without the {@link #suffix(int, int)} it ends with.
+     *
+     * @return the description of the problem, without its position
+     */
+    @Override
+    public String description() {
+        // Every constructor appends the suffix, so the message always ends with it.
+        String message = getMessage();
+        return message.substring(0, message.length() - suffix(line(), column()).length());
+    }
+
     /** The token as the message names it — without a position, which the suffix states. */
     private static String found(LangToken token) {
         return token.type() == LangTokenType.EOF ? "end of input" : "'" + token.value() + "'";

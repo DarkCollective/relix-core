@@ -47,6 +47,14 @@ final class LangParseExceptionTest {
     }
 
     @Test
+    @DisplayName("description() is the message without the position it ends with")
+    void descriptionDropsPosition() {
+        var e = new LangParseException("Expected ';'",
+                new LangToken(LangTokenType.IDENTIFIER, "Orders", 2, 9));
+        assertThat(e.description()).isEqualTo("Expected ';'; found 'Orders'");
+    }
+
+    @Test
     @DisplayName("A token's position is stated once, not once for the token and again for the error")
     void tokenPositionStatedOnce() {
         var e = new LangParseException("Expected ';'",

@@ -20,6 +20,7 @@ import com.darkcollective.relix.semantic.SemanticError;
 import com.darkcollective.relix.semantic.Severity;
 import com.darkcollective.relix.lang.ast.ImportKind;
 import com.darkcollective.relix.lang.ast.Script;
+import com.darkcollective.relix.lang.ast.ScriptParseException;
 import com.darkcollective.relix.lang.ast.Statement;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -292,6 +293,27 @@ final class ImportGraphTest {
             assertThat(graph.script("good.relix")).isPresent();
             assertThat(graph.script("missing.relix")).isEmpty();
             assertThat(graph.hasLoadErrors()).isTrue();
+        }
+
+        @Test
+        @DisplayName("An import that does not parse records an error placed in that file")
+        void unparseableImport() {
+            ScriptLoader loader = path -> {
+                if (path.equals("a.relix")) {
+                    return importing("bad.relix");
+                }
+                throw new ScriptParseException("unexpected token", 2, 7);
+            };
+            var graph = ImportGraph.build("a.relix", null, loader);
+
+            assertThat(graph.loadErrors()).singleElement().satisfies(error -> {
+                assertThat(error.filePath()).isEqualTo("bad.relix");
+                assertThat(error.line()).isEqualTo(2);
+                assertThat(error.column()).isEqualTo(7);
+                assertThat(error.message()).isEqualTo("unexpected token");
+                assertThat(error.severity()).isEqualTo(Severity.ERROR);
+            });
+            assertThat(graph.processingOrder()).containsExactly("a.relix");
         }
 
         @Test
