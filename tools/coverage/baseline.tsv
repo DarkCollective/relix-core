@@ -72,7 +72,7 @@
 1	relix-plan/src/main/java/com/darkcollective/relix/plan/internal/PushdownFolding.java
 1	relix-plan/src/main/java/com/darkcollective/relix/plan/internal/PushdownRenderer.java
 2	relix-plan/src/main/java/com/darkcollective/relix/plan/internal/RelationFunctionInliner.java
-2	relix-plan/src/main/java/com/darkcollective/relix/plan/internal/SqlExpressions.java
+1	relix-plan/src/main/java/com/darkcollective/relix/plan/internal/SqlExpressions.java
 17	relix-plan/src/main/java/com/darkcollective/relix/plan/internal/SqlPushdownPlanner.java
 1	relix-plan/src/main/java/com/darkcollective/relix/plan/internal/StableCalls.java
 3	relix-processor/src/main/java/com/darkcollective/relix/processor/connector/ConnectorProvisioner.java

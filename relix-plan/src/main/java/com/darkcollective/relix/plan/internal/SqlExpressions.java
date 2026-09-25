@@ -147,10 +147,11 @@ public final class SqlExpressions {
             case NumberOperand n -> Optional.of(n.value());
             case StringOperand s -> Optional.of(dialect.stringLiteral(s.value()));
             case BooleanOperand b -> Optional.of(b.value() ? "TRUE" : "FALSE");
-            // Temporal literals render per-dialect (ADR-0013).
-            case DateOperand d -> Optional.of(dialect.dateLiteral(d.value()));
-            case TimeOperand t -> Optional.of(dialect.timeLiteral(t.value()));
-            case TimestampOperand ts -> Optional.of(dialect.timestampLiteral(ts.value()));
+            // Temporal literals render per-dialect (ADR-0013), and a dialect with no
+            // date types declines them.
+            case DateOperand d -> dialect.dateLiteral(d.value());
+            case TimeOperand t -> dialect.timeLiteral(t.value());
+            case TimestampOperand ts -> dialect.timestampLiteral(ts.value());
             case DurationOperand d -> dialect.durationLiteral(d.value());
             case UnaryOperand u -> operand(u.operand(), cols, dialect, functions).map(o -> "(-" + o + ")");
             case BinaryArithmeticExpression e -> arithmetic(e, cols, dialect, functions);
@@ -222,8 +223,11 @@ public final class SqlExpressions {
         if (lhs.isEmpty() || rhs.isEmpty()) {
             return Optional.empty();
         }
-        String op = p.negated() ? " NOT LIKE " : " LIKE ";
-        return Optional.of("(" + lhs.get() + op + rhs.get() + ")");
+        // The dialect decides the spelling: SQLite's LIKE ignores case, so it matches a
+        // literal pattern with GLOB instead, and needs the pattern's text to translate.
+        Optional<String> literal = p.pattern() instanceof StringOperand s
+                ? Optional.of(s.value()) : Optional.empty();
+        return dialect.like(lhs.get(), rhs.get(), literal, p.negated());
     }
 
     private static Optional<String> setLiteral(SetLiteralOperand set, ColumnRenderer cols, Dialect dialect,

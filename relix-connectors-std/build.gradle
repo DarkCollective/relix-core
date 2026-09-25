@@ -48,8 +48,9 @@ dependencies {
     testImplementation 'org.testcontainers:junit-jupiter:1.21.3'
     testRuntimeOnly 'com.mysql:mysql-connector-j:8.4.0'
     testRuntimeOnly 'org.postgresql:postgresql:42.7.12'
-    // Embedded, so its agreement suite runs in the gate rather than behind a container.
+    // Embedded, so their agreement suites run in the gate rather than behind a container.
     testRuntimeOnly 'org.duckdb:duckdb_jdbc:1.5.5.1'
+    testRuntimeOnly 'org.xerial:sqlite-jdbc:3.53.4.0'
     // A logging binding, so Testcontainers' progress is visible rather than a silent wait.
     testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.13'
 }

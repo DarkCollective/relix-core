@@ -54,6 +54,9 @@ final class Spellings {
     /** @see #POSTGRES */
     static final String DUCKDB = "duckdb";
 
+    /** @see #POSTGRES */
+    static final String SQLITE = "sqlite";
+
     /**
      * The unidentified backend, whose variant is the empty string.
      *
@@ -132,6 +135,76 @@ final class Spellings {
         return (target, arguments) -> target.isFamily(PushdownTarget.SQL)
                 && confirmed.contains(target.variant())
                 ? Optional.of(call(function, arguments))
+                : Optional.empty();
+    }
+
+    /**
+     * {@code NAME(a, b, …)} in every SQL dialect but the named ones, for exactly
+     * {@code arity} arguments — the shape of a function that is the same everywhere it
+     * has been run except where it has been run and found not to be.
+     *
+     * <p>A deny-list is the wrong shape for a name nobody has checked, which is what
+     * {@link #sqlOn} is for; it is the right one for a portable function with a recorded
+     * exception, where naming the exception is the record. Each caller says why.
+     *
+     * @param function the SQL function name
+     * @param arity    the argument count this spelling is for
+     * @param excluded the dialect variants that must evaluate it in the engine instead
+     * @return the spelling
+     */
+    static PushdownSpelling sqlExcept(String function, int arity, String... excluded) {
+        Set<String> declined = Set.of(excluded);
+        return (target, arguments) -> target.isFamily(PushdownTarget.SQL)
+                && arguments.size() == arity
+                && !declined.contains(target.variant())
+                ? Optional.of(call(function, arguments))
+                : Optional.empty();
+    }
+
+    /** The same, for any argument count the engine allows. */
+    static PushdownSpelling sqlExcept(String function, String... excluded) {
+        Set<String> declined = Set.of(excluded);
+        return (target, arguments) -> target.isFamily(PushdownTarget.SQL)
+                && !declined.contains(target.variant())
+                ? Optional.of(call(function, arguments))
+                : Optional.empty();
+    }
+
+    /**
+     * The first of {@code spellings} that has an answer for a target — how a function is
+     * written differently on one dialect without every other spelling learning of it.
+     *
+     * @param spellings the spellings to try, in order
+     * @return the combined spelling
+     */
+    static PushdownSpelling firstOf(PushdownSpelling... spellings) {
+        List<PushdownSpelling> ordered = List.of(spellings);
+        return (target, arguments) -> {
+            for (PushdownSpelling spelling : ordered) {
+                Optional<String> sql = spelling.render(target, arguments);
+                if (sql.isPresent()) {
+                    return sql;
+                }
+            }
+            return Optional.empty();
+        };
+    }
+
+    /**
+     * A spelling on exactly one dialect, for exactly {@code arity} arguments, built from
+     * the rendered arguments — for a dialect whose form is not a call of the same name.
+     *
+     * @param dialect the dialect variant
+     * @param arity   the argument count
+     * @param form    builds the SQL from the rendered arguments
+     * @return the spelling
+     */
+    static PushdownSpelling on(String dialect, int arity,
+                               java.util.function.Function<List<String>, String> form) {
+        return (target, arguments) -> target.isFamily(PushdownTarget.SQL)
+                && target.isVariant(dialect)
+                && arguments.size() == arity
+                ? Optional.of(form.apply(arguments))
                 : Optional.empty();
     }
 

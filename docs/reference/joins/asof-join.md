@@ -307,7 +307,8 @@ tables folds into a single
 so the database does the nearest-match lookup. The ordering inequality fixes the
 `ORDER BY` direction (backward → `DESC`, forward → `ASC`); the inner variant uses a
 plain `JOIN LATERAL … ON TRUE`. `LATERAL` is absent from H2 (the GENERIC dialect) and
-version-gated in MySQL (8.0.14+), so both fall back to the in-engine executor. A `WITHIN` tolerance also
+version-gated in MySQL (8.0.14+), and SQLite has none, so those fall back to the
+in-engine executor. A `WITHIN` tolerance also
 falls back (the bound leans on temporal arithmetic with no portable SQL form), as
 does a join spanning two connections. MongoDB pushdown is not implemented.
 

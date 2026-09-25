@@ -80,6 +80,19 @@ final class MathFunctions {
     private MathFunctions() {
     }
 
+    /**
+     * The dialect whose rounding functions answer in binary floating point.
+     *
+     * <p>SQLite has no decimal type: {@code ROUND}, {@code FLOOR} and {@code CEILING}
+     * take and return a REAL, so {@code ROUND(x, 2)} rounds the double nearest {@code x}
+     * — {@code -49.555} is stored a hair above it and rounds to {@code -49.55} there,
+     * where relix rounds the exact decimal half-up to {@code -49.56}. {@code FLOOR} and
+     * {@code CEILING} are also a compile-time option of SQLite's rather than part of its
+     * core, so a driver the user supplies need not have them at all. Both are reasons to
+     * round here.
+     */
+    private static final String ROUNDS_IN_FLOATING_POINT = Spellings.SQLITE;
+
     static List<ScalarFunction> all() {
         return List.of(
                 MATH.fn("Abs", NUMBER, PURE_DETERMINISTIC_IDEMPOTENT, List.of(p("x", NUMBER)),
@@ -88,7 +101,8 @@ final class MathFunctions {
 
                 // Int rounds towards negative infinity — the floor.
                 MATH.fn("Int", NUMBER, PURE_DETERMINISTIC_IDEMPOTENT, List.of(p("x", NUMBER)),
-                        Spellings.sql("FLOOR", 1),
+                        // Not SQLite's: see ROUNDS_IN_FLOATING_POINT.
+                        Spellings.sqlExcept("FLOOR", 1, ROUNDS_IN_FLOATING_POINT),
                         args -> exact(args, "Int", x -> x.setScale(0, RoundingMode.FLOOR))),
 
                 // Fix truncates towards zero, so it disagrees with Int on negatives.
@@ -103,14 +117,14 @@ final class MathFunctions {
                 // zero when the trailing argument is not passed.
                 MATH.fn("Round", NUMBER, PURE_DETERMINISTIC,
                         List.of(p("x", NUMBER), p("places", NUMBER)), Arity.between(1, 2),
-                        Spellings.sql("ROUND"),
+                        Spellings.sqlExcept("ROUND", ROUNDS_IN_FLOATING_POINT),
                         MathFunctions::round),
 
                 // CEILING rather than CEIL: both dialects have both, but CEILING is the
                 // SQL standard's name and the one an unidentified backend is likeliest
                 // to have.
                 MATH.fn("Ceil", NUMBER, PURE_DETERMINISTIC_IDEMPOTENT, List.of(p("x", NUMBER)),
-                        Spellings.sql("CEILING", 1),
+                        Spellings.sqlExcept("CEILING", 1, ROUNDS_IN_FLOATING_POINT),
                         args -> exact(args, "Ceil", x -> x.setScale(0, RoundingMode.CEILING))),
 
                 MATH.fn("Sgn", NUMBER, PURE_DETERMINISTIC_IDEMPOTENT, List.of(p("x", NUMBER)),

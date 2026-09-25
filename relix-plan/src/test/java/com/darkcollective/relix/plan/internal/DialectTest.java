@@ -80,6 +80,46 @@ final class DialectTest {
             assertThat(Dialect.POSTGRES.table("public.orders")).isEqualTo("\"public\".\"orders\"");
             assertThat(Dialect.MYSQL.table("shop.orders")).isEqualTo("`shop`.`orders`");
             assertThat(Dialect.DUCKDB.table("main.orders")).isEqualTo("\"main\".\"orders\"");
+            assertThat(Dialect.SQLITE.table("main.orders")).isEqualTo("\"main\".\"orders\"");
+        }
+    }
+
+    @Nested
+    @DisplayName("LIKE, and the dialect whose LIKE ignores case")
+    class Like {
+
+        @Test
+        @DisplayName("every dialect but SQLite renders LIKE as written")
+        void likeAsWritten() {
+            for (Dialect d : new Dialect[] {Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL,
+                    Dialect.DUCKDB}) {
+                assertThat(d.like("x", "'A%'", Optional.of("A%"), false)).as("%s", d)
+                        .contains("(x LIKE 'A%')");
+                assertThat(d.like("x", "y", Optional.empty(), true)).as("%s", d)
+                        .contains("(x NOT LIKE y)");
+            }
+        }
+
+        @Test
+        @DisplayName("SQLite matches a literal pattern with GLOB, its wildcards translated")
+        void sqliteGlob() {
+            assertThat(Dialect.SQLITE.like("x", "'AB-%'", Optional.of("AB-%"), false))
+                    .contains("(x GLOB 'AB-*')");
+            assertThat(Dialect.SQLITE.like("x", "'a_b'", Optional.of("a_b"), true))
+                    .contains("(x NOT GLOB 'a?b')");
+        }
+
+        @Test
+        @DisplayName("GLOB's own metacharacters are bracketed so they match themselves")
+        void sqliteGlobEscapes() {
+            assertThat(Dialect.SQLITE.like("x", "p", Optional.of("*?[]%'"), false))
+                    .contains("(x GLOB '[*][?][[]]*''')");
+        }
+
+        @Test
+        @DisplayName("SQLite declines a pattern that is not a literal, having nothing to translate")
+        void sqliteDeclinesAComputedPattern() {
+            assertThat(Dialect.SQLITE.like("x", "y", Optional.empty(), false)).isEmpty();
         }
     }
 
@@ -157,6 +197,7 @@ final class DialectTest {
             assertThat(Dialect.byName("MySQL")).isEqualTo(Dialect.MYSQL);
             assertThat(Dialect.byName("mariadb")).isEqualTo(Dialect.MYSQL);
             assertThat(Dialect.byName("DuckDB")).isEqualTo(Dialect.DUCKDB);
+            assertThat(Dialect.byName("sqlite")).isEqualTo(Dialect.SQLITE);
             assertThat(Dialect.byName("h2")).isEqualTo(Dialect.GENERIC);
             assertThat(Dialect.byName("wat")).isEqualTo(Dialect.GENERIC);
         }
@@ -169,6 +210,7 @@ final class DialectTest {
             assertThat(Dialect.fromUrl("jdbc:mariadb://h/db")).isEqualTo(Dialect.MYSQL);
             assertThat(Dialect.fromUrl("jdbc:duckdb:/tmp/x.duckdb")).isEqualTo(Dialect.DUCKDB);
             assertThat(Dialect.fromUrl("jdbc:duckdb:")).isEqualTo(Dialect.DUCKDB);
+            assertThat(Dialect.fromUrl("jdbc:sqlite:/tmp/x.db")).isEqualTo(Dialect.SQLITE);
             assertThat(Dialect.fromUrl("jdbc:h2:mem:x")).isEqualTo(Dialect.GENERIC);
         }
 
@@ -310,35 +352,44 @@ final class DialectTest {
         @Test
         @DisplayName("GENERIC renders quoted ISO literals (implicit cast)")
         void generic() {
-            assertThat(Dialect.GENERIC.dateLiteral(date)).isEqualTo("'2026-06-15'");
-            assertThat(Dialect.GENERIC.timeLiteral(time)).isEqualTo("'13:40'");
-            assertThat(Dialect.GENERIC.timestampLiteral(instant)).isEqualTo("'2026-06-15 13:40:00'");
+            assertThat(Dialect.GENERIC.dateLiteral(date)).contains("'2026-06-15'");
+            assertThat(Dialect.GENERIC.timeLiteral(time)).contains("'13:40'");
+            assertThat(Dialect.GENERIC.timestampLiteral(instant)).contains("'2026-06-15 13:40:00'");
         }
 
         @Test
         @DisplayName("POSTGRES renders typed literals; TIMESTAMP WITH TIME ZONE keeps the Z instant")
         void postgres() {
-            assertThat(Dialect.POSTGRES.dateLiteral(date)).isEqualTo("DATE '2026-06-15'");
-            assertThat(Dialect.POSTGRES.timeLiteral(time)).isEqualTo("TIME '13:40'");
+            assertThat(Dialect.POSTGRES.dateLiteral(date)).contains("DATE '2026-06-15'");
+            assertThat(Dialect.POSTGRES.timeLiteral(time)).contains("TIME '13:40'");
             assertThat(Dialect.POSTGRES.timestampLiteral(instant))
-                    .isEqualTo("TIMESTAMP WITH TIME ZONE '2026-06-15T13:40:00Z'");
+                    .contains("TIMESTAMP WITH TIME ZONE '2026-06-15T13:40:00Z'");
         }
 
         @Test
         @DisplayName("MYSQL renders typed literals; TIMESTAMP is the UTC wall-clock")
         void mysql() {
-            assertThat(Dialect.MYSQL.dateLiteral(date)).isEqualTo("DATE '2026-06-15'");
-            assertThat(Dialect.MYSQL.timeLiteral(time)).isEqualTo("TIME '13:40'");
-            assertThat(Dialect.MYSQL.timestampLiteral(instant)).isEqualTo("TIMESTAMP '2026-06-15 13:40:00'");
+            assertThat(Dialect.MYSQL.dateLiteral(date)).contains("DATE '2026-06-15'");
+            assertThat(Dialect.MYSQL.timeLiteral(time)).contains("TIME '13:40'");
+            assertThat(Dialect.MYSQL.timestampLiteral(instant)).contains("TIMESTAMP '2026-06-15 13:40:00'");
+        }
+
+        @Test
+        @DisplayName("SQLITE has no date types, and declines every temporal literal")
+        void sqlite() {
+            assertThat(Dialect.SQLITE.dateLiteral(date)).isEmpty();
+            assertThat(Dialect.SQLITE.timeLiteral(time)).isEmpty();
+            assertThat(Dialect.SQLITE.timestampLiteral(instant)).isEmpty();
+            assertThat(Dialect.SQLITE.durationLiteral(java.time.Duration.ofMinutes(1))).isEmpty();
         }
 
         @Test
         @DisplayName("DUCKDB renders PostgreSQL's typed literals")
         void duckdb() {
-            assertThat(Dialect.DUCKDB.dateLiteral(date)).isEqualTo("DATE '2026-06-15'");
-            assertThat(Dialect.DUCKDB.timeLiteral(time)).isEqualTo("TIME '13:40'");
+            assertThat(Dialect.DUCKDB.dateLiteral(date)).contains("DATE '2026-06-15'");
+            assertThat(Dialect.DUCKDB.timeLiteral(time)).contains("TIME '13:40'");
             assertThat(Dialect.DUCKDB.timestampLiteral(instant))
-                    .isEqualTo("TIMESTAMP WITH TIME ZONE '2026-06-15T13:40:00Z'");
+                    .contains("TIMESTAMP WITH TIME ZONE '2026-06-15T13:40:00Z'");
         }
     }
 
@@ -357,6 +408,8 @@ final class DialectTest {
                     .isEqualTo(PushdownTarget.sql("mysql"));
             assertThat(Dialect.DUCKDB.pushdownTarget())
                     .isEqualTo(PushdownTarget.sql("duckdb"));
+            assertThat(Dialect.SQLITE.pushdownTarget())
+                    .isEqualTo(PushdownTarget.sql("sqlite"));
         }
 
         @Test
@@ -460,6 +513,12 @@ final class DialectTest {
         void genericIsLeftAlone() {
             assertThat(Dialect.GENERIC.pinSessionToUtcSql()).isEmpty();
         }
+
+        @Test
+        @DisplayName("SQLite has no session time zone to pin")
+        void sqliteHasNone() {
+            assertThat(Dialect.SQLITE.pinSessionToUtcSql()).isEmpty();
+        }
     }
 
     @Nested
@@ -536,7 +595,8 @@ final class DialectTest {
                 Dialect.GENERIC,  new Answer(true,  true,  false, false, true,  false, false, false),
                 Dialect.POSTGRES, new Answer(true,  false, false, true,  true,  true,  true,  true),
                 Dialect.MYSQL,    new Answer(false, false, true,  true,  false, false, true,  false),
-                Dialect.DUCKDB,   new Answer(true,  true,  false, false, true,  true,  true,  true));
+                Dialect.DUCKDB,   new Answer(true,  true,  false, false, true,  true,  true,  true),
+                Dialect.SQLITE,   new Answer(true,  true,  false, false, true,  false, false, false));
 
         @Test
         @DisplayName("a dialect with no row here is a dialect nobody reviewed")

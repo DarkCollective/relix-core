@@ -21,7 +21,8 @@ Overnight records:
   σ HOUR(logged_at) < 6 (Logs)
 
 # Pushdown:
-SQL: folds to `EXTRACT(HOUR FROM <col>)` on all dialects.
+SQL: folds to `EXTRACT(HOUR FROM <col>)` on every dialect but SQLite,
+which has no date type to extract from.
 MongoDB: folds to `{"$hour": "$<col>"}` inside a `$project` stage (requires alias).
 
 # Limitations:
