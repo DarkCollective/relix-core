@@ -273,6 +273,22 @@ public final class CatalogSnapshot implements CatalogProvider {
         return best(connection, table, Entry::statistics);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>A snapshot knows exactly the tables it recorded for the connection, so it always
+     * enumerates them, in the order they were first recorded.
+     */
+    @Override
+    public Optional<List<String>> tables(ConnectionDeclaration connection) {
+        Objects.requireNonNull(connection, "connection");
+        return Optional.of(entries.stream()
+                .filter(e -> e.connection().equalsIgnoreCase(connection.name()))
+                .map(Entry::table)
+                .distinct()
+                .toList());
+    }
+
     /** The highest-precedence entry that carries the asked-for half, if any does. */
     private <T> Optional<T> best(ConnectionDeclaration connection, String table,
                                  java.util.function.Function<Entry, Optional<T>> half) {

@@ -131,6 +131,50 @@ final class CatalogSnapshotTest {
 
             assertThat(result.isFullyValid()).isTrue();
         }
+
+        @Test
+        @DisplayName("it lists the tables it recorded for a connection, once each")
+        void listsItsTables() {
+            CatalogSnapshot snapshot = CatalogSnapshot.of(List.of(introspected(),
+                    new CatalogSnapshot.Entry("Warehouse", "customers", Optional.of(ORDERS),
+                            Optional.empty(), CatalogSnapshot.Origin.INTROSPECTED, EARLY),
+                    new CatalogSnapshot.Entry("warehouse", "orders", Optional.empty(),
+                            Optional.of(RelationStatistics.of(1)),
+                            CatalogSnapshot.Origin.OBSERVED, LATE),
+                    new CatalogSnapshot.Entry("lake", "events", Optional.of(ORDERS),
+                            Optional.empty(), CatalogSnapshot.Origin.INTROSPECTED, EARLY)),
+                    EARLY);
+
+            assertThat(snapshot.tables(WAREHOUSE)).contains(List.of("orders", "customers"));
+            assertThat(CatalogSnapshot.empty().tables(WAREHOUSE)).contains(List.of());
+            assertThat(CatalogProvider.NONE.tables(WAREHOUSE))
+                    .as("a provider that cannot enumerate says so")
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("a misspelt table gets a suggestion from the tables it recorded")
+        void suggestsAMisspeltTable() {
+            CatalogSnapshot snapshot = CatalogSnapshot.of(List.of(introspected()), EARLY);
+            SemanticAnalyzer analyzer = new SemanticAnalyzer(
+                    new InMemoryScriptLoader(Map.of()), BuiltinProvider.none(), snapshot);
+
+            SemanticResult result = analyzer.analyze(com.darkcollective.relix.lang.ScriptParser.parse(
+                    """
+                    connection warehouse from database { url: "jdbc:h2:mem:nothing-here" };
+                    query { π id (warehouse.ordrs) };
+                    query { π id (warehouse.invoices) };
+                    """), "<test>");
+
+            assertThat(result.errors()).extracting(SemanticError::message)
+                    .anySatisfy(m -> assertThat(m)
+                            .startsWith("Cannot resolve schema for table 'ordrs'")
+                            .endsWith(" — did you mean 'warehouse.orders'?"))
+                    .anySatisfy(m -> assertThat(m)
+                            .startsWith("Cannot resolve schema for table 'invoices'")
+                            .as("nothing close, nothing suggested")
+                            .doesNotContain("did you mean"));
+        }
     }
 
     @Nested

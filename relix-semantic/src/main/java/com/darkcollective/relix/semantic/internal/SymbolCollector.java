@@ -246,7 +246,7 @@ public final class SymbolCollector {
             errors.add(SemanticError.error(loc.filePath(), loc.line(), loc.column(),
                     "Cannot resolve schema for table '" + table + "' in connection '" + connName
                     + "': no schema available (declare it with a 'source ... from " + connName
-                    + "' binding, or provide a catalog)"));
+                    + "' binding, or provide a catalog)" + tableHint(conn, connName, table)));
             return;
         }
         var sym = new SourceRelationSymbol(
@@ -256,6 +256,18 @@ public final class SymbolCollector {
                     new SourceDeclaration(true, name,
                             new ConnectionTableSourceConfig(connName, table, List.of())));
         }
+    }
+
+    /**
+     * A "did you mean?" for a table the catalog could not describe, drawn from the tables
+     * it says the connection holds, spelt as the reference would be; empty when the
+     * catalog cannot enumerate them or none is close.
+     */
+    private String tableHint(ConnectionDeclaration conn, String connName, String table) {
+        return catalog.tables(conn)
+                .map(tables -> Suggestions.didYouMean(connName + "." + table,
+                        tables.stream().map(t -> connName + "." + t).toList()))
+                .orElse("");
     }
 
     /**
