@@ -1,4 +1,6 @@
-# Publishes a snapshot of the relix artifact on every push to main.
+# Publishes a snapshot of the relix artifact on every push to develop, the integration
+# branch: a merged change is in the next snapshot without waiting for its batch to be
+# promoted to main.
 #
 # A front end that needs an engine change before it is released builds against the latest
 # snapshot, from Central's snapshot repository:
@@ -31,7 +33,7 @@ name: Snapshot
 
 on:
   push:
-    branches: [ main ]
+    branches: [ develop ]
   workflow_dispatch:
 
 concurrency:
