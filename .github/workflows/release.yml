@@ -189,6 +189,7 @@ jobs:
           mkdir -p assets
           cp relix-dist/build/staging-deploy/com/darkcollective/relix/relix/"$VERSION"/*.jar assets/
           cp relix-dist/build/staging-deploy/com/darkcollective/relix/relix/"$VERSION"/*.pom assets/
+          cp relix-dist/build/staging-deploy/com/darkcollective/relix/relix/"$VERSION"/*.zip assets/
           cp relix-mongo-connector/build/libs/relix-mongo-connector-"$VERSION".jar assets/
           cp relix-mongo-connector/build/connector-catalog-entry.json assets/
           cp connectors/relix-connectors.json assets/relix-connectors.json
@@ -197,7 +198,7 @@ jobs:
             assets/connector-catalog-entry.json
           cp build/docs/reference.pdf assets/relix-language-reference-"$VERSION".pdf
           cp build/docs/guide.pdf assets/relix-programming-guide-"$VERSION".pdf
-          ( cd assets && sha256sum -- *.jar *.pom *.pdf *.json > checksums.txt )
+          ( cd assets && sha256sum -- *.jar *.pom *.zip *.pdf *.json > checksums.txt )
           cat assets/checksums.txt
 
       - name: Upload the release assets
@@ -371,12 +372,13 @@ jobs:
           gpg --list-secret-keys --keyid-format=long
 
       # Every artifact, and nothing else: the checksums are not signed, and a signature
-      # is not checksummed. Central wants a .asc beside each jar and the .pom.
+      # is not checksummed. Central wants a .asc beside each jar, the manuals zip and the
+      # .pom.
       - name: Sign the artifacts
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          find staging -type f \( -name '*.jar' -o -name '*.pom' \) -print0 \
+          find staging -type f \( -name '*.jar' -o -name '*.pom' -o -name '*.zip' \) -print0 \
             | xargs -0 -n1 gpg --batch --yes --quiet --pinentry-mode loopback \
                 --passphrase "$GPG_PASSPHRASE" --armor --detach-sign
           find staging -name '*.asc' | sort

@@ -135,6 +135,21 @@ def sourcesJar = tasks.register('relixSourcesJar', Jar) {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
+// The manuals' source, published with each release (com.darkcollective.relix:relix:<v>:manuals@zip).
+// The front ends render the manuals and run their worked examples, and they read both from
+// the engine release they build against, not from a copy of this tree. Everything a page
+// refers to travels with it: the indexes, the fixture script and the fixture files.
+def manualsZip = tasks.register('relixManualsZip', Zip) {
+    archiveBaseName = 'relix'
+    archiveClassifier = 'manuals'
+    from(rootProject.file('docs/reference')) { into 'reference' }
+    from(rootProject.file('docs/guide')) { into 'guide' }
+    from(rootProject.file('README.md'))
+    // A zip is reproducible only when its entries are ordered and undated.
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
 def javadocJar = tasks.register('relixJavadocJar', Jar) {
     archiveBaseName = 'relix'
     archiveClassifier = 'javadoc'
@@ -148,6 +163,7 @@ publishing {
             artifact tasks.named('jar')
             artifact sourcesJar
             artifact javadocJar
+            artifact manualsZip
             // Maven Central will not accept a POM missing any of name, description, url,
             // licenses, scm or developers, and it says so at upload time — the one moment
             // when the version number is already tagged and the mistake is expensive.
