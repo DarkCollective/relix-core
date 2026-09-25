@@ -193,6 +193,16 @@ column exactly as `γ MIN(…)` would.
 - Nested (array or struct) columns are never consolidated — the engine defines
   no ordering over them.
 - DOWNSAMPLE does not push down to SQL or MongoDB — it always runs in-engine.
+- The interval must not be empty, and `FOR n ROWS` keeps at least one bucket. Both are
+  parse errors:
+
+  ```relix-invalid
+  query { DOWNSAMPLE ts BY '' USING AVG (Metrics) };
+  ```
+
+  ```relix-invalid
+  query { DOWNSAMPLE ts BY '1h' USING AVG FOR 0 ROWS (Metrics) };
+  ```
 - The `FOR n ROWS` limit applies globally (not per grouping key). If you have
   multiple PER keys, the N most-recent buckets across all key combinations are
   kept.

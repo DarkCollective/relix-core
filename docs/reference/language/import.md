@@ -38,7 +38,11 @@ Qualified to disambiguate kind:
 # Limitations:
 Circular imports are not allowed. Named imports affect re-export visibility, not
 local availability (all imported symbols are globally registered). Symbols must be
-declared before they are used.
+declared before they are used. The path must not be blank:
+
+```relix-invalid
+import "";
+```
 
 # Alternatives:
 Inline the source/function directly when it is only used in one script.

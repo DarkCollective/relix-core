@@ -68,16 +68,32 @@ final class EbnfGrammar {
     record Result(boolean accepted, String diagnostic) {}
 
     /** The token classes the page defines in prose rather than as a rule. */
-    private static final Map<String, Predicate<Token>> TOKEN_CLASSES = Map.of(
-            "WORD", t -> t.kind() == Kind.WORD,
-            "DELIMITED_IDENTIFIER", t -> t.kind() == Kind.DELIMITED,
-            "NUMBER", t -> t.kind() == Kind.NUMBER,
-            "INTEGER", t -> t.kind() == Kind.NUMBER && t.text().indexOf('.') < 0,
-            "STRING", t -> t.kind() == Kind.STRING_SQ || t.kind() == Kind.STRING_DQ,
-            "STRING_DQ", t -> t.kind() == Kind.STRING_DQ,
-            "CALL_OPEN", t -> t.kind() == Kind.SYMBOL && t.text().equals("(") && t.touching(),
-            "MARKDOWN_TABLE", t -> t.kind() == Kind.MARKDOWN_TABLE,
-            "CSV_TABLE", t -> t.kind() == Kind.CSV_TABLE);
+    private static final Map<String, Predicate<Token>> TOKEN_CLASSES = Map.ofEntries(
+            Map.entry("WORD", t -> t.kind() == Kind.WORD),
+            Map.entry("DELIMITED_IDENTIFIER", t -> t.kind() == Kind.DELIMITED),
+            Map.entry("NUMBER", t -> t.kind() == Kind.NUMBER),
+            Map.entry("INTEGER", EbnfGrammar::isInteger),
+            Map.entry("POSITIVE_INTEGER", t -> isInteger(t) && !t.text().matches("0+")),
+            Map.entry("STRING", EbnfGrammar::isString),
+            Map.entry("STRING_DQ", t -> t.kind() == Kind.STRING_DQ),
+            Map.entry("NONBLANK_STRING", t -> isString(t) && !isBlankString(t)),
+            Map.entry("NONBLANK_STRING_DQ", t -> t.kind() == Kind.STRING_DQ && !isBlankString(t)),
+            Map.entry("CALL_OPEN", t -> t.kind() == Kind.SYMBOL && t.text().equals("(") && t.touching()),
+            Map.entry("MARKDOWN_TABLE", t -> t.kind() == Kind.MARKDOWN_TABLE),
+            Map.entry("CSV_TABLE", t -> t.kind() == Kind.CSV_TABLE));
+
+    private static boolean isInteger(Token t) {
+        return t.kind() == Kind.NUMBER && t.text().indexOf('.') < 0;
+    }
+
+    private static boolean isString(Token t) {
+        return t.kind() == Kind.STRING_SQ || t.kind() == Kind.STRING_DQ;
+    }
+
+    /** Whether a string token, quotes and all, holds nothing but whitespace between them. */
+    private static boolean isBlankString(Token t) {
+        return t.text().substring(1, t.text().length() - 1).isBlank();
+    }
 
     private static final Pattern ASCII_WORD = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
@@ -657,7 +673,7 @@ final class EbnfGrammar {
                     }
                     name.append(src.charAt(j++));
                 }
-                if (!closed || name.isEmpty()) {
+                if (!closed || name.toString().isBlank()) {
                     out.add(new Token(Kind.ERROR, "`", false, startAt));
                     return out;
                 }

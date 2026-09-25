@@ -88,6 +88,12 @@ TOP for you — `LIM-003`, see the [optimizer](optimizer.md) page — so you get
 bounded heap without a spelling for it.) Returns whole rows, not a single
 aggregated value.
 
+The count and the offset are whole numbers; a fraction is a parse error:
+
+```relix-invalid
+query { TOP 2.5 amount DESC PER customer_id (Orders) };
+```
+
 # Alternatives:
 γ with ARGMAX/ARGMIN returns one value from the extreme row per group (not the
 whole row, and only one). λ over τ for a global top-N without grouping.

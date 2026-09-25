@@ -1218,6 +1218,9 @@ public final class RelAlgebraParser {
         Token intervalTok = expect(TokenType.STRING,
                 "Expected quoted interval string after 'BY' (e.g. '5m', 'PT1H')");
         String interval = intervalTok.lexeme().substring(1, intervalTok.lexeme().length() - 1);
+        if (interval.isBlank()) {
+            throw error(intervalTok, "'DOWNSAMPLE' interval must not be blank (e.g. '5m', 'PT1H')");
+        }
         expect(TokenType.USING, "Expected 'USING' after interval");
         Token fnTok = expectName(
                 "Expected consolidation function (AVG, MIN, MAX, SUM, COUNT) after 'USING'");
@@ -1243,6 +1246,10 @@ public final class RelAlgebraParser {
                 count = Long.parseLong(countTok.lexeme());
             } catch (NumberFormatException e) {
                 throw error(countTok, "'DOWNSAMPLE … FOR n ROWS' requires an integer row count");
+            }
+            if (count < 1) {
+                throw error(countTok, "'DOWNSAMPLE … FOR n ROWS' requires a row count of at least 1, got "
+                        + count);
             }
             expect(TokenType.ROWS, "Expected 'ROWS' after row count in 'FOR n ROWS'");
             maxRows = OptionalLong.of(count);
@@ -1572,13 +1579,12 @@ public final class RelAlgebraParser {
         expect(TokenType.TOP, "Expected 'TOP'");
 
         Token firstNum = expect(TokenType.NUMBER, "Expected a count after 'TOP'");
-        long firstValue = Long.parseLong(firstNum.lexeme());
+        long firstValue = parseRowCount(firstNum, "'TOP'");
         Optional<Long> offset = Optional.empty();
         long count;
         if (match(TokenType.COMMA)) {
             offset = Optional.of(firstValue);
-            count = Long.parseLong(
-                    expect(TokenType.NUMBER, "Expected count after offset").lexeme());
+            count = parseRowCount(expect(TokenType.NUMBER, "Expected count after offset"), "'TOP'");
         } else {
             count = firstValue;
         }
@@ -1602,12 +1608,25 @@ public final class RelAlgebraParser {
         return new TopKNode(List.copyOf(keys), sortSpecs, offset, count, input, loc(opTok));
     }
 
+    /**
+     * Reads a row count or offset — a whole number that fits in a {@code long} — from a
+     * {@code NUMBER} token, reporting anything else at the token. The lexer has already
+     * refused a sign, so the result is never negative.
+     */
+    private long parseRowCount(Token tok, String operator) {
+        try {
+            return Long.parseLong(tok.lexeme());
+        } catch (NumberFormatException e) {
+            throw error(tok, operator + " takes a whole-number row count, got '" + tok.lexeme() + "'");
+        }
+    }
+
     private LimitNode parseLimit() {
         Token opTok = current;
         expect(TokenType.LIMIT, "Expected 'λ'");
 
         Token firstNum = expect(TokenType.NUMBER, "Expected number for limit or offset");
-        long firstValue = Long.parseLong(firstNum.lexeme());
+        long firstValue = parseRowCount(firstNum, "'λ'");
 
         Optional<Long> offset = Optional.empty();
         Long count;
@@ -1616,7 +1635,7 @@ public final class RelAlgebraParser {
             // Two arguments: offset, count
             offset = Optional.of(firstValue);
             Token countNum = expect(TokenType.NUMBER, "Expected count after offset");
-            count = Long.parseLong(countNum.lexeme());
+            count = parseRowCount(countNum, "'λ'");
         } else {
             // One argument: count
             count = firstValue;
