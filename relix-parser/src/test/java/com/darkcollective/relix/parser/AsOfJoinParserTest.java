@@ -143,7 +143,8 @@ final class AsOfJoinParserTest extends ParserTestSupport {
     @Test
     void failsOnMissingCondition() {
         assertParseError("L ASOF R")
-                .hasMessageContaining("Expected comparison operator");
+                .hasMessageContaining("'ASOF' needs a join condition")
+                .at(1, 3);
     }
 
     @Test

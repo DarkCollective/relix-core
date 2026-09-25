@@ -197,7 +197,8 @@ final class SemiAntiJoinParserTest extends ParserTestSupport {
     @Test
     public void failsOnMissingPredicateInSemiJoin() {
         assertParseError("Users ⋉ Orders")
-                .hasMessageContaining("Expected comparison operator");
+                .hasMessageContaining("'⋉' needs a join condition")
+                .at(1, 7);
     }
 
     @Test
@@ -209,7 +210,8 @@ final class SemiAntiJoinParserTest extends ParserTestSupport {
     @Test
     public void failsOnMissingPredicateInAntiJoin() {
         assertParseError("Users ▷ Orders")
-                .hasMessageContaining("Expected comparison operator");
+                .hasMessageContaining("'▷' needs a join condition")
+                .at(1, 7);
     }
 
     @Test
