@@ -75,12 +75,12 @@ script_name       ::= WORD
    import relation Totals from "lib.relix"; one name, of a stated kind
    import { A, B } from "lib.relix";        several names
    import Totals from "lib.relix";          one name                     */
-import_stmt       ::= "import" STRING_DQ ";"
+import_stmt       ::= "import" NONBLANK_STRING_DQ ";"
                     | "import" ( "source" | "relation" | "function" ) script_name
-                               "from" STRING_DQ ";"
+                               "from" NONBLANK_STRING_DQ ";"
                     | "import" "{" script_name ( "," script_name )* ","? "}"
-                               "from" STRING_DQ ";"
-                    | "import" script_name "from" STRING_DQ ";"
+                               "from" NONBLANK_STRING_DQ ";"
+                    | "import" script_name "from" NONBLANK_STRING_DQ ";"
 
 /* Name := { expression };   a view
    Name := [ | a | b | … ];  an inline table (see Inline tables)          */
@@ -101,7 +101,7 @@ def_stmt          ::= "def" script_name "(" ( parameter ( "," parameter )* )? ")
 parameter         ::= script_name ":" scalar_type
 
 /* relate "places" / "placed by" Orders.customer_id [0..*] -> Customers.customer_id [1..1]; */
-relate_stmt       ::= "relate" "symmetric"? STRING_DQ ( "/" STRING_DQ )?
+relate_stmt       ::= "relate" "symmetric"? NONBLANK_STRING_DQ ( "/" NONBLANK_STRING_DQ )?
                       endpoint "->" endpoint ";"
 endpoint          ::= relation_columns multiplicity?
 multiplicity      ::= "[" INTEGER ".." ( INTEGER | "*" ) "]"
@@ -421,9 +421,9 @@ top_k             ::= "TOP" INTEGER ( "," INTEGER )? sort_key ( "," sort_key )*
 cover             ::= "COVER" "EXACT"? INTEGER input
 
 /* DOWNSAMPLE ts BY '5m' USING AVG PER sensor FOR 1000 ROWS (Readings) */
-downsample        ::= "DOWNSAMPLE" name "BY" STRING "USING"
+downsample        ::= "DOWNSAMPLE" name "BY" NONBLANK_STRING "USING"
                       ( "AVG" | "MIN" | "MAX" | "SUM" | "COUNT" )
-                      per_names? ( "FOR" INTEGER "ROWS" )? input
+                      per_names? ( "FOR" POSITIVE_INTEGER "ROWS" )? input
 per_names         ::= "PER" name ( "," name )*
 
 /* ROLLING AVG(price) OVER 3 ROWS SORT ts PER ticker AS avg3 (Trades) */
@@ -563,12 +563,15 @@ reserved_word     ::= "TRUE" | "FALSE" | "NULL" | "UNIT" | "DEE" | "EMPTY" | "DU
 
    DELIMITED_IDENTIFIER
                  "`" any characters except a newline "`", with "``" standing for
-                 one backtick: `order`, `line total`.  Never empty.
+                 one backtick: `order`, `line total`.  Never empty, and never
+                 only whitespace.
 
    NUMBER        digits, optionally "." and more digits: 42, 3.14.
                  No exponent, no leading "." and no sign (a "-" before a
                  number is the minus operator).
    INTEGER       a NUMBER without a fractional part.
+   POSITIVE_INTEGER
+                 an INTEGER of at least 1.
 
    CALL_OPEN     a "(" written directly after a name, with no space or
                  comment between them.  Wherever the grammar asks for "(",
@@ -579,6 +582,8 @@ reserved_word     ::= "TRUE" | "FALSE" | "NULL" | "UNIT" | "DEE" | "EMPTY" | "DU
    STRING_DQ     statement layer: "…" only.  \" is a quote; any other
                  backslash is kept as written, so "C:\data\a.csv" needs no
                  doubling.
+   NONBLANK_STRING, NONBLANK_STRING_DQ
+                 a STRING or STRING_DQ holding more than whitespace.
 
    MARKDOWN_TABLE  "[" raw text "]"     (see Inline tables)
    CSV_TABLE       "[" raw text "]"
@@ -621,6 +626,11 @@ are easy to miss in the rules above.
   backticked: `` π name (`order`) ``. Backticks are always safe.
 - **`query` names one plain name.** `query Totals;` works, but a dotted name needs
   the expression form: `query { relix.plan };`.
+- **Whole numbers must fit.** An INTEGER that counts rows or bounds (`λ`, `TOP`,
+  `SAMPLE … ROWS`, `SEED`, `DOWNSAMPLE … FOR`, a multiplicity, a pagination
+  default) must fit in a 64-bit signed integer, and one that counts hops, a
+  covering strength or a window frame in a 32-bit one. A larger number is
+  rejected where it is written.
 - **Temporal literals are checked as they are read.** `DATE '2024-02-30'` has the
   shape the grammar describes but is not a real date, so the parser rejects it. The
   same holds for `TIME`, `TIMESTAMP` and `DURATION`, whose strings must be valid

@@ -387,7 +387,7 @@ final class LangLexer {
             }
             name.append(c);
         }
-        if (name.isEmpty()) {
+        if (name.toString().isBlank()) {
             throw new LangParseException("Empty delimited name", tokLine, tokCol);
         }
         return new LangToken(LangTokenType.DELIMITED_IDENTIFIER, name.toString(), tokLine, tokCol);

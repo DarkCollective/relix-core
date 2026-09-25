@@ -175,6 +175,13 @@ engine trusts them for planning and explanation but does not verify data
 against them. Join-path *resolution* over the graph (finding and correcting the
 join a query should build) is implemented on top of these declarations.
 
+A relationship's name, and its inverse name, must hold more than whitespace. A blank
+one is a parse error:
+
+```relix-invalid
+relate "" Orders.customer_id -> Customers.customer_id;
+```
+
 # Alternatives:
 The `references:` block on a `source` declaration for plain foreign keys — same
 edge, terser, named after the referencing column. Without any declarations, the

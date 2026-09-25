@@ -411,7 +411,9 @@ public final class Lexer {
             value.append(c);
         }
 
-        if (value.isEmpty()) {
+        // A name of only whitespace is as empty as no name: every node that holds a name
+        // refuses a blank one, and refusing it here is what gives the error a position.
+        if (value.toString().isBlank()) {
             throw new ParseException(
                     "Empty delimited identifier",
                     input,

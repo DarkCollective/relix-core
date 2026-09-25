@@ -276,8 +276,7 @@ final class SourceConfigParser {
                 parser.advance();
                 parser.consume(LangTokenType.DEFAULT);
                 parser.consume(LangTokenType.COLON);
-                String num = parser.requireNumberLit("pagination default value");
-                defaultValue = Optional.of(Long.parseLong(num));
+                defaultValue = Optional.of(parser.requireBoundValue("pagination default value"));
                 parser.consume(LangTokenType.RBRACKET);
             }
             entries.add(new PaginateEntry(logicalName, paramName, defaultValue));
