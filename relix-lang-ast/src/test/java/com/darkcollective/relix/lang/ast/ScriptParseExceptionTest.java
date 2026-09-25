@@ -46,6 +46,13 @@ final class ScriptParseExceptionTest {
     }
 
     @Test
+    @DisplayName("description() is the message verbatim, a frontend having decorated nothing")
+    void descriptionIsMessage() {
+        assertThat(new ScriptParseException("unexpected token", 3, 12).description())
+                .isEqualTo("unexpected token");
+    }
+
+    @Test
     @DisplayName("Is unchecked, so producing an AST needs no checked handling")
     void isUnchecked() {
         assertThat(new ScriptParseException("x")).isInstanceOf(RuntimeException.class);

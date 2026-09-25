@@ -25,7 +25,6 @@ import com.darkcollective.relix.connectors.std.HttpFetcher;
 import com.darkcollective.relix.connectors.std.internal.ConnectorCatalogProvider;
 import com.darkcollective.relix.connectors.std.internal.FileResolver;
 import com.darkcollective.relix.connectors.std.internal.JdbcCatalogProvider;
-import com.darkcollective.relix.lang.LangParseException;
 import com.darkcollective.relix.lang.ScriptParser;
 import com.darkcollective.relix.lang.ast.AssignmentStatement;
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
@@ -1482,21 +1481,15 @@ public final class Relix implements AutoCloseable {
     }
 
     /**
-     * Runs the analyser, reporting a frontend's parse failure as this API's own.
+     * Runs the analyser over the session's script.
      *
-     * <p>Not every parse happens in {@code parseForSession}: an {@code import} is read and parsed
-     * by the {@code ScriptLoader} part-way through analysis, so a script whose *import*
-     * does not parse fails here rather than at the front door. That is still the grammar
-     * failing to produce a tree, which is what {@link RelixException} means — and letting
-     * it escape as itself would leave a caller unable to tell a malformed script from a
-     * defect in the engine.
+     * <p>Not every parse happens in {@code parseForSession}: an {@code import} is read and
+     * parsed by the {@code ScriptLoader} part-way through analysis. The analyser reports a
+     * file that does not parse as an error located in that file, like any other, so
+     * {@link #validate} returns it and the throwing API raises it with the rest.
      */
     private SemanticResult analyzed(Script script) {
-        try {
-            return analyzer.analyze(script, SESSION_PATH);
-        } catch (ScriptParseException e) {
-            throw new RelixException(e.getMessage(), e);
-        }
+        return analyzer.analyze(script, SESSION_PATH);
     }
 
     /**
@@ -1519,12 +1512,7 @@ public final class Relix implements AutoCloseable {
      */
     private static Diagnostic syntaxDiagnostic(RelixException raised) {
         if (raised.getCause() instanceof ScriptParseException parse && parse.line() > 0) {
-            String message = raised.getMessage();
-            String suffix = LangParseException.suffix(parse.line(), parse.column());
-            if (message.endsWith(suffix)) {
-                message = message.substring(0, message.length() - suffix.length());
-            }
-            return Diagnostic.of(message,
+            return Diagnostic.of(parse.description(),
                     new SourceLocation(SESSION_PATH, parse.line(), parse.column()));
         }
         return Diagnostic.of(raised.getMessage());

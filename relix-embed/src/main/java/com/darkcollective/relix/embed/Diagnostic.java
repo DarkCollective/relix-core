@@ -103,6 +103,10 @@ public record Diagnostic(String message, Optional<SourceLocation> location, Seve
     /**
      * Renders a list of errors as one message, for the exception the throwing API raises.
      *
+     * <p>An error placed in an imported file is prefixed with that file and position,
+     * since the exception has no other way to say which file it is in; one in the
+     * session's own text is not, a caller having written that text itself.
+     *
      * @param errors the errors; must not be null
      * @return a single human-readable description
      */
@@ -110,8 +114,16 @@ public record Diagnostic(String message, Optional<SourceLocation> location, Seve
         if (errors.isEmpty()) {
             return "analysis produced no model";
         }
-        return errors.stream().map(SemanticError::message)
+        return errors.stream().map(Diagnostic::describe)
                 .collect(Collectors.joining("; "));
+    }
+
+    private static String describe(SemanticError error) {
+        if (error.line() == 0 || error.filePath().equals(Relix.SESSION_PATH)) {
+            return error.message();
+        }
+        return error.filePath() + ":" + error.line() + ":" + error.column() + ": "
+                + error.message();
     }
 
     @Override
