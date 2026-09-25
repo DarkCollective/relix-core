@@ -248,8 +248,7 @@ public final class ScriptParser {
 
         // import STRING_LIT ;  — bulk import of an entire file
         if (current.type() == LangTokenType.STRING_LIT) {
-            String path = current.value();
-            advance();
+            String path = requireNonBlankStringLit("import source path");
             consumeSemicolon();
             return new ImportStatement(ImportKind.BULK, List.of(), path, loc(startTok));
         }
@@ -267,7 +266,7 @@ public final class ScriptParser {
             advance();
             String name = requireName("import name");
             consume(LangTokenType.FROM);
-            String path = requireStringLit("import source path");
+            String path = requireNonBlankStringLit("import source path");
             consumeSemicolon();
             return new ImportStatement(kind, List.of(name), path, loc(startTok));
         }
@@ -286,7 +285,7 @@ public final class ScriptParser {
             }
             consume(LangTokenType.RBRACE);
             consume(LangTokenType.FROM);
-            String path = requireStringLit("import source path");
+            String path = requireNonBlankStringLit("import source path");
             consumeSemicolon();
             return new ImportStatement(ImportKind.UNQUALIFIED,
                     Collections.unmodifiableList(names), path, loc(startTok));
@@ -295,7 +294,7 @@ public final class ScriptParser {
         // import NAME from STRING ;  — unqualified single import
         String name = requireName("import name");
         consume(LangTokenType.FROM);
-        String path = requireStringLit("import source path");
+        String path = requireNonBlankStringLit("import source path");
         consumeSemicolon();
         return new ImportStatement(ImportKind.UNQUALIFIED, List.of(name), path, loc(startTok));
     }
@@ -409,12 +408,12 @@ public final class ScriptParser {
             advance();
         }
 
-        String name = requireStringLit("relationship name");
+        String name = requireNonBlankStringLit("relationship name");
 
         Optional<String> inverseName = Optional.empty();
         if (current.type() == LangTokenType.SLASH) {
             advance();
-            inverseName = Optional.of(requireStringLit("inverse relationship name"));
+            inverseName = Optional.of(requireNonBlankStringLit("inverse relationship name"));
         }
 
         EndpointSpec source = parseEndpointSpec();
@@ -447,8 +446,11 @@ public final class ScriptParser {
         return new EndpointSpec(ref.relation(), ref.columns(), min, max, loc(startTok));
     }
 
-    /** Reads a multiplicity bound, which must be a non-negative integer literal. */
-    private long requireBoundValue(String context) {
+    /**
+     * Reads a non-negative integer literal that fits in a {@code long} — a multiplicity
+     * bound, a pagination default — reporting anything else at its token.
+     */
+    long requireBoundValue(String context) {
         LangToken tok = current;
         String num = requireNumberLit(context);
         try {
@@ -957,6 +959,20 @@ public final class ScriptParser {
         }
         String value = current.value();
         advance();
+        return value;
+    }
+
+    /**
+     * Reads a string literal that names something, so must hold more than whitespace. A
+     * blank one is refused here, at its token, rather than by the statement's constructor,
+     * which knows nothing of where the text was.
+     */
+    private String requireNonBlankStringLit(String context) {
+        LangToken tok = current;
+        String value = requireStringLit(context);
+        if (value.isBlank()) {
+            throw new LangParseException("The " + context + " must not be blank", tok);
+        }
         return value;
     }
 

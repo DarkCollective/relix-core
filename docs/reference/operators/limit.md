@@ -74,6 +74,13 @@ Without a SORT below it, "first N" is whatever order the source happens to
 deliver — not guaranteed. Limit caps rows but does not sample randomly; for that
 use SAMPLE.
 
+The count and the offset are whole numbers. A fraction, or a number too large for a
+64-bit integer, is a parse error:
+
+```relix-invalid
+query { λ 2.5 (Orders) };
+```
+
 # Alternatives:
 For a random subset use SAMPLE p (probabilistic) or SAMPLE n ROWS (exact count).
 For "N per group" rather than N overall use TOP … PER.
