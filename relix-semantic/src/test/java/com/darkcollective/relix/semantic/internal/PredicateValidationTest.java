@@ -25,6 +25,8 @@ import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.AstBuilders;
+import com.darkcollective.relix.ast.AttributeOperand;
+import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.Provenance;
@@ -142,6 +144,37 @@ final class PredicateValidationTest {
             assertThat(errors.get(0).message())
                     .containsIgnoringCase("selection")
                     .contains("ghost_col");
+        }
+
+        @Test
+        @DisplayName("An unknown attribute is placed at the reference, or at its predicate without one")
+        void undefinedColumnIsPlaced() {
+            var at = new SourceLocation("q.relix", 6, 13);
+            var predicateAt = new SourceLocation("q.relix", 6, 11);
+
+            RelNode placed = select(new ComparisonPredicate(new AttributeOperand("ghost", at),
+                    ComparisonOperator.EQUAL, num("0"), predicateAt), rel("Users"));
+            assertThat(inferAndValidate(placed)).singleElement().satisfies(e -> {
+                assertThat(e.message()).startsWith(
+                        "Selection σ: attribute 'ghost' not found in input schema");
+                assertThat(e.filePath()).isEqualTo("q.relix");
+                assertThat(e.line()).isEqualTo(6);
+                assertThat(e.column()).isEqualTo(13);
+            });
+
+            RelNode unplacedOperand = select(new ComparisonPredicate(attr("ghost"),
+                    ComparisonOperator.EQUAL, num("0"), predicateAt), rel("Users"));
+            assertThat(inferAndValidate(unplacedOperand)).singleElement().satisfies(e -> {
+                assertThat(e.line()).isEqualTo(6);
+                assertThat(e.column()).isEqualTo(11);
+            });
+
+            assertThat(inferAndValidate(select(cmp("ghost"), rel("Users"))))
+                    .as("a tree built with no positions at all is reported against the file")
+                    .singleElement().satisfies(e -> {
+                        assertThat(e.filePath()).isEqualTo("<test>");
+                        assertThat(e.line()).isZero();
+                    });
         }
 
         @Test

@@ -64,6 +64,7 @@
 # drawn on a re-run.
 #
 # count	file
+5	relix-semantic/src/test/java/com/darkcollective/relix/semantic/internal/PredicateValidationTest.java
 1	relix-semantic/src/test/java/com/darkcollective/relix/semantic/internal/SemanticValidationTest.java
 26	relix-ast/src/test/java/com/darkcollective/relix/ast/internal/AstEquivalenceTest.java
 7	relix-ast/src/test/java/com/darkcollective/relix/ast/internal/RelNodeOperandsTest.java

@@ -410,6 +410,35 @@ final class RelixSessionTest {
         }
 
         /**
+         * π and τ placed an unknown column and σ and γ did not, so a script with several
+         * selections gave no hint which one was meant.
+         */
+        @Test
+        @DisplayName("an unknown attribute in a σ predicate or a γ aggregate is placed at the reference")
+        void unknownAttributeIsPlaced() {
+            String script = """
+                    A := [
+                    | id | x |
+                    |----|---|
+                    | 1  | 2 |
+                    ];
+                    query { σ nope > 1 (A) };
+                    query { γ id, SUM(nope) -> s (A) };
+                    """;
+            try (Relix relix = Relix.open()) {
+                List<Diagnostic> found = relix.validate(script);
+
+                assertThat(found).extracting(Diagnostic::message).containsExactly(
+                        "Selection σ: attribute 'nope' not found in input schema (available: id, x)",
+                        "Aggregation γ SUM: attribute 'nope' not found in input schema (available: id, x)");
+                assertThat(found).extracting(d -> d.location().orElseThrow().line())
+                        .containsExactly(6, 7);
+                assertThat(found).extracting(d -> d.location().orElseThrow().column())
+                        .containsExactly(11, 19);
+            }
+        }
+
+        /**
          * An import is parsed by the loader part-way through analysis rather than at the
          * front door, so its syntax error once escaped {@code validate} as an exception
          * naming no file. It is an error in that file, and is reported as one.
