@@ -23,7 +23,8 @@ Bucket ages into whole years (floor):
   π Int(age) → year_bucket (People)
 
 # Pushdown:
-SQL: folds to `FLOOR(<e>)` on all dialects. Exact on an exact numeric column.
+SQL: folds to `FLOOR(<e>)` on every dialect but SQLite, where it is a floating-point
+function and an optional part of the build. Exact on an exact numeric column.
 
 # Limitations:
 NUMBER only; NULL in → NULL out. Floors negatives downward (Int(−1.1) = −2) —

@@ -14,7 +14,7 @@ ISO-8601 date in quotes. Use it to filter or compute against date columns.
 `DATE '…'` parses an ISO-8601 calendar date (YYYY-MM-DD) into a zone-less civil
 java.time.LocalDate at parse time; a malformed payload is a positioned parse
 error. It infers as the DATE scalar type. DATE literals push down to SQL (per
-dialect). Single- or double-quoted payloads are both accepted.
+dialect), except to SQLite, which has no date type. Single- or double-quoted payloads are both accepted.
 
 # Examples:
 Filter rows on or after a date:

@@ -21,7 +21,8 @@ On-the-hour events:
   σ MINUTE(occurred_at) = 0 (Events)
 
 # Pushdown:
-SQL: folds to `EXTRACT(MINUTE FROM <col>)` on all dialects.
+SQL: folds to `EXTRACT(MINUTE FROM <col>)` on every dialect but SQLite,
+which has no date type to extract from.
 MongoDB: folds to `{"$minute": "$<col>"}` inside a `$project` stage (requires alias).
 
 # Limitations:

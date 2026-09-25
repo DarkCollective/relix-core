@@ -24,7 +24,8 @@ First initial:
 
 # Pushdown:
 SQL: folds to `LEFT(<s>, <n>)` on the
-**MySQL**, **PostgreSQL** and **DuckDB** dialects. Each counts a string in
+**MySQL**, **PostgreSQL** and **DuckDB** dialects, and to `SUBSTR(<s>, 1, <n>)` on
+**SQLite**, which lacks the name but counts the same way. Each counts a string in
 characters, which is what relix counts in, and each was put on that list by running
 it against text holding a character outside the basic multilingual plane. H2 (the
 generic dialect) counts UTF-16 code units, so its same-named function answers

@@ -21,7 +21,8 @@ Spot a burst — how many events landed in each second of a minute:
   γ SECOND(occurred_at) → sec, COUNT(id) → hits (Events)
 
 # Pushdown:
-SQL: folds to `EXTRACT(SECOND FROM <col>)` on all dialects.
+SQL: folds to `EXTRACT(SECOND FROM <col>)` on every dialect but SQLite,
+which has no date type to extract from.
 MongoDB: folds to `{"$second": "$<col>"}` inside a `$project` stage (requires alias).
 
 # Limitations:

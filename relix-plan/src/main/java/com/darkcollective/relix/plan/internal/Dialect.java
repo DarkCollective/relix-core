@@ -55,8 +55,8 @@ import java.util.regex.Pattern;
  *
  * <p>The {@link #GENERIC} dialect emits the exact SQL the planner produced before
  * dialects existed for every name that is a plain identifier (unquoted identifiers,
- * {@code LIMIT n [OFFSET m]}), so it is a safe default for H2, PostgreSQL, MySQL, and
- * SQLite.  The {@link #POSTGRES}, {@link #MYSQL} and {@link #DUCKDB} dialects add
+ * {@code LIMIT n [OFFSET m]}), so it is a safe default for H2, PostgreSQL and MySQL.
+ * The {@link #POSTGRES}, {@link #MYSQL}, {@link #DUCKDB} and {@link #SQLITE} dialects add
  * identifier quoting, which is correct when the relix
  * schema's column names match the database's stored case (always true for
  * introspected {@code conn.table} references).
@@ -95,7 +95,17 @@ public enum Dialect {
      * differs from PostgreSQL it differs in the engine's favour: its default collation is
      * binary, so it compares <em>and</em> orders strings exactly as the engine does.
      */
-    DUCKDB("\"", "\"", true);
+    DUCKDB("\"", "\"", true),
+
+    /**
+     * SQLite: double-quoted identifiers and a binary default collation, so it compares and
+     * orders strings as the engine does. What sets it apart is what it lacks — date and
+     * time types, {@code EXTRACT}, {@code LATERAL}, a case-sensitive {@code LIKE} — and
+     * each of those is declined or respelled here rather than inherited from
+     * {@link #GENERIC}, which is what a SQLite connection resolved to before it had a
+     * constant of its own.
+     */
+    SQLITE("\"", "\"", true);
 
     /** A name every backend reads bare, up to case folding. */
     private static final Pattern PLAIN_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
@@ -188,8 +198,8 @@ public enum Dialect {
      */
     public String stringLiteral(String value) {
         String escaped = switch (this) {
-            case GENERIC, POSTGRES, DUCKDB -> value.replace("'", "''");
-            case MYSQL                     -> value.replace("\\", "\\\\").replace("'", "''");
+            case GENERIC, POSTGRES, DUCKDB, SQLITE -> value.replace("'", "''");
+            case MYSQL                             -> value.replace("\\", "\\\\").replace("'", "''");
         };
         return "'" + escaped + "'";
     }
@@ -209,7 +219,7 @@ public enum Dialect {
      */
     public String limit(long count, long offset) {
         return switch (this) {
-            case GENERIC, POSTGRES, MYSQL, DUCKDB ->
+            case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE ->
                     offset > 0 ? "LIMIT " + count + " OFFSET " + offset : "LIMIT " + count;
         };
     }
@@ -229,7 +239,9 @@ public enum Dialect {
      * sorts before {@code true}, so ascending that expression puts the present values
      * first whichever way the real key runs. MySQL has no {@code NULLS LAST} syntax at
      * all, and GENERIC is an unidentified backend that may be MySQL-shaped, so neither
-     * can be given it.
+     * can be given it. SQLite has had {@code NULLS LAST} only since 3.30, and the
+     * driver — which is the database, for an embedded backend — is the user's to choose,
+     * so it gets the portable form too.
      *
      * @param expr       the rendered key expression (already quoted)
      * @param descending whether the key itself sorts descending
@@ -239,8 +251,56 @@ public enum Dialect {
         String direction = descending ? " DESC" : " ASC";
         return switch (this) {
             case POSTGRES, DUCKDB -> List.of(expr + direction + " NULLS LAST");
-            case GENERIC, MYSQL -> List.of("(" + expr + " IS NULL) ASC", expr + direction);
+            case GENERIC, MYSQL, SQLITE -> List.of("(" + expr + " IS NULL) ASC", expr + direction);
         };
+    }
+
+    /**
+     * Renders {@code subject LIKE pattern} (or {@code NOT LIKE}) so that it matches what
+     * the engine's {@code LIKE} matches, or empty where this dialect cannot say it.
+     *
+     * <p>The engine's {@code LIKE} is exact: {@code %} and {@code _} are its only
+     * wildcards, and every other character — case included — matches only itself. That
+     * is standard SQL, and most backends need nothing more than the subject rendered in
+     * comparison position, which the caller has already done.
+     *
+     * <p><b>{@link #SQLITE}'s {@code LIKE} is case-insensitive</b> for ASCII letters, and
+     * no collation changes that: {@code 'a' LIKE 'A'} is true there whatever the column
+     * says. Its {@code GLOB} is the case-sensitive matcher, with {@code *} and {@code ?}
+     * for wildcards, so a <em>literal</em> pattern is translated into one — its own
+     * {@code *}, {@code ?} and {@code [} bracketed so that they match themselves. A
+     * pattern that is not a literal cannot be translated here and declines.
+     *
+     * @param subject the rendered expression being matched; must not be null
+     * @param pattern the rendered pattern, used where the dialect reads {@code LIKE}
+     *                as the engine does; must not be null
+     * @param literal the pattern's text when it is a string literal, else empty
+     * @param negated whether this is {@code NOT LIKE}
+     * @return the predicate, parenthesised; or empty when this dialect declines it
+     */
+    public Optional<String> like(String subject, String pattern, Optional<String> literal,
+                                 boolean negated) {
+        return switch (this) {
+            case GENERIC, POSTGRES, MYSQL, DUCKDB -> Optional.of(
+                    "(" + subject + (negated ? " NOT LIKE " : " LIKE ") + pattern + ")");
+            case SQLITE -> literal.map(text -> "(" + subject
+                    + (negated ? " NOT GLOB " : " GLOB ") + stringLiteral(glob(text)) + ")");
+        };
+    }
+
+    /** A {@code LIKE} pattern rewritten as the {@code GLOB} pattern matching the same strings. */
+    private static String glob(String like) {
+        StringBuilder glob = new StringBuilder(like.length());
+        for (int i = 0; i < like.length(); i++) {
+            char c = like.charAt(i);
+            switch (c) {
+                case '%' -> glob.append('*');
+                case '_' -> glob.append('?');
+                case '*', '?', '[' -> glob.append('[').append(c).append(']');
+                default -> glob.append(c);
+            }
+        }
+        return glob.toString();
     }
 
     /**
@@ -286,24 +346,44 @@ public enum Dialect {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
-     * Renders a {@code DATE} value as a SQL literal: {@code GENERIC} a
-     * quoted ISO string (relies on implicit cast), {@code POSTGRES}/{@code MYSQL} a
-     * typed {@code DATE '…'} literal.
+     * Renders a {@code DATE} value as a SQL literal, or empty where this dialect has no
+     * literal that means what the engine means: {@code GENERIC} a quoted ISO string
+     * (relies on implicit cast), {@code POSTGRES}/{@code MYSQL}/{@code DUCKDB} a typed
+     * {@code DATE '…'} literal.
+     *
+     * <p><b>{@link #SQLITE} declines all four temporal literals.</b> SQLite has no date or
+     * time types: a "date" column holds TEXT, a REAL or an INTEGER by the application's
+     * convention, and a comparison against it is a comparison of text or of numbers. A
+     * quoted ISO string agrees with the engine only while every stored value is written
+     * in exactly that form, which nothing the planner can reach reports — so a temporal
+     * predicate runs in the engine over the values the connector read, where it means
+     * what it says whatever the convention.
+     *
+     * @param value the date; must not be null
+     * @return the literal, or empty when this dialect declines it
      */
-    public String dateLiteral(LocalDate value) {
+    public Optional<String> dateLiteral(LocalDate value) {
         String iso = value.toString();
         return switch (this) {
-            case GENERIC          -> "'" + iso + "'";
-            case POSTGRES, MYSQL, DUCKDB -> "DATE '" + iso + "'";
+            case GENERIC                 -> Optional.of("'" + iso + "'");
+            case POSTGRES, MYSQL, DUCKDB -> Optional.of("DATE '" + iso + "'");
+            case SQLITE                  -> Optional.empty();
         };
     }
 
-    /** Renders a {@code TIME} value as a SQL literal (see {@link #dateLiteral}). */
-    public String timeLiteral(LocalTime value) {
+    /**
+     * Renders a {@code TIME} value as a SQL literal, or empty where this dialect declines
+     * it (see {@link #dateLiteral}).
+     *
+     * @param value the time; must not be null
+     * @return the literal, or empty when this dialect declines it
+     */
+    public Optional<String> timeLiteral(LocalTime value) {
         String iso = value.toString();
         return switch (this) {
-            case GENERIC          -> "'" + iso + "'";
-            case POSTGRES, MYSQL, DUCKDB -> "TIME '" + iso + "'";
+            case GENERIC                 -> Optional.of("'" + iso + "'");
+            case POSTGRES, MYSQL, DUCKDB -> Optional.of("TIME '" + iso + "'");
+            case SQLITE                  -> Optional.empty();
         };
     }
 
@@ -317,14 +397,19 @@ public enum Dialect {
      * <p>{@code DUCKDB} takes PostgreSQL's form. Against a zone-less {@code TIMESTAMP}
      * column DuckDB converts the literal to the session's wall clock, which relix pins to
      * UTC ({@link #pinSessionToUtcSql}), so it compares the instant the engine reads the
-     * column as; against a {@code TIMESTAMPTZ} column it compares instants directly.
+     * column as; against a {@code TIMESTAMPTZ} column it compares instants directly. {@code SQLITE} declines (see
+     * {@link #dateLiteral}).
+     *
+     * @param value the instant; must not be null
+     * @return the literal, or empty when this dialect declines it
      */
-    public String timestampLiteral(Instant value) {
+    public Optional<String> timestampLiteral(Instant value) {
         String utc = TIMESTAMP_UTC.format(LocalDateTime.ofInstant(value, ZoneOffset.UTC));
         return switch (this) {
-            case GENERIC  -> "'" + utc + "'";
-            case POSTGRES, DUCKDB -> "TIMESTAMP WITH TIME ZONE '" + value + "'";   // ISO instant with Z
-            case MYSQL    -> "TIMESTAMP '" + utc + "'";
+            case GENERIC          -> Optional.of("'" + utc + "'");
+            case POSTGRES, DUCKDB -> Optional.of("TIMESTAMP WITH TIME ZONE '" + value + "'");   // ISO instant with Z
+            case MYSQL            -> Optional.of("TIMESTAMP '" + utc + "'");
+            case SQLITE           -> Optional.empty();
         };
     }
 
@@ -357,7 +442,7 @@ public enum Dialect {
             case DUCKDB -> value.getNano() % 1_000 == 0
                     ? Optional.of("to_microseconds(" + microseconds(value) + ")")
                     : Optional.empty();
-            case GENERIC, MYSQL -> Optional.empty();
+            case GENERIC, MYSQL, SQLITE -> Optional.empty();
         };
     }
 
@@ -407,7 +492,7 @@ public enum Dialect {
      */
     public boolean comparesStringsExactly() {
         return switch (this) {
-            case GENERIC, POSTGRES, DUCKDB -> true;
+            case GENERIC, POSTGRES, DUCKDB, SQLITE -> true;
             case MYSQL -> false;
         };
     }
@@ -435,7 +520,8 @@ public enum Dialect {
      * <p>DuckDB answers {@code true} to both questions: its default collation compares
      * UTF-8 bytes, which is code-point order. That was run rather than read — over the
      * agreement fixture's {@code U+FF5E}/emoji pair, the one that tells code-point order
-     * from UTF-16 order.
+     * from UTF-16 order. SQLite's {@code BINARY} collation is {@code memcmp} over UTF-8,
+     * and answers the same, measured over the same pair.
      *
      * <p>A {@code false} answer does not decline the fold: it renders the ordering under
      * an explicit exact collation, {@link #exactStringOrder}.
@@ -444,7 +530,7 @@ public enum Dialect {
      */
     public boolean ordersStringsExactly() {
         return switch (this) {
-            case GENERIC, DUCKDB -> true;
+            case GENERIC, DUCKDB, SQLITE -> true;
             case POSTGRES, MYSQL -> false;
         };
     }
@@ -477,7 +563,7 @@ public enum Dialect {
      */
     public String exactStringComparison(String expression) {
         return switch (this) {
-            case GENERIC, POSTGRES, DUCKDB -> expression;
+            case GENERIC, POSTGRES, DUCKDB, SQLITE -> expression;
             case MYSQL -> "CONVERT(" + expression + " USING utf8mb4) COLLATE utf8mb4_0900_bin";
         };
     }
@@ -505,8 +591,8 @@ public enum Dialect {
      */
     public String exactStringOrder(String expression) {
         return switch (this) {
-            case GENERIC, DUCKDB -> expression;
-            case POSTGRES        -> "(" + expression + ") COLLATE \"C\"";
+            case GENERIC, DUCKDB, SQLITE -> expression;
+            case POSTGRES                -> "(" + expression + ") COLLATE \"C\"";
             case MYSQL    -> exactStringComparison(expression);
         };
     }
@@ -601,6 +687,9 @@ public enum Dialect {
             // Checked against a running DuckDB: the setting is `TimeZone`, and it is what
             // a TIMESTAMPTZ is rendered in and what date_trunc over one truncates.
             case DUCKDB   -> Optional.of("SET TimeZone = 'UTC'");
+            // SQLite has no session time zone to pin: its date functions compute at UTC
+            // unless a query asks for 'localtime', and relix folds none of them.
+            case SQLITE   -> Optional.empty();
         };
     }
 
@@ -625,6 +714,7 @@ public enum Dialect {
             case POSTGRES -> PushdownTarget.sql("postgres");
             case MYSQL    -> PushdownTarget.sql("mysql");
             case DUCKDB   -> PushdownTarget.sql("duckdb");
+            case SQLITE   -> PushdownTarget.sql("sqlite");
         };
     }
 
@@ -635,6 +725,8 @@ public enum Dialect {
      * <ul>
      *   <li>{@link #GENERIC} (H2 2.x), {@link #POSTGRES} and {@link #DUCKDB}:
      *       {@code true}.</li>
+     *   <li>{@link #SQLITE}: {@code true} — window functions arrived in SQLite 3.25
+     *       (2018), and the corpus's window cases run against it in the gate.</li>
      *   <li>{@link #MYSQL}: {@code false} — MySQL 5.x predates window-function
      *       support; since the declared dialect cannot confirm the server version,
      *       window operators fall back to in-engine execution for safety.</li>
@@ -644,7 +736,7 @@ public enum Dialect {
      */
     public boolean supportsWindowFunctions() {
         return switch (this) {
-            case GENERIC, POSTGRES, DUCKDB -> true;
+            case GENERIC, POSTGRES, DUCKDB, SQLITE -> true;
             case MYSQL -> false;
         };
     }
@@ -662,6 +754,7 @@ public enum Dialect {
      *       and the AS-OF corpus runs against it in the gate.</li>
      *   <li>{@link #GENERIC}: {@code false} — the generic target is H2, whose 2.x
      *       releases have no {@code LATERAL} support, so AS-OF runs in-engine.</li>
+     *   <li>{@link #SQLITE}: {@code false} — SQLite has no {@code LATERAL}.</li>
      *   <li>{@link #MYSQL}: {@code false} — {@code LATERAL} arrived only in MySQL
      *       8.0.14, and the declared dialect cannot confirm the server version, so
      *       AS-OF falls back to in-engine execution for safety (as window functions do).</li>
@@ -675,7 +768,7 @@ public enum Dialect {
         // into a rendering question and moves it into the AS-OF renderer (#869).
         return switch (this) {
             case POSTGRES, DUCKDB -> true;
-            case GENERIC, MYSQL -> false;
+            case GENERIC, MYSQL, SQLITE -> false;
         };
     }
 
@@ -747,7 +840,8 @@ public enum Dialect {
             case "postgres", "postgresql" -> POSTGRES;
             case "mysql", "mariadb"       -> MYSQL;
             case "duckdb"                 -> DUCKDB;
-            default                       -> GENERIC;   // h2, ansi, sqlite, unknown
+            case "sqlite"                 -> SQLITE;
+            default                       -> GENERIC;   // h2, ansi, unknown
         };
     }
 
@@ -762,6 +856,9 @@ public enum Dialect {
         }
         if (lower.startsWith("jdbc:duckdb:")) {
             return DUCKDB;
+        }
+        if (lower.startsWith("jdbc:sqlite:")) {
+            return SQLITE;
         }
         return GENERIC;
     }

@@ -44,6 +44,8 @@ rather than in name.
     than the string `DATE_FORMAT` returns. The unit must be a literal: a call
     whose unit is a column or an expression is evaluated in-engine, since the
     unit is what chooses the pattern.
+  - **SQLite**: not pushed. SQLite has no date type, and `strftime` reads whatever
+    text a column holds.
   - **GENERIC**: not pushed; the call is evaluated in-engine, and everything
     above the operator containing it stays in the engine with it. The generic
     dialect is an unidentified backend, so it is offered no spelling that has

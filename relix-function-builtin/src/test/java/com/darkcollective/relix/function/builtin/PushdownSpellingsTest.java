@@ -46,6 +46,7 @@ final class PushdownSpellingsTest {
     private static final PushdownTarget MYSQL = PushdownTarget.sql("mysql");
     private static final PushdownTarget GENERIC = PushdownTarget.sql("");
     private static final PushdownTarget DUCKDB = PushdownTarget.sql("duckdb");
+    private static final PushdownTarget SQLITE = PushdownTarget.sql("sqlite");
     private static final PushdownTarget MONGO = PushdownTarget.mongo();
 
     private static Optional<String> render(String function, PushdownTarget target,
@@ -380,12 +381,73 @@ final class PushdownSpellingsTest {
         }
     }
 
+    /**
+     * SQLite, which lacks what the others share: no date types and so no {@code EXTRACT},
+     * no {@code LEFT}/{@code RIGHT}/{@code CHAR_LENGTH}, and rounding in floating point.
+     */
+    @Nested
+    @DisplayName("SQLite, spelled around what it lacks")
+    final class Sqlite {
+
+        @Test
+        @DisplayName("counting and slicing under SQLite's own names")
+        void countingAndSlicing() {
+            assertThat(render("Len", SQLITE, "\"s\"")).contains("LENGTH(\"s\")");
+            assertThat(render("Left", SQLITE, "\"s\"", "2")).contains("SUBSTR(\"s\", 1, 2)");
+            assertThat(render("Mid", SQLITE, "\"s\"", "2")).contains("SUBSTR(\"s\", 2)");
+            assertThat(render("Mid", SQLITE, "\"s\"", "2", "3")).contains("SUBSTR(\"s\", 2, 3)");
+        }
+
+        @Test
+        @DisplayName("Right counts its start from the left, so n = 0 is empty rather than everything")
+        void right() {
+            assertThat(render("Right", SQLITE, "\"s\"", "2"))
+                    .contains("SUBSTR(\"s\", MAX(LENGTH(\"s\") - 2, 0) + 1)");
+        }
+
+        @Test
+        @DisplayName("no temporal function folds: there is no date type to read")
+        void noTemporalFunctions() {
+            for (String function : List.of("YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND")) {
+                assertThat(render(function, SQLITE, "\"at\"")).as(function).isEmpty();
+            }
+            assertThat(render("DATE_TRUNC", SQLITE, "'day'", "\"at\"")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("the rounding functions decline, answering in floating point there")
+        void noRounding() {
+            assertThat(render("Round", SQLITE, "x")).isEmpty();
+            assertThat(render("Round", SQLITE, "x", "2")).isEmpty();
+            assertThat(render("Int", SQLITE, "x")).isEmpty();
+            assertThat(render("Ceil", SQLITE, "x")).isEmpty();
+            assertThat(render("Fix", SQLITE, "x")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("each respelling answers only for its own argument count")
+        void wrongArgumentCount() {
+            assertThat(render("Left", SQLITE, "\"s\"")).isEmpty();
+            assertThat(render("Right", SQLITE, "\"s\"", "2", "3")).isEmpty();
+            assertThat(render("Int", POSTGRES, "x", "y")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("the exact ones fold as everywhere else")
+        void exact() {
+            assertThat(render("Abs", SQLITE, "x")).contains("ABS(x)");
+            assertThat(render("Sgn", SQLITE, "x")).contains("SIGN(x)");
+            assertThat(render("Replace", SQLITE, "s", "'a'", "'b'")).contains("REPLACE(s, 'a', 'b')");
+            assertThat(render("IsNull", SQLITE, "x")).contains("(x IS NULL)");
+        }
+    }
+
     @Test
     @DisplayName("the transcendental numerics decline: a different double, or no answer at all")
     void transcendentalsDecline() {
         for (String function : List.of("Sqr", "Log", "Exp", "Sin", "Cos", "Tan", "Atn",
                 "Power")) {
-            for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, MONGO)) {
+            for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, MONGO)) {
                 assertThat(render(function, target, "a"))
                         .as("%s on %s", function, target).isEmpty();
                 assertThat(render(function, target, "a", "b"))
@@ -415,7 +477,7 @@ final class PushdownSpellingsTest {
 
     private static boolean spellsAnything(ScalarFunction fn) {
         List<String> arguments = List.of("a", "b", "c");
-        for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, MONGO)) {
+        for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, MONGO)) {
             for (int count = 0; count <= arguments.size(); count++) {
                 if (fn.pushdown().render(target, arguments.subList(0, count)).isPresent()) {
                     return true;

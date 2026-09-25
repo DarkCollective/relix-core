@@ -26,6 +26,8 @@ SQL: dialect-dependent, because truncation towards zero is the one rounding SQL
 never settled on a single name for.
   - **MySQL**: `TRUNCATE(<e>, 0)`.
   - **Postgres** and **DuckDB**: `TRUNC(<e>)`.
+  - **SQLite**: not pushed. Its `TRUNC` is a floating-point function behind a
+    compile-time option.
   - **GENERIC**: not pushed. A name that has to be chosen per dialect is one an
     unidentified backend has not been confirmed to have.
 

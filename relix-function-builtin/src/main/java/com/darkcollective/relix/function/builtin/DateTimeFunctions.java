@@ -90,6 +90,12 @@ final class DateTimeFunctions {
     /** @see #POSTGRES */
     private static final String DUCKDB = "duckdb";
 
+    /**
+     * The dialect with no date or time types, and so none of the temporal functions: a
+     * SQLite "date" is TEXT, a REAL or an INTEGER by the application's convention.
+     */
+    private static final String SQLITE = "sqlite";
+
     private DateTimeFunctions() {
     }
 
@@ -289,6 +295,11 @@ final class DateTimeFunctions {
             }
             String argument = arguments.get(0);
             if (target.isFamily(PushdownTarget.SQL)) {
+                // SQLite has no EXTRACT, and no date type for one to read: its strftime
+                // parses whatever text the column holds, which is a different function.
+                if (target.isVariant(SQLITE)) {
+                    return Optional.empty();
+                }
                 return Optional.of("EXTRACT(" + sqlUnit + " FROM " + argument + ")");
             }
             if (target.isFamily(PushdownTarget.MONGO)) {

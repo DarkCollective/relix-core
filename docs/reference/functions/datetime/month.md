@@ -24,7 +24,8 @@ December records:
   σ MONTH(event_date) = 12 (Calendar)
 
 # Pushdown:
-SQL: folds to `EXTRACT(MONTH FROM <col>)` on all dialects (GENERIC, Postgres, MySQL).
+SQL: folds to `EXTRACT(MONTH FROM <col>)` on every dialect but SQLite, which has
+no date type to extract from.
 MongoDB: folds to `{"$month": "$<col>"}` inside a `$project` stage (requires alias).
 
 # Limitations:
