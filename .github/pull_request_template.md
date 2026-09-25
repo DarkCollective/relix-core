@@ -1,7 +1,6 @@
 <!--
-Thanks for contributing. This repository is published from a larger one, so an
-approved pull request is applied upstream by a maintainer and arrives here with the
-next publication, with your authorship kept. See CONTRIBUTING.md.
+Thanks for contributing. Pull requests target the `develop` branch, not `main`;
+`develop` is promoted to `main` in batches. See CONTRIBUTING.md.
 -->
 
 ## What and why
