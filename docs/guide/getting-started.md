@@ -300,7 +300,7 @@ for (Diagnostic problem : relix.validate("Bad := { σ nope = 1 (Orders) };")) {
 ```
 
 ```
-Selection σ: attribute 'nope' not found in schema (available: order_id, customer, status, amount)
+Selection σ: attribute 'nope' not found in input schema (available: order_id, customer, status, amount)
 ```
 
 A failure that only appears once rows are moving is a third case: it arrives as the
