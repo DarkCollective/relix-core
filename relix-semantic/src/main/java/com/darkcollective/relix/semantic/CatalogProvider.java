@@ -19,6 +19,7 @@ import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
 import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.Schema;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -31,8 +32,9 @@ import java.util.Optional;
  * declared schema produce a clear "schema unavailable" error in offline use.
  *
  * <p>The seam also supplies optional {@link RelationStatistics} (row counts,
- * keys) for the cost model via {@link #tableStatistics}; the default returns
- * {@link Optional#empty()}, so a schema-only provider needs no extra work.
+ * keys) for the cost model via {@link #tableStatistics}, and the tables a connection
+ * holds via {@link #tables}; both default to {@link Optional#empty()}, so a schema-only
+ * provider needs no extra work.
  */
 @FunctionalInterface
 public interface CatalogProvider {
@@ -61,6 +63,24 @@ public interface CatalogProvider {
      */
     default Optional<RelationStatistics> tableStatistics(
             ConnectionDeclaration connection, String table) {
+        return Optional.empty();
+    }
+
+    /**
+     * Returns the names of the tables {@code connection} holds, as far as this provider
+     * knows them, or {@link Optional#empty()} if it cannot enumerate them.
+     *
+     * <p>The analyser uses the list to suggest a table when a reference names one the
+     * provider cannot describe, as it already suggests a column. The default returns
+     * empty, which suits live introspection: asking a database for every table to
+     * correct one typo is not a cost worth paying during analysis. A provider holding a
+     * fixed set of tables, such as a {@link CatalogSnapshot}, lists them.
+     *
+     * @param connection the declared connection
+     * @return the table names, as a reference would spell them after the connection's
+     *         name; or empty if this provider cannot enumerate them
+     */
+    default Optional<List<String>> tables(ConnectionDeclaration connection) {
         return Optional.empty();
     }
 
