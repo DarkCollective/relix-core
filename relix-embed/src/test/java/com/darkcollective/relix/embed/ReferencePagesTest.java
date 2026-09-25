@@ -73,6 +73,46 @@ final class ReferencePagesTest {
         assertThat(lookup("limit")).isEqualTo("operators/limit.md");
     }
 
+    @Test
+    @DisplayName("a page is keyed by the ASCII spellings the spellings table gives its operator")
+    void asciiSpellingsAreKeys() {
+        assertThat(lookup("anti")).isEqualTo("joins/anti-join.md");
+        assertThat(lookup("semi")).isEqualTo("joins/semi-join.md");
+        assertThat(lookup("><")).isEqualTo("joins/theta-join.md");
+        assertThat(lookup("|><")).isEqualTo("joins/left-outer-join.md");
+        assertThat(lookup("ljoin")).isEqualTo("joins/left-outer-join.md");
+        assertThat(lookup("rjoin")).isEqualTo("joins/right-outer-join.md");
+        assertThat(lookup("|><|")).isEqualTo("joins/full-outer-join.md");
+        assertThat(lookup("diff")).isEqualTo("set-operations/difference.md");
+        assertThat(lookup("except")).isEqualTo("set-operations/difference.md");
+        assertThat(lookup("intersect")).isEqualTo("set-operations/intersection.md");
+        assertThat(lookup("order by")).isEqualTo("operators/sort.md");
+        assertThat(lookup("<=")).isEqualTo("predicates/comparison.md");
+        assertThat(lookup("⊥")).isEqualTo("predicates/is-null.md");
+        assertThat(lookup("x is null"))
+                .as("a usage with an operand in it is not a spelling")
+                .isEqualTo("(none)");
+        assertThat(lookup("->"))
+                .as("a row naming no page adds nothing")
+                .isEqualTo("(none)");
+    }
+
+    @Test
+    @DisplayName("an ASCII spelling of a glyph no page is about keys nothing")
+    void rowNamingNoPage() {
+        ReferencePage page = new ReferencePage("a.md", "operator", "A", "σ", "s", List.of("σ"));
+        List<ReferencePage> keyed = ReferenceIndex.withSpellings(List.of(page), """
+                | Unicode | ASCII |
+                |---|---|
+                | `σ` | `SELECT` |
+                | `→` | `->` |
+                | `x` / `y` | `p` / `q` |
+                """);
+        assertThat(keyed).singleElement()
+                .extracting(ReferencePage::keys)
+                .isEqualTo(List.of("σ", "select"));
+    }
+
     /** The page a key finds, as a reader of the index would look it up. */
     static String lookup(String key) {
         String wanted = key.toLowerCase(Locale.ROOT);
