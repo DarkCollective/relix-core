@@ -24,7 +24,8 @@ Trailing year of a reference:
 # Pushdown:
 SQL: folds to `RIGHT(<s>, <n>)` on the
 **MySQL**, **PostgreSQL** and **DuckDB** dialects, and to `SUBSTR(<s>, MAX(LENGTH(<s>) - <n>, 0) + 1)` on
-**SQLite**, which lacks the name but counts the same way. Each counts a string in
+**SQLite**, which lacks the name but counts the same way, and to a `SUBSTRING(…, CODEUNITS32)` on
+**Db2**, whose own functions count bytes unless told otherwise. Each counts a string in
 characters, which is what relix counts in, and each was put on that list by running
 it against text holding a character outside the basic multilingual plane. H2 (the
 generic dialect) counts UTF-16 code units, so its same-named function answers

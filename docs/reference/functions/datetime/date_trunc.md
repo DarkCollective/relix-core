@@ -34,8 +34,8 @@ minute/second only. Truncation is at UTC. NULL in → NULL out.
 # Pushdown:
 SQL: dialect-dependent, and the one built-in whose spelling differs in shape
 rather than in name.
-  - **Postgres** and **DuckDB**: `date_trunc('<unit>', <col>)` — standard Postgres
-    form, which DuckDB shares.
+  - **Postgres**, **DuckDB** and **Db2**: `date_trunc('<unit>', <col>)` — standard
+    Postgres form, which DuckDB and Db2 share.
   - **MySQL**: `CAST(DATE_FORMAT(<col>, '<pattern>') AS DATETIME)`, with one
     pattern per unit — `'%Y-01-01 00:00:00'` for a year, `'%Y-%m-%d %H:00:00'`
     for an hour, and so on. MySQL and MariaDB have no `DATE_TRUNC` function;

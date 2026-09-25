@@ -41,7 +41,7 @@ and is blocking over a provably-unbounded input.
 ## SQL pushdown
 
 When the source is backed by a JDBC connection and the dialect supports window
-functions (PostgreSQL, DuckDB, SQLite, SQL Server and the GENERIC H2 dialect; MySQL is conservative), the
+functions (PostgreSQL, DuckDB, SQLite, SQL Server, Db2 and the GENERIC H2 dialect; MySQL is conservative), the
 ranking window is folded into the SQL scan:
 
   SELECT dept, emp_id, salary, ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC) AS rn
@@ -188,7 +188,7 @@ field of that name, the added column replaces it.
 `PERCENT_RANK` take no argument. The `AS` column must not clash with an existing
 input column. Offset window functions (`WINDOW LAG / LEAD / FIRST_VALUE /
 LAST_VALUE`) are a sibling family — see [Window / Offset](window-offset.md). SQL
-pushdown is supported on PostgreSQL, DuckDB, SQLite, SQL Server and GENERIC (H2) backends; MySQL and MongoDB
+pushdown is supported on PostgreSQL, DuckDB, SQLite, SQL Server, Db2 and GENERIC (H2) backends; MySQL and MongoDB
 always evaluate ranking windows in-engine.
 
 # Alternatives:

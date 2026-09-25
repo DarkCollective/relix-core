@@ -215,6 +215,9 @@ public final class DataSourceRegistry implements ConnectionProvider {
         if (lower.contains("sql server")) {
             return Optional.of("sqlserver");
         }
+        if (lower.startsWith("db2")) {
+            return Optional.of("db2");
+        }
         return Optional.empty();
     }
 

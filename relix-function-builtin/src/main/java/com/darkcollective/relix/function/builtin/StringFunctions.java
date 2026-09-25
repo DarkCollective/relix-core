@@ -53,9 +53,11 @@ import static com.darkcollective.relix.symbol.ScalarType.STRING;
  *
  <h2>Which of these a backend is offered</h2>
  * The counting and slicing four, and only where a backend has been <em>run</em> and
- * agreed: MySQL, PostgreSQL, DuckDB and SQLite count characters, so each computes
+ * agreed: MySQL, PostgreSQL, DuckDB, SQLite and Db2 count characters, so each computes
  * {@code Len}, {@code Left}, {@code Right} and {@code Mid} itself — SQLite under names of
- * its own, having no {@code CHAR_LENGTH}, {@code LEFT} or {@code RIGHT}. H2, which resolves to the
+ * its own, having no {@code CHAR_LENGTH}, {@code LEFT} or {@code RIGHT}, and Db2 through
+ * {@code SUBSTRING} told to count in {@code CODEUNITS32}, its own {@code LEFT} counting
+ * bytes and padding. H2, which resolves to the
  * generic dialect, counts UTF-16 code units exactly as Java used to here — so
  * {@code CHAR_LENGTH} there is a different function wearing the same name, and the
  * generic dialect is offered nothing. "SQL counts characters" is the kind of claim that
@@ -99,7 +101,9 @@ final class StringFunctions {
                                 Spellings.sqlOn("CHAR_LENGTH", 1, Spellings.MYSQL, Spellings.POSTGRES, Spellings.DUCKDB),
                                 // SQLite has no CHAR_LENGTH; its LENGTH counts a TEXT
                                 // value's characters, which is the same count.
-                                Spellings.sqlOn("LENGTH", 1, Spellings.SQLITE)),
+                                Spellings.sqlOn("LENGTH", 1, Spellings.SQLITE),
+                                Spellings.on(Spellings.DB2, 1, a -> "CHARACTER_LENGTH(" + a.get(0)
+                                        + ", " + Spellings.DB2_CHARACTERS + ")")),
                         args -> args.get(0).isNull() ? NullValue.INSTANCE
                                 : number(CodePoints.length(string(args.get(0), "Len")))),
 
@@ -129,7 +133,11 @@ final class StringFunctions {
                                 Spellings.sqlOn("LEFT", 2, Spellings.MYSQL, Spellings.POSTGRES, Spellings.DUCKDB),
                                 // SQLite has no LEFT; a slice from the first character is it.
                                 Spellings.on(Spellings.SQLITE, 2,
-                                        a -> "SUBSTR(" + a.get(0) + ", 1, " + a.get(1) + ")")),
+                                        a -> "SUBSTR(" + a.get(0) + ", 1, " + a.get(1) + ")"),
+                                // Db2's own LEFT pads to the length asked for.
+                                Spellings.on(Spellings.DB2, 2,
+                                        a -> "SUBSTRING(" + a.get(0) + ", 1, " + a.get(1) + ", "
+                                                + Spellings.DB2_CHARACTERS + ")")),
                         StringFunctions::left),
 
                 STRINGS.fn("Right", STRING, PURE_DETERMINISTIC,
@@ -142,7 +150,11 @@ final class StringFunctions {
                                 // gives nothing for 0 and everything for n past the end.
                                 Spellings.on(Spellings.SQLITE, 2,
                                         a -> "SUBSTR(" + a.get(0) + ", MAX(LENGTH(" + a.get(0)
-                                                + ") - " + a.get(1) + ", 0) + 1)")),
+                                                + ") - " + a.get(1) + ", 0) + 1)"),
+                                Spellings.on(Spellings.DB2, 2,
+                                        a -> "SUBSTRING(" + a.get(0) + ", GREATEST(CHARACTER_LENGTH("
+                                                + a.get(0) + ", " + Spellings.DB2_CHARACTERS + ") - "
+                                                + a.get(1) + ", 0) + 1, " + Spellings.DB2_CHARACTERS + ")")),
                         StringFunctions::right),
 
                 // Mid(s, start) and Mid(s, start, length) are one function of two forms,
@@ -152,7 +164,11 @@ final class StringFunctions {
                         List.of(p("s", STRING), p("start", NUMBER), p("length", NUMBER)),
                         Arity.between(2, 3), Spellings.firstOf(
                                 Spellings.sqlOn("SUBSTRING", Spellings.MYSQL, Spellings.POSTGRES, Spellings.DUCKDB),
-                                Spellings.sqlOn("SUBSTR", Spellings.SQLITE)),
+                                Spellings.sqlOn("SUBSTR", Spellings.SQLITE),
+                                Spellings.on(Spellings.DB2, 2, a -> "SUBSTRING(" + a.get(0) + ", "
+                                        + a.get(1) + ", " + Spellings.DB2_CHARACTERS + ")"),
+                                Spellings.on(Spellings.DB2, 3, a -> "SUBSTRING(" + a.get(0) + ", "
+                                        + a.get(1) + ", " + a.get(2) + ", " + Spellings.DB2_CHARACTERS + ")")),
                         StringFunctions::mid),
 
                 // InStr(s, find) searches from the beginning; InStr(start, s, find) from

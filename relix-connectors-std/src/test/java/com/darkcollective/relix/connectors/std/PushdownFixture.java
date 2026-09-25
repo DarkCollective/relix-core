@@ -138,7 +138,15 @@ final class PushdownFixture {
          * {@code ?}, and {@code N'…'} literals, for the same reason on the way in. Nor does
          * it read a typed {@code DATE '…'} literal.
          */
-        SQLSERVER("DATETIME2", "DATETIMEOFFSET", "", true);
+        SQLSERVER("DATETIME2", "DATETIMEOFFSET", "", true),
+
+        /**
+         * Db2 for LUW, which has one timestamp type and no offset-bearing one, so the
+         * pair is the same type twice. That makes {@code stamped} ask nothing
+         * {@code placed} does not — the honest shape for a backend with nothing a
+         * session zone could shift.
+         */
+        DB2("TIMESTAMP", "TIMESTAMP");
 
         private final String unconverted;
         private final String converted;

@@ -46,10 +46,14 @@ dependencies {
     testImplementation 'org.testcontainers:mysql:1.21.3'
     testImplementation 'org.testcontainers:postgresql:1.21.3'
     testImplementation 'org.testcontainers:mssqlserver:1.21.3'
+    testImplementation 'org.testcontainers:db2:1.21.3'
     testImplementation 'org.testcontainers:junit-jupiter:1.21.3'
     testRuntimeOnly 'com.mysql:mysql-connector-j:8.4.0'
     testRuntimeOnly 'org.postgresql:postgresql:42.7.12'
     testRuntimeOnly 'com.microsoft.sqlserver:mssql-jdbc:13.6.0.jre11'
+    // IBM's driver is IPLA-licensed rather than permissively, so it is a test-only
+    // dependency: nothing relix ships carries it, and a user supplies their own.
+    testRuntimeOnly 'com.ibm.db2:jcc:12.1.5.0'
     // Embedded, so their agreement suites run in the gate rather than behind a container.
     testRuntimeOnly 'org.duckdb:duckdb_jdbc:1.5.5.1'
     testRuntimeOnly 'org.xerial:sqlite-jdbc:3.53.4.0'

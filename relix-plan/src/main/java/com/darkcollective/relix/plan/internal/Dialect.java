@@ -70,7 +70,9 @@ import java.util.regex.Pattern;
  * {@link #quote} reads the quoting each constant declares, and {@link #boolAnd}
  * renders SQL-92 that no backend lacks.
  *
- * <p>Every constant but {@link #SQLSERVER} renders {@code LIMIT n [OFFSET m]}. SQL Server's
+ * <p>Every constant but {@link #SQLSERVER} and {@link #DB2} renders
+ * {@code LIMIT n [OFFSET m]}; Db2 renders the standard's {@code FETCH FIRST}, which it
+ * accepts with or without an ordering. SQL Server's
  * row-limiting is {@code OFFSET … FETCH}, which needs more than an arm of {@link #limit}:
  * that form is legal only after an {@code ORDER BY}, so the pushdown planner also
  * declines a limit fold over an unordered sub-tree — {@link #limitNeedsOrderBy}.
@@ -115,7 +117,22 @@ public enum Dialect {
      * values, no {@code LATERAL} (its {@code APPLY} is the same thing spelled otherwise),
      * no session time zone, and a case-insensitive default collation.
      */
-    SQLSERVER("[", "]", true);
+    SQLSERVER("[", "]", true),
+
+    /**
+     * IBM Db2 for Linux, UNIX and Windows, 11.5 and later. Unlike every other named
+     * dialect it leaves a plain identifier bare: Db2 folds an unquoted name to
+     * <em>upper</em> case, so a table created as {@code orders} is stored as
+     * {@code ORDERS} and the quoted {@code "orders"} would name a different, absent one.
+     * A name that is not a plain identifier is double-quoted exactly as written, as the
+     * generic dialect does.
+     *
+     * <p>A Db2 database created in UTF-8, the default, compares strings with the
+     * {@code IDENTITY} collation — by their bytes, which is code-point order — so it
+     * answers both string questions as the engine does. A database created with a
+     * locale collation does not, and says so with {@code collation: database}.
+     */
+    DB2("\"", "\"", false);
 
     /** A name every backend reads bare, up to case folding. */
     private static final Pattern PLAIN_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
@@ -208,7 +225,7 @@ public enum Dialect {
      */
     public String stringLiteral(String value) {
         return switch (this) {
-            case GENERIC, POSTGRES, DUCKDB, SQLITE -> "'" + value.replace("'", "''") + "'";
+            case GENERIC, POSTGRES, DUCKDB, SQLITE, DB2 -> "'" + value.replace("'", "''") + "'";
             case MYSQL -> "'" + value.replace("\\", "\\\\").replace("'", "''") + "'";
             // T-SQL reads a backslash as itself; N marks the literal Unicode, without which
             // a character outside the database's code page arrives as '?'.
@@ -239,6 +256,11 @@ public enum Dialect {
             case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE ->
                     offset > 0 ? "LIMIT " + count + " OFFSET " + offset : "LIMIT " + count;
             case SQLSERVER -> "OFFSET " + offset + " ROWS FETCH NEXT " + count + " ROWS ONLY";
+            // The standard's form, which Db2 accepts with or without an ORDER BY; the
+            // OFFSET is written only when there is one to skip.
+            case DB2 -> offset > 0
+                    ? "OFFSET " + offset + " ROWS FETCH FIRST " + count + " ROWS ONLY"
+                    : "FETCH FIRST " + count + " ROWS ONLY";
         };
     }
 
@@ -256,7 +278,7 @@ public enum Dialect {
      */
     public boolean limitNeedsOrderBy() {
         return switch (this) {
-            case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE -> false;
+            case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE, DB2 -> false;
             case SQLSERVER -> true;
         };
     }
@@ -291,7 +313,7 @@ public enum Dialect {
     public List<String> orderByTerms(String expr, boolean descending) {
         String direction = descending ? " DESC" : " ASC";
         return switch (this) {
-            case POSTGRES, DUCKDB -> List.of(expr + direction + " NULLS LAST");
+            case POSTGRES, DUCKDB, DB2 -> List.of(expr + direction + " NULLS LAST");
             case GENERIC, MYSQL, SQLITE -> List.of("(" + expr + " IS NULL) ASC", expr + direction);
             case SQLSERVER -> List.of("CASE WHEN " + expr + " IS NULL THEN 1 ELSE 0 END ASC",
                     expr + direction);
@@ -328,7 +350,7 @@ public enum Dialect {
     public Optional<String> like(String subject, String pattern, Optional<String> literal,
                                  boolean negated) {
         return switch (this) {
-            case GENERIC, POSTGRES, MYSQL, DUCKDB -> Optional.of(
+            case GENERIC, POSTGRES, MYSQL, DUCKDB, DB2 -> Optional.of(
                     "(" + subject + (negated ? " NOT LIKE " : " LIKE ") + pattern + ")");
             case SQLITE -> literal.map(text -> "(" + subject
                     + (negated ? " NOT GLOB " : " GLOB ") + stringLiteral(glob(text)) + ")");
@@ -352,7 +374,7 @@ public enum Dialect {
      */
     public String booleanLiteral(boolean value) {
         return switch (this) {
-            case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE -> value ? "TRUE" : "FALSE";
+            case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE, DB2 -> value ? "TRUE" : "FALSE";
             case SQLSERVER -> value ? "1" : "0";
         };
     }
@@ -439,7 +461,7 @@ public enum Dialect {
         String iso = value.toString();
         return switch (this) {
             case GENERIC                 -> Optional.of("'" + iso + "'");
-            case POSTGRES, MYSQL, DUCKDB -> Optional.of("DATE '" + iso + "'");
+            case POSTGRES, MYSQL, DUCKDB, DB2 -> Optional.of("DATE '" + iso + "'");
             // T-SQL has no typed literal syntax; a CAST of the ISO string is its spelling.
             case SQLSERVER               -> Optional.of("CAST('" + iso + "' AS DATE)");
             case SQLITE                  -> Optional.empty();
@@ -457,7 +479,7 @@ public enum Dialect {
         String iso = value.toString();
         return switch (this) {
             case GENERIC                 -> Optional.of("'" + iso + "'");
-            case POSTGRES, MYSQL, DUCKDB -> Optional.of("TIME '" + iso + "'");
+            case POSTGRES, MYSQL, DUCKDB, DB2 -> Optional.of("TIME '" + iso + "'");
             case SQLSERVER               -> Optional.of("CAST('" + iso + "' AS TIME)");
             case SQLITE                  -> Optional.empty();
         };
@@ -490,7 +512,9 @@ public enum Dialect {
         return switch (this) {
             case GENERIC          -> Optional.of("'" + utc + "'");
             case POSTGRES, DUCKDB -> Optional.of("TIMESTAMP WITH TIME ZONE '" + value + "'");   // ISO instant with Z
-            case MYSQL            -> Optional.of("TIMESTAMP '" + utc + "'");
+            // Db2 for LUW has no offset-bearing timestamp: its TIMESTAMP is the wall clock
+            // the engine reads as UTC, so the literal is that wall clock too.
+            case MYSQL, DB2       -> Optional.of("TIMESTAMP '" + utc + "'");
             case SQLSERVER        -> Optional.of("CAST('" + TIMESTAMP_UTC_FRACTION.format(
                     LocalDateTime.ofInstant(value, ZoneOffset.UTC)) + "' AS DATETIME2)");
             case SQLITE           -> Optional.empty();
@@ -527,7 +551,9 @@ public enum Dialect {
                     ? Optional.of("to_microseconds(" + microseconds(value) + ")")
                     : Optional.empty();
             // T-SQL has no interval type at all.
-            case GENERIC, MYSQL, SQLITE, SQLSERVER -> Optional.empty();
+            // Nor has Db2 a value of interval type — its labelled durations are syntax
+            // for arithmetic, not something a comparison can take.
+            case GENERIC, MYSQL, SQLITE, SQLSERVER, DB2 -> Optional.empty();
         };
     }
 
@@ -556,7 +582,10 @@ public enum Dialect {
      * {@code 'Gold' = 'gold'} is false there as it is here. {@link #DUCKDB}'s default
      * collation is binary, so it answers {@code true} for the plainer reason.
      * {@link #SQLSERVER}'s default, {@code SQL_Latin1_General_CP1_CI_AS}, is
-     * case-insensitive, so it answers {@code false} as MySQL does.
+     * case-insensitive, so it answers {@code false} as MySQL does. {@link #DB2} answers
+     * {@code true} — a UTF-8 database's default {@code IDENTITY} collation compares bytes
+     * — with SQL Server's one caveat: it compares padded, so {@code 'a' = 'a '} holds
+     * there too, and no collation of its own changes that.
      *
      * <p>This is a claim about <b>equality alone</b>, and the separation is the whole
      * reason there are two methods: the same Postgres that compares equal strings
@@ -579,7 +608,7 @@ public enum Dialect {
      */
     public boolean comparesStringsExactly() {
         return switch (this) {
-            case GENERIC, POSTGRES, DUCKDB, SQLITE -> true;
+            case GENERIC, POSTGRES, DUCKDB, SQLITE, DB2 -> true;
             case MYSQL, SQLSERVER -> false;
         };
     }
@@ -608,7 +637,8 @@ public enum Dialect {
      * UTF-8 bytes, which is code-point order. That was run rather than read — over the
      * agreement fixture's {@code U+FF5E}/emoji pair, the one that tells code-point order
      * from UTF-16 order. SQLite's {@code BINARY} collation is {@code memcmp} over UTF-8,
-     * and answers the same, measured over the same pair.
+     * and answers the same, measured over the same pair; so does a UTF-8 Db2 database
+     * under its default {@code IDENTITY} collation.
      *
      * <p>A {@code false} answer does not decline the fold: it renders the ordering under
      * an explicit exact collation, {@link #exactStringOrder}.
@@ -617,7 +647,7 @@ public enum Dialect {
      */
     public boolean ordersStringsExactly() {
         return switch (this) {
-            case GENERIC, DUCKDB, SQLITE -> true;
+            case GENERIC, DUCKDB, SQLITE, DB2 -> true;
             case POSTGRES, MYSQL, SQLSERVER -> false;
         };
     }
@@ -659,7 +689,7 @@ public enum Dialect {
      */
     public String exactStringComparison(String expression) {
         return switch (this) {
-            case GENERIC, POSTGRES, DUCKDB, SQLITE -> expression;
+            case GENERIC, POSTGRES, DUCKDB, SQLITE, DB2 -> expression;
             case MYSQL -> "CONVERT(" + expression + " USING utf8mb4) COLLATE utf8mb4_0900_bin";
             case SQLSERVER -> "(" + expression + ") " + SQLSERVER_EXACT;
         };
@@ -695,7 +725,7 @@ public enum Dialect {
      */
     public String exactStringOrder(String expression) {
         return switch (this) {
-            case GENERIC, DUCKDB, SQLITE -> expression;
+            case GENERIC, DUCKDB, SQLITE, DB2 -> expression;
             case POSTGRES                -> "(" + expression + ") COLLATE \"C\"";
             case MYSQL, SQLSERVER        -> exactStringComparison(expression);
         };
@@ -801,6 +831,10 @@ public enum Dialect {
             // own offset, and neither reads a session setting. Its extractions are spelled
             // through SWITCHOFFSET(…, '+00:00') instead, which is UTC whatever the column.
             case SQLSERVER -> Optional.empty();
+            // Db2 for LUW has no time-zone-bearing timestamp at all, so there is nothing
+            // a session zone could shift: EXTRACT and DATE_TRUNC read the stored wall
+            // clock, which is the one the engine reads as UTC.
+            case DB2 -> Optional.empty();
         };
     }
 
@@ -827,6 +861,7 @@ public enum Dialect {
             case DUCKDB   -> PushdownTarget.sql("duckdb");
             case SQLITE   -> PushdownTarget.sql("sqlite");
             case SQLSERVER -> PushdownTarget.sql("sqlserver");
+            case DB2 -> PushdownTarget.sql("db2");
         };
     }
 
@@ -850,7 +885,7 @@ public enum Dialect {
      */
     public boolean supportsWindowFunctions() {
         return switch (this) {
-            case GENERIC, POSTGRES, DUCKDB, SQLITE, SQLSERVER -> true;
+            case GENERIC, POSTGRES, DUCKDB, SQLITE, SQLSERVER, DB2 -> true;
             case MYSQL -> false;
         };
     }
@@ -872,6 +907,7 @@ public enum Dialect {
      *   <li>{@link #SQLSERVER}: {@code true} — it has no {@code LATERAL} either, but
      *       {@code OUTER APPLY}/{@code CROSS APPLY} is the same correlated join, and
      *       {@link #nearestRowJoin} spells it.</li>
+     *   <li>{@link #DB2}: {@code true} — it takes PostgreSQL's spelling unchanged.</li>
      *   <li>{@link #MYSQL}: {@code false} — {@code LATERAL} arrived only in MySQL
      *       8.0.14, and the declared dialect cannot confirm the server version, so
      *       AS-OF falls back to in-engine execution for safety (as window functions do).</li>
@@ -909,7 +945,9 @@ public enum Dialect {
     public Optional<String> nearestRowJoin(String left, String columns, String source,
                                            String orderBy, String alias, boolean inner) {
         return switch (this) {
-            case POSTGRES, DUCKDB -> Optional.of(left
+            // Db2 takes PostgreSQL's spelling as written, LIMIT 1 and ON TRUE included —
+            // checked against Db2 11.5.
+            case POSTGRES, DUCKDB, DB2 -> Optional.of(left
                     + (inner ? " JOIN LATERAL (" : " LEFT JOIN LATERAL (")
                     + "SELECT " + columns + " " + source + " ORDER BY " + orderBy + " LIMIT 1) "
                     + alias + " ON TRUE");
@@ -991,6 +1029,7 @@ public enum Dialect {
             case "duckdb"                 -> DUCKDB;
             case "sqlite"                 -> SQLITE;
             case "sqlserver", "mssql"     -> SQLSERVER;
+            case "db2"                    -> DB2;
             default                       -> GENERIC;   // h2, ansi, unknown
         };
     }
@@ -1012,6 +1051,9 @@ public enum Dialect {
         }
         if (lower.startsWith("jdbc:sqlserver:")) {
             return SQLSERVER;
+        }
+        if (lower.startsWith("jdbc:db2:")) {
+            return DB2;
         }
         return GENERIC;
     }

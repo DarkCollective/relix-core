@@ -206,7 +206,7 @@ final class MathFunctions {
     /**
      * {@code Fix} per dialect. Truncation towards zero is the one rounding SQL never
      * settled on a single name for — MySQL spells it {@code TRUNCATE(x, 0)}, Postgres and
-     * DuckDB {@code TRUNC(x)}, and SQL Server {@code ROUND(x, 0, 1)} — and the generic dialect is offered neither, because a
+     * DuckDB and Db2 {@code TRUNC(x)}, and SQL Server {@code ROUND(x, 0, 1)} — and the generic dialect is offered neither, because a
      * name that has to be chosen per dialect is by definition one an unidentified
      * backend has not been confirmed to have.
      */
@@ -218,7 +218,8 @@ final class MathFunctions {
         if (target.isVariant(Spellings.MYSQL)) {
             return Optional.of("TRUNCATE(" + x + ", 0)");
         }
-        if (target.isVariant(Spellings.POSTGRES) || target.isVariant(Spellings.DUCKDB)) {
+        if (target.isVariant(Spellings.POSTGRES) || target.isVariant(Spellings.DUCKDB)
+                || target.isVariant(Spellings.DB2)) {
             return Optional.of("TRUNC(" + x + ")");
         }
         // T-SQL truncates through ROUND's third argument: any non-zero value truncates.
