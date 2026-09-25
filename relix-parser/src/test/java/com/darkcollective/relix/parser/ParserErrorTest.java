@@ -15,7 +15,11 @@
  */
 package com.darkcollective.relix.parser;
 
+import com.darkcollective.relix.ast.AntiJoinNode;
 import org.junit.jupiter.api.Test;
+
+import static com.darkcollective.relix.ast.AstAssertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 final class ParserErrorTest extends ParserTestSupport {
 
@@ -80,6 +84,66 @@ final class ParserErrorTest extends ParserTestSupport {
         assertParseError("Users ⋈")
                 .hasMessageContaining("Expected relation name")
                 .at(1, 8);
+    }
+
+    @Test
+    public void reportsJoinMissingItsCondition() {
+        assertThatThrownBy(() -> parse("Customers ANTI Orders"))
+                .hasMessage("'ANTI' needs a join condition between its two inputs, written after"
+                        + " the operator: Customers ANTI <condition> Orders at line 1, column 11");
+        assertParseError("Customers ANTI Orders")
+                .at(1, 11)
+                .found("'ANTI'");
+    }
+
+    @Test
+    public void reportsEveryConditionedJoinMissingItsCondition() {
+        for (String op : new String[] {"SEMI", "⋉", "▷", "LJOIN", "RJOIN", "FJOIN", "><",
+                "|><", "><|", "|><|", "⨝", "ASOF"}) {
+            assertParseError("A " + op + " B")
+                    .hasMessageContaining("'" + op + "' needs a join condition")
+                    .at(1, 3);
+        }
+    }
+
+    @Test
+    public void reportsJoinMissingItsConditionBeforeAnotherOperatorOrParen() {
+        assertParseError("(A SEMI s.B) ∪ C")
+                .hasMessageContaining("A SEMI <condition> s.B at line 1, column 4")
+                .at(1, 4);
+        assertParseError("(A ∪ B) SEMI C")
+                .as("a left input with no single name is elided")
+                .hasMessageContaining("… SEMI <condition> C")
+                .at(1, 9);
+        assertParseError("A ▷ B ∪ C")
+                .hasMessageContaining("A ▷ <condition> B")
+                .at(1, 3);
+        assertParseError("A ASOF inner B")
+                .hasMessageContaining("'ASOF' needs a join condition")
+                .at(1, 3);
+    }
+
+    @Test
+    public void conditionStartingWithANameStillParses() {
+        assertThat(parse("A ▷ A.id = B.id B")).isNode(AntiJoinNode.class);
+        assertParseError("σ x (A ▷ x(1) B)")
+                .as("a name followed by '(' is a function call, so the condition is there")
+                .hasMessageContaining("Expected comparison operator");
+        assertParseError("A ⋉ x.")
+                .as("a dot with no name after it is left to the condition's own error")
+                .hasMessageContaining("Expected identifier after '.'");
+    }
+
+    @Test
+    public void reportsNaturalJoinGivenACondition() {
+        assertThatThrownBy(() -> parse("A ⋈ A.nope = A.id A"))
+                .hasMessage("'⋈' is the natural join: it joins on the columns both inputs share"
+                        + " and takes no condition; for an explicit condition use ⨝ (><)"
+                        + " at line 1, column 3");
+        assertParseError("A ⋈ A.nope = A.id A").at(1, 3);
+        assertParseError("A JOIN x < 1 B")
+                .hasMessageContaining("'JOIN' is the natural join")
+                .at(1, 3);
     }
 
     @Test
