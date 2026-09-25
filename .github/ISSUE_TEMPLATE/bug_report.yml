@@ -6,12 +6,16 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report this. **If it is a security problem, stop here** and report it privately instead — see `SECURITY.md`.
-  - type: input
+  - type: textarea
     id: version
     attributes:
       label: Version
-      description: The Relix version or commit you are using.
-      placeholder: 1.0.0-rc1, or a commit hash
+      description: >-
+        The Relix version or commit you are using. Pasting the output of the
+        query `relix.version` is the exact answer: it lists the engine and every
+        connector and function library actually installed, with their versions.
+      placeholder: 1.0.0-rc1, or a commit hash, or the rows of relix.version
+      render: text
     validations:
       required: true
   - type: input
@@ -19,7 +23,7 @@ body:
     attributes:
       label: Environment
       description: Java version and operating system, plus the database and driver version if a connection is involved.
-      placeholder: Temurin 24, macOS 15, PostgreSQL 16 / pgjdbc 42.7
+      placeholder: Temurin 21, macOS 15, PostgreSQL 16 / pgjdbc 42.7
     validations:
       required: true
   - type: textarea

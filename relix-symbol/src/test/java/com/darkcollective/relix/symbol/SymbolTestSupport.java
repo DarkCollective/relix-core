@@ -24,7 +24,7 @@ import com.darkcollective.relix.symbol.function.ScalarFunctionSymbol;
 import com.darkcollective.relix.symbol.relation.DatabaseRelationSymbol;
 import com.darkcollective.relix.symbol.relation.InlineRelationSymbol;
 import com.darkcollective.relix.symbol.relation.QueryRelationSymbol;
-import com.darkcollective.relix.symbol.table.InMemorySymbolTable;
+import com.darkcollective.relix.symbol.table.internal.InMemorySymbolTable;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 
 import java.util.List;

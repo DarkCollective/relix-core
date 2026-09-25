@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast;
 
+import com.darkcollective.relix.ast.internal.AstEquivalence;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

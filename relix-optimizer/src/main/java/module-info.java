@@ -20,18 +20,18 @@
  * produced by semantic analysis and rewrites each query's
  * {@link com.darkcollective.relix.ast.RelNode} tree to a semantically equivalent
  * but more efficient form.  Every transformation is logged in an
- * {@link com.darkcollective.relix.optimizer.OptimizationContext} so the full
+ * {@link com.darkcollective.relix.optimizer.internal.OptimizationContext} so the full
  * audit trail can be rendered by
- * {@link com.darkcollective.relix.optimizer.OptimizationReport}.
+ * the console's optimization report.
  *
  * <h2>Optimization rules</h2>
  * <p>Each rule is identified by a unique
  * {@link com.darkcollective.relix.optimizer.OptimizationCode} and implements
- * the {@link com.darkcollective.relix.optimizer.OptimizationRule} interface.
+ * the {@link com.darkcollective.relix.optimizer.internal.OptimizationRule} interface.
  * Codes are grouped by a category prefix ({@code SEL}, {@code JOIN}, …);
  * {@link com.darkcollective.relix.optimizer.OptimizationCode} is the definitive
  * list of both the categories and the rules in them, and
- * {@link com.darkcollective.relix.optimizer.OptimizationPipeline} declares the
+ * {@link com.darkcollective.relix.optimizer.internal.OptimizationPipeline} declares the
  * order they run in.  Neither is restated here — a second copy of an enumerable
  * list is a copy that drifts.
  *
@@ -39,7 +39,6 @@
  * <pre>
  *   QueryOptimizer optimizer = new QueryOptimizer();
  *   List&lt;OptimizationResult&gt; results = optimizer.optimize(semanticModel);
- *   System.out.print(OptimizationReport.generate(model.namespace(), results));
  * </pre>
  */
 module com.darkcollective.relix.optimizer {
@@ -65,4 +64,5 @@ module com.darkcollective.relix.optimizer {
     requires com.darkcollective.relix.function;
 
     exports com.darkcollective.relix.optimizer;
+    exports com.darkcollective.relix.optimizer.internal to com.darkcollective.relix.embed;
 }

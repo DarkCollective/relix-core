@@ -15,8 +15,10 @@
  */
 package com.darkcollective.relix.processor;
 
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.symbol.ScalarType;
+import com.darkcollective.relix.symbol.Schema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -208,6 +210,30 @@ final class RowTest extends ProcessorTestSupport {
         void nullDisplaysCorrectly() {
             var row = ArrayRow.of(schema("x"), NullValue.INSTANCE);
             assertThat(row.toString()).contains("x=NULL");
+        }
+    }
+
+    @Nested
+    @DisplayName("Row.of, the factory a connector builds rows with")
+    class Factory {
+
+        @Test
+        @DisplayName("reads back by name and by position, from a list or varargs")
+        void builds() {
+            Schema heading = schema("id", "name");
+            Row fromList = Row.of(heading, List.of(num(1), str("Ada")));
+            Row fromArgs = Row.of(heading, num(1), str("Ada"));
+            assertThat(fromList.get("name")).isEqualTo(str("Ada"));
+            assertThat(fromArgs.get(0)).isEqualTo(num(1));
+            assertThat(fromList.schema()).isEqualTo(heading);
+        }
+
+        @Test
+        @DisplayName("refuses a value count that does not match the heading")
+        void mismatch() {
+            Schema heading = schema("id");
+            assertThatThrownBy(() -> Row.of(heading, List.of()))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 }

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan;
 
+import com.darkcollective.relix.plan.internal.PhysicalPlanPrinter;
 import com.darkcollective.relix.symbol.SchemaAssert;
 import com.darkcollective.relix.symbol.SymbolAssertions;
 import org.assertj.core.api.AbstractAssert;

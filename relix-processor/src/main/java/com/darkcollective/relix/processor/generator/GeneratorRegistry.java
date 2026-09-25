@@ -16,7 +16,7 @@
 package com.darkcollective.relix.processor.generator;
 
 import com.darkcollective.relix.cost.Boundedness;
-import com.darkcollective.relix.semantic.GeneratorCatalog;
+import com.darkcollective.relix.semantic.internal.GeneratorCatalog;
 import com.darkcollective.relix.symbol.Schema;
 
 import java.util.LinkedHashMap;

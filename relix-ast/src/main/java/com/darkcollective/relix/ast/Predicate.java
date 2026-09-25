@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast;
 
+import com.darkcollective.relix.ast.internal.Predicates;
 import com.darkcollective.relix.ast.visitor.PredicateVisitor;
 
 /**

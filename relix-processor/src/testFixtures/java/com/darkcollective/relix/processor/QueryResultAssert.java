@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.processor;
 
+import com.darkcollective.relix.processor.internal.QueryResult;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.value.Value;
 import org.assertj.core.api.AbstractAssert;

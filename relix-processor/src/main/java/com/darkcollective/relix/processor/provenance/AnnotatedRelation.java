@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.processor.provenance;
 
+import com.darkcollective.relix.processor.provenance.internal.ProvenanceEvaluator;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.provenance.Semiring;
 import com.darkcollective.relix.symbol.Schema;

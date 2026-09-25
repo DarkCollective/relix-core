@@ -166,7 +166,7 @@ table_field       ::= "table" ":" STRING_DQ
 /* url required */
 http_source       ::= "http" "{" ( http_field ( ","? http_field )* ","? )? "}"
 http_field        ::= "url" ":" STRING_DQ
-                    | "method" ":" ( "GET" | "POST" )
+                    | "method" ":" ( "GET" | "POST" | "QUERY" )
                     | "headers" ":" "{" ( STRING_DQ ":" STRING_DQ ","? )* "}"
                     | "auth" ":" auth_spec
                     | "body" ":" STRING_DQ
@@ -352,8 +352,9 @@ rename_list       ::= name ( "," name )*
                     | name arrow name ( "," name arrow name )*
 
 /* γ customer_id, SUM(amount) → total, COUNT(*) → orders (Orders)
-   Grouping keys come first, without braces; at least one aggregate is required.
-   With no keys the whole input is one group. */
+   Grouping keys come first as a plain list; at least one aggregate is required.
+   With no keys the whole input is one group. A key is an operand, so {k} is a
+   struct and groups by a one-field struct rather than by the column k. */
 aggregation       ::= ( "γ" | "GROUP" ) "BY"?
                       ( grouping_key ( "," grouping_key )* ","? )?
                       aggregate ( "," aggregate )* ","? input
@@ -601,6 +602,9 @@ are easy to miss in the rules above.
   `σ IsNull(x) = true (R)` rather than `σ IsNull(x) (R)`.
 - **Sets use braces.** `x IN {1, 2}` tests membership. `x IN (1, 2)` is a syntax
   error: a parenthesis opens a single expression.
+- **Braces elsewhere build a struct.** Outside a set, `{a}` is a struct with one
+  field `a`. A grouping key is an operand, so `γ {region}, COUNT(*) (Orders)`
+  parses and groups by a struct, not by the column. Write `γ region, COUNT(*) (Orders)`.
 - **There is no NULL value to write.** `⊥` and `NULL` appear only in a null test:
   `x = ⊥`, `x = NULL`, `x IS NULL` and `x IS NOT NULL` all ask whether `x` is NULL.
   Anywhere else, the word `null` names a column.
@@ -617,6 +621,10 @@ are easy to miss in the rules above.
   backticked: `` π name (`order`) ``. Backticks are always safe.
 - **`query` names one plain name.** `query Totals;` works, but a dotted name needs
   the expression form: `query { relix.plan };`.
+- **Temporal literals are checked as they are read.** `DATE '2024-02-30'` has the
+  shape the grammar describes but is not a real date, so the parser rejects it. The
+  same holds for `TIME`, `TIMESTAMP` and `DURATION`, whose strings must be valid
+  ISO-8601 values.
 - **Statement order.** `namespace` must be the first statement and `env` the next;
   the other statements may come in any order.
 - **Nesting depth.** One expression may nest at most 250 levels deep.
@@ -690,6 +698,13 @@ Grouping keys come first, with no braces, and at least one aggregate is required
 
 ```relix-invalid
 query { γ region (Orders) };
+```
+
+Braces around a grouping key are not an error, but they change the result. This
+groups by a one-field struct and returns one struct column instead of `region`:
+
+```relix
+query { γ {region}, COUNT(*) → orders (Orders) };
 ```
 
 To list the distinct values of a column, project it and remove the duplicates:

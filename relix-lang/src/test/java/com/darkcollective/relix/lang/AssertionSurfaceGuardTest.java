@@ -350,11 +350,20 @@ final class AssertionSurfaceGuardTest {
         return kinds;
     }
 
-    /** Every {@code .java} file in a {@code test} or {@code testFixtures} source set. */
+    /**
+     * The front ends that leave for their own repositories. Their tests compile against the
+     * published jar alone (#1133), and the asserts this guard asks for are the engine's
+     * test fixtures, which are not published; so the rule is the engine's, not theirs.
+     */
+    private static final Set<String> FRONT_ENDS = Set.of(
+            "relix-cli", "relix-repl", "relix-console", "relix-ask", "relix-site");
+
+    /** Every {@code .java} file in an engine module's {@code test} or {@code testFixtures} source set. */
     private static List<Path> testSources() {
         List<Path> sources = new ArrayList<>();
         try (Stream<Path> modules = Files.list(repoRoot())) {
-            for (Path module : modules.filter(Files::isDirectory).toList()) {
+            for (Path module : modules.filter(Files::isDirectory)
+                    .filter(m -> !FRONT_ENDS.contains(m.getFileName().toString())).toList()) {
                 for (String set : List.of("src/test/java", "src/testFixtures/java")) {
                     Path dir = module.resolve(set);
                     if (!Files.isDirectory(dir)) {

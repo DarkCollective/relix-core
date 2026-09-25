@@ -19,9 +19,9 @@ import com.darkcollective.relix.events.EventMetrics;
 import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.events.QueryEventListener;
 import com.darkcollective.relix.plan.PhysicalNode;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 
 import java.time.Duration;
 import java.util.List;

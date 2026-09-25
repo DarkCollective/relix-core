@@ -26,7 +26,12 @@ There are three column forms:
   column passes through unchanged. This is the textbook ρ_{a→b}(R) form, and it
   is the terse way to disambiguate a single colliding column in a wide relation.
 
-The pair form and the positional form cannot be mixed in one list. In the pair
+The pair form and the positional form cannot be mixed in one list:
+
+```relix-invalid
+query { ρ Staff (id, name → full_name) (Users) };
+```
+ In the pair
 form the new relation name is optional: `ρ (name → full_name) (R)` renames the
 column in place, keeping the relation's existing name and each surviving column's
 origin qualifier.

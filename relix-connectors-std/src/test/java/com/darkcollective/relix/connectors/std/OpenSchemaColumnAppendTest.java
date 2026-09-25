@@ -15,7 +15,8 @@
  */
 package com.darkcollective.relix.connectors.std;
 
-import com.darkcollective.relix.processor.QueryExecutor;
+import com.darkcollective.relix.connectors.std.internal.JsonFileDataSourceConnector;
+import com.darkcollective.relix.processor.internal.QueryExecutor;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.semantic.SemanticModel;
 import org.junit.jupiter.api.DisplayName;

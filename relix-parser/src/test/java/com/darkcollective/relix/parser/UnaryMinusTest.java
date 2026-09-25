@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.DisplayName;
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.*;
 
 import java.util.List;
 

@@ -132,6 +132,17 @@ System.out.println(relix.relation("σ amount > 100 (Orders)").explainJson());
 {"op":"Select","estimatedRows":null,"schema":{"open":false,"columns":[{"name":"order_id","type":"N"},{"name":"customer_id","type":"N"},{"name":"status","type":"S"},{"name":"amount","type":"N"}]},"children":[{"op":"Scan","source":"Orders","estimatedRows":null,"schema":{"open":false,"columns":[{"name":"order_id","type":"N"},{"name":"customer_id","type":"N"},{"name":"status","type":"S"},{"name":"amount","type":"N"}]},"children":[]}]}
 ```
 
+`renderJson()` is the same for the tree as written, before any planning: one object per
+operator, each with the heading the analyser inferred for it.
+
+```java
+System.out.println(relix.relation("σ amount > 100 (Orders)").renderJson());
+```
+
+```
+{"op":"Selection","label":"σ amount > 100","schema":{"open":false,"columns":[{"name":"order_id","type":"N"},{"name":"customer_id","type":"N"},{"name":"status","type":"S"},{"name":"amount","type":"N"}]},"materialization":"stream","children":[{"op":"Relation","label":"Orders [SRC]","relation":"Orders","kind":"SRC","schema":{"open":false,"columns":[{"name":"order_id","type":"N"},{"name":"customer_id","type":"N"},{"name":"status","type":"S"},{"name":"amount","type":"N"}]},"materialization":"stream","children":[]}]}
+```
+
 And as an object, when the interesting part is a number in it rather than the rendering:
 
 ```java
@@ -216,6 +227,21 @@ BigOpenOrders [QR]  order_id:N  customer_id:N  status:S  amount:N
 ════════════════════════════════════════════════════════════════════════════════
 ```
 
+The session's `model()` gives the same report, and `ir(relations)` narrows it to the
+relations named, which is how a tool shows the tree behind one query rather than the whole
+script:
+
+```java
+relix.model().ir(List.of("BigOpenOrders", "Orders")).lines()
+        .filter(line -> line.startsWith(" BigOpenOrders") || line.startsWith(" Orders"))
+        .forEach(System.out::println);
+```
+
+```
+ BigOpenOrders  QR   order_id:N  customer_id:N  status:S  amount:N
+ Orders         SRC  order_id:N  customer_id:N  status:S  amount:N
+```
+
 ## What the engine is made of
 
 `relix.version` is a relation, not a Java accessor, and it lists one row per component of
@@ -231,8 +257,10 @@ relix.relation("π component, kind (relix.version)").toList()
 (component=relix-engine, kind=engine)
 (component=relix-builtin, kind=function-library)
 (component=relix-embed, kind=facade)
+(component=clf, kind=connector)
 (component=csv, kind=connector)
 (component=gedcom, kind=connector)
+(component=log, kind=connector)
 (component=ojAlgo, kind=solver)
 (component=org.h2.Driver, kind=driver)
 ```

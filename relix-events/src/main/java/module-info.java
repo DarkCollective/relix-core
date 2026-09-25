@@ -31,4 +31,5 @@
  */
 module com.darkcollective.relix.events {
     exports com.darkcollective.relix.events;
+    exports com.darkcollective.relix.events.internal to com.darkcollective.relix.semantic;
 }

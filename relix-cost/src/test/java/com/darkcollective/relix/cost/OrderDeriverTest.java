@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.cost;
 
+import com.darkcollective.relix.ast.Ordering;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.RelNode;

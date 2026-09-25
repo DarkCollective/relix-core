@@ -15,10 +15,10 @@
  */
 package com.darkcollective.relix.processor.exec;
 
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.semantic.SemanticAssertions;
 import com.darkcollective.relix.semantic.SemanticModel;
 import org.junit.jupiter.api.DisplayName;
@@ -364,8 +364,8 @@ final class FixpointGuardTest extends ProcessorTestSupport {
     @DisplayName("QueryExecutor overloads respect maxFixpointRounds")
     class QueryExecutorOverloads {
 
-        private final com.darkcollective.relix.processor.QueryExecutor QE =
-                new com.darkcollective.relix.processor.QueryExecutor();
+        private final com.darkcollective.relix.processor.internal.QueryExecutor QE =
+                new com.darkcollective.relix.processor.internal.QueryExecutor();
 
         private static final String MULTI_ROUND_SCRIPT = CHAIN_EDGES + FIX_CLOSURE;
 
@@ -373,7 +373,7 @@ final class FixpointGuardTest extends ProcessorTestSupport {
         @DisplayName("executeStreaming with cap aborts correctly")
         void executeStreamingWithCapAborts() {
             SemanticModel model = model(MULTI_ROUND_SCRIPT);
-            com.darkcollective.relix.processor.DataSourceConnector conn =
+            com.darkcollective.relix.processor.internal.DataSourceConnector conn =
                     ExecutionContext.inlineOnly(model).connector();
             List<String> errors = new java.util.ArrayList<>();
             assertThatThrownBy(() ->
@@ -388,7 +388,7 @@ final class FixpointGuardTest extends ProcessorTestSupport {
         @DisplayName("executeStreaming unlimited default succeeds")
         void executeStreamingUnlimitedSucceeds() {
             SemanticModel model = model(MULTI_ROUND_SCRIPT);
-            com.darkcollective.relix.processor.DataSourceConnector conn =
+            com.darkcollective.relix.processor.internal.DataSourceConnector conn =
                     ExecutionContext.inlineOnly(model).connector();
             List<Long> counts = new java.util.ArrayList<>();
             QE.executeStreaming(model, conn,

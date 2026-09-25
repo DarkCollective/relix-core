@@ -20,7 +20,7 @@ import com.darkcollective.relix.function.FunctionLibrary;
 import com.darkcollective.relix.function.FunctionSignature;
 import com.darkcollective.relix.function.ScalarFunction;
 import com.darkcollective.relix.function.StrictScalarFunction;
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
 import com.darkcollective.relix.processor.connector.RelixConnector;

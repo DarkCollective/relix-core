@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.processor.connector;
 
+import com.darkcollective.relix.processor.connector.internal.ConnectorPluginLoader;
+import com.darkcollective.relix.processor.connector.internal.ConnectorRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

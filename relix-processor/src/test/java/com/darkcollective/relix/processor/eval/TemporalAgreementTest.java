@@ -20,7 +20,7 @@ import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.value.Value;
 import org.junit.jupiter.api.DisplayName;

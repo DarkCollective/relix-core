@@ -45,8 +45,11 @@ module com.darkcollective.relix.symbol {
     requires transitive com.darkcollective.relix.ast;
 
     exports com.darkcollective.relix.symbol;
+    exports com.darkcollective.relix.symbol.internal to com.darkcollective.relix.optimizer, com.darkcollective.relix.processor;
     exports com.darkcollective.relix.symbol.relation;
     exports com.darkcollective.relix.symbol.function;
     exports com.darkcollective.relix.symbol.table;
+    exports com.darkcollective.relix.symbol.table.internal to com.darkcollective.relix.embed, com.darkcollective.relix.semantic;
     exports com.darkcollective.relix.symbol.graph;
+    exports com.darkcollective.relix.symbol.graph.internal to com.darkcollective.relix.semantic;
 }

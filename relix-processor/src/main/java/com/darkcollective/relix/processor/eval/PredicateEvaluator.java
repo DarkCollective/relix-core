@@ -15,10 +15,12 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.processor.EvaluationException;
+
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.ElementOfPredicate;
-import com.darkcollective.relix.ast.LikePatterns;
+import com.darkcollective.relix.ast.internal.LikePatterns;
 import com.darkcollective.relix.ast.NotPredicate;
 import com.darkcollective.relix.ast.NullPredicate;
 import com.darkcollective.relix.ast.OrPredicate;

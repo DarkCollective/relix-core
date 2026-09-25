@@ -41,6 +41,7 @@ The shape of a `.relix` file — declaring data, naming results, and reusing cod
 | [http source](language/http-source.md) | Read JSON from an HTTP/REST API (headers, auth, body) |
 | [connection](language/connection.md) | Share one database connection across many sources |
 | [gedcom source](language/gedcom-source.md) | Read a GEDCOM genealogy file as individuals and families |
+| [log source](language/log-source.md) | Read a web server access log as a typed relation |
 | [relate](language/relate.md) | Declare named, bounded relationships between relations (schema graph) |
 | [inline-table](language/inline-table.md) | Embed small reference data directly in a script |
 | [assignment & query](language/assignment.md) | Name a view with `:=` and mark a result `query` |

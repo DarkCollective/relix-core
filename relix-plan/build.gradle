@@ -15,7 +15,7 @@ dependencies {
     api project(':relix-symbol')    // Schema / RelationSymbol in PhysicalNode's public API
     api project(':relix-semantic')  // SchemaAnnotations in the Planner's public API
     api project(':relix-events')    // QueryEventListener in the Planner's public API
-    api project(':relix-json')      // JsonWriter — in PhysicalPlanJson.write(...) signature
+    implementation project(':relix-json')   // PhysicalPlanJson writes with it; no public signature names it
     api project(':relix-cost')  // CostEstimator + BoundednessSource (in the Planner's public ctor) — join algorithm / build-side / boundedness
     api project(':relix-function')  // FunctionCatalog — in the Planner's public ctor; the source of every pushdown spelling
     // SolverCatalog — in Planner.withSolvers, and what tells the planner whether

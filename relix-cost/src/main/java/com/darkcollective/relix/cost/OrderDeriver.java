@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.cost;
 
+import com.darkcollective.relix.ast.Ordering;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.SortNode;
 

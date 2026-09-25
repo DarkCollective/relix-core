@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.symbol.graph;
 
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -69,6 +70,33 @@ public record Relationship(
             throw new IllegalArgumentException(
                     "a symmetric relationship cannot carry an inverse name");
         }
+    }
+
+    /**
+     * This edge's identity as a join, ignoring what it is called and which way round
+     * it was written: the two endpoints, each a relation and its lower-cased columns,
+     * in a fixed order.
+     *
+     * <p>Two relationships with the same identity join the same rows. That is the
+     * sameness a caller holding several edges needs: an edge learned from a query and
+     * a declared one over the same columns are the same edge under two names, and
+     * {@code A.x = B.y} is the same edge as {@code B.y = A.x}.
+     *
+     * @return the identity; never null
+     * @since 1.0
+     */
+    public String edgeIdentity() {
+        String a = endpointIdentity(source);
+        String b = endpointIdentity(target);
+        return a.compareTo(b) <= 0 ? a + "<->" + b : b + "<->" + a;
+    }
+
+    private static String endpointIdentity(Endpoint e) {
+        StringBuilder sb = new StringBuilder(SchemaGraph.key(e.relation()));
+        for (String c : e.columns()) {
+            sb.append('#').append(c.toLowerCase(Locale.ROOT));
+        }
+        return sb.toString();
     }
 
     /** Returns {@code true} if this edge connects a relation to itself. */

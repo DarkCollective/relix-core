@@ -107,7 +107,10 @@ public final class ScriptCorpus extends ScriptBuilders {
      * came to be readable by the grammar and unwritable by the printer — a source whose
      * credentials were dropped on the way through, with every kind round-tripping.
      *
-     * @return three declarations, an HTTP source and two relates, nothing left at default
+     * <p>A second HTTP source carries the one {@link HttpMethod} the first does not reach
+     * beyond the default: {@code QUERY}, which exists only with a body.
+     *
+     * @return four declarations, two HTTP sources and two relates, nothing left at default
      */
     public static List<Statement> everyPopulatedComponent() {
         HttpSourceConfig http = httpSource(
@@ -122,8 +125,17 @@ public final class ScriptCorpus extends ScriptBuilders {
                 Optional.of("{\"since\": \"2020-01-01\"}"),
                 Optional.of(new BearerAuth("s3cret")));
 
+        HttpSourceConfig query = httpSource(
+                "https://api.example.com/orders",
+                HttpMethod.QUERY,
+                Map.of("Content-Type", "application/sql"),
+                Optional.empty(), Optional.empty(), List.of(),
+                Optional.of("SELECT id FROM orders"),
+                Optional.empty());
+
         return List.of(
                 source("Remote", http),
+                source("Searched", query),
                 relate("places", Optional.of("placed by"), true,
                         endpoint("Orders", List.of("customer_id")),
                         endpoint("Customers", List.of("id"), 1, java.util.OptionalLong.of(1))),

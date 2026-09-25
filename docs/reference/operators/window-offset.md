@@ -175,6 +175,8 @@ columns use [Window / Ranking](window-ranking.md). For one collapsed row per gro
 use [γ](group.md).
 
 # See Also:
+[log source](../language/log-source.md) — WINDOW LAG over a web server's access log, among other windowing examples on one real dataset
+
 [window-ranking](window-ranking.md), [rolling](rolling.md), [sort](sort.md), [group](group.md)
 
 # Notes:

@@ -15,11 +15,12 @@
  */
 package com.darkcollective.relix.embed;
 
-import com.darkcollective.relix.connectors.std.ConnectionPool;
+import com.darkcollective.relix.connectors.std.internal.ConnectionPool;
+import com.darkcollective.relix.connectors.std.internal.FileResolver;
 import com.darkcollective.relix.connectors.std.DriverProvisioner;
 import com.darkcollective.relix.processor.connector.ConnectorProvisioner;
 import com.darkcollective.relix.processor.connector.Fetcher;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.generator.GeneratorRegistry;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.ColumnDefinition;
@@ -87,7 +88,8 @@ final class CompositeDataSourceConnectorTest {
                 DriverProvisioner.create(false, NO_NETWORK),
                 ConnectorProvisioner.create(false, NO_NETWORK),
                 new GeneratorRegistry(), new ConnectionPool(),
-                List.of(new FakeRegisteredConnector()));
+                List.of(new FakeRegisteredConnector()),
+                FileResolver.create(baseDir.resolve("cache"), false));
     }
 
     /** A script declaring one connection of {@code type} and one table-backed source on it. */

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.semantic;
 
+import com.darkcollective.relix.semantic.internal.SemanticAnalyzer;
 import com.darkcollective.relix.function.FunctionCatalog;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

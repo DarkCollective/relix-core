@@ -25,7 +25,7 @@ import com.darkcollective.relix.ast.RelNodeCorpus;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.TraceNode;
 import com.darkcollective.relix.ast.UnnestNode;
-import com.darkcollective.relix.ast.visitor.PrettyPrinter;
+import com.darkcollective.relix.ast.visitor.internal.PrettyPrinter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Nested;

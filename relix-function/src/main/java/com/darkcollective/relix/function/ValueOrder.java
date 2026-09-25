@@ -19,7 +19,7 @@ import com.darkcollective.relix.value.BooleanValue;
 import com.darkcollective.relix.value.DateValue;
 import com.darkcollective.relix.value.DurationValue;
 import com.darkcollective.relix.value.NumberValue;
-import com.darkcollective.relix.value.CodePoints;
+import com.darkcollective.relix.value.internal.CodePoints;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;

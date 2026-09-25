@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.ast;
 
-import com.darkcollective.relix.ast.visitor.PrettyPrinter;
+import com.darkcollective.relix.ast.visitor.internal.PrettyPrinter;
 import com.darkcollective.relix.ast.visitor.RelNodeVisitor;
 
 import java.util.List;

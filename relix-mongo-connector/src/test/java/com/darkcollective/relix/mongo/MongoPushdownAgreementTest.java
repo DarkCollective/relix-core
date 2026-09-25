@@ -17,14 +17,14 @@ package com.darkcollective.relix.mongo;
 
 import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.events.QueryEventListener;
-import com.darkcollective.relix.processor.DataSourceConnector;
-import com.darkcollective.relix.processor.ExecutionContext;
-import com.darkcollective.relix.processor.QueryExecutor;
+import com.darkcollective.relix.processor.internal.DataSourceConnector;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
+import com.darkcollective.relix.processor.internal.QueryExecutor;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
 import com.darkcollective.relix.semantic.SemanticFixtures;
 import com.darkcollective.relix.semantic.SemanticModel;
-import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.symbol.Schema;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast;
 
+import com.darkcollective.relix.ast.internal.AttributeNames;
 import com.darkcollective.relix.ast.visitor.OperandVisitor;
 
 import java.util.Objects;

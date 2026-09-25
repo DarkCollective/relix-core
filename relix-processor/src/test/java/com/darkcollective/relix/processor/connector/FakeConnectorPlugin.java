@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.processor.connector;
 
+import com.darkcollective.relix.processor.connector.internal.ConnectorPluginLoader;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.symbol.Schema;
 

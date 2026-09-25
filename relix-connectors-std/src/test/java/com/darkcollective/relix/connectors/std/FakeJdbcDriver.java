@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.connectors.std;
 
+import com.darkcollective.relix.connectors.std.internal.RelixDriverLoader;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverPropertyInfo;

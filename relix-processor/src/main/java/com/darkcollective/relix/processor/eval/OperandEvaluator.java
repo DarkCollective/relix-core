@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.processor.EvaluationException;
+
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
@@ -31,8 +33,8 @@ import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.StructConstruction;
 import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.UnaryOperand;
-import com.darkcollective.relix.processor.ArrayRow;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ArrayRow;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.value.ArrayValue;
 import com.darkcollective.relix.value.BooleanValue;
@@ -188,7 +190,7 @@ public final class OperandEvaluator {
      * makes a run reproducible — the same script over the same data yields the same
      * rows however much later it is replayed — and costs nothing, because one
      * immutable catalogue serves every clock. See
-     * {@link com.darkcollective.relix.processor.ExecutionContext#clock()}.
+     * {@link com.darkcollective.relix.processor.internal.ExecutionContext#clock()}.
      *
      * @param symbolTable the symbol table to search for user-defined functions;
      *                    may be {@code null} (disables user-defined function support)

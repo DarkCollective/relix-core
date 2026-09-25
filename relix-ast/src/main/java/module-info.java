@@ -32,14 +32,16 @@
  *       (attributes, literals, arithmetic, function calls, …)</li>
  * </ul>
  *
- * <p>A concrete {@link com.darkcollective.relix.ast.visitor.PrettyPrinter}
+ * <p>A concrete {@link com.darkcollective.relix.ast.visitor.internal.PrettyPrinter}
  * implementation is bundled in the {@code visitor} subpackage and is the
  * reference example for writing new visitors.
  *
  * @see com.darkcollective.relix.ast.RelNode
- * @see com.darkcollective.relix.ast.visitor.PrettyPrinter
+ * @see com.darkcollective.relix.ast.visitor.internal.PrettyPrinter
  */
 module com.darkcollective.relix.ast {
     exports com.darkcollective.relix.ast;
+    exports com.darkcollective.relix.ast.internal to com.darkcollective.relix.connectors.std, com.darkcollective.relix.cost, com.darkcollective.relix.optimizer, com.darkcollective.relix.parser, com.darkcollective.relix.plan, com.darkcollective.relix.processor, com.darkcollective.relix.semantic;
     exports com.darkcollective.relix.ast.visitor;
+    exports com.darkcollective.relix.ast.visitor.internal to com.darkcollective.relix.lang.ast, com.darkcollective.relix.optimizer, com.darkcollective.relix.plan, com.darkcollective.relix.semantic;
 }

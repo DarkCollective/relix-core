@@ -17,9 +17,9 @@ package com.darkcollective.relix.processor.generator;
 
 import com.darkcollective.relix.lang.ast.SourceDeclaration;
 import com.darkcollective.relix.lang.ast.source.GeneratorSourceConfig;
-import com.darkcollective.relix.processor.DataSourceConnector;
+import com.darkcollective.relix.processor.internal.DataSourceConnector;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.generator.Generator;
 import com.darkcollective.relix.processor.generator.GeneratorRegistry;
 import com.darkcollective.relix.semantic.SemanticModel;

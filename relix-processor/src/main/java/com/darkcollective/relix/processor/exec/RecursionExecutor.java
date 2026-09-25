@@ -19,9 +19,9 @@ import com.darkcollective.relix.ast.ObjectiveSense;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.TraceAlgorithm;
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.eval.ValueComparator;
 import com.darkcollective.relix.value.ArrayValue;
 import com.darkcollective.relix.value.NumberValue;
@@ -653,7 +653,7 @@ final class RecursionExecutor {
      * headings from the base schema (the {@code ∪} convention — the validator enforces
      * only positional union-compatibility, never matching names), so a step sub-plan
      * may legitimately rename its columns.  Looking the values up by the base schema's
-     * names would then throw {@link com.darkcollective.relix.processor.ArrayRow#get(String)}
+     * names would then throw {@link com.darkcollective.relix.processor.internal.ArrayRow#get(String)}
      * on a renamed step row.  Open (schema-on-read) schemas have no fixed columns, so
      * the row itself carries the authoritative width.
      */

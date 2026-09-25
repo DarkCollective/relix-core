@@ -18,9 +18,11 @@ relation and a `.ged` file is several, and a connection is exactly the thing sev
 tables share. You declare the file once and bind each table you want.
 
 # Technical Description:
-`path` names the `.ged` file (`url` with an optional `file:` scheme is accepted as
-well, since that is how every other connection type is configured). The path is
-resolved against the process's working directory, not the script's.
+`path` names the `.ged` file, or `url` does: a `file:` URL, or an `https` one, which is
+fetched once per session and cached (see [connection](connection.md) for the rules
+every file connection shares). A relative path resolves against the script's
+directory, as a `csv("…")` source's does. A gzip-compressed file is read as its
+content.
 
 Two tables are available, and a `source … from <connection>` binds one:
 
@@ -217,8 +219,14 @@ mean carrying an open one.
 
 A connection's name must not be a word the expression grammar already uses, or a
 dotted reference to it will not parse — `tree` is the `TREE` operator, so
-`connection tree …` declares fine and `tree.individuals` does not parse. Any name
-that is not an operator keyword is safe.
+`connection tree …` declares fine and `tree.individuals` does not parse:
+
+```relix-invalid
+connection tree from gedcom { path: "family.ged" };
+query { tree.individuals };
+```
+
+Any name that is not an operator keyword is safe.
 
 # See Also:
 - [connection](connection.md) — the declaration this one is a kind of

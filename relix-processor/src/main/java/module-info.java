@@ -66,9 +66,12 @@ module com.darkcollective.relix.processor {
     uses com.darkcollective.relix.processor.connector.RelixConnector;
 
     exports com.darkcollective.relix.processor;
+    exports com.darkcollective.relix.processor.internal to com.darkcollective.relix.connectors.std, com.darkcollective.relix.embed;
     exports com.darkcollective.relix.processor.eval;
     exports com.darkcollective.relix.processor.exec;
     exports com.darkcollective.relix.processor.connector;
+    exports com.darkcollective.relix.processor.connector.internal to com.darkcollective.relix.connectors.std, com.darkcollective.relix.embed;
     exports com.darkcollective.relix.processor.generator;
     exports com.darkcollective.relix.processor.provenance;
+    exports com.darkcollective.relix.processor.provenance.internal to com.darkcollective.relix.embed;
 }

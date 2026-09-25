@@ -24,7 +24,7 @@ may also be **nested**: `{ field: TYPE, … }` declares a
 struct and `[TYPE]` an array, composing to any depth. A column or field whose name
 is not a plain identifier, such as `unit-price`, is written between backticks, as it
 is in a query; a doubled backtick stands for one. `${VAR}` placeholders in URLs
-are substituted from the active environment before analysis. Other source kinds (json, http, generator) exist for
+and other string values are resolved from the active environment when a query runs. Other source kinds (json, http, generator) exist for
 their respective connectors. CSV paths resolve relative to the script's directory.
 
 In a CSV file an **empty field is a NULL** — `2,Grace,` gives a NULL third column.
@@ -126,5 +126,6 @@ credentials across many tables. Inline tables embed small reference data directl
 [http source](http-source.md), [connection](connection.md), [relate](relate.md), [inline-table](inline-table.md), [namespace](namespace.md), [import](import.md)
 
 # Notes:
-Use ${VAR} substitution (see `relix help env`) to keep connection URLs and
-credentials out of the script text.
+Use ${VAR} placeholders (see `relix help env`) to keep connection URLs and
+credentials out of the script text. The script keeps the placeholder, so nothing that
+prints it shows the value.

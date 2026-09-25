@@ -123,7 +123,7 @@ approximate-percentage sample.
 
 # Notes:
 The disambiguation from Bernoulli SAMPLE is the `ROWS` keyword after an integer
-count. The SEED value is an integer literal. To drive it from an environment
-variable, use `${SEED_VAR}` substitution before parsing. The seed applies to the
+count. The SEED value is an integer literal written in the script. The seed applies
+to the
 Algorithm R reservoir-replacement decisions only; the same seed with different
 input data produces a different set of output rows.

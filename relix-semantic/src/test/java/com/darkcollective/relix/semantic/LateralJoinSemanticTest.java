@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.semantic;
 
+import com.darkcollective.relix.semantic.internal.IrReport;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.lang.ast.QueryTarget;
 import org.junit.jupiter.api.DisplayName;

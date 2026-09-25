@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.plan;
 
+import com.darkcollective.relix.plan.internal.Planner;
+
 /**
  * Physical algorithm choice for a {@link PhysicalNode.Trace} optimal-path operator.
  *

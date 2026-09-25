@@ -16,7 +16,7 @@
 package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 
 import java.util.Spliterator;
 import java.util.Spliterators;
@@ -42,6 +42,16 @@ import java.util.stream.StreamSupport;
  * here — the REPL runs a command on a worker and cancels it with {@code cancel(true)},
  * which raised a flag the engine never read, so the query carried on running on a daemon
  * thread while the user was returned to the prompt.
+ *
+ * <h2>Where the flag is read</h2>
+ *
+ * At every operator boundary: {@link PhysicalExecutor} wraps each operator's output as
+ * it dispatches it, through {@link WorkBudget#meter}, so the flag is read for every row
+ * that moves between two operators. Reading it only at the root was not enough. An
+ * operator that pulls many rows and yields none, such as a selection that never matches
+ * over an endless input, does all its work inside a single pull from the root and never
+ * returned to that check. {@link MaterializationBudget} keeps its own check for the
+ * operators that drain an input while yielding nothing.
  *
  * <h2>What it does not cover, and why that is said out loud</h2>
  *

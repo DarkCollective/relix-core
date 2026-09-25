@@ -16,6 +16,7 @@
 package com.darkcollective.relix.parser;
 
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.*;
 import com.darkcollective.relix.ast.AstBuilders;
 import org.assertj.core.api.AbstractAssert;
 

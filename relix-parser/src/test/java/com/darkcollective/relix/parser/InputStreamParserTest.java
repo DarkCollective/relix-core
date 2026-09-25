@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Nested;
 import org.assertj.core.api.Assertions;
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;

@@ -198,7 +198,14 @@ column exactly as `γ MIN(…)` would.
   kept.
 - Week intervals (`1w`) are counted as 7 × 86 400 seconds from the Unix epoch
   (UTC) and are not calendar-aware.
+- A bucket with no input rows produces no output row, so the series has gaps where
+  nothing happened. An operator over rows that follows, such as `ROLLING … OVER 3 ROWS`,
+  then counts the buckets that are present, not consecutive intervals: its window can
+  span far more wall-clock time than three buckets' width. The
+  [log source](../language/log-source.md) page shows this on real traffic.
 
 # See Also:
+[log source](../language/log-source.md) — DOWNSAMPLE over a web server's access log, among other windowing examples on one real dataset
+
 [group](../operators/group.md), [sort](../operators/sort.md), [limit](../operators/limit.md),
 [TIMESTAMP literal](../literals/timestamp-literal.md), [DATE_TRUNC](../functions/datetime/date_trunc.md)

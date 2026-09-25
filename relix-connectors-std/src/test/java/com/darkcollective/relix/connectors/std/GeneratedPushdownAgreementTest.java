@@ -16,7 +16,7 @@
 package com.darkcollective.relix.connectors.std;
 
 import com.darkcollective.relix.ast.RelNode;
-import com.darkcollective.relix.plan.Dialect;
+import com.darkcollective.relix.plan.internal.Dialect;
 import com.darkcollective.relix.semantic.QueryGenerator;
 import com.darkcollective.relix.semantic.SemanticFixtures;
 import com.darkcollective.relix.semantic.SemanticModel;

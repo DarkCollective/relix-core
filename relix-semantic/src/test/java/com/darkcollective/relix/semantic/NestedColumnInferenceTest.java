@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.semantic;
 
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.symbol.ArrayType;

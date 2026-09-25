@@ -1,0 +1,38 @@
+/*
+ * Copyright 2026 Darkcollective, LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+/**
+ * The engine-side machinery behind {@code com.darkcollective.relix.plan}: not exported by the published
+ * artifact. What follows describes the package as a whole, as it stood before the split.
+ *
+ * Physical query planning.
+ *
+ * <p>Bridges logical relational algebra and execution: the
+ * {@link com.darkcollective.relix.plan.internal.Planner} translates an optimised logical
+ * {@link com.darkcollective.relix.ast.RelNode} tree into a
+ * {@link com.darkcollective.relix.plan.PhysicalNode} plan that fixes the physical
+ * strategy (join algorithm, build side) and carries each operator's resolved
+ * output schema.
+ *
+ * <h2>Core types</h2>
+ * <ul>
+ *   <li>{@link com.darkcollective.relix.plan.PhysicalNode} — sealed hierarchy of
+ *       executable physical operators (its nested records).</li>
+ *   <li>{@link com.darkcollective.relix.plan.internal.Planner} — logical → physical
+ *       translation, including cost-based join-strategy selection and view
+ *       inlining.</li>
+ * </ul>
+ */
+package com.darkcollective.relix.plan.internal;

@@ -15,8 +15,8 @@
  */
 package com.darkcollective.relix.processor.exec;
 
-import com.darkcollective.relix.processor.ArrayRow;
-import com.darkcollective.relix.processor.DocumentRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
+import com.darkcollective.relix.processor.internal.DocumentRow;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.eval.OperandEvaluator;

@@ -142,7 +142,13 @@ partition's edge, it is simply shorter.
 
 # Limitations:
 The aggregate must be one of `SUM`, `AVG`, `COUNT`, `MIN`, `MAX` (not `COLLECT`,
-`ARGMAX`, or `ARGMIN`). The `AS` column must not clash with an existing input
+`ARGMAX`, or `ARGMIN`):
+
+```relix-invalid
+query { ROLLING COLLECT(price) OVER 3 ROWS SORT trade_time AS recent (StockTicks) };
+```
+
+ The `AS` column must not clash with an existing input
 column. Over a schema-on-read source (JSON, HTTP, MongoDB)
 there is no declared heading to clash with, so the operator always runs; if a
 document turns out to carry a field of that name, the added column replaces it. SQL pushdown is supported on PostgreSQL and GENERIC (H2) JDBC backends;
@@ -156,6 +162,8 @@ For one collapsed row per group use [γ](group.md). For time-bucket consolidatio
 that collapses rows use [DOWNSAMPLE](../advanced/downsample.md).
 
 # See Also:
+[log source](../language/log-source.md) — ROLLING over a web server's access log, among other windowing examples on one real dataset
+
 [group](group.md), [sort](sort.md), [top](../advanced/top.md)
 
 # Notes:

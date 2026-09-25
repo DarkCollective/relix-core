@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan;
 
+import com.darkcollective.relix.plan.internal.Planner;
 import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.ConsolidationFunction;
@@ -30,7 +31,7 @@ import com.darkcollective.relix.ast.ProjectedAttribute;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
 import com.darkcollective.relix.ast.WindowFunction;
-import com.darkcollective.relix.cost.Ordering;
+import com.darkcollective.relix.ast.Ordering;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.relation.RelationSymbol;
 
@@ -326,12 +327,12 @@ public sealed interface PhysicalNode {
                 Optional<ProduceBound> produceBound, Optional<String> qualifier) implements PhysicalNode {
 
         /** Scan without a generator production bound. */
-        Scan(Schema schema, RelationSymbol source) {
+        public Scan(Schema schema, RelationSymbol source) {
             this(schema, source, Optional.empty());
         }
 
         /** Scan under no particular qualifier. */
-        Scan(Schema schema, RelationSymbol source, Optional<ProduceBound> produceBound) {
+        public Scan(Schema schema, RelationSymbol source, Optional<ProduceBound> produceBound) {
             this(schema, source, produceBound, Optional.empty());
         }
 
@@ -514,7 +515,7 @@ public sealed interface PhysicalNode {
                    PhysicalNode input) implements PhysicalNode {
 
         /** Unbounded closure (no endpoint pushdown) — both bounds empty. */
-        Closure(Schema schema, String fromColumn, String toColumn,
+        public Closure(Schema schema, String fromColumn, String toColumn,
                 boolean undirected, boolean reflexive, PhysicalNode input) {
             this(schema, fromColumn, toColumn, undirected, reflexive,
                     Optional.empty(), Optional.empty(), input);
@@ -558,7 +559,7 @@ public sealed interface PhysicalNode {
                 PhysicalNode input) implements PhysicalNode {
 
         /** Unbounded path (no endpoint pushdown) — both bounds empty. */
-        Path(Schema schema, String fromColumn, String toColumn, boolean undirected,
+        public Path(Schema schema, String fromColumn, String toColumn, boolean undirected,
              int minHops, int maxHops, String depthColumn, PhysicalNode input) {
             this(schema, fromColumn, toColumn, undirected, minHops, maxHops, depthColumn,
                     Optional.empty(), Optional.empty(), input);
@@ -581,7 +582,7 @@ public sealed interface PhysicalNode {
                  PhysicalNode input) implements PhysicalNode {
 
         /** Bounded trace evaluated by the default relaxation fixpoint. */
-        Trace(Schema schema, String fromColumn, String toColumn, boolean undirected,
+        public Trace(Schema schema, String fromColumn, String toColumn, boolean undirected,
               String weightColumn, ObjectiveSense sense, String pathColumn,
               Optional<Operand> boundSource, Optional<Operand> boundTarget,
               PhysicalNode input) {

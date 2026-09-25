@@ -15,9 +15,9 @@
  */
 package com.darkcollective.relix.parser;
 
-import com.darkcollective.relix.ast.AstEquivalence;
+import com.darkcollective.relix.ast.internal.AstEquivalence;
 import com.darkcollective.relix.ast.Predicate;
-import com.darkcollective.relix.ast.Predicates;
+import com.darkcollective.relix.ast.internal.Predicates;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.SourceLocation;

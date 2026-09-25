@@ -19,7 +19,7 @@ import com.darkcollective.relix.ast.AllenRelation;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.eval.PredicateEvaluator;
 import com.darkcollective.relix.processor.eval.ValueComparator;
 import com.darkcollective.relix.value.Value;

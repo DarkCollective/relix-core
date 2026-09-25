@@ -15,13 +15,13 @@
  */
 package com.darkcollective.relix.processor.provenance;
 
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
-import com.darkcollective.relix.processor.QueryExecutor;
+import com.darkcollective.relix.processor.internal.QueryExecutor;
 import com.darkcollective.relix.provenance.BaseTuple;
 import com.darkcollective.relix.provenance.Semiring;
 import com.darkcollective.relix.semantic.SemanticModel;
-import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

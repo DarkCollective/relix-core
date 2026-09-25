@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.processor.EvaluationException;
+
 import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.AttributeOperand;
@@ -32,7 +34,7 @@ import com.darkcollective.relix.symbol.Provenance;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.ShadowPolicy;
 import com.darkcollective.relix.symbol.function.ScalarFunctionSymbol;
-import com.darkcollective.relix.symbol.table.InMemorySymbolTable;
+import com.darkcollective.relix.symbol.table.internal.InMemorySymbolTable;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

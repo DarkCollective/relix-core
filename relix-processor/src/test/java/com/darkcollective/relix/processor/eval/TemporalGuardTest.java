@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.processor.eval;
 
-import com.darkcollective.relix.ast.TemporalLiterals;
+import com.darkcollective.relix.ast.internal.TemporalLiterals;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.Value;
 import org.junit.jupiter.api.DisplayName;

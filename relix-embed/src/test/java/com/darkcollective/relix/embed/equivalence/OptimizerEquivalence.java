@@ -17,14 +17,14 @@ package com.darkcollective.relix.embed.equivalence;
 
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.optimizer.OptimizationCode;
-import com.darkcollective.relix.optimizer.OptimizationResult;
-import com.darkcollective.relix.optimizer.QueryOptimizer;
-import com.darkcollective.relix.processor.DataSourceConnector;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.optimizer.internal.OptimizationResult;
+import com.darkcollective.relix.optimizer.internal.QueryOptimizer;
+import com.darkcollective.relix.processor.internal.DataSourceConnector;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.exec.RelNodeExecutor;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
-import com.darkcollective.relix.semantic.SchemaInference;
+import com.darkcollective.relix.semantic.internal.SchemaInference;
 import com.darkcollective.relix.semantic.SemanticModel;
 
 import com.darkcollective.relix.cost.DistinctnessSource;
@@ -34,10 +34,10 @@ import com.darkcollective.relix.processor.generator.GeneratorDataSourceConnector
 import com.darkcollective.relix.processor.generator.GeneratorMonotonicitySource;
 import com.darkcollective.relix.processor.generator.GeneratorRegistry;
 import com.darkcollective.relix.semantic.CatalogProvider;
-import com.darkcollective.relix.semantic.GeneratorCatalog;
-import com.darkcollective.relix.semantic.InMemoryScriptLoader;
-import com.darkcollective.relix.semantic.SemanticAnalyzer;
-import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.semantic.internal.GeneratorCatalog;
+import com.darkcollective.relix.semantic.internal.InMemoryScriptLoader;
+import com.darkcollective.relix.semantic.internal.SemanticAnalyzer;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 
 import java.util.List;
 import java.util.Map;

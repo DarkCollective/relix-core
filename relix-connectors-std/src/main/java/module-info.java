@@ -49,8 +49,10 @@ module com.darkcollective.relix.connectors.std {
     uses java.sql.Driver;
 
     provides com.darkcollective.relix.processor.connector.RelixConnector
-            with com.darkcollective.relix.connectors.std.CsvConnector,
-                 com.darkcollective.relix.connectors.std.GedcomConnector;
+            with com.darkcollective.relix.connectors.std.internal.CsvConnector,
+                 com.darkcollective.relix.connectors.std.internal.GedcomConnector,
+                 com.darkcollective.relix.connectors.std.internal.LogConnector;
 
     exports com.darkcollective.relix.connectors.std;
+    exports com.darkcollective.relix.connectors.std.internal to com.darkcollective.relix.embed;
 }

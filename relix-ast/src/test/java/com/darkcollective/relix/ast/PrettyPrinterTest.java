@@ -18,6 +18,7 @@ package com.darkcollective.relix.ast;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.*;
 
 import java.util.List;
 

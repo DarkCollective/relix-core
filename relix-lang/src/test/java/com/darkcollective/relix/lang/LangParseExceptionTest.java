@@ -43,6 +43,31 @@ final class LangParseExceptionTest {
         assertThat(e).hasMessage("Expected ';' (line 4, col 17)");
         assertThat(e.line()).isEqualTo(4);
         assertThat(e.column()).isEqualTo(17);
+        assertThat(e.getMessage()).endsWith(LangParseException.suffix(4, 17));
+    }
+
+    @Test
+    @DisplayName("A token's position is stated once, not once for the token and again for the error")
+    void tokenPositionStatedOnce() {
+        var e = new LangParseException("Expected ';'",
+                new LangToken(LangTokenType.IDENTIFIER, "Orders", 2, 9));
+        assertThat(e).hasMessage("Expected ';'; found 'Orders' (line 2, col 9)");
+        assertThat(e.line()).isEqualTo(2);
+        assertThat(e.column()).isEqualTo(9);
+    }
+
+    @Test
+    @DisplayName("A syntax error inside an expression is placed at the offending token, once")
+    void expressionErrorPlacedAtToken() {
+        assertThatThrownBy(() -> ScriptParser.parse("X := [| a |\n| 1 |];\nquery { π a.+1 (X) };\n"))
+                .isInstanceOfSatisfying(LangParseException.class, e -> {
+                    assertThat(e.line()).isEqualTo(3);
+                    assertThat(e.column())
+                            .as("the '+' after 'a.', not the statement's opening brace")
+                            .isEqualTo(13);
+                    assertThat(e).hasMessage("Syntax error in RA expression: "
+                            + "Expected identifier after '.'; found '+' (line 3, col 13)");
+                });
     }
 
     @Test

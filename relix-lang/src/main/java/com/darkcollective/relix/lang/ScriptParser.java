@@ -842,8 +842,8 @@ public final class ScriptParser {
             return RelAlgebraParser.parse(raw.text(), filePath, raw.startLine(), raw.startCol());
         } catch (ParseException e) {
             throw new LangParseException(
-                    "Syntax error in RA expression: " + e.getMessage(),
-                    openBrace.line(), openBrace.column());
+                    "Syntax error in RA expression: " + withoutPosition(e),
+                    e.line(), e.column());
         }
     }
 
@@ -852,9 +852,17 @@ public final class ScriptParser {
             return RelAlgebraParser.parseOperand(raw.text(), filePath, raw.startLine(), raw.startCol());
         } catch (ParseException e) {
             throw new LangParseException(
-                    "Syntax error in operand expression: " + e.getMessage(),
-                    openBrace.line(), openBrace.column());
+                    "Syntax error in operand expression: " + withoutPosition(e),
+                    e.line(), e.column());
         }
+    }
+
+    /**
+     * The sub-parser's message without the position it embeds, since the exception
+     * wrapping it states that position itself — once, in the grammar's own form.
+     */
+    private static String withoutPosition(ParseException e) {
+        return e.getMessage().replace(" at line " + e.line() + ", column " + e.column(), "");
     }
 
     // =========================================================================
