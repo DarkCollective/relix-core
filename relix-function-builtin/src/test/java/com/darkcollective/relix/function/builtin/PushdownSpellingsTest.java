@@ -48,6 +48,7 @@ final class PushdownSpellingsTest {
     private static final PushdownTarget DUCKDB = PushdownTarget.sql("duckdb");
     private static final PushdownTarget SQLITE = PushdownTarget.sql("sqlite");
     private static final PushdownTarget SQLSERVER = PushdownTarget.sql("sqlserver");
+    private static final PushdownTarget DB2 = PushdownTarget.sql("db2");
     private static final PushdownTarget MONGO = PushdownTarget.mongo();
 
     private static Optional<String> render(String function, PushdownTarget target,
@@ -500,12 +501,37 @@ final class PushdownSpellingsTest {
         }
     }
 
+    /** Db2, which counts bytes unless told otherwise. */
+    @Nested
+    @DisplayName("Db2, counting in CODEUNITS32")
+    final class Db2 {
+
+        @Test
+        @DisplayName("counting and slicing through SUBSTRING in code points, never LEFT or RIGHT")
+        void countingAndSlicing() {
+            assertThat(render("Len", DB2, "name")).contains("CHARACTER_LENGTH(name, CODEUNITS32)");
+            assertThat(render("Left", DB2, "name", "2")).contains("SUBSTRING(name, 1, 2, CODEUNITS32)");
+            assertThat(render("Right", DB2, "name", "2")).contains(
+                    "SUBSTRING(name, GREATEST(CHARACTER_LENGTH(name, CODEUNITS32) - 2, 0) + 1, CODEUNITS32)");
+            assertThat(render("Mid", DB2, "name", "2")).contains("SUBSTRING(name, 2, CODEUNITS32)");
+            assertThat(render("Mid", DB2, "name", "2", "3")).contains("SUBSTRING(name, 2, 3, CODEUNITS32)");
+        }
+
+        @Test
+        @DisplayName("date_trunc and TRUNC, as on PostgreSQL")
+        void truncation() {
+            assertThat(render("DATE_TRUNC", DB2, "'day'", "ts")).contains("date_trunc('day', ts)");
+            assertThat(render("Fix", DB2, "x")).contains("TRUNC(x)");
+            assertThat(render("YEAR", DB2, "ts")).contains("EXTRACT(YEAR FROM ts)");
+        }
+    }
+
     @Test
     @DisplayName("the transcendental numerics decline: a different double, or no answer at all")
     void transcendentalsDecline() {
         for (String function : List.of("Sqr", "Log", "Exp", "Sin", "Cos", "Tan", "Atn",
                 "Power")) {
-            for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, SQLSERVER, MONGO)) {
+            for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, SQLSERVER, DB2, MONGO)) {
                 assertThat(render(function, target, "a"))
                         .as("%s on %s", function, target).isEmpty();
                 assertThat(render(function, target, "a", "b"))
@@ -535,7 +561,7 @@ final class PushdownSpellingsTest {
 
     private static boolean spellsAnything(ScalarFunction fn) {
         List<String> arguments = List.of("a", "b", "c");
-        for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, SQLSERVER, MONGO)) {
+        for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, SQLSERVER, DB2, MONGO)) {
             for (int count = 0; count <= arguments.size(); count++) {
                 if (fn.pushdown().render(target, arguments.subList(0, count)).isPresent()) {
                     return true;

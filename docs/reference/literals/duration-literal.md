@@ -22,7 +22,7 @@ It infers as the DURATION scalar type.
 (e.g. `INTERVAL 'PT30M'`), so predicates like `σ held > DURATION 'PT30M'` push to
 `WHERE ("held" > INTERVAL 'PT30M')`. On **DuckDB**, which rejects the ISO-8601
 string, it folds to an exact count of microseconds, `to_microseconds(1800000000)`;
-a duration finer than a microsecond does not push. On MySQL, SQLite, SQL Server and GENERIC dialects, DURATION
+a duration finer than a microsecond does not push. On MySQL, SQLite, SQL Server, Db2 and GENERIC dialects, DURATION
 literals do **not** push (MySQL INTERVAL needs per-unit keywords that don't map
 cleanly to ISO-8601) — the predicate runs in-engine.
 

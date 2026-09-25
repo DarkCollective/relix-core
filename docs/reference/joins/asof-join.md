@@ -301,7 +301,7 @@ query { ByFirst };
 ```
 
 # SQL pushdown:
-On a **PostgreSQL** or **DuckDB** connection an AS-OF over two bare connection
+On a **PostgreSQL**, **DuckDB** or **Db2** connection an AS-OF over two bare connection
 tables folds into a single
 `LEFT JOIN LATERAL (SELECT … ORDER BY <match> DESC|ASC LIMIT 1) ON TRUE` pushed scan,
 so the database does the nearest-match lookup. The ordering inequality fixes the

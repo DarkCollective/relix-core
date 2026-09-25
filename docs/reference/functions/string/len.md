@@ -27,7 +27,8 @@ Find suspiciously long entries:
 # Pushdown:
 SQL: folds to `CHAR_LENGTH(<s>)` on the
 **MySQL**, **PostgreSQL** and **DuckDB** dialects, and to `LENGTH(<s>)` on
-**SQLite**, which lacks the name but counts the same way. Each counts a string in
+**SQLite**, which lacks the name but counts the same way, and to `CHARACTER_LENGTH(<s>, CODEUNITS32)` on
+**Db2**, whose own functions count bytes unless told otherwise. Each counts a string in
 characters, which is what relix counts in, and each was put on that list by running
 it against text holding a character outside the basic multilingual plane. H2 (the
 generic dialect) counts UTF-16 code units, so its same-named function answers

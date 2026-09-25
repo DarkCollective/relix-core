@@ -454,6 +454,26 @@ final class SqlPushdownPlannerTest {
      * dialect where what folds, rather than only how it is written, differs.
      */
     @Nested
+    @DisplayName("Db2, which leaves plain names bare and fetches without needing an order")
+    class Db2 {
+
+        private static final String DB2_ORDERS =
+                "connection db from database { url: \"jdbc:db2://h:50000/sample\" };\n"
+                + "source Orders from db { table: \"orders\", "
+                + "schema: { id: NUMBER, amount: NUMBER } };\n";
+
+        @Test
+        @DisplayName("a limit folds with or without a sort, as FETCH FIRST")
+        void fetchFirst() {
+            assertThat(scanOf(push(DB2_ORDERS + "query { λ 3 (Orders) };")).nativeQuery())
+                    .isEqualTo("SELECT id, amount FROM orders FETCH FIRST 3 ROWS ONLY");
+            assertThat(scanOf(push(DB2_ORDERS + "query { λ 3, 2 (τ amount DESC (Orders)) };")).nativeQuery())
+                    .isEqualTo("SELECT id, amount FROM orders ORDER BY amount DESC NULLS LAST "
+                            + "OFFSET 3 ROWS FETCH FIRST 2 ROWS ONLY");
+        }
+    }
+
+    @Nested
     @DisplayName("SQL Server's OFFSET … FETCH, which needs an ORDER BY")
     class SqlServer {
 

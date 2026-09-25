@@ -25,7 +25,7 @@ Whole hours from a fractional hours figure:
 SQL: dialect-dependent, because truncation towards zero is the one rounding SQL
 never settled on a single name for.
   - **MySQL**: `TRUNCATE(<e>, 0)`.
-  - **Postgres** and **DuckDB**: `TRUNC(<e>)`.
+  - **Postgres**, **DuckDB** and **Db2**: `TRUNC(<e>)`.
   - **SQL Server**: `ROUND(<e>, 0, 1)`, whose third argument truncates.
   - **SQLite**: not pushed. Its `TRUNC` is a floating-point function behind a
     compile-time option.

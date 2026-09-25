@@ -81,11 +81,11 @@ where it can fold. That is why the two features compound — see
 | γ aggregation | `GROUP BY` | any grouping key is not a bare column — a computed key such as `YEAR(ts)`, or a renamed one — or an aggregate has no SQL spelling |
 | ∀ universal | `GROUP BY … HAVING` | there are no grouping keys |
 | τ sort | `ORDER BY` | a projection, sort or limit is already folded, or a sort key is not a bare column. Above a γ the key may be one of its output columns |
-| λ limit | `LIMIT`/`OFFSET`, or `OFFSET … FETCH` on SQL Server | a limit is already folded, or — on SQL Server, whose `OFFSET … FETCH` is legal only after an `ORDER BY` — nothing below it is sorted |
+| λ limit | `LIMIT`/`OFFSET`, or `OFFSET … FETCH` on SQL Server and Db2 | a limit is already folded, or — on SQL Server, whose `OFFSET … FETCH` is legal only after an `ORDER BY` — nothing below it is sorted |
 | `TOP` | `ORDER BY … LIMIT` | it is per-group (`PER …`) — only the whole-relation form folds |
 | ⨝ theta join | `JOIN … ON` | either side is not a bare table scan, the two sides are on different connections or are the same relation (a self-join), or the condition has an untranslatable part |
 | ⋈ natural join | `JOIN … ON` equating the shared columns | either side is not a bare table scan, the two sides are on different connections or are the same relation, or a shared column has a different type on each side |
-| `ASOF` join | `LEFT JOIN LATERAL (… ORDER BY … LIMIT 1) ON TRUE`, or `JOIN LATERAL` for the `INNER` form | the dialect is not PostgreSQL, DuckDB or SQL Server (which spells it `OUTER APPLY (SELECT TOP 1 …)`), or the join carries a `WITHIN` tolerance |
+| `ASOF` join | `LEFT JOIN LATERAL (… ORDER BY … LIMIT 1) ON TRUE`, or `JOIN LATERAL` for the `INNER` form | the dialect is not PostgreSQL, DuckDB, Db2 or SQL Server (which spells it `OUTER APPLY (SELECT TOP 1 …)`), or the join carries a `WITHIN` tolerance |
 | `IJOIN` interval | `JOIN … ON` over the endpoints | either side is not a bare scan, or they are on different connections |
 | `WINDOW` / `ROLLING` | `OVER (PARTITION BY … ORDER BY …)` | the dialect is MySQL, or a projection, grouping or limit is already folded |
 
@@ -192,13 +192,13 @@ large table. Of the built-in scalar functions, **twenty-one** have a SQL spellin
 | Function | SQL |
 |---|---|
 | `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND` | `EXTRACT(unit FROM e)`; `DATEPART(unit, SWITCHOFFSET(e, '+00:00'))` on SQL Server; SQLite declines them |
-| `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL and DuckDB, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect, SQLite and SQL Server decline it |
+| `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL, DuckDB and Db2, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect, SQLite and SQL Server decline it |
 | `Abs`, `Int`, `Ceil`, `Sgn`, `Round` | `ABS`, `FLOOR`, `CEILING`, `SIGN`, `ROUND` (`ROUND(e, 0)` on SQL Server); SQLite, which rounds in floating point, declines `Int`, `Ceil` and `Round` |
-| `Fix` | `TRUNCATE(e, 0)` on MySQL, `TRUNC(e)` on PostgreSQL and DuckDB, `ROUND(e, 0, 1)` on SQL Server; the generic dialect and SQLite decline it |
+| `Fix` | `TRUNCATE(e, 0)` on MySQL, `TRUNC(e)` on PostgreSQL, DuckDB and Db2, `ROUND(e, 0, 1)` on SQL Server; the generic dialect and SQLite decline it |
 | `Coalesce`, `Nz` (two-argument form) | `COALESCE(…)` |
 | `IsNull` | `(e IS NULL)`; `(CASE WHEN e IS NULL THEN 1 ELSE 0 END)` on SQL Server |
 | `Replace` | `REPLACE(s, find, replacement)`, the string under a binary collation on SQL Server |
-| `Len`, `Left`, `Right`, `Mid` | `CHAR_LENGTH`, `LEFT`, `RIGHT`, `SUBSTRING` on **MySQL, PostgreSQL and DuckDB**; `LENGTH` and `SUBSTR` on **SQLite**; nowhere else |
+| `Len`, `Left`, `Right`, `Mid` | `CHAR_LENGTH`, `LEFT`, `RIGHT`, `SUBSTRING` on **MySQL, PostgreSQL and DuckDB**; `LENGTH` and `SUBSTR` on **SQLite**; `CHARACTER_LENGTH` and `SUBSTRING` in `CODEUNITS32` on **Db2**; nowhere else |
 
 Everything else is evaluated in the engine, and two families are worth knowing by
 name because SQL has a same-named function for every one of them and answers
@@ -229,7 +229,7 @@ cause. A slower plan is the deliberate trade.
 `Len`, `Left`, `Right` and `Mid` are the four that are offered to **named**
 dialects rather than to SQL at large, and the reason is worth knowing because it
 is not about the functions. relix counts and slices a string in **code points**,
-and so do MySQL, PostgreSQL, DuckDB and SQLite — but H2, which resolves to the generic dialect,
+and so do MySQL, PostgreSQL, DuckDB, SQLite and Db2 — but H2, which resolves to the generic dialect,
 counts UTF-16 code units, so its `CHAR_LENGTH` and `LEFT` are different functions
 wearing familiar names and disagree on any text holding a character outside the
 basic multilingual plane. "SQL counts characters" is exactly the kind of claim
@@ -313,7 +313,7 @@ number and the orders agree exactly. The difference needs both an unusual backen
 and unusual data.
 
 Two things make it avoidable when it matters. Naming the dialect (`dialect: mysql`,
-`dialect: postgres`, `dialect: duckdb`, `dialect: sqlite`, `dialect: sqlserver`) moves the connection off `generic` and onto a checked answer.
+`dialect: postgres`, `dialect: duckdb`, `dialect: sqlite`, `dialect: sqlserver`, `dialect: db2`) moves the connection off `generic` and onto a checked answer.
 Declaring `collation: database` tells relix to make no assumption about string
 comparison at all, at the cost of computing those in the engine — see
 [connection](../language/connection.md).
@@ -323,6 +323,7 @@ comparison at all, at the cost of computing those in the engine — see
 | `generic` (default) | unquoted, unless not a plain identifier | no `DATE_TRUNC`; relies on the backend folding unquoted identifiers, and on its string comparison being the common one — see below |
 | `postgres` | `"quoted"` | with DuckDB, the only dialects that fold an `ASOF` join, `DURATION` literals and `NULLS LAST`; string *ordering* is collated, string equality is not |
 | `mysql` | `` `quoted` `` | no window functions, so those are computed in the engine; `DATE_TRUNC` folds through `DATE_FORMAT`; string comparison and ordering are collated |
+| `db2` | unquoted, unless not a plain identifier | Db2 11.5 or later; PostgreSQL's SQL for `NULLS LAST`, `date_trunc` and an `ASOF` join, `FETCH FIRST` for a limit; strings compare and order exactly in a UTF-8 database — see below |
 | `sqlserver` | `[bracketed]` | `OFFSET … FETCH`, so a limit folds only over a sort; NULLs placed with `CASE`; `ASOF` through `APPLY`; no `DURATION`, `DATE_TRUNC` or string counting; string comparison and ordering are collated — see below |
 | `sqlite` | `"quoted"` | no date or time types, so no temporal literal, `EXTRACT` or `DATE_TRUNC` folds; `LIKE` is sent as `GLOB`; rounding runs in the engine; strings compare and order exactly |
 | `duckdb` | `"quoted"` | PostgreSQL's SQL — `NULLS LAST`, `date_trunc`, an `ASOF` join through `LATERAL`, window functions — with a binary default collation, so neither string comparison nor string ordering is collated |
@@ -411,6 +412,35 @@ converted. Two differences remain that no collation removes, and both are narrow
 - **Ordering beyond the basic multilingual plane.** A binary collation orders by
   UTF-16 code unit, as H2 does, and differs from relix's code-point order only for a
   supplementary character compared with one in `U+E000..U+FFFF`.
+
+### Db2
+
+Db2 for Linux, UNIX and Windows is recognised from a `jdbc:db2:` URL, or named with
+`dialect: db2`, and is supported from 11.5. Most of what relix renders it takes as
+written — `NULLS LAST`, typed temporal literals, `date_trunc`, window functions, and an
+`ASOF` join as `LEFT JOIN LATERAL (… LIMIT 1) ON TRUE`. A limit is the standard's
+`FETCH FIRST n ROWS ONLY`, which Db2 accepts with or without an `ORDER BY`.
+
+Three things differ:
+
+- **Names are left bare.** Db2 folds an unquoted name to upper case, so a table
+  created as `orders` is stored as `ORDERS`. relix writes a plain identifier unquoted,
+  as the generic dialect does, and delimits only a name like `order-lines` that could
+  not be written bare. A table whose name was created quoted and in lower case must be
+  declared exactly as it was created.
+- **Characters are counted in `CODEUNITS32`.** Db2's `LENGTH`, `LEFT` and `RIGHT`
+  count bytes by default, and its `LEFT` pads with spaces when asked for more than a
+  string holds, so `Len`, `Left`, `Right` and `Mid` go through `CHARACTER_LENGTH` and
+  `SUBSTRING` told to count in code points.
+- **No zone to pin.** Db2 for LUW has no time-zone-bearing timestamp, so there is no
+  session setting a temporal fold could be shifted by; a `TIMESTAMP` column holds the
+  wall clock relix reads as UTC.
+
+Strings are compared and ordered as written. A Db2 database created in UTF-8 — the
+default — uses the `IDENTITY` collation, which compares bytes and so orders by code
+point exactly as relix does. A database created with a locale collation does not, and
+should declare `collation: database`. Like SQL Server, Db2 compares strings padded, so
+`'a' = 'a '` is true there and false in relix.
 
 ### Strings, and the collation they are compared under
 

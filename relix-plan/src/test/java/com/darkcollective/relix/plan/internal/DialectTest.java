@@ -55,6 +55,13 @@ final class DialectTest {
         }
 
         @Test
+        @DisplayName("db2 leaves a plain identifier bare, since it folds unquoted names to upper case")
+        void db2() {
+            assertThat(Dialect.DB2.quote("orders")).isEqualTo("orders");
+            assertThat(Dialect.DB2.quote("order-lines")).isEqualTo("\"order-lines\"");
+        }
+
+        @Test
         @DisplayName("sqlserver bracket-quotes and doubles an embedded closing bracket")
         void sqlserver() {
             assertThat(Dialect.SQLSERVER.quote("col")).isEqualTo("[col]");
@@ -90,6 +97,7 @@ final class DialectTest {
             assertThat(Dialect.DUCKDB.table("main.orders")).isEqualTo("\"main\".\"orders\"");
             assertThat(Dialect.SQLITE.table("main.orders")).isEqualTo("\"main\".\"orders\"");
             assertThat(Dialect.SQLSERVER.table("dbo.orders")).isEqualTo("[dbo].[orders]");
+            assertThat(Dialect.DB2.table("db2inst1.orders")).isEqualTo("db2inst1.orders");
         }
     }
 
@@ -148,7 +156,7 @@ final class DialectTest {
         @DisplayName("every dialect but SQLite and SQL Server renders LIKE as written")
         void likeAsWritten() {
             for (Dialect d : new Dialect[] {Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL,
-                    Dialect.DUCKDB}) {
+                    Dialect.DUCKDB, Dialect.DB2}) {
                 assertThat(d.like("x", "'A%'", Optional.of("A%"), false)).as("%s", d)
                         .contains("(x LIKE 'A%')");
                 assertThat(d.like("x", "y", Optional.empty(), true)).as("%s", d)
@@ -200,6 +208,13 @@ final class DialectTest {
         void sqlserver() {
             assertThat(Dialect.SQLSERVER.limit(10, 0)).isEqualTo("OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
             assertThat(Dialect.SQLSERVER.limit(10, 5)).isEqualTo("OFFSET 5 ROWS FETCH NEXT 10 ROWS ONLY");
+        }
+
+        @Test
+        @DisplayName("Db2 spells the standard's FETCH FIRST, and names an offset only when there is one")
+        void db2() {
+            assertThat(Dialect.DB2.limit(10, 0)).isEqualTo("FETCH FIRST 10 ROWS ONLY");
+            assertThat(Dialect.DB2.limit(10, 5)).isEqualTo("OFFSET 5 ROWS FETCH FIRST 10 ROWS ONLY");
         }
 
         @Test
@@ -271,6 +286,7 @@ final class DialectTest {
             assertThat(Dialect.byName("sqlite")).isEqualTo(Dialect.SQLITE);
             assertThat(Dialect.byName("SQLServer")).isEqualTo(Dialect.SQLSERVER);
             assertThat(Dialect.byName("mssql")).isEqualTo(Dialect.SQLSERVER);
+            assertThat(Dialect.byName("DB2")).isEqualTo(Dialect.DB2);
             assertThat(Dialect.byName("h2")).isEqualTo(Dialect.GENERIC);
             assertThat(Dialect.byName("wat")).isEqualTo(Dialect.GENERIC);
         }
@@ -286,6 +302,7 @@ final class DialectTest {
             assertThat(Dialect.fromUrl("jdbc:sqlite:/tmp/x.db")).isEqualTo(Dialect.SQLITE);
             assertThat(Dialect.fromUrl("jdbc:sqlserver://h:1433;databaseName=db"))
                     .isEqualTo(Dialect.SQLSERVER);
+            assertThat(Dialect.fromUrl("jdbc:db2://h:50000/sample")).isEqualTo(Dialect.DB2);
             assertThat(Dialect.fromUrl("jdbc:h2:mem:x")).isEqualTo(Dialect.GENERIC);
         }
 
@@ -407,6 +424,7 @@ final class DialectTest {
             assertThat(Dialect.POSTGRES.supportsLateralAsOf()).isTrue();
             assertThat(Dialect.DUCKDB.supportsLateralAsOf()).isTrue();
             assertThat(Dialect.SQLSERVER.supportsLateralAsOf()).isTrue();
+            assertThat(Dialect.DB2.supportsLateralAsOf()).isTrue();
         }
 
         @Test
@@ -491,6 +509,14 @@ final class DialectTest {
         }
 
         @Test
+        @DisplayName("DB2 renders typed literals; TIMESTAMP is the UTC wall-clock, as it has no zone")
+        void db2() {
+            assertThat(Dialect.DB2.dateLiteral(date)).contains("DATE '2026-06-15'");
+            assertThat(Dialect.DB2.timeLiteral(time)).contains("TIME '13:40'");
+            assertThat(Dialect.DB2.timestampLiteral(instant)).contains("TIMESTAMP '2026-06-15 13:40:00'");
+        }
+
+        @Test
         @DisplayName("DUCKDB renders PostgreSQL's typed literals")
         void duckdb() {
             assertThat(Dialect.DUCKDB.dateLiteral(date)).contains("DATE '2026-06-15'");
@@ -519,6 +545,7 @@ final class DialectTest {
                     .isEqualTo(PushdownTarget.sql("sqlite"));
             assertThat(Dialect.SQLSERVER.pushdownTarget())
                     .isEqualTo(PushdownTarget.sql("sqlserver"));
+            assertThat(Dialect.DB2.pushdownTarget()).isEqualTo(PushdownTarget.sql("db2"));
         }
 
         @Test
@@ -624,10 +651,11 @@ final class DialectTest {
         }
 
         @Test
-        @DisplayName("SQLite and SQL Server have no session time zone to pin")
+        @DisplayName("SQLite, SQL Server and Db2 have no session time zone to pin")
         void sqliteHasNone() {
             assertThat(Dialect.SQLITE.pinSessionToUtcSql()).isEmpty();
             assertThat(Dialect.SQLSERVER.pinSessionToUtcSql()).isEmpty();
+            assertThat(Dialect.DB2.pinSessionToUtcSql()).isEmpty();
         }
     }
 
@@ -707,7 +735,8 @@ final class DialectTest {
                 Dialect.MYSQL,    new Answer(false, false, true,  true,  false, false, true,  false),
                 Dialect.DUCKDB,   new Answer(true,  true,  false, false, true,  true,  true,  true),
                 Dialect.SQLITE,   new Answer(true,  true,  false, false, true,  false, false, false),
-                Dialect.SQLSERVER, new Answer(false, false, true, true,  true,  true,  false, false));
+                Dialect.SQLSERVER, new Answer(false, false, true, true,  true,  true,  false, false),
+                Dialect.DB2,      new Answer(true,  true,  false, false, true,  true,  false, false));
 
         @Test
         @DisplayName("a dialect with no row here is a dialect nobody reviewed")
