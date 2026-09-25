@@ -53,8 +53,8 @@ import static com.darkcollective.relix.symbol.ScalarType.STRING;
  *
  <h2>Which of these a backend is offered</h2>
  * The counting and slicing four, and only where a backend has been <em>run</em> and
- * agreed: MySQL and PostgreSQL count characters, so both compute {@code Len},
- * {@code Left}, {@code Right} and {@code Mid} themselves. H2, which resolves to the
+ * agreed: MySQL, PostgreSQL and DuckDB count characters, so each computes {@code Len},
+ * {@code Left}, {@code Right} and {@code Mid} itself. H2, which resolves to the
  * generic dialect, counts UTF-16 code units exactly as Java used to here — so
  * {@code CHAR_LENGTH} there is a different function wearing the same name, and the
  * generic dialect is offered nothing. "SQL counts characters" is the kind of claim that
@@ -94,7 +94,7 @@ final class StringFunctions {
     static List<ScalarFunction> all() {
         return List.of(
                 STRINGS.fn("Len", NUMBER, PURE_DETERMINISTIC, List.of(p("s", STRING)),
-                        Spellings.sqlOn("CHAR_LENGTH", 1, Spellings.MYSQL, Spellings.POSTGRES),
+                        Spellings.sqlOn("CHAR_LENGTH", 1, Spellings.MYSQL, Spellings.POSTGRES, Spellings.DUCKDB),
                         args -> args.get(0).isNull() ? NullValue.INSTANCE
                                 : number(CodePoints.length(string(args.get(0), "Len")))),
 
@@ -120,18 +120,18 @@ final class StringFunctions {
 
                 STRINGS.fn("Left", STRING, PURE_DETERMINISTIC,
                         List.of(p("s", STRING), p("n", NUMBER)),
-                        Spellings.sqlOn("LEFT", 2, Spellings.MYSQL, Spellings.POSTGRES), StringFunctions::left),
+                        Spellings.sqlOn("LEFT", 2, Spellings.MYSQL, Spellings.POSTGRES, Spellings.DUCKDB), StringFunctions::left),
 
                 STRINGS.fn("Right", STRING, PURE_DETERMINISTIC,
                         List.of(p("s", STRING), p("n", NUMBER)),
-                        Spellings.sqlOn("RIGHT", 2, Spellings.MYSQL, Spellings.POSTGRES), StringFunctions::right),
+                        Spellings.sqlOn("RIGHT", 2, Spellings.MYSQL, Spellings.POSTGRES, Spellings.DUCKDB), StringFunctions::right),
 
                 // Mid(s, start) and Mid(s, start, length) are one function of two forms,
                 // not two functions: they differ only in whether the trailing argument
                 // is passed.
                 STRINGS.fn("Mid", STRING, PURE_DETERMINISTIC,
                         List.of(p("s", STRING), p("start", NUMBER), p("length", NUMBER)),
-                        Arity.between(2, 3), Spellings.sqlOn("SUBSTRING", Spellings.MYSQL, Spellings.POSTGRES), StringFunctions::mid),
+                        Arity.between(2, 3), Spellings.sqlOn("SUBSTRING", Spellings.MYSQL, Spellings.POSTGRES, Spellings.DUCKDB), StringFunctions::mid),
 
                 // InStr(s, find) searches from the beginning; InStr(start, s, find) from
                 // a position. The second form shifts what each position means, so the

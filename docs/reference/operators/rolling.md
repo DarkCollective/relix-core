@@ -44,7 +44,7 @@ input.
 ## SQL pushdown
 
 When the input is backed by a JDBC connection and the dialect supports window
-functions (PostgreSQL and the GENERIC H2 dialect; MySQL is conservative since
+functions (PostgreSQL, DuckDB and the GENERIC H2 dialect; MySQL is conservative since
 the minimum MySQL 5.x version predates window functions), `ROLLING` is folded
 into the SQL scan as an ANSI SQL:2003 OVER clause:
 
