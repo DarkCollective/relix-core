@@ -14,26 +14,10 @@
  * limitations under the License.
  */
 /**
- * The opt-in annotated-relation (K-relation) model that carries provenance
- * annotations through execution.
+ * A relation annotated over a semiring, as {@code Relation.provenance} returns it.
  *
- * <p>This package bridges the engine's {@link com.darkcollective.relix.processor.Row}
- * runtime tuples to the {@link com.darkcollective.relix.provenance.Semiring} algebra:
- * an {@link com.darkcollective.relix.processor.provenance.Annotated} pairs a row with
- * a semiring element, and an
- * {@link com.darkcollective.relix.processor.provenance.AnnotatedRelation} is the
- * canonical K-relation — distinct tuples mapped to the {@code ⊕}-combination of their
- * derivations, zero-annotated tuples absent.
- *
- * <p>The model is <strong>opt-in</strong>: it is constructed only when a provenance
- * mode is active, so the default {@code Stream<Row>} evaluation path is untouched and
- * pays nothing. The annotation is always a side-channel, never an ordinary data
- * column, keeping the relational algebra closed. This package is the carrier model
- * and its {@code lift}/{@code normalise}/{@code forget} operations;
- * {@link com.darkcollective.relix.processor.provenance.ProvenanceEvaluator} threads
- * the annotations through the positive operators (σ/π/×/⋈/∪).
- *
- * @see <a href="https://doi.org/10.1145/1265530.1265535">T. J. Green, G.
- *      Karvounarakis &amp; V. Tannen, <em>Provenance semirings</em>, PODS 2007</a>
+ * <p>{@link com.darkcollective.relix.processor.provenance.AnnotatedRelation} is the rows,
+ * each an {@link com.darkcollective.relix.processor.provenance.Annotated} pairing a row
+ * with its annotation: its lineage, its count, its cost, as the semiring defines.
  */
 package com.darkcollective.relix.processor.provenance;

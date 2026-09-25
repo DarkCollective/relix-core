@@ -27,9 +27,9 @@
  */
 module com.darkcollective.relix {
 
-    // The API, and the engine types its signatures reach. This list is the published
-    // surface: it is generated from the same set ReExportSurfaceTest computes, so a
-    // package a caller can reach is exported and nothing else is.
+    // The API, and the engine types its signatures reach, however many steps out. This
+    // list is the published surface, and ReExportSurfaceTest (relix-embed) reads it:
+    // a package a caller can reach from the facade must be here, and nothing else may be.
     exports com.darkcollective.relix.embed;
     exports com.darkcollective.relix.ast;
     exports com.darkcollective.relix.ast.visitor;
@@ -37,15 +37,20 @@ module com.darkcollective.relix {
     exports com.darkcollective.relix.events;
     exports com.darkcollective.relix.function;
     exports com.darkcollective.relix.lang.ast;
+    // A Statement is published, so the declarations it can be are: a source's or a
+    // connection's config, and an assignment's inline table.
+    exports com.darkcollective.relix.lang.ast.source;
+    exports com.darkcollective.relix.lang.ast.table;
     exports com.darkcollective.relix.optimizer;
     exports com.darkcollective.relix.plan;
     exports com.darkcollective.relix.processor;
     exports com.darkcollective.relix.processor.connector;
-    exports com.darkcollective.relix.processor.exec;
     exports com.darkcollective.relix.processor.provenance;
     exports com.darkcollective.relix.provenance;
     exports com.darkcollective.relix.semantic;
     exports com.darkcollective.relix.symbol;
+    // A symbol table answers with function symbols as well as relation ones.
+    exports com.darkcollective.relix.symbol.function;
     exports com.darkcollective.relix.symbol.graph;
     exports com.darkcollective.relix.symbol.relation;
     exports com.darkcollective.relix.symbol.table;
@@ -72,7 +77,7 @@ module com.darkcollective.relix {
     provides com.darkcollective.relix.function.FunctionLibrary
             with com.darkcollective.relix.function.builtin.BuiltinFunctionLibrary;
     provides com.darkcollective.relix.processor.connector.RelixConnector
-            with com.darkcollective.relix.connectors.std.CsvConnector;
+            with com.darkcollective.relix.connectors.std.internal.CsvConnector;
     provides com.darkcollective.relix.solver.MathProgrammingSolver
             with com.darkcollective.relix.solver.ojalgo.OjAlgoSolver;
 }

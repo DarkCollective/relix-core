@@ -15,11 +15,11 @@
  */
 package com.darkcollective.relix.processor.exec;
 
-import com.darkcollective.relix.ast.AttributeNames;
+import com.darkcollective.relix.ast.internal.AttributeNames;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.Value;
-import com.darkcollective.relix.symbol.NestedPaths;
+import com.darkcollective.relix.symbol.internal.NestedPaths;
 import com.darkcollective.relix.symbol.Schema;
 
 import java.util.Locale;
@@ -34,7 +34,7 @@ import java.util.Set;
  * <p>When the two join inputs share a column name (e.g. both sides expose
  * {@code k}), the flat concatenated schema must rename one of them, which loses
  * the association between the predicate's qualifier and the intended side.  A
- * plain {@link com.darkcollective.relix.processor.ArrayRow} can only resolve such
+ * plain {@link com.darkcollective.relix.processor.internal.ArrayRow} can only resolve such
  * a name to its first positional match, so {@code A.k = B.k} would compare
  * {@code A.k} against itself.  This view instead resolves an ambiguous bare name
  * by its qualifier: {@code B.k} is routed to the right input when {@code B} is a

@@ -1,0 +1,78 @@
+# Publishes a snapshot of the relix artifact on every push to main.
+#
+# A front end that needs an engine change before it is released builds against the latest
+# snapshot, from Central's snapshot repository:
+#
+#   repositories { maven { url 'https://central.sonatype.com/repository/maven-snapshots/' } }
+#   dependencies { implementation 'com.darkcollective.relix:relix:<next>-SNAPSHOT' }
+#
+# A snapshot is named for the release it leads to: the build's version with its qualifier
+# replaced by -SNAPSHOT, so 1.1.0-rc1 in the build publishes 1.1.0-SNAPSHOT. That is why
+# the build's default version is bumped to the next release right after one ships: a
+# default left at 1.1.0 would publish snapshots of a version that already exists.
+#
+# A front-end *release* never depends on a snapshot. It pins an engine release or release
+# candidate; only its develop branch tracks the snapshot.
+#
+# Setup, done once:
+#
+#   1. In the Central Portal, enable snapshots for the com.darkcollective namespace.
+#   2. Create a `snapshots` environment in this repository's settings, with no required
+#      reviewers, holding the two token secrets the release uses:
+#        CENTRAL_TOKEN_USERNAME, CENTRAL_TOKEN_PASSWORD
+#      A separate environment rather than `release`: that one's reviewers exist to hold the
+#      irreversible step, and a snapshot is neither irreversible nor worth a review.
+#   3. Set the repository variable SNAPSHOTS_ENABLED to `true`. The job is skipped until
+#      then, rather than failing on every push.
+#
+# Nothing here is signed or tagged: a snapshot is replaced by the next one.
+
+name: Snapshot
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    name: Publish snapshot
+    # Off until the one-off setup is done: set the repository variable SNAPSHOTS_ENABLED
+    # to `true` (Settings → Secrets and variables → Actions → Variables). Until then the
+    # job is skipped rather than failed, so main's checks are not red for a missing setting.
+    if: vars.SNAPSHOTS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: snapshots
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Resolve the snapshot version
+        id: ver
+        run: |
+          base="$(./gradlew --no-daemon -q printVersion | tail -1 | sed -E 's/-.*$//')"
+          echo "version=${base}-SNAPSHOT" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${base}-SNAPSHOT"
+
+      # A snapshot a front end builds against has passed the same gate a release does.
+      - name: Build
+        run: ./gradlew --no-daemon build -PrelixVersion="${{ steps.ver.outputs.version }}"
+
+      - name: Publish
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: ./gradlew --no-daemon :relix-dist:publishSnapshot -PrelixVersion="${{ steps.ver.outputs.version }}"

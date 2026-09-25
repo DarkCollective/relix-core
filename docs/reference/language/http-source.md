@@ -3,11 +3,11 @@
 # Syntax:
 source <Name> from http {
     url:     "<url>",                 // required; may contain ${ENV} and {pathParam}
-    method:  GET | POST,              // optional, default GET (Relix is read-only)
+    method:  GET | POST | QUERY,      // optional, default GET (Relix is read-only)
     headers: { "<Name>": "<value>" }, // optional static request headers
     auth:    bearer("…") | basic("…","…")
              | apikey("…","…") | apikey(query("…"),"…"),
-    body:    "<request body>",        // optional; for POST reads (e.g. GraphQL)
+    body:    "<request body>",        // for POST/QUERY reads; required by QUERY
     extract: json("<jsonpath>"),      // optional; locates the records array
     schema:  { <col>: <TYPE> at "<jsonpath>", … }  // optional; omit for open
 };
@@ -17,9 +17,16 @@ An HTTP source turns a JSON REST/GraphQL endpoint into a relation. Relix issues
 the request, parses the JSON response, and yields one row per record. It is the
 network sibling of the local `json("…")` file source.
 
-Relix is **read-only by design**: only `GET` and `POST` are allowed, and `POST`
-is used *solely* to carry a read query in the request body (the GraphQL/search
-idiom). The mutating methods (PUT/PATCH/DELETE) and the bodyless HEAD are rejected.
+Relix is **read-only by design**: only `GET`, `QUERY` and `POST` are allowed.
+`QUERY` (RFC 10008) is the method made for a read whose query travels in the
+request body: it is safe and idempotent by definition, and a `QUERY` source must
+declare a `body`. `POST` is used *solely* to carry a read query in the body for
+the many endpoints that do not accept `QUERY` (the GraphQL/search idiom). The
+mutating methods (PUT/PATCH/DELETE) and the bodyless HEAD are rejected:
+
+```relix-invalid
+source Items from http { url: "https://api.example.com/items", method: PUT };
+```
 
 By default a source is **open** (schema-on-read): each JSON object becomes a
 document row you navigate by path at query time (e.g. `user.name`, `items[0].id`).
@@ -27,9 +34,13 @@ Declare a `schema { … }` to make it a **closed, typed** relation whose columns
 extracted from each record by an `at "$.path"` binding (or the column name).
 
 # Technical Description:
-`url` is the only required field. `${ENV}` placeholders (in the URL, headers,
-body, and auth values) are substituted from the active environment **before** the
-script is parsed, so secrets never appear in the source text.
+`url` is the only required field. `${NAME}` placeholders (in the URL, header
+values, body, and auth values) keep secrets out of the source text. They are
+resolved when a query runs: from the active environment in the `relix` command and
+the REPL, and through the resolver its session was built with in a program embedding
+relix. The declaration keeps the placeholder, so nothing that prints the session
+shows the value, and a placeholder with no value fails the query with an error naming
+it and the source.
 
 `extract: json("$.path")` locates the records: the value at the path must be a
 JSON array (one record per element) or a single object (one record). When omitted,
@@ -41,6 +52,30 @@ trailing `[*]` are accepted and normalised.
 `Authorization: Bearer t`; `basic(u,p)` → `Authorization: Basic base64(u:p)`;
 `apikey(name,v)` → the header `name: v`; `apikey(query(name),v)` → the URL
 parameter `?name=v`. Equivalent raw headers work too.
+
+**A header is set in one place.** `headers`, `auth` and an `IN` column bound
+`as header("…")` all set request headers, and naming the same header in two of
+them is an analysis error naming the source and the header. Names are compared
+case-insensitively, as HTTP compares them, so `auth: bearer(…)` beside a declared
+`"authorization"` header is refused too. Neither of the two values is an obvious
+winner, so relix does not pick one.
+
+**Some headers cannot be declared.** The HTTP client sets `Connection`,
+`Content-Length`, `Expect`, `Host` and `Upgrade` itself, and declaring one is an
+analysis error. So is a header name that is not a valid HTTP token, or a value
+containing a line break. A value that only becomes invalid once a `${…}`
+placeholder is substituted is reported when the request is built, as an error
+naming the source and the header.
+
+**A request with a body is sent as JSON unless it says otherwise.** When a
+request carries a body (a declared `body`, or the generated GraphQL document
+below), relix adds `Content-Type: application/json`. A `Content-Type` declared in
+`headers`, in any capitalisation, is sent instead. A request with no body, such
+as an ordinary `GET`, carries no `Content-Type`.
+
+A redirect is followed. A 301, 302, 307 or 308 answer to a `QUERY` resends the
+`QUERY` with its body, and a 303 fetches the result with `GET`, as RFC 10008
+specifies.
 
 Typed columns coerce the extracted value to the declared type (NUMBER, STRING,
 BOOLEAN, ANY, DATE/TIME/TIMESTAMP/DURATION). A missing path navigates to NULL rather
@@ -73,17 +108,31 @@ source Products from http {
 query { τ price DESC (σ price > 10 (Products)) };
 ```
 
-Send an authenticated POST read with a JSON body:
+Send an authenticated POST read with a JSON body. The body goes out as
+`application/json` without a header saying so:
 ```relix
 source Echo from http {
     url:     "https://httpbin.org/anything",
     method:  POST,
     auth:    bearer("${API_TOKEN}"),
-    headers: { "Content-Type": "application/json" },
     body:    "{ \"hello\": \"relix\" }",
     extract: json("$.json")
 };
 query Echo;
+```
+
+Read with `QUERY`, sending a query in a language the endpoint names. The
+declared `Content-Type` replaces the JSON default:
+```relix
+source OpenOrders from http {
+    url:     "https://api.example.com/orders",
+    method:  QUERY,
+    headers: { "Content-Type": "application/sql" },
+    body:    "SELECT id, total FROM orders WHERE status = 'OPEN'",
+    extract: json("$.rows"),
+    schema:  { id: NUMBER, total: NUMBER }
+};
+query { τ total DESC (OpenOrders) };
 ```
 
 # Live Examples:
@@ -207,7 +256,7 @@ source Users from http {
 query { π id, name (Users) };
 ```
 
-sends
+sends, as `Content-Type: application/json`,
 
 ```
 {"query":"{ users { id name } }"}
@@ -221,7 +270,9 @@ becomes `author { name }`, and two columns under one parent share its selection 
 **A declared `body` is sent verbatim.** Generation only ever fills an absence, so a
 query you wrote is the query that goes — relix never rewrites it to something
 narrower. A `POST` with no body could not have been reaching a GraphQL endpoint
-before, so no working source changes meaning.
+before, so no working source changes meaning. Generation is for `POST` alone: the
+GraphQL-over-HTTP convention is `POST`, and a `QUERY` source always declares its
+body.
 
 **Only the projection folds.** A `σ` stays in the engine, because GraphQL has no
 general predicate language: filtering is whatever arguments each schema happens to
@@ -246,5 +297,6 @@ source needing them declares its own `body` and gives up the generated projectio
 [source](source.md), [connection](connection.md), [assignment & query](assignment.md)
 
 # Notes:
-Keep tokens and keys in the environment via `${VAR}` (see `relix help env`); the
-connector resolves them before the request and never logs their values.
+Keep tokens and keys out of the script with `${VAR}` (see `relix help env` for the
+command line). They are resolved before the request is built, and their values are
+never logged.

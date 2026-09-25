@@ -144,7 +144,13 @@ Trials := { COVER 2 (τ substrate ASC (Substrate × Temperature × Coating)) };
 ```
 
 # Limitations:
-Strength t has no default — it is required. The algorithm is greedy
+Strength t has no default — it is required:
+
+```relix-invalid
+query { COVER (Substrate × Temperature × Coating) };
+```
+
+ The algorithm is greedy
 (near-minimal, not provably minimal). Output is a subset of the input rows
 (schema unchanged); it does not push down.
 

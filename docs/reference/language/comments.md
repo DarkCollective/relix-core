@@ -18,7 +18,18 @@ its braces are commented the same way, so there is nothing to remember about whe
 you are when you write one.
 
 `//` is not a comment. It is two division operators, and it is a syntax error
-wherever it appears.
+wherever it appears, after a statement:
+
+```relix-invalid
+query { Orders }; // every order
+```
+
+and inside braces:
+
+```relix-invalid
+query { Orders // every order
+};
+```
 
 # Technical Description:
 Comments are removed by the lexer, so they are invisible to every phase above it.

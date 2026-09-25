@@ -94,6 +94,16 @@ compileJava {
     enabled = false
 }
 
+// Inside this build a project dependency is normally served as its classes directory,
+// which here is empty: the classes are merged into the jar, never compiled. The front
+// ends depend on this project exactly as a program outside the repository depends on the
+// published artifact (#1132), so the jar is the only thing it offers.
+['apiElements', 'runtimeElements'].each { name ->
+    configurations.named(name) {
+        outgoing.variants.removeAll(outgoing.variants.findAll { it.name in ['classes', 'resources'] })
+    }
+}
+
 javadoc {
     enabled = false
 }
@@ -195,6 +205,20 @@ publishing {
         maven {
             name = 'staging'
             url = layout.buildDirectory.dir('staging-deploy')
+        }
+        // Work in progress, for a front end that needs an engine change before it is
+        // released (#1134). Central's own snapshot repository: public, readable with no
+        // credentials, and written with the token the release already uses. The URL can
+        // be overridden (-PsnapshotRepository=file:///...) to rehearse a publish locally.
+        maven {
+            name = 'snapshots'
+            url = findProperty('snapshotRepository') ?: 'https://central.sonatype.com/repository/maven-snapshots/'
+            if (url.scheme in ['http', 'https']) {
+                credentials {
+                    username = System.getenv('CENTRAL_TOKEN_USERNAME')
+                    password = System.getenv('CENTRAL_TOKEN_PASSWORD')
+                }
+            }
         }
     }
 }
@@ -304,4 +328,44 @@ tasks.register('consumerSmokeTest', GradleBuild) {
     // container — hence the qualified name on the line below.
     tasks = ['run']
     dependsOn writeConsumerProject, project.tasks.named('publishToMavenLocal')
+}
+
+// ---------------------------------------------------------------------------
+// Snapshots (#1134)
+//
+//   ./gradlew :relix-dist:publishSnapshot -PrelixVersion=<next>-SNAPSHOT
+//
+// A snapshot is named for the release it leads to, so its version is the next release's
+// number with -SNAPSHOT: Maven and Gradle both sort 1.1.0-SNAPSHOT before 1.1.0-rc1 and
+// 1.1.0. The two repositories each refuse the other's kind of version, because either
+// mistake is expensive: a snapshot staged for Central fails validation after the tag
+// exists, and a release in the snapshot repository is a mutable copy of a version that
+// must never change.
+// ---------------------------------------------------------------------------
+def isSnapshot = { v -> v.toString().endsWith('-SNAPSHOT') }
+
+tasks.register('publishSnapshot') {
+    group = 'publishing'
+    description = 'Publishes the relix artifact to the snapshot repository (a -SNAPSHOT version only).'
+    dependsOn 'publishRelixPublicationToSnapshotsRepository'
+}
+
+tasks.matching { it.name == 'publishRelixPublicationToSnapshotsRepository' }.configureEach {
+    def v = project.version
+    doFirst {
+        if (!isSnapshot(v)) {
+            throw new GradleException("The snapshot repository takes -SNAPSHOT versions only, and this is ${v}. " +
+                    "Pass -PrelixVersion=<next release>-SNAPSHOT.")
+        }
+    }
+}
+
+tasks.matching { it.name == 'publishRelixPublicationToStagingRepository' }.configureEach {
+    def v = project.version
+    doFirst {
+        if (isSnapshot(v)) {
+            throw new GradleException("A release cannot be a snapshot: ${v}. Snapshots go to the snapshot repository " +
+                    "(publishSnapshot).")
+        }
+    }
 }

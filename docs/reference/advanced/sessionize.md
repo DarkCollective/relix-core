@@ -110,6 +110,8 @@ boundary logic, but it does not assign the running session id. TOP and the windo
 ranking functions rank within a partition but do not segment by a gap.
 
 # See Also:
+[log source](../language/log-source.md) — SESSIONIZE over a web server's access log, among other windowing examples on one real dataset
+
 [window-offset](../operators/window-offset.md), [downsample](downsample.md),
 [aggregation](../operators/group.md), [duration literal](../literals/duration-literal.md)
 

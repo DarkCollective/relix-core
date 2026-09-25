@@ -16,7 +16,7 @@
 package com.darkcollective.relix.embed.equivalence;
 
 import com.darkcollective.relix.optimizer.OptimizationCode;
-import com.darkcollective.relix.optimizer.OptimizationResult;
+import com.darkcollective.relix.optimizer.internal.OptimizationResult;
 import com.darkcollective.relix.optimizer.TransformationRecord;
 import com.darkcollective.relix.semantic.SemanticModel;
 import org.junit.jupiter.api.DisplayName;

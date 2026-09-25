@@ -30,7 +30,7 @@ import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.TieBreak;
 import com.darkcollective.relix.ast.WindowFrame;
 import com.darkcollective.relix.ast.WindowFunction;
-import com.darkcollective.relix.cost.Ordering;
+import com.darkcollective.relix.ast.Ordering;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.Provenance;
 import com.darkcollective.relix.symbol.ScalarType;

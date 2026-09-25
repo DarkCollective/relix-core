@@ -18,16 +18,21 @@ package com.darkcollective.relix.lang.ast.source;
 /**
  * HTTP request method for an {@link HttpSourceConfig}.
  *
- * <p>Relix is <strong>read-only by design</strong>: only the two methods that
- * fetch data are permitted. {@link #GET} is the ordinary read; {@link #POST} is
- * accepted <em>solely</em> as a read mechanism — many APIs (GraphQL, search
- * endpoints) carry the query in a request body and answer with the result set.
- * The mutating methods {@code PUT}/{@code PATCH}/{@code DELETE} are deliberately
- * absent, as is {@code HEAD} (which returns no body and so cannot produce rows).
+ * <p>Relix is <strong>read-only by design</strong>: only methods that fetch data
+ * are permitted. {@link #GET} is the ordinary read. {@link #QUERY} (RFC 10008) is
+ * the read whose query travels in the request body; it is safe and idempotent by
+ * definition, and a source declaring it must carry a {@code body}. {@link #POST}
+ * is accepted <em>solely</em> as a read mechanism for the many APIs (GraphQL,
+ * search endpoints) that take their query in a body and do not accept
+ * {@code QUERY}. The mutating methods {@code PUT}/{@code PATCH}/{@code DELETE}
+ * are deliberately absent, as is {@code HEAD} (which returns no body and so
+ * cannot produce rows).
  */
 public enum HttpMethod {
     /** An ordinary HTTP read. */
     GET,
     /** A read whose query travels in the request body (e.g. GraphQL/search). */
-    POST
+    POST,
+    /** The RFC 10008 read whose query is the request body; safe and idempotent. */
+    QUERY
 }

@@ -15,11 +15,12 @@
  */
 package com.darkcollective.relix.connectors.std;
 
-import com.darkcollective.relix.processor.QueryExecutor;
-import com.darkcollective.relix.processor.QueryResult;
+import com.darkcollective.relix.connectors.std.internal.JdbcDataSourceConnector;
+import com.darkcollective.relix.processor.internal.QueryExecutor;
+import com.darkcollective.relix.processor.internal.QueryResult;
 import com.darkcollective.relix.semantic.SemanticFixtures;
 import com.darkcollective.relix.semantic.SemanticModel;
-import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

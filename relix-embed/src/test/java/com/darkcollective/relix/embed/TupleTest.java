@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.embed;
 
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;

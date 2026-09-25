@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.plan;
 
+import com.darkcollective.relix.plan.internal.PhysicalPlanJson;
+import com.darkcollective.relix.plan.internal.PhysicalPlanPrinter;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;

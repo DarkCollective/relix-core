@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.semantic;
 
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.ListAssert;

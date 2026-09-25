@@ -16,7 +16,7 @@
 package com.darkcollective.relix.processor.eval;
 
 import com.darkcollective.relix.function.FunctionContext;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.value.DateValue;

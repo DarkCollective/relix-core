@@ -15,7 +15,8 @@
  */
 package com.darkcollective.relix.connectors.std;
 
-import com.darkcollective.relix.processor.connector.DriverDownloader;
+import com.darkcollective.relix.connectors.std.internal.RelixDriverLoader;
+import com.darkcollective.relix.processor.connector.internal.DriverDownloader;
 import com.darkcollective.relix.processor.connector.Fetcher;
 
 import java.io.IOException;
@@ -102,6 +103,21 @@ public final class DriverProvisioner {
     public static DriverProvisioner create(boolean enabled, Fetcher fetcher) {
         return new DriverProvisioner(
                 DriverCatalog.load(), RelixDriverLoader.defaultDirectory(), fetcher, enabled);
+    }
+
+    /**
+     * Registers every JDBC driver installed in {@code ~/.relix/drivers}, so a
+     * connection can use a driver downloaded by an earlier run.
+     *
+     * <p>A host calls this once at startup. A missing directory, or one with no driver
+     * JARs, registers nothing.
+     *
+     * @return one description per driver registered (its class and the JAR it came
+     *         from), in load order; never null
+     * @since 1.0
+     */
+    public static List<String> loadInstalled() {
+        return new RelixDriverLoader(RelixDriverLoader.defaultDirectory()).load();
     }
 
     /** @return whether this provisioner is permitted to download */

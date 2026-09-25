@@ -15,7 +15,8 @@
  */
 package com.darkcollective.relix.value;
 
-import com.darkcollective.relix.value.ValuePath.Step;
+import com.darkcollective.relix.value.internal.ValuePath;
+import com.darkcollective.relix.value.internal.ValuePath.Step;
 import com.darkcollective.relix.symbol.ScalarType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

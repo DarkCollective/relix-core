@@ -67,7 +67,10 @@ final class ValueBoundaryTest {
     @Test
     @DisplayName("exports the value package under its own name")
     void exportsTheValuePackage() throws IOException {
+        // Unqualified exports only: value.internal is exported to named engine modules,
+        // which is not publishing it.
         Set<String> exports = valueDescriptor().exports().stream()
+                .filter(e -> !e.isQualified())
                 .map(ModuleDescriptor.Exports::source)
                 .collect(Collectors.toSet());
 

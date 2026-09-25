@@ -15,10 +15,13 @@
  */
 package com.darkcollective.relix.plan;
 
+import com.darkcollective.relix.plan.internal.PhysicalPlanJson;
+import com.darkcollective.relix.plan.internal.PhysicalPlanPrinter;
+import com.darkcollective.relix.plan.internal.Planner;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.SelectionNode;
-import com.darkcollective.relix.cost.Ordering;
+import com.darkcollective.relix.ast.Ordering;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.ColumnDefinition;

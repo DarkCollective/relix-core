@@ -21,7 +21,7 @@ package com.darkcollective.relix.ast;
  * authoring surface was promoted), so they are shared with relix-parser tests and
  * with embedders.
  */
-abstract class AstTestSupport extends AstBuilders {
+public abstract class AstTestSupport extends AstBuilders {
 
     /**
      * Asserts that {@code node} pretty-prints to exactly {@code expected}.

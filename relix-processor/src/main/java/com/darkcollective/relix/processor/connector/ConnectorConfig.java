@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.processor.connector;
 
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 
 import java.util.Map;
 import java.util.Objects;

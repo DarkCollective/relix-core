@@ -20,7 +20,7 @@ import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.value.DateValue;
 import com.darkcollective.relix.value.DurationValue;
 import com.darkcollective.relix.value.NumberValue;

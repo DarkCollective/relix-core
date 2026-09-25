@@ -88,6 +88,13 @@ ext.docGuides = [
         ],
 ]
 
+// The version the build is at, for a workflow deriving the snapshot version from it.
+tasks.register('printVersion') {
+    description = 'Prints the version the build publishes under.'
+    def v = findProperty('relixVersion') ?: '1.0.0-rc2'
+    doLast { println v }
+}
+
 subprojects {
     apply plugin: 'java-library'
     apply plugin: 'jacoco'
@@ -628,9 +635,14 @@ ext.bundledModules = coreModules + [
 // assembled from, and a module-mode javadoc run cannot read a package from two modules
 // at once. Its published javadoc is this aggregate's output, which documents exactly
 // the same code one layer down.
+//
+// A front end is excluded too: it is built on the published jar (`requires
+// com.darkcollective.relix`, #1132), a module that is not a source module in this run, and
+// it is not part of the artifact whose Javadoc this is. Each keeps its own `javadoc`.
 ext.javadocModules = subprojects
         .findAll { it.file('src/main/java/module-info.java').exists() }
         .findAll { it.path != ':relix-dist' }
+        .findAll { !(it.file('src/main/java/module-info.java').text =~ /(?m)^\s*requires\s+(transitive\s+)?com\.darkcollective\.relix;/) }
         .collect { it.path }
         .sort()
 
@@ -755,19 +767,95 @@ aggregateJavadoc('javadocPublished', bundledModules, 'published',
 //   ./gradlew docsPdf        ->  build/docs/reference.pdf
 //   ./gradlew guidePdf       ->  build/docs/guide.pdf
 //   ./gradlew pdfs           ->  both
-//   ./gradlew docsPdfImage   ->  (re)build the renderer image only
+//   ./gradlew docsPdfImage   ->  make the renderer image available (see below)
 //   ./gradlew docsPdfTest    ->  run the renderer's own tests (both PDFs need them)
 // ---------------------------------------------------------------------------
-def docsPdfImageTag = 'relix-docs-pdf'
+//
+// THE IMAGE IS PULLED, NOT BUILT, WHERE A REGISTRY HAS IT (#1094). Building it
+// installs Chromium, Node, ReportLab and mermaid-cli — about 100s on a CI runner,
+// which starts with no layer cache, so every lane that renders paid it every run.
+// The tag is a hash of the two files the image is made of (the renderer scripts are
+// run from the mounted checkout, not copied in, so editing them needs no new
+// image). docsPdfImage then takes the first of:
+//
+//   1. an image with that tag already present locally;
+//   2. `<repo>:<hash>`, pulled — when RELIX_PDF_IMAGE_REPO (or -PpdfImageRepo)
+//      names a repository;
+//   3. a local build, pushed to `<repo>:<hash>` only when RELIX_PDF_IMAGE_PUSH is
+//      `true`. CI sets that on `main` alone — the build cache's rule, for the
+//      build cache's reason: a branch must not put bytes into what main renders
+//      with. A failed push is a warning, not a failure: the image is a cache, and
+//      a deploy that failed because a cache could not be written would make the
+//      site depend on it.
+//
+// With neither variable set — a fresh clone, the public tree — it is step 3 alone,
+// which is exactly what this task always did.
+// ---------------------------------------------------------------------------
+def docsPdfImageTag = {
+    def digest = java.security.MessageDigest.getInstance('SHA-256')
+    ['docs/pdf/Dockerfile', 'docs/pdf/puppeteer-config.json'].each {
+        digest.update(file(it).bytes)
+    }
+    "relix-docs-pdf:${digest.digest().encodeHex().toString().take(16)}"
+}()
 
-tasks.register('docsPdfImage', Exec) {
+abstract class DocsPdfImageTask extends DefaultTask {
+    @javax.inject.Inject abstract ExecOperations getExecOps()
+    @Input abstract Property<String> getImageTag()
+    @Input @org.gradle.api.tasks.Optional abstract Property<String> getRemoteRepository()
+    @Input abstract Property<Boolean> getPush()
+    @Internal abstract DirectoryProperty getContextDir()
+
+    private boolean docker(List<String> args, boolean quiet = true) {
+        def result = execOps.exec {
+            commandLine(['docker'] + args)
+            ignoreExitValue = true
+            if (quiet) {
+                standardOutput = OutputStream.nullOutputStream()
+                errorOutput = OutputStream.nullOutputStream()
+            }
+        }
+        result.exitValue == 0
+    }
+
+    @TaskAction
+    void provide() {
+        def local = imageTag.get()
+        def hash = local.substring(local.indexOf(':') + 1)
+        def remote = remoteRepository.map { "${it}:${hash}".toString() }.getOrNull()
+
+        if (docker(['image', 'inspect', local])) {
+            logger.lifecycle("PDF renderer image ${local} is present locally")
+            return
+        }
+        if (remote != null && docker(['pull', remote], false)) {
+            docker(['tag', remote, local])
+            logger.lifecycle("PDF renderer image pulled from ${remote}")
+            return
+        }
+        logger.lifecycle("Building PDF renderer image ${local}")
+        execOps.exec { commandLine 'docker', 'build', '-t', local, contextDir.get().asFile.path }
+
+        if (remote != null && push.get()) {
+            if (docker(['tag', local, remote]) && docker(['push', remote], false)) {
+                logger.lifecycle("PDF renderer image published as ${remote}")
+            } else {
+                logger.warn("warning: could not push ${remote}; later runs will build it again")
+            }
+        }
+    }
+}
+
+tasks.register('docsPdfImage', DocsPdfImageTask) {
     group = 'documentation'
-    description = 'Build the Docker image that renders the manual PDFs.'
-    inputs.file('docs/pdf/Dockerfile')
-    inputs.file('docs/pdf/generate_pdf.py')
-    inputs.file('docs/pdf/test_generate_pdf.py')
-    workingDir projectDir
-    commandLine 'docker', 'build', '-t', docsPdfImageTag, 'docs/pdf'
+    description = 'Make the manual-PDF renderer image available: local, else pulled, else built.'
+    imageTag = docsPdfImageTag
+    contextDir = layout.projectDirectory.dir('docs/pdf')
+    def repo = providers.gradleProperty('pdfImageRepo')
+            .orElse(providers.environmentVariable('RELIX_PDF_IMAGE_REPO'))
+            .filter { !it.isBlank() }
+    remoteRepository = repo
+    push = providers.environmentVariable('RELIX_PDF_IMAGE_PUSH').map { it == 'true' }.orElse(false)
 }
 
 // The renderer is a Markdown parser, and every defect it has had was silent: the
@@ -787,7 +875,7 @@ tasks.register('docsPdfTest', Exec) {
     workingDir projectDir
     commandLine 'docker', 'run', '--rm', '-v', "${projectDir}:/work",
             '--entrypoint', 'python', docsPdfImageTag,
-            '/opt/test_generate_pdf.py'
+            '/work/docs/pdf/test_generate_pdf.py'
 }
 
 // One render task per manual, from the same ext.docGuides registry the check

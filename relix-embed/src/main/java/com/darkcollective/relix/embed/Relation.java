@@ -46,24 +46,26 @@ import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.events.QueryEventListener;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.lang.ast.QueryStatement;
-import com.darkcollective.relix.optimizer.OptimizationResult;
+import com.darkcollective.relix.optimizer.internal.OptimizationResult;
 import com.darkcollective.relix.optimizer.TransformationRecord;
-import com.darkcollective.relix.optimizer.QueryOptimizer;
-import com.darkcollective.relix.plan.PhysicalPlanJson;
-import com.darkcollective.relix.plan.PhysicalPlanPrinter;
-import com.darkcollective.relix.processor.DataSourceConnector;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.optimizer.internal.QueryOptimizer;
+import com.darkcollective.relix.plan.PlannedQuery;
+import com.darkcollective.relix.plan.internal.PhysicalPlanJson;
+import com.darkcollective.relix.plan.internal.PhysicalPlanPrinter;
+import com.darkcollective.relix.processor.internal.DataSourceConnector;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.exec.RelNodeExecutor;
 import com.darkcollective.relix.processor.generator.GeneratorBoundednessSource;
 import com.darkcollective.relix.processor.generator.GeneratorDistinctnessSource;
 import com.darkcollective.relix.processor.generator.GeneratorMonotonicitySource;
 import com.darkcollective.relix.processor.provenance.AnnotatedRelation;
-import com.darkcollective.relix.processor.provenance.BaseAnnotator;
-import com.darkcollective.relix.processor.provenance.ProvenanceEvaluator;
+import com.darkcollective.relix.processor.provenance.internal.BaseAnnotator;
+import com.darkcollective.relix.processor.provenance.internal.ProvenanceEvaluator;
 import com.darkcollective.relix.provenance.Semiring;
-import com.darkcollective.relix.semantic.SchemaInference;
-import com.darkcollective.relix.semantic.RelationDeterminism;
+import com.darkcollective.relix.semantic.internal.SchemaInference;
+import com.darkcollective.relix.semantic.internal.RelationDeterminism;
+import com.darkcollective.relix.semantic.internal.LogicalPlanJson;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.Schema;
@@ -76,6 +78,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.Optional;
 import java.util.Spliterator;
 import java.util.Spliterators;
@@ -129,6 +132,9 @@ public final class Relation {
      * optimisations, and losing one costs a little work; reporting one falsely is a wrong
      * answer.
      */
+    /** The event code a sandbox's output limit reports a cut result under. */
+    static final String TRUNCATED = "TRUNCATED";
+
     private static final int GUARDED_CHARACTERISTICS =
             Spliterator.ORDERED | Spliterator.NONNULL | Spliterator.DISTINCT | Spliterator.IMMUTABLE;
 
@@ -1108,6 +1114,20 @@ public final class Relation {
     }
 
     /**
+     * This relation's expression tree as JSON, for a program rather than a reader.
+     *
+     * <p>The logical counterpart to {@link #explainJson()}: one object per operator,
+     * each carrying its inputs and the heading the analyser inferred for it. Nothing is
+     * planned or run.
+     *
+     * @return the tree as a JSON document
+     * @since 1.0
+     */
+    public String renderJson() {
+        return LogicalPlanJson.toJson(node, model.symbolTable(), model.nodeSchemas());
+    }
+
+    /**
      * The heading this relation produces.
      *
      * @return the output schema
@@ -1255,7 +1275,7 @@ public final class Relation {
     public String explain(QueryEventListener listener) {
         Objects.requireNonNull(listener, "listener");
         requireResolvable();
-        RelNodeExecutor.PlannedQuery planned = new RelNodeExecutor()
+        PlannedQuery planned = new RelNodeExecutor()
                 .withObservedCardinalities(session.observedExpressions())
                 .planWithEstimates(node, planningContext(), listener);
         return PhysicalPlanPrinter.explain(planned.plan(), planned.estimates());
@@ -1268,7 +1288,7 @@ public final class Relation {
      * @since 1.0
      */
     public String explainJson() {
-        RelNodeExecutor.PlannedQuery planned = plan();
+        PlannedQuery planned = plan();
         return PhysicalPlanJson.toJson(planned.plan(), planned.estimates());
     }
 
@@ -1282,7 +1302,7 @@ public final class Relation {
      * @return the plan and its estimates
      * @since 1.0
      */
-    public RelNodeExecutor.PlannedQuery plan() {
+    public PlannedQuery plan() {
         requireResolvable();
         return new RelNodeExecutor()
                 .withObservedCardinalities(session.observedExpressions())
@@ -1337,12 +1357,16 @@ public final class Relation {
         Relation planned = forExecution();
         planned.requireBounded();
         List<Tuple> rows;
-        try (Stream<Tuple> stream = planned.open(QueryEventListener.NONE)) {
+        boolean[] truncated = {false};
+        try (Stream<Tuple> stream = planned.open(event -> truncated[0] |= isTruncation(event))) {
             rows = stream.toList();
         }
         // Drained, so the count is this relation's cardinality rather than a number about
         // how much the caller wanted — which is exactly the condition stream() cannot meet.
-        observe(rows.size());
+        // A result the sandbox cut is not drained in that sense: its size is the limit's.
+        if (!truncated[0]) {
+            observe(rows.size());
+        }
         return rows;
     }
 
@@ -1500,7 +1524,9 @@ public final class Relation {
         collected.add(QueryEvent.of(QueryEvent.Stage.EXECUTE, "ROWS",
                         "query delivered " + rows.size() + " row" + (rows.size() == 1 ? "" : "s"))
                 .withMetrics(EventMetrics.of(rows.size(), elapsed)));
-        observe(rows.size());
+        if (collected.stream().noneMatch(Relation::isTruncation)) {
+            observe(rows.size());
+        }
         return new Rows(planned.schema(), rows, collected);
     }
 
@@ -1572,9 +1598,10 @@ public final class Relation {
         // nothing to dispatch on here: lineage mints a variable per occurrence and the
         // weighted semirings read the column, both through the same call.
         BaseAnnotator<K> annotator = BaseAnnotator.forSemiring(semiring, weightColumn);
-        try (DataSourceConnector connector = session.openConnector(model)) {
+        SemanticModel run = executionModel();
+        try (DataSourceConnector connector = session.openConnector(run)) {
             return new ProvenanceEvaluator()
-                    .evaluate(node, semiring, context(connector, QueryEventListener.NONE), annotator);
+                    .evaluate(node, semiring, context(run, connector, QueryEventListener.NONE), annotator);
         } catch (RuntimeException e) {
             // Reads every row before it can annotate one, so there is no lazy window here:
             // the single catch covers the whole of it.
@@ -1592,16 +1619,19 @@ public final class Relation {
     private Stream<Tuple> open(QueryEventListener listener) {
         session.requireOpen();
         requireResolvable();
-        DataSourceConnector connector = session.openConnector(model);
+        SemanticModel run = executionModel();
+        DataSourceConnector connector = session.openConnector(run);
         try {
             // Registered with the session, so a stream the caller walks away from is still
             // closed when the session is — the connection it borrowed is otherwise beyond
             // the pool's reach, which closes what is idle and not what is out on loan.
-            return session.track(guarded(new RelNodeExecutor()
+            Stream<Tuple> rows = guarded(new RelNodeExecutor()
                     .withObservedCardinalities(session.observedExpressions())
-                    .execute(node, context(connector, observing(listener)))
+                    .execute(node, context(run, connector, observing(listener)))
                     .map(Tuple::of)
-                    .onClose(connector::close)));
+                    .onClose(connector::close));
+            OptionalInt cap = session.maxOutputRows();
+            return session.track(cap.isPresent() ? capped(rows, cap.getAsInt(), listener) : rows);
         } catch (RuntimeException e) {
             connector.close();
             throw asFailure(e);
@@ -1644,6 +1674,52 @@ public final class Relation {
     }
 
     /**
+     * The first {@code limit} rows of {@code rows}, reporting to {@code listener} when there
+     * were more.
+     *
+     * <p>Whether there were more is found by reading one row past the limit. Without that
+     * read, a result of exactly {@code limit} rows would be reported as cut when nothing
+     * was lost. Nothing further is read, so a relation with no end costs one extra row.
+     */
+    private static Stream<Tuple> capped(Stream<Tuple> rows, int limit, QueryEventListener listener) {
+        Spliterator<Tuple> source = rows.spliterator();
+        Spliterator<Tuple> capped = new Spliterators.AbstractSpliterator<>(
+                Math.min(source.estimateSize(), limit), source.characteristics() & GUARDED_CHARACTERISTICS) {
+            private int delivered;
+            private boolean finished;
+
+            @Override
+            public boolean tryAdvance(Consumer<? super Tuple> action) {
+                if (finished) {
+                    return false;
+                }
+                if (delivered < limit) {
+                    if (source.tryAdvance(action)) {
+                        delivered++;
+                        return true;
+                    }
+                    finished = true;
+                    return false;
+                }
+                finished = true;
+                if (source.tryAdvance(ignored -> { })) {
+                    listener.onEvent(QueryEvent.of(QueryEvent.Stage.EXECUTE, TRUNCATED,
+                                    "result truncated to " + limit + " row" + (limit == 1 ? "" : "s")
+                                            + " by the sandbox's output limit")
+                            .withMetrics(EventMetrics.rows(limit)));
+                }
+                return false;
+            }
+        };
+        return StreamSupport.stream(capped, false).onClose(rows::close);
+    }
+
+    /** Whether {@code event} says a result was cut short by the sandbox's output limit. */
+    static boolean isTruncation(QueryEvent event) {
+        return event.stage() == QueryEvent.Stage.EXECUTE && event.code().equals(TRUNCATED);
+    }
+
+    /**
      * Restates an engine failure as a {@link QueryExecutionException}, keeping the message.
      *
      * <p>The engine's message is better than anything that could be written here — it names
@@ -1659,7 +1735,7 @@ public final class Relation {
         // The planner's refusal of a blocking operator over an endless input is the same
         // fact as a collecting terminal's, reached by a different route, so it is not a
         // failure and does not arrive as one.
-        if (e instanceof com.darkcollective.relix.plan.BoundednessException) {
+        if (e instanceof com.darkcollective.relix.plan.internal.BoundednessException) {
             return new UnboundedRelationException(e.getMessage(), e);
         }
         return new QueryExecutionException(
@@ -1761,9 +1837,22 @@ public final class Relation {
                         + " nothing declares: " + String.join(", ", unresolved);
     }
 
-    /** The context an execution runs in: this relation's own model, the session's bindings. */
-    private ExecutionContext context(DataSourceConnector connector, QueryEventListener listener) {
-        return ExecutionContext.of(measured(model), connector)
+    /**
+     * The model one execution runs against: this relation's own, with the session's
+     * measurements folded in and the placeholders of every declaration it reaches resolved.
+     *
+     * <p>Built afresh for each execution, so a secret is read when it is used and a
+     * rotated one reaches the next run. The relation's own model keeps the placeholder,
+     * which is what keeps the value out of everything that prints a model.
+     */
+    private SemanticModel executionModel() {
+        return session.placeholders().resolve(measured(model), node);
+    }
+
+    /** The context an execution runs in: its resolved model, the session's bindings. */
+    private ExecutionContext context(SemanticModel run, DataSourceConnector connector,
+                                     QueryEventListener listener) {
+        return ExecutionContext.of(run, connector)
                 .withClock(session.clock())
                 // The session's cap, not the context's default of unlimited. Every guard
                 // built on it reads it from here — FIX's round limit, TRACE's
@@ -1776,6 +1865,10 @@ public final class Relation {
                 // large for the heap, and a session that asked for one and did not get it
                 // is exactly the unattributable OutOfMemoryError it exists to replace.
                 .withMaxMaterializedRows(session.maxMaterializedRows())
+                // The work limits, likewise the session's: without them a query that never
+                // yields a row, a selection over an endless generator, runs for ever.
+                .withMaxProcessedRows(session.maxProcessedRows())
+                .withTimeout(session.timeout())
                 .withListener(listener);
     }
 
@@ -1804,7 +1897,9 @@ public final class Relation {
      * would cost a service-loader scan to open nothing.
      */
     private ExecutionContext planningContext() {
-        return ExecutionContext.inlineOnly(measured(model)).withClock(session.clock());
+        // Resolved like an execution's, because the plan depends on the values: a
+        // connection's URL is what chooses its SQL dialect.
+        return ExecutionContext.inlineOnly(executionModel()).withClock(session.clock());
     }
 
     /**

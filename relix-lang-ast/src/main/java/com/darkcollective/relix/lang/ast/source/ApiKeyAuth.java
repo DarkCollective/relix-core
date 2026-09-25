@@ -29,7 +29,7 @@ import java.util.Objects;
  *
  * @param name     the header name or query-parameter name; must not be blank
  * @param value    the key value (typically a {@code ${ENV}} reference, resolved
- *                 before parsing); must not be null
+ *                 when the request is made); must not be null
  * @param location whether {@code name}/{@code value} is sent as a header or a
  *                 query parameter; must not be null
  */

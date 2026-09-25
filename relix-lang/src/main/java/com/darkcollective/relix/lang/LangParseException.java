@@ -21,10 +21,13 @@ import com.darkcollective.relix.lang.ast.ScriptParseException;
  * Thrown when the {@link ScriptParser} encounters a syntax error in a
  * {@code .relix} source file.
  *
- * <p>The exception message includes the human-readable description of the
- * unexpected token together with the source location.  Use {@link #line()} and
- * {@link #column()} (inherited from {@link ScriptParseException}) for
- * programmatic access to the error position.
+ * <p>The exception message is the human-readable description of the problem
+ * followed by its source location, stated once as {@code (line N, col M)} — the
+ * message is often shown on its own, and without the position it does not say
+ * where the error is.  Use {@link #line()} and {@link #column()} (inherited from
+ * {@link ScriptParseException}) for programmatic access to the same position;
+ * {@link #suffix(int, int)} is the exact text appended, for a caller that already
+ * reports the position and wants the message without it.
  *
  * <p>This is the {@code .relix} text grammar's specialisation of the core-level
  * {@link ScriptParseException} — the type the engine's "where does a
@@ -46,7 +49,7 @@ public final class LangParseException extends ScriptParseException {
      * @param column  1-based source column of the offending token
      */
     public LangParseException(String message, int line, int column) {
-        super(message + " (line " + line + ", col " + column + ")", line, column);
+        super(message + suffix(line, column), line, column);
     }
 
     /**
@@ -56,6 +59,22 @@ public final class LangParseException extends ScriptParseException {
      * @param token   the token at which parsing failed
      */
     public LangParseException(String message, LangToken token) {
-        this(message + "; found " + token.describe(), token.line(), token.column());
+        this(message + "; found " + found(token), token.line(), token.column());
+    }
+
+    /**
+     * Returns the position text the message ends with, {@code " (line N, col M)"}.
+     *
+     * @param line   1-based source line
+     * @param column 1-based source column
+     * @return the suffix a message at that position carries
+     */
+    public static String suffix(int line, int column) {
+        return " (line " + line + ", col " + column + ")";
+    }
+
+    /** The token as the message names it — without a position, which the suffix states. */
+    private static String found(LangToken token) {
+        return token.type() == LangTokenType.EOF ? "end of input" : "'" + token.value() + "'";
     }
 }

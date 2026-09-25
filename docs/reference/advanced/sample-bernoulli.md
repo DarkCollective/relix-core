@@ -102,7 +102,6 @@ SAMPLE n ROWS for an exact-count uniform sample. LIMIT for a deterministic prefi
 [sample-reservoir](sample-reservoir.md), [limit](../operators/limit.md), [rand](../functions/math/rand.md)
 
 # Notes:
-The SEED value is an integer literal. To drive it from an environment variable,
-use `${SEED_VAR}` substitution before parsing. The seed applies to the
+The SEED value is an integer literal written in the script. The seed applies to the
 per-row Bernoulli coin flips only; the same seed with different input data
 produces a different set of output rows.

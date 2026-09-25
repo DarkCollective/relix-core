@@ -17,9 +17,9 @@ package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
-import com.darkcollective.relix.processor.ArrayRow;
-import com.darkcollective.relix.processor.DataSourceConnector;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ArrayRow;
+import com.darkcollective.relix.processor.internal.DataSourceConnector;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.semantic.SemanticModel;

@@ -16,8 +16,8 @@
 package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.events.QueryEventListener;
-import com.darkcollective.relix.processor.DataSourceConnector;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.DataSourceConnector;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.eval.OperandEvaluator;
 import com.darkcollective.relix.processor.eval.PredicateEvaluator;
@@ -33,9 +33,10 @@ import java.util.Map;
  * {@link #withBinding} produces a new {@code EvalCtx} that shadows the named
  * relation with new rows.
  *
- * <p>{@link #spools} is the one <em>mutable</em> member, and it is deliberately the
- * same object in every context {@link #withBinding} derives: a shared sub-plan is
- * filled once for a whole execution, fixpoint iterations included.
+ * <p>{@link #spools} and {@link #work} are the <em>mutable</em> members, and each is
+ * deliberately the same object in every context {@link #withBinding} derives: a shared
+ * sub-plan is filled once for a whole execution, fixpoint iterations included, and every
+ * round is charged to the one work budget.
  *
  * <p>Shared (package-private) across the operator-group executors that
  * {@link PhysicalExecutor} delegates to.
@@ -48,6 +49,7 @@ record EvalCtx(DataSourceConnector connector,
                SpoolCache spools,
                int maxFixpointRounds,
                int maxMaterializedRows,
+               WorkBudget work,
                ExecutionContext executionContext) {
 
     static EvalCtx from(ExecutionContext ctx) {
@@ -55,7 +57,7 @@ record EvalCtx(DataSourceConnector connector,
                 ctx.symbolTable(), ctx.functions(), ctx.functionContext());
         return new EvalCtx(ctx.connector(), eval, new PredicateEvaluator(eval),
                 ctx.listener(), Map.of(), new SpoolCache(), ctx.maxFixpointRounds(),
-                ctx.maxMaterializedRows(), ctx);
+                ctx.maxMaterializedRows(), WorkBudget.startingNow(ctx), ctx);
     }
 
     /** Returns a new context with {@code name} bound to {@code rows} (shadowing any prior binding). */
@@ -63,6 +65,6 @@ record EvalCtx(DataSourceConnector connector,
         Map<String, List<Row>> copy = new HashMap<>(recursionBindings);
         copy.put(name, rows);
         return new EvalCtx(connector, operandEval, predicateEval, listener, copy,
-                spools, maxFixpointRounds, maxMaterializedRows, executionContext);
+                spools, maxFixpointRounds, maxMaterializedRows, work, executionContext);
     }
 }

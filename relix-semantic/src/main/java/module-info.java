@@ -29,20 +29,20 @@
  *       schema compatibility for set operations, and source config completeness.</li>
  * </ol>
  *
- * <p>The entry point is {@link com.darkcollective.relix.semantic.SemanticAnalyzer},
+ * <p>The entry point is {@link com.darkcollective.relix.semantic.internal.SemanticAnalyzer},
  * whose contract is {@code Script → SemanticResult} — the engine
  * analyses an AST, and the concrete {@code .relix} text syntax is one frontend
  * that produces one.  Where a {@code Script} comes from is pluggable behind
  * {@link com.darkcollective.relix.semantic.ScriptLoader}; the grammar itself is
  * <em>not</em> on this module's {@code main} classpath, so reading text —
- * {@code FileSystemScriptLoader}, {@code ScriptText} — lives in
- * {@code relix-console} (Decision 2).
+ * {@code Relix.parse}, {@code FileSystemScriptLoader} — lives in
+ * the front ends (Decision 2).
  * Built-in functions and relations are registered via a
- * {@link com.darkcollective.relix.semantic.BuiltinProvider} hook passed at
+ * {@link com.darkcollective.relix.semantic.internal.BuiltinProvider} hook passed at
  * construction time.
  *
  * <p>Analysis always returns a
- * {@link com.darkcollective.relix.semantic.SemanticResult} that carries both a
+ * {@link com.darkcollective.relix.semantic.internal.SemanticResult} that carries both a
  * (possibly partial) {@link com.darkcollective.relix.semantic.SemanticModel} and
  * any {@link com.darkcollective.relix.semantic.SemanticError}s collected during
  * analysis.
@@ -65,9 +65,9 @@ module com.darkcollective.relix.semantic {
     // because relix-semantic directly depends on this module's types.
     requires transitive com.darkcollective.relix.symbol;
 
-    // JsonWriter appears in LogicalPlanJson.write(JsonWriter, …); transitive so
-    // bundle assemblers (the CLI) can drive the same writer across modules.
-    requires transitive com.darkcollective.relix.json;
+    // LogicalPlanJson and CatalogSnapshot write with it. Not transitive: no public
+    // signature names it.
+    requires com.darkcollective.relix.json;
 
     // QueryEvent appears in SemanticAnalyzer.withSessionEvents(List<QueryEvent>),
     // which carries the previous run's feed in as the extent of relix.events
@@ -91,5 +91,8 @@ module com.darkcollective.relix.semantic {
     requires transitive com.darkcollective.relix.cost;
 
     exports com.darkcollective.relix.semantic;
+    exports com.darkcollective.relix.semantic.internal to com.darkcollective.relix.embed, com.darkcollective.relix.optimizer, com.darkcollective.relix.plan, com.darkcollective.relix.processor;
     exports com.darkcollective.relix.semantic.graph;
+    // The heading's JSON form, for the physical plan writer alone.
+    exports com.darkcollective.relix.semantic.json to com.darkcollective.relix.plan;
 }

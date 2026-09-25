@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.optimizer;
 
+import com.darkcollective.relix.optimizer.internal.OptimizationContext;
 import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.ListAssert;

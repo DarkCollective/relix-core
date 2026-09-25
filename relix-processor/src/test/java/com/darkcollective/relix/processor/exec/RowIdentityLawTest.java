@@ -15,10 +15,10 @@
  */
 package com.darkcollective.relix.processor.exec;
 
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.eval.ValueComparator;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;

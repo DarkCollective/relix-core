@@ -15,13 +15,15 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.processor.EvaluationException;
+
 import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.function.Arity;
 import com.darkcollective.relix.function.FunctionCatalog;
 import com.darkcollective.relix.function.ScalarFunction;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.symbol.ScalarType;

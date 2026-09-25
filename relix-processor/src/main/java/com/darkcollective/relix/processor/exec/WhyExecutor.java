@@ -17,12 +17,12 @@ package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.ast.WhyNode;
 import com.darkcollective.relix.plan.PhysicalNode;
-import com.darkcollective.relix.processor.ArrayRow;
-import com.darkcollective.relix.processor.DocumentRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
+import com.darkcollective.relix.processor.internal.DocumentRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.provenance.AnnotatedRelation;
-import com.darkcollective.relix.processor.provenance.BaseAnnotator;
-import com.darkcollective.relix.processor.provenance.ProvenanceEvaluator;
+import com.darkcollective.relix.processor.provenance.internal.BaseAnnotator;
+import com.darkcollective.relix.processor.provenance.internal.ProvenanceEvaluator;
 import com.darkcollective.relix.value.ArrayValue;
 import com.darkcollective.relix.value.BooleanValue;
 import com.darkcollective.relix.value.NullValue;

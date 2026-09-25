@@ -15,6 +15,15 @@
  */
 package com.darkcollective.relix.optimizer;
 
+import com.darkcollective.relix.optimizer.internal.ColumnPruningPass;
+import com.darkcollective.relix.optimizer.internal.LateralDecorrelationPass;
+import com.darkcollective.relix.optimizer.internal.OuterJoinDemotionPass;
+import com.darkcollective.relix.optimizer.internal.RenameEliminationPass;
+import com.darkcollective.relix.optimizer.internal.SelectionComplement;
+import com.darkcollective.relix.optimizer.internal.SelectionIntoTimeSeriesPass;
+import com.darkcollective.relix.optimizer.internal.TransitiveEqualityPass;
+import com.darkcollective.relix.optimizer.internal.ViewInliner;
+
 /**
  * Enumeration of every transformation rule the query optimizer can apply.
  *

@@ -82,6 +82,19 @@ public record Rows(Schema schema, List<Tuple> rows, List<QueryEvent> events)
         return rows.isEmpty();
     }
 
+    /**
+     * {@return whether the session's sandbox cut this result short}
+     *
+     * <p>A closed {@link Sandbox} with an output limit returns at most that many rows.
+     * When a query had more, the rows here are the first ones and this is true; the
+     * events then include the {@code EXECUTE}/{@code TRUNCATED} event that reported it.
+     *
+     * @since 1.0
+     */
+    public boolean truncated() {
+        return events.stream().anyMatch(Relation::isTruncation);
+    }
+
     @Override
     public Iterator<Tuple> iterator() {
         return rows.iterator();

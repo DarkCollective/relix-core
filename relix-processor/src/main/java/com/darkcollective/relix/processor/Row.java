@@ -15,8 +15,10 @@
  */
 package com.darkcollective.relix.processor;
 
+import com.darkcollective.relix.processor.internal.DocumentRow;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.symbol.Schema;
 
 import java.util.List;
@@ -32,6 +34,35 @@ import java.util.List;
  * <p>Implementations must be immutable.
  */
 public interface Row {
+
+    /**
+     * A row of {@code values} under {@code schema}, one value per column in order.
+     *
+     * <p>The row a connector produces: a {@code RelixConnector} reads its source and
+     * hands the engine rows built here.
+     *
+     * @param schema the row's columns; must not be null
+     * @param values one value per column; must not be null, and its size must match
+     * @return the row
+     * @throws IllegalArgumentException if the counts differ
+     * @since 1.0
+     */
+    static Row of(Schema schema, List<Value> values) {
+        return ArrayRow.of(schema, values);
+    }
+
+    /**
+     * A row of {@code values} under {@code schema}, one value per column in order.
+     *
+     * @param schema the row's columns; must not be null
+     * @param values one value per column
+     * @return the row
+     * @throws IllegalArgumentException if the counts differ
+     * @since 1.0
+     */
+    static Row of(Schema schema, Value... values) {
+        return ArrayRow.of(schema, values);
+    }
 
     /**
      * Returns the schema that describes this row's columns.

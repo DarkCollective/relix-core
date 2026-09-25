@@ -16,10 +16,10 @@
 package com.darkcollective.relix.processor.eval;
 
 import com.darkcollective.relix.function.ScalarFunction;
-import com.darkcollective.relix.processor.ExecutionContext;
-import com.darkcollective.relix.processor.QueryExecutor;
-import com.darkcollective.relix.processor.QueryResult;
-import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
+import com.darkcollective.relix.processor.internal.QueryExecutor;
+import com.darkcollective.relix.processor.internal.QueryResult;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -23,19 +23,20 @@ import com.darkcollective.relix.lang.ast.source.GeneratorSourceConfig;
 import com.darkcollective.relix.lang.ast.source.HttpSourceConfig;
 import com.darkcollective.relix.lang.ast.source.JsonFileSourceConfig;
 import com.darkcollective.relix.lang.ast.SourceDeclaration;
-import com.darkcollective.relix.processor.DataSourceConnector;
+import com.darkcollective.relix.processor.internal.DataSourceConnector;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
 import com.darkcollective.relix.processor.connector.ConnectorProvisioner;
-import com.darkcollective.relix.processor.connector.ConnectorRegistry;
+import com.darkcollective.relix.processor.connector.internal.ConnectorRegistry;
 import com.darkcollective.relix.processor.connector.RelixConnector;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.connectors.std.DriverProvisioner;
 import com.darkcollective.relix.processor.generator.GeneratorDataSourceConnector;
-import com.darkcollective.relix.connectors.std.HttpDataSourceConnector;
-import com.darkcollective.relix.connectors.std.ConnectionPool;
-import com.darkcollective.relix.connectors.std.JdbcDataSourceConnector;
-import com.darkcollective.relix.connectors.std.JsonFileDataSourceConnector;
+import com.darkcollective.relix.connectors.std.internal.HttpDataSourceConnector;
+import com.darkcollective.relix.connectors.std.internal.ConnectionPool;
+import com.darkcollective.relix.connectors.std.internal.FileResolver;
+import com.darkcollective.relix.connectors.std.internal.JdbcDataSourceConnector;
+import com.darkcollective.relix.connectors.std.internal.JsonFileDataSourceConnector;
 import com.darkcollective.relix.processor.generator.GeneratorRegistry;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.Schema;
@@ -80,6 +81,7 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
     private final HttpDataSourceConnector httpConnector;
     private final JdbcDataSourceConnector jdbcConnector;
     private final GeneratorDataSourceConnector generatorConnector;
+    private final FileResolver files;
 
     /**
      * Creates the composite connector for one model, over a {@link ConnectionPool} and a
@@ -108,17 +110,20 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
      * @param generators           the registry of built-in generators; must not be null
      * @param pool                 the caller's connection pool; must not be null
      * @param connectors           the caller's own connectors, in priority order; must not be null
+     * @param files                the session's file resolver, which hands a file-backed
+     *                             connector a local path; must not be null
      */
     CompositeDataSourceConnector(SemanticModel model, Path baseDir,
                                  DriverProvisioner driverProvisioner,
                                  ConnectorProvisioner connectorProvisioner,
                                  GeneratorRegistry generators,
                                  ConnectionPool pool,
-                                 List<RelixConnector> connectors) {
+                                 List<RelixConnector> connectors,
+                                 FileResolver files) {
         this(model, baseDir, connectorProvisioner, generators,
                 new JdbcDataSourceConnector(model, Objects.requireNonNull(pool, "pool"),
                         Objects.requireNonNull(driverProvisioner, "driverProvisioner")),
-                connectors);
+                connectors, files);
     }
 
     /** The one real constructor. */
@@ -126,7 +131,9 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
                                          ConnectorProvisioner connectorProvisioner,
                                          GeneratorRegistry generators,
                                          JdbcDataSourceConnector jdbcConnector,
-                                         List<RelixConnector> supplied) {
+                                         List<RelixConnector> supplied,
+                                         FileResolver files) {
+        this.files = Objects.requireNonNull(files, "files");
         this.model = Objects.requireNonNull(model, "model");
         this.baseDir = Objects.requireNonNull(baseDir, "baseDir");
         this.supplied = List.copyOf(Objects.requireNonNull(supplied, "connectors"));
@@ -172,7 +179,8 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
         }
         RelixConnector connector = resolveOrProvision(type,
                 "connection '" + table.connection() + "', relation '" + relationName + "'");
-        return connector.open(new ConnectorConfig(connection.properties()), table.table(), schema);
+        return connector.open(files.prepare(connector, new ConnectorConfig(connection.properties()), baseDir),
+                table.table(), schema);
     }
 
     /**
@@ -206,9 +214,9 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
         RelixConnector connector = registry.forType("csv").orElseThrow(() -> new EvaluationException(
                 "No connector registered for CSV sources (relation '" + relationName + "')"));
         ConnectorConfig config = new ConnectorConfig(Map.of(
-                "path", baseDir.resolve(csv.path()).toString(),
+                "path", csv.path(),
                 "header", String.valueOf(csv.hasHeader())));
-        return connector.open(config, relationName, schema);
+        return connector.open(files.prepare(connector, config, baseDir), relationName, schema);
     }
 
     /**
@@ -229,7 +237,8 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
                     "No connection declaration for pushed query on '" + connection + "'");
         }
         RelixConnector connector = resolveOrProvision(connectorType, "connection '" + connection + "'");
-        return connector.openQuery(new ConnectorConfig(declaration.properties()), nativeQuery, schema);
+        return connector.openQuery(files.prepare(connector, new ConnectorConfig(declaration.properties()), baseDir),
+                nativeQuery, schema);
     }
 
     @Override

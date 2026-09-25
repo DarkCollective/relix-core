@@ -16,13 +16,13 @@
 package com.darkcollective.relix.embed.equivalence;
 
 import com.darkcollective.relix.ast.RelNode;
-import com.darkcollective.relix.optimizer.OptimizationResult;
+import com.darkcollective.relix.optimizer.internal.OptimizationResult;
 import com.darkcollective.relix.cost.BoundednessSource;
 import com.darkcollective.relix.events.QueryEventListener;
 import com.darkcollective.relix.plan.PhysicalNode;
-import com.darkcollective.relix.plan.Planner;
+import com.darkcollective.relix.plan.internal.Planner;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
-import com.darkcollective.relix.semantic.SchemaInference;
+import com.darkcollective.relix.semantic.internal.SchemaInference;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import org.junit.jupiter.api.DisplayName;

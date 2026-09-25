@@ -48,7 +48,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -169,7 +168,7 @@ public final class JoinObserver {
 
     private void walk(RelNode node, Map<String, Relationship> out) {
         observeAt(node).ifPresent(edge -> {
-            String id = structuralIdentity(edge);
+            String id = edge.edgeIdentity();
             if (!knownToGraph(edge) && !out.containsKey(id)) {
                 out.put(id, edge);
             }
@@ -336,53 +335,13 @@ public final class JoinObserver {
 
     /** {@code true} if the existing graph already carries this edge (by structure, any name). */
     private boolean knownToGraph(Relationship candidate) {
-        String id = edgeIdentity(candidate);
+        String id = candidate.edgeIdentity();
         for (Relationship e : existing.edgesOf(candidate.source().relation())) {
-            if (edgeIdentity(e).equals(id)) {
+            if (e.edgeIdentity().equals(id)) {
                 return true;
             }
         }
         return false;
-    }
-
-    /**
-     * The name-independent identity of an edge: its two endpoints (relation key
-     * plus lower-cased columns), unordered so an edge and its reversal collapse
-     * onto one key.
-     *
-     * <p>This is the key de-noising uses, and the name is deliberately excluded
-     * from it: a learned edge's generated name would never match the name a user
-     * chose for the same columns, so including it would let a learned edge
-     * duplicate a declared one. It is public because a caller holding learned
-     * edges needs the same notion of sameness — to rename one, drop one, or
-     * remember that a candidate was rejected and must not be re-proposed.
-     *
-     * @param relationship the edge to key; never null
-     * @return its structural identity; never null
-     */
-    public static String edgeIdentity(Relationship relationship) {
-        Objects.requireNonNull(relationship, "relationship");
-        return structuralIdentity(relationship);
-    }
-
-    /**
-     * Structural identity for de-noising: the two endpoints (relation key +
-     * lower-cased columns), unordered so a reversed edge collapses — the name is
-     * deliberately excluded, since a learned edge's generated name would never
-     * match a declared one on the same columns.
-     */
-    private static String structuralIdentity(Relationship r) {
-        String a = endpointIdentity(r.source());
-        String b = endpointIdentity(r.target());
-        return a.compareTo(b) <= 0 ? a + "<->" + b : b + "<->" + a;
-    }
-
-    private static String endpointIdentity(Endpoint e) {
-        StringBuilder sb = new StringBuilder(SchemaGraph.key(e.relation()));
-        for (String c : e.columns()) {
-            sb.append('#').append(c.toLowerCase(Locale.ROOT));
-        }
-        return sb.toString();
     }
 
     // =========================================================================

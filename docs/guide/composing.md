@@ -41,8 +41,6 @@ without parsing anything. They are not two dialects with two meanings — they a
 of writing one tree:
 
 ```java
-import com.darkcollective.relix.ast.AstEquivalence;
-
 Relation written = relix.relation("π customer_id, amount (σ status = 'OPEN' (Orders))");
 
 Relation composed = relix.relation("Orders")
@@ -51,8 +49,7 @@ Relation composed = relix.relation("Orders")
 
 System.out.println(written.render());
 System.out.println(composed.render());
-System.out.println("same tree: "
-        + AstEquivalence.equivalent(written.node(), composed.node()));
+System.out.println("same tree: " + written.render().equals(composed.render()));
 ```
 
 ```
@@ -168,8 +165,8 @@ String fromTheOutside = "OPEN\" ∨ 1 = 1 --";
 Relation guarded = relix.relation("Orders").select(eq(attr("status"), str(fromTheOutside)));
 
 System.out.println(guarded.render());
-System.out.println("the text parses back to the same tree: " + AstEquivalence.equivalent(
-        guarded.node(), relix.relation(guarded.render()).node()));
+System.out.println("the text parses back to the same tree: "
+        + relix.relation(guarded.render()).render().equals(guarded.render()));
 ```
 
 ```

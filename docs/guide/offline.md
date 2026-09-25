@@ -149,7 +149,7 @@ So every terminal that drains a relation measures it. A scan read to the end rep
 relation's real size, and the next plan prefers that to whatever it would have estimated:
 
 ```java
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.value.NumberValue;
 import java.util.stream.Stream;
 
@@ -157,9 +157,9 @@ Schema readings = new Schema(List.of(new ColumnDefinition("id", ScalarType.NUMBE
 
 Relix measured = Relix.open();
 measured.source("Readings", readings, () -> Stream.of(
-        ArrayRow.of(readings, NumberValue.of("1")),
-        ArrayRow.of(readings, NumberValue.of("2")),
-        ArrayRow.of(readings, NumberValue.of("3"))));
+        Row.of(readings, NumberValue.of("1")),
+        Row.of(readings, NumberValue.of("2")),
+        Row.of(readings, NumberValue.of("3"))));
 
 var before = measured.relation("Readings").plan();
 System.out.println("estimated: " + before.estimates().rows(before.plan()));

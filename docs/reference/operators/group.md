@@ -19,7 +19,10 @@ place". List the keys to group by first, then the aggregate calculations.
 A grouping key can be a bare column or a full expression — e.g.
 `YEAR(order_date) → yr` or `price * qty → line` — with an optional `→ alias`
 naming the output column (a bare column keeps its own name). This mirrors
-projection: you can group by a computed value, not only a stored column.
+projection: you can group by a computed value, not only a stored column. Write the
+keys as a plain comma-separated list, without braces: `{region}` is an expression
+too (a struct), so braces change what you group by instead of raising an error.
+The worked example below shows the difference.
 
 If you give no grouping keys, the whole relation collapses to a single
 summary row.
@@ -89,10 +92,43 @@ are **gone**, because there is no single value for them within a group. If you
 need one, say which: `ARGMAX(amount, rep)` picks the rep from the group's biggest
 deal, and `COLLECT(rep)` keeps them all.
 
+**Do not put braces around the grouping keys.** The keys are a plain
+comma-separated list. Braces are legal there, but they do not group: `{region}`
+[builds a struct](../literals/struct-construction.md), so the braced form groups
+by a one-field struct and produces a different heading. It raises no error:
+
+```relix
+query { γ {region}, SUM(amount) → total (Sales) };
+```
+
+```
+ group           total
+ ──────────────  ─────
+ {region: east}    200
+ {region: west}    250
+(2 rows)
+```
+
+The groups are the same, but there is no `region` column any more. There is one
+struct column, called `group` because an expression key with no alias is named
+that way. A later `σ region = 'east'` over this result fails analysis because the
+column does not exist. `γ {region, rep}` is the same mistake with two keys: it
+groups by the pair, but returns a single struct column where you wanted two. Write
+`γ region, rep, …` instead.
+
 # Limitations:
 COLLECT, ARGMAX and ARGMIN do not push down to SQL (no portable equivalent) and
 run in the engine. A group with all-NULL aggregate inputs follows SQL-style NULL
 handling per aggregate.
+
+At least one aggregate is required. Grouping keys on their own do not form a γ:
+
+```relix-invalid
+query { γ region (Sales) };
+```
+
+To list the distinct values of a column, project it and remove duplicates with
+`δ (π region (Sales))`.
 
 # Alternatives:
 To keep the actual rows that achieve a maximum per group (not just one value),

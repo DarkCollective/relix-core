@@ -15,9 +15,9 @@
  */
 package com.darkcollective.relix.processor.generator;
 
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;

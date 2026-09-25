@@ -15,6 +15,12 @@
  */
 package com.darkcollective.relix.semantic;
 
+import com.darkcollective.relix.semantic.internal.BuiltinProvider;
+import com.darkcollective.relix.semantic.internal.GeneratorCatalog;
+import com.darkcollective.relix.semantic.internal.InMemoryScriptLoader;
+import com.darkcollective.relix.semantic.internal.SchemaInferenceVisitor;
+import com.darkcollective.relix.semantic.internal.SemanticAnalyzer;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.function.FunctionCatalog;
 import com.darkcollective.relix.lang.ScriptParser;

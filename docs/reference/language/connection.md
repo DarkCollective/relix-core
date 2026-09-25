@@ -25,6 +25,18 @@ binding-form sources (`source T from conn { table, schema }`) or dotted refs
 connections also appear, redacted, in the `relix.connections` system catalog
 (name + dialect only — never the URL/credentials).
 
+**A file connection** — `csv`, `gedcom`, `log` — names one file or directory, by
+`path` or by `url`, never both. A relative `path` resolves against the script's
+directory, the rule a `csv("…")` source follows. A `url` is either `file:` (a path
+written as a URL) or `https:`, which is fetched. A fetched file is kept under
+`~/.relix/cache/files` and is fetched at most once per session, so every scan in a
+session reads the same bytes even if the file changes on the server. A later session
+asks the server whether the file changed (`ETag`/`Last-Modified`) and reuses the cached
+copy when it did not, or when the server cannot be reached. `sha256: "<hex>"` pins the
+file's content, and a file whose digest differs is refused. A compressed (gzip) file is
+read as its content. A program embedding relix can forbid fetching; a connection naming
+an `https` file is then an error.
+
 # Examples:
 Declare once, query many tables:
 ```relix
@@ -34,6 +46,15 @@ query { shop.customers ⋈ shop.orders };
 
 Mongo connection (registry dispatch by type token):
   connection events from mongodb { url: "${MONGO_URL}" };
+
+A file served over https, pinned to the content the query was written against:
+```relix
+connection sample from log {
+    url:    "https://example.org/logs/access.log",
+    sha256: "7d8f3a1c0b9e2f4d5a6c7b8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f80",
+    format: "combined"
+};
+```
 
 Bind a specific table with an explicit schema:
 ```relix

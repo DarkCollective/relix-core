@@ -308,7 +308,7 @@ composing to any depth. Here it is against a connector supplying the documents, 
 the shape [Bringing your own data](data-in.md#a-backend-of-your-own) sets up:
 
 ```java
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
 import com.darkcollective.relix.processor.connector.RelixConnector;
 import com.darkcollective.relix.value.ArrayValue;
@@ -331,7 +331,7 @@ class Directory implements RelixConnector {
     }
 
     public Stream<Row> open(ConnectorConfig config, String table, Schema schema) {
-        return Stream.of(ArrayRow.of(schema,
+        return Stream.of(Row.of(schema,
                 new StringValue("Grace"),
                 struct("city", new StringValue("Cambridge"),
                        "country", new StringValue("GB")),

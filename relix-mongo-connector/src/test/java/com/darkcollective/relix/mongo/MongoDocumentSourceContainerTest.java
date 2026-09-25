@@ -16,7 +16,7 @@
 package com.darkcollective.relix.mongo;
 
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.mongodb.MongoCommandException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;

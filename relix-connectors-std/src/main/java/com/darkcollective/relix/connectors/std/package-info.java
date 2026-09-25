@@ -14,34 +14,14 @@
  * limitations under the License.
  */
 /**
- * The standard library of {@link com.darkcollective.relix.processor.DataSourceConnector}
- * implementations — CSV, JSON files, HTTP/JSON endpoints and JDBC databases — plus the
- * JDBC driver provisioning they need.
+ * JDBC driver provisioning for the standard connectors.
  *
- * <p>Each connector bridges one external data-source kind to the query executor's
- * {@link com.darkcollective.relix.processor.Row} model:
- * <ul>
- *   <li>{@link com.darkcollective.relix.connectors.std.CsvDataSourceConnector} —
- *       local CSV files declared with
- *       {@code source X from csv("path/to/file.csv") { … }};</li>
- *   <li>{@link com.darkcollective.relix.connectors.std.JsonFileDataSourceConnector} —
- *       local JSON documents;</li>
- *   <li>{@link com.darkcollective.relix.connectors.std.HttpDataSourceConnector} —
- *       read-only HTTP/JSON endpoints;</li>
- *   <li>{@link com.darkcollective.relix.connectors.std.JdbcDataSourceConnector} —
- *       relational databases over JDBC, with
- *       {@link com.darkcollective.relix.connectors.std.JdbcCatalogProvider} supplying
- *       table schemas and statistics.</li>
- * </ul>
- *
- * <p>All connectors receive a fully-validated
- * {@link com.darkcollective.relix.semantic.SemanticModel} at construction time so they
- * can look up the transport-level configuration (path, column schema, header flag, etc.)
- * stored in {@link com.darkcollective.relix.semantic.SemanticModel#sources()}.
- *
- * <p>This is a <em>provider</em>, not part of the engine: it compiles against the
- * connector SPI the engine publishes and is discovered at runtime, exactly as an
- * out-of-tree connector plugin is. Nothing here is privileged, which is why the engine
- * itself needs neither a JDBC stack nor an HTTP client.
+ * <p>{@link com.darkcollective.relix.connectors.std.DriverProvisioner} downloads a
+ * missing JDBC driver when a host permits it, from the list
+ * {@link com.darkcollective.relix.connectors.std.DriverCatalog} describes, and
+ * registers the drivers an earlier run installed.
+ * {@link com.darkcollective.relix.connectors.std.HttpFetcher} is the HTTPS fetcher it
+ * downloads with, which a host can wrap to report progress. The connectors themselves
+ * are discovered, not named.
  */
 package com.darkcollective.relix.connectors.std;

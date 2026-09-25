@@ -48,6 +48,8 @@ itself wherever an expression reads better as text.
 | [Bringing your own data and code](data-in.md) | Rows held, rows produced per scan, a connector of your own, a function library of your own |
 | [Generating data](generating.md) | Generator relations and their bounds; `COVER` and all-pairs suites; seeded sampling and what a seed buys |
 | [Against a database](database.md) | Binding a `DataSource`, introspection, what is pushed down and what is not, joining your data to theirs, connection lifecycle, and what a federated query does not promise |
+| [Secrets in declarations](secrets.md) | `${NAME}` placeholders resolved when a query runs, so a token never enters the model; a missing value; declarations built in Java |
+| [Sandboxing a session](sandbox.md) | A closed sandbox for untrusted text: internal declarations only, external ones the sandbox permits, output and input limits, the configuration file |
 | [Working without a database](offline.md) | What composes offline; unresolved names; capturing a catalog snapshot and replaying it |
 
 ## Getting answers out
@@ -58,3 +60,9 @@ itself wherever an expression reads better as text.
 | [Looking at what the engine did](inspecting.md) | Rendering, the rewrite and why it fired, the physical plan and its estimates, the session's own report |
 | [The engine describes itself](introspection.md) | The `relix.*` catalogs as relations: what is installed, what the session knows, dependencies, functions, and the last run's feed |
 | [Provenance: where a row came from](provenance.md) | Lineage as a column; annotating a relation over a semiring; which to reach for |
+
+## Building tools
+
+| Page | What it covers |
+|---|---|
+| [Building tools on Relix](tooling.md) | Parsing a script and loading imports; tokens for syntax highlighting; learning the joins a user writes and resolving them; the language reference; connectors and drivers |

@@ -21,7 +21,7 @@
  * {@link com.darkcollective.relix.symbol.graph.SchemaGraph}, finds the base-
  * relation join at the program's core, and searches the graph for the minimal
  * connected path spanning those relations. It returns a
- * {@link com.darkcollective.relix.semantic.graph.JoinResolution}: a
+ * {@link com.darkcollective.relix.symbol.graph.JoinResolution}: a
  * {@code Resolved} program whose join conditions the graph corrected, an
  * {@code Ambiguous} enumeration of equally-minimal paths (the two-FK
  * "did you mean?" case), or a {@code Passthrough} when the graph cannot

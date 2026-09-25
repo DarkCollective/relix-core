@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.embed;
 
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
 import com.darkcollective.relix.processor.connector.RelixConnector;
 import com.darkcollective.relix.semantic.CatalogSnapshot;

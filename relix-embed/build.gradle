@@ -16,11 +16,27 @@ plugins {
 // ProgrammingGuideTest reads docs/guide and compiles what it finds there. Gradle
 // cannot see that input, so without declaring it a guide-only change leaves the guard
 // UP-TO-DATE — passing because it never ran, the one failure mode a guard must not have.
+// The language reference ships in the jar (#1131), so a tool with only the artifact can
+// read it: Relix.referencePages() / referencePage(path). docs/reference stays the source
+// of truth, where its gates run. Function pages are left out, their libraries serving
+// them, and so is the one page about a front end rather than the language.
+processResources {
+    from("${rootProject.projectDir}/docs/reference") {
+        into 'com/darkcollective/relix/embed/reference'
+        include '**/*.md'
+        exclude 'functions/**'
+        exclude 'advanced/repl.md'
+        exclude 'README.md'
+    }
+}
+
 tasks.named('test') {
     inputs.dir("$rootDir/docs/guide").withPropertyName('programmingGuide')
     // ProgrammingGuideTest also runs the public README's example: the export's overlay
     // here, the root README in the public tree. Either may be absent, so `files`.
     inputs.files("$rootDir/tools/export/public/README.md", "$rootDir/README.md").withPropertyName('publicReadme')
+    // ReExportSurfaceTest reads the published artifact's exports from its descriptor.
+    inputs.file("$rootDir/relix-dist/src/main/java/module-info.java").withPropertyName('publishedDescriptor')
 }
 
 dependencies {
@@ -38,9 +54,13 @@ dependencies {
     // The .relix grammar. The facade is a frontend, so naming a frontend is allowed
     // here in a way it is not anywhere in the engine (EngineBoundaryTest).
     implementation project(':relix-lang')
+    // Its lexer, which Relix.tokens drives.
+    implementation project(':relix-parser')
+    // Sandbox.load reads its JSON configuration with it.
+    implementation project(':relix-json')
 
     // `api`, not `implementation`, for the same reason as the four above: each of
-    // these appears in a public signature, one step out at most — a plan carries
+    // these appears in a public signature, directly or further out — a plan carries
     // PlanEstimates, a rewrite is a TransformationRecord, a run reports QueryEvents,
     // provenance is annotated over a Semiring, a library is a FunctionLibrary, and
     // the provisioners are named where a host supplies them. The set is not a matter

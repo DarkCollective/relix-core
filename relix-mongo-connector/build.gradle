@@ -10,27 +10,23 @@
 // URLClassLoader, so it needs no module-info.
 
 dependencies {
-    // The connector SPI + Row/Schema/Value types. Provided by the host relix
-    // runtime (relix-processor is already on the parent class loader), so compileOnly.
-    compileOnly project(':relix-processor')
+    // The connector SPI + Row/Schema/Value types, from the published artifact (#1132).
+    // Provided by the host at run time (the jar is already on the parent class loader),
+    // so compileOnly.
+    compileOnly project(':relix-dist')
 
     // The MongoDB driver — bundled with the plugin (the host does not ship it).
     implementation 'org.mongodb:mongodb-driver-sync:5.2.1'
 
     // Tests exercise the connector against the real SPI types with a fake document
     // source (no live MongoDB needed).
-    testImplementation project(':relix-processor')
+    testImplementation project(':relix-dist')
 
     // MongoPushdownAgreementTest plans and executes a real script both ways, so it needs
-    // the analyzer's test fixtures and the modules a planned query is stated in terms of.
-    testImplementation testFixtures(project(':relix-semantic'))   // analyze()
-    testImplementation project(':relix-semantic')
-    testImplementation project(':relix-plan')
-    testImplementation project(':relix-events')
-    testImplementation project(':relix-symbol')
-    testImplementation project(':relix-lang-ast')
-    // The bundled function library, so a script analyses against the functions it names.
-    testRuntimeOnly project(':relix-function-builtin')
+    // the analyzer's test fixtures; the jar supplies the engine they run against.
+    testImplementation(testFixtures(project(':relix-semantic'))) { transitive = false }
+    testImplementation(testFixtures(project(':relix-symbol'))) { transitive = false }
+    testImplementation(testFixtures(project(':relix-ast'))) { transitive = false }
 
     // End-to-end test against a throwaway MongoDB container (Testcontainers).
     // Skipped automatically when Docker is unavailable (disabledWithoutDocker).

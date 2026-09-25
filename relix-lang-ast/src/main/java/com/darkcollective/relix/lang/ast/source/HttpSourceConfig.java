@@ -48,18 +48,20 @@ import java.util.Optional;
  * is parsed as JSON and a top-level array (or single object) is treated as the
  * records, exactly like a local JSON file source.
  *
- * <p>Header, URL, body, and auth values may contain {@code ${VAR}} placeholders;
- * these are resolved against the active environment before the script is parsed.
+ * <p>Header, URL, body, and auth values may contain {@code ${VAR}} placeholders. They
+ * are resolved when a query runs, from the selected environment in the command-line
+ * tool and through the resolver an embedding session was built with
+ * ({@code Relix.Builder.placeholders}), and the declaration keeps the placeholder.
  *
  * @param url      the URL; may contain {@code ${ENV_VAR}} references; must not be blank
- * @param method   the HTTP method (GET or POST — Relix is read-only); must not be null
+ * @param method   the HTTP method (GET, POST or QUERY — Relix is read-only); must not be null
  * @param headers  static request headers; may be empty
  * @param extract  how to locate records in the response body; absent means the
  *                 JSON-file default (top-level array or object)
  * @param paginate optional pagination parameter mapping; absent means unpaginated
  * @param columns  the ordered column specifications; <strong>may be empty</strong>,
  *                 which selects an open (schema-on-read) source
- * @param body     the request body (for {@code POST} reads, e.g. a GraphQL/search
+ * @param body     the request body (for {@code POST}/{@code QUERY} reads, e.g. a GraphQL/search
  *                 query); absent means no body
  * @param auth     an authentication shorthand; absent means none (or expressed via
  *                 a raw {@code Authorization} header)

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.symbol.table;
 
+import com.darkcollective.relix.symbol.table.internal.InMemorySymbolTable;
 import com.darkcollective.relix.symbol.RegistrationResult;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Symbol;

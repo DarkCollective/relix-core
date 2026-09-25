@@ -350,6 +350,28 @@ final class RelixSessionTest {
         }
 
         /**
+         * The position is stated once in each rendering. A thrown message is often all a
+         * caller prints, so it carries the position in words; a placed diagnostic already
+         * carries it as a location, so its message does not repeat it.
+         */
+        @Test
+        @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
+        void parseFailurePositionStatedOnce() {
+            String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";
+            try (Relix relix = Relix.open()) {
+                Diagnostic placed = relix.validate(bad).getFirst();
+                assertThat(placed.location().orElseThrow().line()).isEqualTo(3);
+                assertThat(placed.location().orElseThrow().column()).isEqualTo(13);
+                assertThat(placed.message())
+                        .isEqualTo("Syntax error in RA expression: Expected identifier after '.'; found '+'");
+
+                assertThatThrownBy(() -> relix.define(bad))
+                        .isInstanceOf(RelixException.class)
+                        .hasMessageEndingWith("found '+' (line 3, col 13)");
+            }
+        }
+
+        /**
          * {@code of(String)} and {@code toString()} are published members that nothing
          * called — the shape a caller reaches for when it has a complaint no position can
          * be attached to, and the shape every caller reaches for when it prints one. A

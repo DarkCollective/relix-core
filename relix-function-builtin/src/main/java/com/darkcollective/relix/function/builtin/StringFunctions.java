@@ -17,7 +17,7 @@ package com.darkcollective.relix.function.builtin;
 
 import com.darkcollective.relix.function.Arity;
 import com.darkcollective.relix.function.ScalarFunction;
-import com.darkcollective.relix.value.CodePoints;
+import com.darkcollective.relix.value.internal.CodePoints;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.StringValue;

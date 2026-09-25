@@ -21,7 +21,7 @@ import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.relation.DatabaseRelationSymbol;
-import com.darkcollective.relix.symbol.table.InMemorySymbolTable;
+import com.darkcollective.relix.symbol.table.internal.InMemorySymbolTable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

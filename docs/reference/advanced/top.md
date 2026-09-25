@@ -93,6 +93,8 @@ aggregated value.
 whole row, and only one). λ over τ for a global top-N without grouping.
 
 # See Also:
+[log source](../language/log-source.md) — TOP over a web server's access log, among other windowing examples on one real dataset
+
 [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [group](../operators/group.md), [sort](../operators/sort.md), [limit](../operators/limit.md)
 
 # Notes:

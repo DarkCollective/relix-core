@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.processor.EvaluationException;
+
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.ObjectiveSense;
 import com.darkcollective.relix.ast.Operand;

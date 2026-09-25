@@ -15,7 +15,9 @@
  */
 package com.darkcollective.relix.processor;
 
-import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.processor.internal.QueryExecutor;
+import com.darkcollective.relix.processor.internal.QueryResult;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;

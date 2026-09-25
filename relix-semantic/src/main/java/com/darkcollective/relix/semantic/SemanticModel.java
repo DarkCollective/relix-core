@@ -15,14 +15,22 @@
  */
 package com.darkcollective.relix.semantic;
 
+import com.darkcollective.relix.semantic.internal.IrReport;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
+import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.function.FunctionCatalog;
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
 import com.darkcollective.relix.lang.ast.QueryStatement;
 import com.darkcollective.relix.lang.ast.SourceDeclaration;
 import com.darkcollective.relix.symbol.RelationStatistics;
+import com.darkcollective.relix.semantic.graph.JoinObserver;
+import com.darkcollective.relix.semantic.graph.JoinPathResolver;
+import com.darkcollective.relix.symbol.graph.JoinResolution;
+import com.darkcollective.relix.symbol.graph.Relationship;
 import com.darkcollective.relix.symbol.graph.SchemaGraph;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -177,5 +185,73 @@ public record SemanticModel(
                          Map<String, SourceDeclaration> sources,
                          SchemaAnnotations nodeSchemas, List<QueryStatement> rootQueries) {
         this(namespace, symbolTable, sources, Map.of(), Map.of(), nodeSchemas, rootQueries);
+    }
+
+    /**
+     * The relationships this analysis <em>demonstrates</em> that its schema graph does
+     * not already record: each column equality written across the two sides of a join,
+     * in a query or a view, over relations the graph could connect.
+     *
+     * <p>A session that feeds these back through
+     * {@code Relix.Builder.relationships} learns the joins its user has written, so a
+     * later {@link #resolveJoins} can assemble the same join unprompted. Nothing is
+     * executed: an analysis alone says which columns a join equated. Only a model
+     * without errors is worth asking, since a query that did not resolve demonstrates
+     * nothing.
+     *
+     * @return the distinct edges, in the order first written, each with a generated
+     *         name and origin {@code LEARNED}; never null, possibly empty
+     * @since 1.0
+     */
+    public List<Relationship> demonstratedRelationships() {
+        return JoinObserver.observe(this);
+    }
+
+    /**
+     * Resolves the joins in {@code expression} over this model's schema graph: the
+     * join is assembled from the relationships the graph records, rather than from the
+     * conditions the expression was written with.
+     *
+     * <p>The answer is {@code Passthrough} when the graph cannot improve on the
+     * expression (there is no graph, or the expression is not a join over base
+     * relations the graph connects), {@code Resolved} when exactly one minimal path
+     * connects the relations, and {@code Ambiguous} when several do, listing them by
+     * relationship name so a user can be asked which was meant.
+     *
+     * @param expression the expression whose joins to resolve; must not be null
+     * @return the resolution; never null
+     * @since 1.0
+     */
+    public JoinResolution resolveJoins(RelNode expression) {
+        return JoinPathResolver.resolve(schemaGraph, symbolTable, expression);
+    }
+
+    /**
+     * This model as a readable report: every symbol with its heading, the expression
+     * tree behind each view, and the root queries.
+     *
+     * <p>Lines are at most 80 characters, so the report prints cleanly in a terminal.
+     *
+     * @return the report; never null or empty
+     * @since 1.0
+     */
+    public String ir() {
+        return IrReport.generate(this);
+    }
+
+    /**
+     * The report limited to the named relations: their symbols and expression trees,
+     * with every other relation and all functions left out. The root queries are shown
+     * as for {@link #ir()}. Names match case-insensitively.
+     *
+     * <p>A tool showing the tree behind one query passes the relations that query
+     * reaches, rather than printing the whole script.
+     *
+     * @param relations the relations to include; must not be null
+     * @return the report; never null or empty
+     * @since 1.0
+     */
+    public String ir(Collection<String> relations) {
+        return IrReport.generateFocused(this, new java.util.LinkedHashSet<>(relations));
     }
 }

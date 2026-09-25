@@ -16,7 +16,7 @@
 package com.darkcollective.relix.processor.generator;
 
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;
 import org.junit.jupiter.api.Test;

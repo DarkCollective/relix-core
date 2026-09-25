@@ -168,7 +168,7 @@ final class QualifiedRowTest extends ProcessorTestSupport {
             QualifiedRow mixed = new QualifiedRow(
                     row(NESTED_LEFT, str("Grace"),
                             new com.darkcollective.relix.value.StructValue(location)),
-                    new com.darkcollective.relix.processor.DocumentRow(
+                    new com.darkcollective.relix.processor.internal.DocumentRow(
                             new com.darkcollective.relix.value.StructValue(document)),
                     NESTED_LEFT, Schema.open(), Set.of("profiles"), Set.of("teams"),
                     NESTED_LEFT);
@@ -181,7 +181,7 @@ final class QualifiedRowTest extends ProcessorTestSupport {
                     .isEqualTo(str("infra"));
 
             QualifiedRow mirrored = new QualifiedRow(
-                    new com.darkcollective.relix.processor.DocumentRow(
+                    new com.darkcollective.relix.processor.internal.DocumentRow(
                             new com.darkcollective.relix.value.StructValue(document)),
                     row(NESTED_LEFT, str("Grace"),
                             new com.darkcollective.relix.value.StructValue(location)),

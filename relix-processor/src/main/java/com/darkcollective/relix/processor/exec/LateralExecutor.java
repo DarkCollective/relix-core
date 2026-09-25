@@ -25,7 +25,7 @@ import com.darkcollective.relix.ast.TimeOperand;
 import com.darkcollective.relix.ast.TimestampOperand;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.value.BooleanValue;
 import com.darkcollective.relix.value.DateValue;
 import com.darkcollective.relix.value.DurationValue;

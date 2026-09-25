@@ -24,7 +24,7 @@ import java.util.Objects;
  * <p>Syntax: {@code auth: bearer("${TOKEN}")}
  *
  * @param token the bearer token (typically a {@code ${ENV}} reference, resolved
- *              before parsing); must not be blank
+ *              when the request is made); must not be blank
  */
 public record BearerAuth(String token) implements AuthSpec {
 

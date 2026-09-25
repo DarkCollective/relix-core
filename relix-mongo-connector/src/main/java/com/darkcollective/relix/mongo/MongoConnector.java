@@ -15,11 +15,9 @@
  */
 package com.darkcollective.relix.mongo;
 
-import com.darkcollective.relix.processor.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
 import com.darkcollective.relix.processor.connector.RelixConnector;
-import com.darkcollective.relix.ast.TemporalLiterals;
 import com.darkcollective.relix.value.ArrayValue;
 import com.darkcollective.relix.value.BooleanValue;
 import com.darkcollective.relix.value.DateValue;
@@ -39,6 +37,9 @@ import com.darkcollective.relix.symbol.StructType;
 import com.darkcollective.relix.symbol.Type;
 import org.bson.Document;
 
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.math.BigDecimal;
 import java.time.DateTimeException;
 import java.time.Duration;
@@ -142,7 +143,7 @@ public final class MongoConnector implements RelixConnector {
         for (ColumnDefinition column : schema.columns()) {
             values.add(coerce(document.get(column.name()), column.type()));
         }
-        return ArrayRow.of(schema, values);
+        return Row.of(schema, values);
     }
 
     /**
@@ -228,15 +229,15 @@ public final class MongoConnector implements RelixConnector {
         try {
             return switch (type) {
                 case TIMESTAMP -> new TimestampValue(instant != null
-                        ? instant : TemporalLiterals.parseTimestamp(text(raw)));
+                        ? instant : parseTimestamp(text(raw)));
                 case DATE -> new DateValue(instant != null
                         ? LocalDate.ofInstant(instant, ZoneOffset.UTC)
-                        : TemporalLiterals.parseDate(text(raw)));
+                        : LocalDate.parse(text(raw)));
                 case TIME -> new TimeValue(instant != null
                         ? LocalTime.ofInstant(instant, ZoneOffset.UTC)
-                        : TemporalLiterals.parseTime(text(raw)));
+                        : LocalTime.parse(text(raw)));
                 case DURATION -> new DurationValue(raw instanceof Duration d
-                        ? d : TemporalLiterals.parseDuration(text(raw)));
+                        ? d : Duration.parse(text(raw)));
                 default -> throw new IllegalStateException("not a temporal type: " + type);
             };
         } catch (DateTimeException e) {
@@ -322,5 +323,14 @@ public final class MongoConnector implements RelixConnector {
     /** {@link #any} with the NULL check, for a nested element that may be absent. */
     private static Value coerceAny(Object raw) {
         return raw == null ? NullValue.INSTANCE : any(raw);
+    }
+
+    /** ISO-8601 text as an instant: with an offset as written, without one as UTC. */
+    private static Instant parseTimestamp(String iso) {
+        try {
+            return OffsetDateTime.parse(iso).toInstant();
+        } catch (DateTimeParseException withoutOffset) {
+            return LocalDateTime.parse(iso).toInstant(ZoneOffset.UTC);
+        }
     }
 }

@@ -60,7 +60,7 @@ public interface Generator {
      * @param args   the raw generator arguments (e.g. {@code lo}/{@code hi}/{@code step})
      * @param schema the schema returned by {@link #schema(Map)} for the same args
      * @return a lazy stream of rows; the caller closes it
-     * @throws com.darkcollective.relix.processor.eval.EvaluationException if the
+     * @throws com.darkcollective.relix.processor.EvaluationException if the
      *         arguments are missing or invalid
      */
     Stream<Row> rows(Map<String, String> args, Schema schema);

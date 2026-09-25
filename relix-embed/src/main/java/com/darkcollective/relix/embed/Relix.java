@@ -18,13 +18,23 @@ package com.darkcollective.relix.embed;
 import com.darkcollective.relix.ast.Expr;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.RelNode;
-import com.darkcollective.relix.connectors.std.ConnectionPool;
-import com.darkcollective.relix.connectors.std.DataSourceRegistry;
+import com.darkcollective.relix.connectors.std.internal.ConnectionPool;
+import com.darkcollective.relix.connectors.std.internal.DataSourceRegistry;
 import com.darkcollective.relix.connectors.std.DriverProvisioner;
 import com.darkcollective.relix.connectors.std.HttpFetcher;
-import com.darkcollective.relix.connectors.std.ConnectorCatalogProvider;
-import com.darkcollective.relix.connectors.std.JdbcCatalogProvider;
+import com.darkcollective.relix.connectors.std.internal.ConnectorCatalogProvider;
+import com.darkcollective.relix.connectors.std.internal.FileResolver;
+import com.darkcollective.relix.connectors.std.internal.JdbcCatalogProvider;
+import com.darkcollective.relix.lang.LangParseException;
 import com.darkcollective.relix.lang.ScriptParser;
+import com.darkcollective.relix.lang.ast.AssignmentStatement;
+import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
+import com.darkcollective.relix.lang.ast.DefRelationStatement;
+import com.darkcollective.relix.lang.ast.DefStatement;
+import com.darkcollective.relix.lang.ast.EnvStatement;
+import com.darkcollective.relix.lang.ast.ImportStatement;
+import com.darkcollective.relix.lang.ast.RelateStatement;
+import com.darkcollective.relix.lang.ast.SourceDeclaration;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.lang.ast.NamedQueryTarget;
 import com.darkcollective.relix.lang.ast.QueryStatement;
@@ -32,6 +42,7 @@ import com.darkcollective.relix.lang.ast.Script;
 import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.lang.ast.ScriptParseException;
 import com.darkcollective.relix.lang.ast.ScriptPrinter;
+import com.darkcollective.relix.lang.ast.source.GeneratorSourceConfig;
 import com.darkcollective.relix.lang.ast.Statement;
 import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.function.FunctionCatalog;
@@ -39,26 +50,25 @@ import com.darkcollective.relix.function.FunctionLibrary;
 import com.darkcollective.relix.lang.ast.ScriptBuilders;
 import com.darkcollective.relix.lang.ast.source.ConnectionTableSourceConfig;
 import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
-import com.darkcollective.relix.processor.ArrayRow;
-import com.darkcollective.relix.processor.DataSourceConnector;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ArrayRow;
+import com.darkcollective.relix.processor.internal.DataSourceConnector;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.connector.RelixConnector;
 import com.darkcollective.relix.processor.connector.ConnectorProvisioner;
-import com.darkcollective.relix.processor.connector.ConnectorRegistry;
+import com.darkcollective.relix.processor.connector.internal.ConnectorRegistry;
 import com.darkcollective.relix.processor.generator.GeneratorRegistry;
-import com.darkcollective.relix.semantic.BuiltinProvider;
-import com.darkcollective.relix.semantic.IrReport;
+import com.darkcollective.relix.semantic.internal.BuiltinProvider;
 import com.darkcollective.relix.semantic.CatalogProvider;
-import com.darkcollective.relix.semantic.ComponentInventory;
+import com.darkcollective.relix.semantic.internal.ComponentInventory;
 import com.darkcollective.relix.semantic.CatalogSnapshot;
-import com.darkcollective.relix.semantic.InMemoryScriptLoader;
+import com.darkcollective.relix.semantic.internal.InMemoryScriptLoader;
 import com.darkcollective.relix.semantic.ScriptLoader;
-import com.darkcollective.relix.semantic.SemanticAnalyzer;
-import com.darkcollective.relix.semantic.SchemaInference;
+import com.darkcollective.relix.semantic.internal.SemanticAnalyzer;
+import com.darkcollective.relix.semantic.internal.SchemaInference;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.cost.ObservedCardinalities;
-import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.symbol.graph.SchemaGraph;
 import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.Schema;
@@ -70,6 +80,7 @@ import javax.sql.DataSource;
 import java.sql.DriverManager;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -78,9 +89,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.SequencedMap;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -161,8 +174,16 @@ public final class Relix implements AutoCloseable {
     /** The bindings execution reads: where relative paths resolve, and what time it is. */
     private final Path baseDirectory;
     private final Clock clock;
+
+    /** How this session resolves a declaration's {@code ${NAME}} placeholders. */
+    private final Placeholders placeholders;
+
+    /** Where a file connection's file is, fetched and pinned for this session's life. */
+    private final FileResolver files;
     private final int maxFixpointRounds;
     private final int maxMaterializedRows;
+    private final long maxProcessedRows;
+    private final Duration timeout;
     private final DriverProvisioner driverProvisioner;
     private final ConnectorProvisioner connectorProvisioner;
     private final ScriptLoader scriptLoader;
@@ -230,6 +251,21 @@ public final class Relix implements AutoCloseable {
     private SemanticAnalyzer analyzer;
     private final List<Statement> statements = new ArrayList<>();
 
+    /** What this session lets its users reach; open unless the builder named one. */
+    private final Sandbox sandbox;
+
+    /**
+     * The external declarations a closed sandbox permits, as printed: a user's
+     * declaration is admitted when it prints identically to one of these.
+     */
+    private final Set<String> permittedExternal;
+
+    /**
+     * Whether the sandbox's rules are in force. False while the sandbox's own
+     * declarations are installed, which are the host's and trusted.
+     */
+    private boolean sealed;
+
     private Optional<String> namespace = Optional.empty();
 
     /** The analysis of everything declared so far; invalidated by {@link #define}. */
@@ -242,20 +278,33 @@ public final class Relix implements AutoCloseable {
         // declared url. Offline either answers empty rather than failing, which is what lets
         // a session compose with nothing reachable. A caller-supplied catalog is theirs, so
         // only the one built here is closed with the session.
+        this.placeholders = builder.placeholders;
+        this.files = FileResolver.create(FileResolver.DEFAULT_CACHE, builder.remoteFiles);
         if (builder.catalog != null) {
-            this.catalog = builder.catalog;
+            this.catalog = placeholders.catalog(builder.catalog);
             this.ownedCatalog = null;
         } else {
             ConnectorCatalogProvider built =
                     new ConnectorCatalogProvider(new JdbcCatalogProvider(dataSources));
-            this.catalog = built;
+            this.catalog = placeholders.catalog(built);
             this.ownedCatalog = built;
         }
         this.allowUnresolved = builder.allowUnresolved;
-        this.baseDirectory = builder.baseDirectory;
+        this.sandbox = builder.sandbox;
+        // A sandbox read from a file resolves its declarations' relative paths against
+        // that file's directory, unless the host named a base directory itself.
+        this.baseDirectory = builder.baseDirectorySet
+                ? builder.baseDirectory
+                : sandbox.baseDirectory().orElse(builder.baseDirectory);
         this.clock = builder.clock;
-        this.maxFixpointRounds = builder.maxFixpointRounds;
-        this.maxMaterializedRows = builder.maxMaterializedRows;
+        this.maxFixpointRounds = stricter(builder.maxFixpointRounds, sandbox.maxFixpointRounds());
+        this.maxMaterializedRows = stricter(builder.maxMaterializedRows, sandbox.maxMaterializedRows());
+        this.maxProcessedRows = sandbox.maxProcessedRows().isPresent()
+                ? Math.min(builder.maxProcessedRows, sandbox.maxProcessedRows().getAsLong())
+                : builder.maxProcessedRows;
+        this.timeout = sandbox.timeout()
+                .map(limit -> limit.compareTo(builder.timeout) < 0 ? limit : builder.timeout)
+                .orElse(builder.timeout);
         this.driverProvisioner = builder.driverProvisioner;
         this.connectorProvisioner = builder.connectorProvisioner;
         this.scriptLoader = builder.scriptLoader;
@@ -269,6 +318,100 @@ public final class Relix implements AutoCloseable {
         // the AST names the connection, the registry holds the handle (ADR-0027 D6).
         builder.connections.keySet()
                 .forEach(name -> statements.add(dataSources.declarationFor(name)));
+        this.permittedExternal = installSandbox();
+    }
+
+    /**
+     * Installs a closed sandbox's own declarations, then puts its rules in force.
+     *
+     * <p>Those declarations are the host's, so they are installed before the session is
+     * sealed; what they declare externally is what a user may later repeat.
+     *
+     * @return the printed forms of the external declarations the sandbox permits
+     */
+    private Set<String> installSandbox() {
+        if (sandbox.isOpen()) {
+            return Set.of();
+        }
+        Set<String> permitted = new java.util.HashSet<>();
+        if (!sandbox.declarations().isBlank()) {
+            Script declared = parseForSession(sandbox.declarations());
+            install(declared);
+            declared.statements().stream()
+                    .filter(Relix::isExternal)
+                    .forEach(st -> permitted.add(ScriptPrinter.print(st)));
+        }
+        sealed = true;
+        return Set.copyOf(permitted);
+    }
+
+    /** The smaller of a builder's cap and a sandbox's, when the sandbox sets one. */
+    private static int stricter(int configured, OptionalInt sandboxLimit) {
+        return sandboxLimit.isPresent() ? Math.min(configured, sandboxLimit.getAsInt()) : configured;
+    }
+
+    /**
+     * Whether a statement reaches outside the session: reads a file, a database or an
+     * endpoint, or loads other text. A generator synthesises its rows and reaches nothing,
+     * which is why it is the one kind of {@code source} that is internal.
+     */
+    private static boolean isExternal(Statement statement) {
+        return switch (statement) {
+            case EnvStatement ignored -> true;
+            case ImportStatement ignored -> true;
+            case ConnectionDeclaration ignored -> true;
+            case SourceDeclaration source -> !(source.config() instanceof GeneratorSourceConfig);
+            case RelateStatement ignored -> false;
+            case AssignmentStatement ignored -> false;
+            case DefStatement ignored -> false;
+            case DefRelationStatement ignored -> false;
+            case QueryStatement ignored -> false;
+        };
+    }
+
+    /**
+     * The first statement a sealed sandbox refuses, described for the user; empty when
+     * every statement is admitted.
+     */
+    private Optional<String> refusal(List<Statement> candidates) {
+        if (!sealed) {
+            return Optional.empty();
+        }
+        for (Statement statement : candidates) {
+            if (isExternal(statement) && !permittedExternal.contains(ScriptPrinter.print(statement))) {
+                return Optional.of("this session's sandbox does not permit "
+                        + describe(statement) + "; it accepts inline tables, views, functions and "
+                        + "the sources and connections it was configured with");
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static String describe(Statement statement) {
+        return switch (statement) {
+            case SourceDeclaration source -> "the source '" + source.name() + "'";
+            case ConnectionDeclaration connection -> "the connection '" + connection.name() + "'";
+            case ImportStatement ignored -> "an import";
+            case EnvStatement ignored -> "an env statement";
+            default -> "this declaration";
+        };
+    }
+
+    /** The first reason a sealed sandbox refuses this text before parsing it; empty when none. */
+    private Optional<String> inputRefusal(String relixText) {
+        OptionalInt limit = sandbox.maxInputChars();
+        if (sealed && limit.isPresent() && relixText.length() > limit.getAsInt()) {
+            return Optional.of("this session's sandbox accepts at most " + limit.getAsInt()
+                    + " characters of text per call; this text has " + relixText.length());
+        }
+        return Optional.empty();
+    }
+
+    private void requireWithinInputLimit(String relixText) {
+        Objects.requireNonNull(relixText, "relixText");
+        inputRefusal(relixText).ifPresent(reason -> {
+            throw new SandboxViolationException(reason);
+        });
     }
 
     /**
@@ -279,6 +422,49 @@ public final class Relix implements AutoCloseable {
      */
     public static Builder builder() {
         return new Builder();
+    }
+
+    /**
+     * This engine's version, as the build stamped it: {@code 1.0.0}, say.
+     *
+     * <p>The same value {@code relix.version} reports for the engine, for a program that
+     * wants it without running a query.
+     *
+     * @return the version, or {@code unknown} when the packaging carries none
+     * @since 1.0
+     */
+    public static String version() {
+        return ComponentInventory.engineVersion();
+    }
+
+    /**
+     * Every page of the language reference: operators, joins, set operations,
+     * aggregates, predicates, literals, statements, and the guide pages.
+     *
+     * <p>Each entry says what the page is about and the words it can be looked up by; the
+     * markdown is {@link #referencePage(String)} of its path. The reference ships in this
+     * artifact, so a tool reads it with nothing else installed. A function's page is not
+     * here: it belongs to the library that offers the function, and
+     * {@code FunctionCatalog.documentation} serves it.
+     *
+     * @return the pages, in the reference's own order; never null
+     * @since 1.0
+     */
+    public static List<ReferencePage> referencePages() {
+        return ReferenceIndex.ALL;
+    }
+
+    /**
+     * The markdown of one reference page.
+     *
+     * @param path the page's path, as {@link ReferencePage#path()} gives it, such as
+     *             {@code operators/select.md}; must not be null
+     * @return the page, or empty if the reference has none at that path
+     * @since 1.0
+     */
+    public static Optional<String> referencePage(String path) {
+        Objects.requireNonNull(path, "path");
+        return ReferenceIndex.read(path);
     }
 
     /**
@@ -311,7 +497,8 @@ public final class Relix implements AutoCloseable {
      * @since 1.0
      */
     public Relix define(String relixText) {
-        Script parsed = parse(relixText);
+        requireWithinInputLimit(relixText);
+        Script parsed = parseForSession(relixText);
         List<Statement> queries = parsed.statements().stream()
                 .filter(QueryStatement.class::isInstance)
                 .toList();
@@ -321,6 +508,31 @@ public final class Relix implements AutoCloseable {
                             + " query statement(s). Use script(...) to get a Relation for each.");
         }
         return install(parsed);
+    }
+
+    /**
+     * Adds declarations to the session, given as statements already built — with
+     * {@code ScriptBuilders}, say — rather than as text.
+     *
+     * <p>The typed counterpart of {@link #define(String)}: a header value or a password is
+     * a plain Java string here, so there is nothing to escape. It does put the value in
+     * the session's declarations, where {@link #definitions()} and {@link #ir()} will show
+     * it. For a secret, prefer a {@code ${NAME}} placeholder and
+     * {@link Builder#placeholders}, which keep the value out of the model altogether.
+     *
+     * @param declarations the statements; must not be null, and none may be a query
+     * @return this session, for chaining
+     * @throws RelixException if a statement is a query, or the declarations do not
+     *                        analyse against what is already declared
+     * @since 1.0
+     */
+    public Relix define(Statement... declarations) {
+        List<Statement> added = List.of(Objects.requireNonNull(declarations, "declarations"));
+        if (added.stream().anyMatch(QueryStatement.class::isInstance)) {
+            throw new RelixException(
+                    "define() takes declarations, not query statements; use relation(...) for a query");
+        }
+        return install(new Script(Optional.empty(), added));
     }
 
     /**
@@ -336,7 +548,8 @@ public final class Relix implements AutoCloseable {
      * @since 1.0
      */
     public List<Relation> script(String relixText) {
-        Script parsed = parse(relixText);
+        requireWithinInputLimit(relixText);
+        Script parsed = parseForSession(relixText);
         // A query is not a declaration: it names a result, and installing it would make
         // every later analysis re-root it. The declarations go in; the queries come back
         // as relations.
@@ -391,7 +604,8 @@ public final class Relix implements AutoCloseable {
      */
     public Relation relation(String expression) {
         Objects.requireNonNull(expression, "expression");
-        Script wrapped = parse("query { " + expression + " };");
+        requireWithinInputLimit(expression);
+        Script wrapped = parseForSession("query { " + expression + " };");
         List<Statement> parsedStatements = wrapped.statements();
         if (parsedStatements.size() != 1
                 || !(parsedStatements.getFirst() instanceof QueryStatement query)) {
@@ -802,7 +1016,7 @@ public final class Relix implements AutoCloseable {
      * @since 1.0
      */
     public String ir() {
-        return IrReport.generate(model());
+        return model().ir();
     }
 
     /**
@@ -890,11 +1104,20 @@ public final class Relix implements AutoCloseable {
      * @since 1.0
      */
     public List<Diagnostic> validate(String relixText) {
+        Objects.requireNonNull(relixText, "relixText");
+        Optional<String> tooLong = inputRefusal(relixText);
+        if (tooLong.isPresent()) {
+            return List.of(Diagnostic.of(tooLong.get()));
+        }
         Script parsed;
         try {
-            parsed = parse(relixText);
+            parsed = parseForSession(relixText);
         } catch (RelixException e) {
             return List.of(syntaxDiagnostic(e));
+        }
+        Optional<String> refused = refusal(parsed.statements());
+        if (refused.isPresent()) {
+            return List.of(Diagnostic.of(refused.get()));
         }
         List<Statement> combined = new ArrayList<>(statements);
         combined.addAll(parsed.statements());
@@ -999,6 +1222,11 @@ public final class Relix implements AutoCloseable {
         return clock;
     }
 
+    /** How this session resolves placeholders, for each execution to apply. */
+    Placeholders placeholders() {
+        return placeholders;
+    }
+
     /** The expression-keyed counts this session's runs have measured. */
     ObservedCardinalities observedExpressions() {
         return observedExpressions;
@@ -1051,6 +1279,19 @@ public final class Relix implements AutoCloseable {
         return maxMaterializedRows;
     }
 
+    long maxProcessedRows() {
+        return maxProcessedRows;
+    }
+
+    Duration timeout() {
+        return timeout;
+    }
+
+    /** The sandbox's cap on the rows one query returns, when it sets one. */
+    OptionalInt maxOutputRows() {
+        return sandbox.maxOutputRows();
+    }
+
     /** The generators, as both a schema catalog and a row producer. */
     GeneratorRegistry generators() {
         return generators;
@@ -1077,7 +1318,7 @@ public final class Relix implements AutoCloseable {
         requireOpen();
         return new CompositeDataSourceConnector(model, baseDirectory,
                 driverProvisioner, connectorProvisioner,
-                generators, pool, List.copyOf(installedConnectors));
+                generators, pool, List.copyOf(installedConnectors), files);
     }
 
     /**
@@ -1182,6 +1423,9 @@ public final class Relix implements AutoCloseable {
     }
 
     private Relix install(Script parsed) {
+        refusal(parsed.statements()).ifPresent(reason -> {
+            throw new SandboxViolationException(reason);
+        });
         List<Statement> combined = new ArrayList<>(statements);
         combined.addAll(parsed.statements());
         Optional<String> combinedNamespace = parsed.namespace().or(() -> namespace);
@@ -1240,7 +1484,7 @@ public final class Relix implements AutoCloseable {
     /**
      * Runs the analyser, reporting a frontend's parse failure as this API's own.
      *
-     * <p>Not every parse happens in {@link #parse}: an {@code import} is read and parsed
+     * <p>Not every parse happens in {@code parseForSession}: an {@code import} is read and parsed
      * by the {@code ScriptLoader} part-way through analysis, so a script whose *import*
      * does not parse fails here rather than at the front door. That is still the grammar
      * failing to produce a tree, which is what {@link RelixException} means — and letting
@@ -1261,23 +1505,32 @@ public final class Relix implements AutoCloseable {
      * <p>This is the one method here whose whole purpose is text the program did not
      * write, so where the failure is is as much of the answer as what it is. The grammar
      * knows: a {@code ScriptParseException} carries the line and column of the offending
-     * token, and {@link #parse} keeps it as the cause when it wraps it in the type this
+     * token, and {@code parseForSession} keeps it as the cause when it wraps it in the type this
      * API raises. Reading it back is what stops a caller rendering diagnostics from having
      * to find the position again inside the message text — where it is, and where the only
      * way to get it out is to parse English.
+     *
+     * <p>The grammar's message ends with the same position in words, because a message
+     * is often shown without its location — thrown out of {@link #define}, say. A located
+     * diagnostic drops that suffix so a renderer printing both states the position once.
      *
      * <p>A position of zero means the frontend had none to give, which a builder-produced
      * {@code Script} genuinely does not, so that stays an unplaced diagnostic.
      */
     private static Diagnostic syntaxDiagnostic(RelixException raised) {
         if (raised.getCause() instanceof ScriptParseException parse && parse.line() > 0) {
-            return Diagnostic.of(raised.getMessage(),
+            String message = raised.getMessage();
+            String suffix = LangParseException.suffix(parse.line(), parse.column());
+            if (message.endsWith(suffix)) {
+                message = message.substring(0, message.length() - suffix.length());
+            }
+            return Diagnostic.of(message,
                     new SourceLocation(SESSION_PATH, parse.line(), parse.column()));
         }
         return Diagnostic.of(raised.getMessage());
     }
 
-    private static Script parse(String relixText) {
+    private static Script parseForSession(String relixText) {
         Objects.requireNonNull(relixText, "relixText");
         try {
             return ScriptParser.parse(relixText, SESSION_PATH);
@@ -1291,6 +1544,74 @@ public final class Relix implements AutoCloseable {
             case ExpressionQueryTarget t -> t.expression();
             case NamedQueryTarget t -> com.darkcollective.relix.ast.AstBuilders.rel(t.name());
         };
+    }
+
+    /**
+     * Parses {@code .relix} text into a {@link Script}, without analysing it.
+     *
+     * <p>The tree is what {@link #define(Statement...)} takes and what a
+     * {@link com.darkcollective.relix.semantic.ScriptLoader} returns, so this is the
+     * method for a program that reads scripts itself: a loader serving files, or a tool
+     * that inspects a script's statements before deciding what to do with them. Nothing
+     * is resolved, so a script naming a relation nobody declared parses.
+     *
+     * @param text the script; must not be null
+     * @return the parsed script; never null
+     * @throws ScriptParseException if the text does not parse, carrying the line and
+     *         column of the failure
+     * @since 1.0
+     */
+    public static Script parse(String text) {
+        return parse(text, SESSION_PATH);
+    }
+
+    /**
+     * Parses {@code .relix} text into a {@link Script}, naming where it came from.
+     *
+     * <p>{@code source} is the name a failure and every node's location carry, such as
+     * the file's path, so an error in an imported file points at that file.
+     *
+     * @param text the script; must not be null
+     * @param source the name of the text's origin; must not be null
+     * @return the parsed script; never null
+     * @throws ScriptParseException if the text does not parse, carrying the line and
+     *         column of the failure
+     * @since 1.0
+     */
+    public static Script parse(String text, String source) {
+        Objects.requireNonNull(text, "text");
+        Objects.requireNonNull(source, "source");
+        try {
+            return ScriptParser.parse(text, source);
+        } catch (ScriptParseException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            // The grammar reports its own failures as ScriptParseException; anything else
+            // is a tree it could not build, which is still the text not parsing.
+            ScriptParseException failure = new ScriptParseException(e.getMessage());
+            failure.initCause(e);
+            throw failure;
+        }
+    }
+
+    /**
+     * Splits {@code .relix} text into classified tokens, for syntax highlighting.
+     *
+     * <p>Lenient, because an editor asks while the user is still typing: a well-formed
+     * prefix is tokenized as usual, and whatever follows the point where the text stops
+     * making sense is one {@link TokenKind#INCOMPLETE} token running to the end. Comments
+     * are tokens; whitespace is not. The tokens are in order and do not overlap, and
+     * offsets count {@code char}s, as {@link String#charAt} does.
+     *
+     * <p>This is lexical only. A token's kind says what it is on its own ({@code σ} is
+     * an operator, {@code COUNT} a keyword), not whether the text around it parses.
+     *
+     * @param text the text to tokenize; null is read as empty
+     * @return the tokens; never null, possibly empty
+     * @since 1.0
+     */
+    public static List<Token> tokens(String text) {
+        return Tokens.of(text);
     }
 
     /**
@@ -1311,6 +1632,8 @@ public final class Relix implements AutoCloseable {
         private boolean allowUnresolved;
         private int maxFixpointRounds = ExecutionContext.UNLIMITED_FIXPOINT_ROUNDS;
         private int maxMaterializedRows = ExecutionContext.DEFAULT_MAX_MATERIALIZED_ROWS;
+        private long maxProcessedRows = ExecutionContext.UNLIMITED_PROCESSED_ROWS;
+        private Duration timeout = ExecutionContext.UNLIMITED_TIMEOUT;
         private ScriptLoader scriptLoader = new InMemoryScriptLoader(Map.of());
         private SchemaGraph relationships = SchemaGraph.EMPTY;
         private List<QueryEvent> sessionEvents = List.of();
@@ -1319,8 +1642,77 @@ public final class Relix implements AutoCloseable {
                 ConnectorProvisioner.create(false, HttpFetcher.https());
         private final List<FunctionLibrary> libraries = new ArrayList<>();
         private final List<RelixConnector> connectors = new ArrayList<>();
+        private Placeholders placeholders = Placeholders.NONE;
+        private boolean remoteFiles = true;
+        private Sandbox sandbox = Sandbox.open();
+        private boolean baseDirectorySet;
 
         private Builder() {
+        }
+
+        /**
+         * Supplies the values of the {@code ${NAME}} placeholders in source and connection
+         * declarations: a bearer token, an API key, a database password or URL.
+         *
+         * {@snippet lang = "java":
+         * Relix relix = Relix.builder()
+         *         .placeholders(name -> Optional.ofNullable(System.getenv(name)))
+         *         .build();
+         * relix.define("""
+         *         source Orders from http {
+         *             url:     "https://api.example.com/orders",
+         *             headers: { "Authorization": "Bearer ${ORDERS_TOKEN}" }
+         *         };
+         *         """);
+         * }
+         *
+         * <p><strong>The placeholder stays in the declaration.</strong> It is resolved
+         * each time a query runs, for the declarations that query reaches, and the value
+         * goes to the connector for that run alone. So the value is never written into
+         * the text a script is parsed from, and nothing that prints the session —
+         * {@link Relix#definitions()}, {@link Relix#ir()}, an analysis error — shows it.
+         * Because it is asked for on each run, a rotated credential is picked up without
+         * redefining anything.
+         *
+         * <p>Only string <em>values</em> are resolved: URLs, paths, table names, header
+         * values, request bodies, credentials, column defaults and connection properties.
+         * Each name is asked for at most once per run, and only for the declarations the
+         * query reaches. Analysis asks too, when it introspects a connection's tables.
+         * When the resolver returns empty for a
+         * name a query needs, the query fails with an error naming the placeholder and the
+         * source or connection holding it, rather than sending the text {@code ${NAME}}.
+         * A session built without a resolver leaves placeholders as written.
+         *
+         * @param resolver the value of each placeholder name, or empty when it has none;
+         *                 must not be null
+         * @return this builder, for chaining
+         * @since 1.0
+         */
+        public Builder placeholders(Function<String, Optional<String>> resolver) {
+            this.placeholders = Placeholders.of(Objects.requireNonNull(resolver, "resolver"));
+            return this;
+        }
+
+        /**
+         * Says whether a file connection may name its file by an {@code https} URL.
+         *
+         * <p>Allowed by default. A {@code url:} is something the script asked for, like an
+         * HTTP source's request, so reaching for it is not a surprise. It does put bytes
+         * on disk inside an embedded process: a fetched file is cached under
+         * {@code ~/.relix/cache/files} and reused by later sessions when the server says it
+         * has not changed. A session that must not do that says so here, and a connection
+         * naming a URL is then an error rather than a download.
+         *
+         * <p>Within one session a URL is fetched at most once, and every scan reads that
+         * copy, so a file that changes on the server does not change under a running query.
+         *
+         * @param allow whether an {@code https} file may be fetched
+         * @return this builder, for chaining
+         * @since 1.0
+         */
+        public Builder remoteFiles(boolean allow) {
+            this.remoteFiles = allow;
+            return this;
         }
 
         /**
@@ -1380,6 +1772,7 @@ public final class Relix implements AutoCloseable {
          */
         public Builder baseDirectory(Path directory) {
             this.baseDirectory = Objects.requireNonNull(directory, "directory");
+            this.baseDirectorySet = true;
             return this;
         }
 
@@ -1421,21 +1814,6 @@ public final class Relix implements AutoCloseable {
             return this;
         }
 
-        /**
-         * Accepts relations whose names the analyser could not resolve, instead of
-         * rejecting them.
-         *
-         * <p>What makes offline work <em>full-strength</em> for a reference that needs a
-         * catalog: {@code warehouse.orders} composes, renders and optimises with the
-         * database unreachable, at the cost of the weaker plan an unknown schema implies.
-         *
-         * <p>Off by default, because the same signal is what a typo produces. Turning it
-         * on trades an error at composition time for one at execution time, which is the
-         * right trade only when composing is the whole intent — tuning a query in CI, on
-         * a machine with no access to production.
-         *
-         * @return this builder
-         */
         /**
          * Caps how many rounds a recursive {@code FIX} may iterate before the engine
          * stops it.
@@ -1493,6 +1871,59 @@ public final class Relix implements AutoCloseable {
                 throw new IllegalArgumentException("maxMaterializedRows must be >= 1: " + rows);
             }
             this.maxMaterializedRows = rows;
+            return this;
+        }
+
+        /**
+         * Caps the work one execution may do, counted as rows passed from one operator to
+         * the next.
+         *
+         * <p>Every row an operator hands to the operator above it is charged, so the count
+         * is the sum of every operator's output. It stops the queries a cap on buffering
+         * or on output cannot: a selection over an endless generator that matches
+         * nothing, which never yields a row, and an aggregate over a large product, which
+         * holds nothing and yields one. It is a total for the whole execution, recursion
+         * included, because what it bounds is work rather than memory. The same query over
+         * the same data charges the same count on any machine.
+         *
+         * <p>Unbounded by default. A query that crosses it fails with a
+         * {@link QueryExecutionException} naming the limit.
+         *
+         * @param rows the most rows one execution may process; must be at least 1
+         * @return this builder, for chaining
+         * @since 1.0
+         */
+        public Builder maxProcessedRows(long rows) {
+            if (rows < 1) {
+                throw new IllegalArgumentException("maxProcessedRows must be >= 1: " + rows);
+            }
+            this.maxProcessedRows = rows;
+            return this;
+        }
+
+        /**
+         * Limits how long one execution may run.
+         *
+         * <p>The clock starts when a query starts executing, and is checked as rows pass
+         * between operators. That reaches every loop in the engine that moves rows, but
+         * not a call that does not return to the engine: a JDBC driver waiting on its
+         * database, or a solver's search. Unlike {@link #maxProcessedRows(long)} the
+         * outcome depends on the machine, so prefer that limit where the answer should be
+         * reproducible, and use this one as a backstop.
+         *
+         * <p>Unlimited by default. A query that crosses it fails with a
+         * {@link QueryExecutionException} naming the limit.
+         *
+         * @param timeout the longest one execution may run; must be positive
+         * @return this builder, for chaining
+         * @since 1.0
+         */
+        public Builder timeout(Duration timeout) {
+            Objects.requireNonNull(timeout, "timeout");
+            if (timeout.isNegative() || timeout.isZero()) {
+                throw new IllegalArgumentException("timeout must be positive: " + timeout);
+            }
+            this.timeout = timeout;
             return this;
         }
 
@@ -1574,6 +2005,31 @@ public final class Relix implements AutoCloseable {
          */
         public Builder sessionEvents(List<QueryEvent> events) {
             this.sessionEvents = List.copyOf(Objects.requireNonNull(events, "events"));
+            return this;
+        }
+
+        /**
+         * Restricts what this session's users may reach, and how much one query may do.
+         *
+         * <p>Sessions are open by default. A closed sandbox accepts internal declarations
+         * (inline tables, views, functions) from {@link Relix#define(String)} and
+         * {@link Relix#script(String)}, but an external one (a file, database or HTTP
+         * source, a connection, an import) only when the sandbox's own declarations
+         * contain the same one. It also caps input length and result size. See
+         * {@link Sandbox}.
+         *
+         * {@snippet lang = "java":
+         * Relix relix = Relix.builder()
+         *         .sandbox(Sandbox.load(Path.of("sandbox.json")))
+         *         .build();
+         * }
+         *
+         * @param sandbox the sandbox; must not be null
+         * @return this builder, for chaining
+         * @since 1.0
+         */
+        public Builder sandbox(Sandbox sandbox) {
+            this.sandbox = Objects.requireNonNull(sandbox, "sandbox");
             return this;
         }
 

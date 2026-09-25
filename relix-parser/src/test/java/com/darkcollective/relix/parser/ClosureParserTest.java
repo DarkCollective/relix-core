@@ -18,6 +18,7 @@ package com.darkcollective.relix.parser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.*;
 
 /**
  * Tests for the transitive-closure operators CLOSURE (R⁺) and RCLOSURE (R*).

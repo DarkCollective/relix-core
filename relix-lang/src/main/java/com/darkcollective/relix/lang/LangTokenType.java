@@ -124,7 +124,8 @@ public enum LangTokenType {
 
     // -------------------------------------------------------------------------
     // HTTP method enum values (uppercase).  Relix is read-only by design, so only
-    // the read methods GET and POST exist — PUT/PATCH/DELETE/HEAD are not tokens.
+    // the read methods exist — PUT/PATCH/DELETE/HEAD are not tokens. The third read
+    // method, QUERY, is the `query` statement keyword and needs no token here.
     // -------------------------------------------------------------------------
 
     GET, POST,

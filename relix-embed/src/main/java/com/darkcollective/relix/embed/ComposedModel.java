@@ -23,7 +23,7 @@ import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.Symbol;
 import com.darkcollective.relix.symbol.function.FunctionSymbol;
-import com.darkcollective.relix.symbol.table.InMemorySymbolTable;
+import com.darkcollective.relix.symbol.table.internal.InMemorySymbolTable;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 
 import java.util.IdentityHashMap;

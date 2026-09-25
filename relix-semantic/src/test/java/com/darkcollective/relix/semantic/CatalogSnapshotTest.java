@@ -15,6 +15,10 @@
  */
 package com.darkcollective.relix.semantic;
 
+import com.darkcollective.relix.semantic.internal.BuiltinProvider;
+import com.darkcollective.relix.semantic.internal.InMemoryScriptLoader;
+import com.darkcollective.relix.semantic.internal.SemanticAnalyzer;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
 import com.darkcollective.relix.lang.ast.ScriptBuilders;
 import com.darkcollective.relix.symbol.ColumnDefinition;

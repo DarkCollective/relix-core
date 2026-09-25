@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.processor;
 
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.value.BooleanValue;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.NumberValue;

@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.cost;
 
-import com.darkcollective.relix.ast.AstEquivalence;
+import com.darkcollective.relix.ast.internal.AstEquivalence;
 import com.darkcollective.relix.ast.RelNode;
 
 import java.util.LinkedHashMap;

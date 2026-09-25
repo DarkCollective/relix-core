@@ -19,11 +19,11 @@ import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.lang.ast.NamedQueryTarget;
 import com.darkcollective.relix.lang.ast.QueryStatement;
-import com.darkcollective.relix.processor.DataSourceConnector;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.DataSourceConnector;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.ScalarType;
 import org.junit.jupiter.api.DisplayName;
@@ -628,7 +628,7 @@ final class RelNodeExecutorTest extends ProcessorTestSupport {
             fields.put("name", str(name));
             fields.put("addr", new com.darkcollective.relix.value.StructValue(
                     java.util.Map.of("city", str(city))));
-            return new com.darkcollective.relix.processor.DocumentRow(
+            return new com.darkcollective.relix.processor.internal.DocumentRow(
                     new com.darkcollective.relix.value.StructValue(fields));
         }
 

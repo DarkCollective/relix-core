@@ -14,23 +14,14 @@
  * limitations under the License.
  */
 /**
- * The pluggable connector SPI — the open replacement for
- * the closed, three-way CSV/JSON/JDBC connector dispatch.
+ * The connector provider interface, and connector plugin provisioning.
  *
- * <p>A {@link com.darkcollective.relix.processor.connector.RelixConnector} bridges
- * one or more <em>type tokens</em> (the word after {@code from} in a
- * {@code connection} declaration) to the executor's
- * {@link com.darkcollective.relix.processor.Row} model, reading its backend-specific
- * settings from a type-agnostic
- * {@link com.darkcollective.relix.processor.connector.ConnectorConfig}.  Capabilities
- * (schema introspection, statistics, query pushdown) are opt-in via the optional
- * methods a connector overrides.
- *
- * <p>The {@link com.darkcollective.relix.processor.connector.ConnectorRegistry}
- * indexes connectors by token and dispatches to them: built-ins are discovered from
- * the module path via {@link java.util.ServiceLoader}, while external plugins are
- * loaded from {@code ~/.relix/connectors/} by a
- * {@link com.darkcollective.relix.processor.connector.ConnectorPluginLoader} — so a
- * new backend (e.g. MongoDB) ships as a JAR with no rebuild of relix.
+ * <p>A {@link com.darkcollective.relix.processor.connector.RelixConnector} reads one kind
+ * of external source, configured by a
+ * {@link com.darkcollective.relix.processor.connector.ConnectorConfig}; connectors are
+ * discovered with {@code ServiceLoader} or registered on a session.
+ * {@link com.darkcollective.relix.processor.connector.ConnectorProvisioner} downloads a
+ * plugin a host asks for, from the {@link com.darkcollective.relix.processor.connector.ConnectorCatalog},
+ * through a {@link com.darkcollective.relix.processor.connector.Fetcher}.
  */
 package com.darkcollective.relix.processor.connector;
