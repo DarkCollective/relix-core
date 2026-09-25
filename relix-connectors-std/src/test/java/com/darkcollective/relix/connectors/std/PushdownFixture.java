@@ -109,7 +109,16 @@ final class PushdownFixture {
          * decides, while the driver still hands the raw column back to the engine as the
          * instant it is.
          */
-        POSTGRES("TIMESTAMP", "TIMESTAMPTZ");
+        POSTGRES("TIMESTAMP", "TIMESTAMPTZ"),
+
+        /**
+         * DuckDB, whose pair is PostgreSQL's and behaves as PostgreSQL's does: a
+         * {@code TIMESTAMPTZ} is rendered in the session's {@code TimeZone}, so
+         * {@code date_trunc} and {@code EXTRACT} over one read a wall clock the session
+         * decides. Unlike pgjdbc, its driver reports the column as
+         * {@code TIMESTAMP_WITH_TIMEZONE}, so the connector recognises it by type code.
+         */
+        DUCKDB("TIMESTAMP", "TIMESTAMPTZ");
 
         private final String unconverted;
         private final String converted;

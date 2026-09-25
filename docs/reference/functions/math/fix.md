@@ -25,7 +25,7 @@ Whole hours from a fractional hours figure:
 SQL: dialect-dependent, because truncation towards zero is the one rounding SQL
 never settled on a single name for.
   - **MySQL**: `TRUNCATE(<e>, 0)`.
-  - **Postgres**: `TRUNC(<e>)`.
+  - **Postgres** and **DuckDB**: `TRUNC(<e>)`.
   - **GENERIC**: not pushed. A name that has to be chosen per dialect is one an
     unidentified backend has not been confirmed to have.
 

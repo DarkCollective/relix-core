@@ -23,12 +23,12 @@ First initial:
   π Left(first_name, 1) → initial (People)
 
 # Pushdown:
-SQL: folds to `LEFT(<s>, <n>)` on the **MySQL** dialect only. MySQL counts a string in
-characters, which is what relix counts in; H2 (the generic dialect) counts UTF-16
-code units, so its same-named function answers differently for text holding a
-character outside the basic multilingual plane, and is offered nothing. Postgres
-is not offered it either — not because it is believed to differ, but because no
-Postgres has been run against it.
+SQL: folds to `LEFT(<s>, <n>)` on the
+**MySQL**, **PostgreSQL** and **DuckDB** dialects. Each counts a string in
+characters, which is what relix counts in, and each was put on that list by running
+it against text holding a character outside the basic multilingual plane. H2 (the
+generic dialect) counts UTF-16 code units, so its same-named function answers
+differently for such text, and is offered nothing.
 
 # Limitations:
 n must be ≥ 0. STRING first argument; NULL in → NULL out.

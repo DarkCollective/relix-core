@@ -85,7 +85,7 @@ where it can fold. That is why the two features compound — see
 | `TOP` | `ORDER BY … LIMIT` | it is per-group (`PER …`) — only the whole-relation form folds |
 | ⨝ theta join | `JOIN … ON` | either side is not a bare table scan, the two sides are on different connections or are the same relation (a self-join), or the condition has an untranslatable part |
 | ⋈ natural join | `JOIN … ON` equating the shared columns | either side is not a bare table scan, the two sides are on different connections or are the same relation, or a shared column has a different type on each side |
-| `ASOF` join | `LEFT JOIN LATERAL (… ORDER BY … LIMIT 1) ON TRUE`, or `JOIN LATERAL` for the `INNER` form | the dialect is not PostgreSQL, or the join carries a `WITHIN` tolerance |
+| `ASOF` join | `LEFT JOIN LATERAL (… ORDER BY … LIMIT 1) ON TRUE`, or `JOIN LATERAL` for the `INNER` form | the dialect is not PostgreSQL or DuckDB, or the join carries a `WITHIN` tolerance |
 | `IJOIN` interval | `JOIN … ON` over the endpoints | either side is not a bare scan, or they are on different connections |
 | `WINDOW` / `ROLLING` | `OVER (PARTITION BY … ORDER BY …)` | the dialect is MySQL, or a projection, grouping or limit is already folded |
 
@@ -156,7 +156,7 @@ Inside a folded operator, an expression folds if every part of it does.
 |---|---|
 | column references | struct `{…}` and array `[…]` construction |
 | number, string, boolean, `DATE`, `TIME`, `TIMESTAMP` literals | a predicate used as a value |
-| `DURATION` literals, on PostgreSQL | `DURATION` literals on other dialects |
+| `DURATION` literals, on PostgreSQL and DuckDB | `DURATION` literals on other dialects |
 | `= ≠ < ≤ > ≥`, `∧ ∨ ¬`, `IS [NOT] NULL`, `IN`, `LIKE` | |
 | `+ - *` and unary minus | division `/` |
 
@@ -191,13 +191,13 @@ large table. Of the built-in scalar functions, **twenty-one** have a SQL spellin
 | Function | SQL |
 |---|---|
 | `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND` | `EXTRACT(unit FROM e)` |
-| `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect declines it |
+| `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL and DuckDB, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect declines it |
 | `Abs`, `Int`, `Ceil`, `Sgn`, `Round` | `ABS`, `FLOOR`, `CEILING`, `SIGN`, `ROUND` |
-| `Fix` | `TRUNCATE(e, 0)` on MySQL, `TRUNC(e)` on PostgreSQL; the generic dialect declines it |
+| `Fix` | `TRUNCATE(e, 0)` on MySQL, `TRUNC(e)` on PostgreSQL and DuckDB; the generic dialect declines it |
 | `Coalesce`, `Nz` (two-argument form) | `COALESCE(…)` |
 | `IsNull` | `(e IS NULL)` |
 | `Replace` | `REPLACE(s, find, replacement)` |
-| `Len`, `Left`, `Right`, `Mid` | `CHAR_LENGTH`, `LEFT`, `RIGHT`, `SUBSTRING` — **MySQL and PostgreSQL only** |
+| `Len`, `Left`, `Right`, `Mid` | `CHAR_LENGTH`, `LEFT`, `RIGHT`, `SUBSTRING` — **MySQL, PostgreSQL and DuckDB only** |
 
 Everything else is evaluated in the engine, and two families are worth knowing by
 name because SQL has a same-named function for every one of them and answers
@@ -228,7 +228,7 @@ cause. A slower plan is the deliberate trade.
 `Len`, `Left`, `Right` and `Mid` are the four that are offered to **named**
 dialects rather than to SQL at large, and the reason is worth knowing because it
 is not about the functions. relix counts and slices a string in **code points**,
-and so do MySQL and PostgreSQL — but H2, which resolves to the generic dialect,
+and so do MySQL, PostgreSQL and DuckDB — but H2, which resolves to the generic dialect,
 counts UTF-16 code units, so its `CHAR_LENGTH` and `LEFT` are different functions
 wearing familiar names and disagree on any text holding a character outside the
 basic multilingual plane. "SQL counts characters" is exactly the kind of claim
@@ -312,7 +312,7 @@ number and the orders agree exactly. The difference needs both an unusual backen
 and unusual data.
 
 Two things make it avoidable when it matters. Naming the dialect (`dialect: mysql`,
-`dialect: postgres`) moves the connection off `generic` and onto a checked answer.
+`dialect: postgres`, `dialect: duckdb`) moves the connection off `generic` and onto a checked answer.
 Declaring `collation: database` tells relix to make no assumption about string
 comparison at all, at the cost of computing those in the engine — see
 [connection](../language/connection.md).
@@ -320,8 +320,9 @@ comparison at all, at the cost of computing those in the engine — see
 | Dialect | Identifiers | Notable |
 |---|---|---|
 | `generic` (default) | unquoted, unless not a plain identifier | no `DATE_TRUNC`; relies on the backend folding unquoted identifiers, and on its string comparison being the common one — see below |
-| `postgres` | `"quoted"` | the only dialect that folds an `ASOF` join, `DURATION` literals and `NULLS LAST`; string *ordering* is collated, string equality is not |
+| `postgres` | `"quoted"` | with DuckDB, the only dialects that fold an `ASOF` join, `DURATION` literals and `NULLS LAST`; string *ordering* is collated, string equality is not |
 | `mysql` | `` `quoted` `` | no window functions, so those are computed in the engine; `DATE_TRUNC` folds through `DATE_FORMAT`; string comparison and ordering are collated |
+| `duckdb` | `"quoted"` | PostgreSQL's SQL — `NULLS LAST`, `date_trunc`, an `ASOF` join through `LATERAL`, window functions — with a binary default collation, so neither string comparison nor string ordering is collated |
 
 Each dialect writes a table name one part at a time, so a schema-qualified
 `table: "sales.orders"` becomes `"sales"."orders"` on PostgreSQL. On `generic`, a
@@ -329,6 +330,22 @@ name that is a plain identifier (letters, digits and `_`, not starting with a di
 is written bare, and any other name is double-quoted exactly as written. A table
 created as `"order-lines"` is therefore read as `"order-lines"`, and its name must
 match the stored name's case.
+
+### DuckDB, and the file it names
+
+DuckDB runs inside the process that opens it, so a DuckDB connection names a
+database *file* rather than a server:
+
+```relix
+connection lake from database { url: "jdbc:duckdb:/data/lake.duckdb" };
+```
+
+A bare `jdbc:duckdb:`, DuckDB's in-memory form, is private to the one JDBC
+connection that opened it. relix opens connections of its own, so each would see a
+fresh, empty database — name a file. The dialect is recognised from the `jdbc:duckdb:`
+prefix, or can be named with `dialect: duckdb`. Its SQL is PostgreSQL's in every place
+relix renders differently, and its default collation is binary, so a DuckDB
+connection folds every string comparison and ordering as written.
 
 ### Strings, and the collation they are compared under
 
@@ -405,8 +422,8 @@ by in the engine, and the query returns different rows depending on whether it
 folded.
 
 So relix **pins the session to UTC** on every connection it opens to an identified
-backend — `SET TIME ZONE 'UTC'` on PostgreSQL, `SET time_zone = '+00:00'` on MySQL
-— and a temporal fold means the same thing wherever it runs. On PostgreSQL there is
+backend — `SET TIME ZONE 'UTC'` on PostgreSQL, `SET time_zone = '+00:00'` on MySQL,
+`SET TimeZone = 'UTC'` on DuckDB — and a temporal fold means the same thing wherever it runs. On PostgreSQL there is
 no other way to say it: the driver takes the session's zone from the client
 machine's default and ignores one named in the connection string, so without this a
 query's answers moved with the time zone of the host the engine ran on.

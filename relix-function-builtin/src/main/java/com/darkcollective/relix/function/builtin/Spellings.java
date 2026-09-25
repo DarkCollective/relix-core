@@ -51,6 +51,9 @@ final class Spellings {
     /** @see #POSTGRES */
     static final String MYSQL = "mysql";
 
+    /** @see #POSTGRES */
+    static final String DUCKDB = "duckdb";
+
     /**
      * The unidentified backend, whose variant is the empty string.
      *

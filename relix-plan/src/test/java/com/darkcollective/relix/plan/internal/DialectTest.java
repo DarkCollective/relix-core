@@ -79,6 +79,7 @@ final class DialectTest {
             assertThat(Dialect.GENERIC.table("sales.order-lines")).isEqualTo("sales.\"order-lines\"");
             assertThat(Dialect.POSTGRES.table("public.orders")).isEqualTo("\"public\".\"orders\"");
             assertThat(Dialect.MYSQL.table("shop.orders")).isEqualTo("`shop`.`orders`");
+            assertThat(Dialect.DUCKDB.table("main.orders")).isEqualTo("\"main\".\"orders\"");
         }
     }
 
@@ -155,6 +156,7 @@ final class DialectTest {
             assertThat(Dialect.byName("postgres")).isEqualTo(Dialect.POSTGRES);
             assertThat(Dialect.byName("MySQL")).isEqualTo(Dialect.MYSQL);
             assertThat(Dialect.byName("mariadb")).isEqualTo(Dialect.MYSQL);
+            assertThat(Dialect.byName("DuckDB")).isEqualTo(Dialect.DUCKDB);
             assertThat(Dialect.byName("h2")).isEqualTo(Dialect.GENERIC);
             assertThat(Dialect.byName("wat")).isEqualTo(Dialect.GENERIC);
         }
@@ -165,6 +167,8 @@ final class DialectTest {
             assertThat(Dialect.fromUrl("jdbc:postgresql://h/db")).isEqualTo(Dialect.POSTGRES);
             assertThat(Dialect.fromUrl("jdbc:mysql://h/db")).isEqualTo(Dialect.MYSQL);
             assertThat(Dialect.fromUrl("jdbc:mariadb://h/db")).isEqualTo(Dialect.MYSQL);
+            assertThat(Dialect.fromUrl("jdbc:duckdb:/tmp/x.duckdb")).isEqualTo(Dialect.DUCKDB);
+            assertThat(Dialect.fromUrl("jdbc:duckdb:")).isEqualTo(Dialect.DUCKDB);
             assertThat(Dialect.fromUrl("jdbc:h2:mem:x")).isEqualTo(Dialect.GENERIC);
         }
 
@@ -281,9 +285,10 @@ final class DialectTest {
     class LateralAsOf {
 
         @Test
-        @DisplayName("only POSTGRES supports a LATERAL AS-OF push")
+        @DisplayName("POSTGRES and DUCKDB, which spell LATERAL alike, support a LATERAL AS-OF push")
         void postgresSupports() {
             assertThat(Dialect.POSTGRES.supportsLateralAsOf()).isTrue();
+            assertThat(Dialect.DUCKDB.supportsLateralAsOf()).isTrue();
         }
 
         @Test
@@ -326,6 +331,15 @@ final class DialectTest {
             assertThat(Dialect.MYSQL.timeLiteral(time)).isEqualTo("TIME '13:40'");
             assertThat(Dialect.MYSQL.timestampLiteral(instant)).isEqualTo("TIMESTAMP '2026-06-15 13:40:00'");
         }
+
+        @Test
+        @DisplayName("DUCKDB renders PostgreSQL's typed literals")
+        void duckdb() {
+            assertThat(Dialect.DUCKDB.dateLiteral(date)).isEqualTo("DATE '2026-06-15'");
+            assertThat(Dialect.DUCKDB.timeLiteral(time)).isEqualTo("TIME '13:40'");
+            assertThat(Dialect.DUCKDB.timestampLiteral(instant))
+                    .isEqualTo("TIMESTAMP WITH TIME ZONE '2026-06-15T13:40:00Z'");
+        }
     }
 
     @Nested
@@ -341,6 +355,8 @@ final class DialectTest {
                     .isEqualTo(PushdownTarget.sql("postgres"));
             assertThat(Dialect.MYSQL.pushdownTarget())
                     .isEqualTo(PushdownTarget.sql("mysql"));
+            assertThat(Dialect.DUCKDB.pushdownTarget())
+                    .isEqualTo(PushdownTarget.sql("duckdb"));
         }
 
         @Test
@@ -432,10 +448,11 @@ final class DialectTest {
     class SessionTimeZone {
 
         @Test
-        @DisplayName("the two named dialects each have their own spelling")
+        @DisplayName("each named dialect has its own spelling")
         void namedDialects() {
             assertThat(Dialect.POSTGRES.pinSessionToUtcSql()).contains("SET TIME ZONE 'UTC'");
             assertThat(Dialect.MYSQL.pinSessionToUtcSql()).contains("SET time_zone = '+00:00'");
+            assertThat(Dialect.DUCKDB.pinSessionToUtcSql()).contains("SET TimeZone = 'UTC'");
         }
 
         @Test
@@ -455,6 +472,20 @@ final class DialectTest {
         @DisplayName("postgres takes the ISO-8601 string as written")
         void postgres() {
             assertThat(Dialect.POSTGRES.durationLiteral(halfHour)).contains("INTERVAL 'PT30M'");
+        }
+
+        @Test
+        @DisplayName("duckdb rejects the ISO string, so it is handed an exact count of microseconds")
+        void duckdb() {
+            assertThat(Dialect.DUCKDB.durationLiteral(halfHour)).contains("to_microseconds(1800000000)");
+            assertThat(Dialect.DUCKDB.durationLiteral(java.time.Duration.ofSeconds(-1, 500_000)))
+                    .contains("to_microseconds(-999500)");
+        }
+
+        @Test
+        @DisplayName("duckdb declines a duration finer than a microsecond rather than rounding it")
+        void duckdbDeclinesNanoseconds() {
+            assertThat(Dialect.DUCKDB.durationLiteral(java.time.Duration.ofNanos(1_500))).isEmpty();
         }
 
         @Test
@@ -504,7 +535,8 @@ final class DialectTest {
                 //                      cmp=   ord=   wrapEq wrapOr win    lat    pin    dur
                 Dialect.GENERIC,  new Answer(true,  true,  false, false, true,  false, false, false),
                 Dialect.POSTGRES, new Answer(true,  false, false, true,  true,  true,  true,  true),
-                Dialect.MYSQL,    new Answer(false, false, true,  true,  false, false, true,  false));
+                Dialect.MYSQL,    new Answer(false, false, true,  true,  false, false, true,  false),
+                Dialect.DUCKDB,   new Answer(true,  true,  false, false, true,  true,  true,  true));
 
         @Test
         @DisplayName("a dialect with no row here is a dialect nobody reviewed")

@@ -81,11 +81,14 @@ final class DateTimeFunctions {
 
     private static final Category DATETIME = Category.of("datetime");
 
-    /** The one SQL dialect confirmed to have {@code date_trunc}, in relix's argument order. */
+    /** A SQL dialect confirmed to have {@code date_trunc}, in relix's argument order. */
     private static final String POSTGRES = "postgres";
 
     /** The dialect that reaches the same truncation through {@code DATE_FORMAT}. */
     private static final String MYSQL = "mysql";
+
+    /** @see #POSTGRES */
+    private static final String DUCKDB = "duckdb";
 
     private DateTimeFunctions() {
     }
@@ -296,8 +299,8 @@ final class DateTimeFunctions {
     }
 
     /**
-     * {@code DATE_TRUNC(unit, ts)} per backend. Postgres takes the arguments in relix's
-     * order, MongoDB spells it as a pipeline operator, and MySQL — which has no
+     * {@code DATE_TRUNC(unit, ts)} per backend. Postgres and DuckDB take the arguments in
+     * relix's order, MongoDB spells it as a pipeline operator, and MySQL — which has no
      * {@code DATE_TRUNC} — reaches the same result through a per-unit
      * {@code DATE_FORMAT} pattern. The generic dialect declines: it is an
      * unidentified backend, and a wrong spelling is worse than evaluating the call
@@ -311,7 +314,7 @@ final class DateTimeFunctions {
         String unit = arguments.get(0);
         String timestamp = arguments.get(1);
         if (target.isFamily(PushdownTarget.SQL)) {
-            if (target.isVariant(POSTGRES)) {
+            if (target.isVariant(POSTGRES) || target.isVariant(DUCKDB)) {
                 return Optional.of("date_trunc(" + unit + ", " + timestamp + ")");
             }
             if (target.isVariant(MYSQL)) {
