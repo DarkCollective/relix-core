@@ -91,7 +91,7 @@ ext.docGuides = [
 // The version the build is at, for a workflow deriving the snapshot version from it.
 tasks.register('printVersion') {
     description = 'Prints the version the build publishes under.'
-    def v = findProperty('relixVersion') ?: '1.0.0-rc2'
+    def v = findProperty('relixVersion') ?: '1.0.0-rc4'
     doLast { println v }
 }
 
@@ -100,7 +100,7 @@ subprojects {
     apply plugin: 'jacoco'
 
     group = 'com.darkcollective.relix'
-    version = findProperty('relixVersion') ?: '1.0.0-rc2'
+    version = findProperty('relixVersion') ?: '1.0.0-rc4'
 
     java {
         toolchain {
