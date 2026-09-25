@@ -117,7 +117,10 @@ final class MathFunctions {
                 // zero when the trailing argument is not passed.
                 MATH.fn("Round", NUMBER, PURE_DETERMINISTIC,
                         List.of(p("x", NUMBER), p("places", NUMBER)), Arity.between(1, 2),
-                        Spellings.sqlExcept("ROUND", ROUNDS_IN_FLOATING_POINT),
+                        Spellings.firstOf(
+                                // T-SQL's ROUND always takes the places.
+                                Spellings.on(Spellings.SQLSERVER, 1, a -> "ROUND(" + a.get(0) + ", 0)"),
+                                Spellings.sqlExcept("ROUND", ROUNDS_IN_FLOATING_POINT)),
                         MathFunctions::round),
 
                 // CEILING rather than CEIL: both dialects have both, but CEILING is the
@@ -202,8 +205,8 @@ final class MathFunctions {
 
     /**
      * {@code Fix} per dialect. Truncation towards zero is the one rounding SQL never
-     * settled on a single name for — MySQL spells it {@code TRUNCATE(x, 0)} and
-     * Postgres and DuckDB {@code TRUNC(x)} — and the generic dialect is offered neither, because a
+     * settled on a single name for — MySQL spells it {@code TRUNCATE(x, 0)}, Postgres and
+     * DuckDB {@code TRUNC(x)}, and SQL Server {@code ROUND(x, 0, 1)} — and the generic dialect is offered neither, because a
      * name that has to be chosen per dialect is by definition one an unidentified
      * backend has not been confirmed to have.
      */
@@ -217,6 +220,10 @@ final class MathFunctions {
         }
         if (target.isVariant(Spellings.POSTGRES) || target.isVariant(Spellings.DUCKDB)) {
             return Optional.of("TRUNC(" + x + ")");
+        }
+        // T-SQL truncates through ROUND's third argument: any non-zero value truncates.
+        if (target.isVariant(Spellings.SQLSERVER)) {
+            return Optional.of("ROUND(" + x + ", 0, 1)");
         }
         return Optional.empty();
     }

@@ -55,6 +55,14 @@ final class DialectTest {
         }
 
         @Test
+        @DisplayName("sqlserver bracket-quotes and doubles an embedded closing bracket")
+        void sqlserver() {
+            assertThat(Dialect.SQLSERVER.quote("col")).isEqualTo("[col]");
+            assertThat(Dialect.SQLSERVER.quote("a]b")).isEqualTo("[a]]b]");
+            assertThat(Dialect.SQLSERVER.quote("order-lines")).isEqualTo("[order-lines]");
+        }
+
+        @Test
         @DisplayName("mysql back-tick-quotes and doubles embedded back-ticks")
         void mysql() {
             assertThat(Dialect.MYSQL.quote("col")).isEqualTo("`col`");
@@ -81,6 +89,54 @@ final class DialectTest {
             assertThat(Dialect.MYSQL.table("shop.orders")).isEqualTo("`shop`.`orders`");
             assertThat(Dialect.DUCKDB.table("main.orders")).isEqualTo("\"main\".\"orders\"");
             assertThat(Dialect.SQLITE.table("main.orders")).isEqualTo("\"main\".\"orders\"");
+            assertThat(Dialect.SQLSERVER.table("dbo.orders")).isEqualTo("[dbo].[orders]");
+        }
+    }
+
+    @Nested
+    @DisplayName("literals SQL Server spells its own way")
+    class SqlServerLiterals {
+
+        @Test
+        @DisplayName("a string is national, so a character outside the code page survives")
+        void nationalString() {
+            assertThat(Dialect.SQLSERVER.stringLiteral("it's")).isEqualTo("N'it''s'");
+            assertThat(Dialect.SQLSERVER.stringLiteral("a\\b")).isEqualTo("N'a\\b'");
+            // Every other dialect writes the same value unprefixed, whatever it starts with.
+            assertThat(Dialect.POSTGRES.stringLiteral("N'x")).isEqualTo("'N''x'");
+        }
+
+        @Test
+        @DisplayName("a boolean is a BIT, 1 or 0")
+        void booleans() {
+            assertThat(Dialect.SQLSERVER.booleanLiteral(true)).isEqualTo("1");
+            assertThat(Dialect.SQLSERVER.booleanLiteral(false)).isEqualTo("0");
+            assertThat(Dialect.GENERIC.booleanLiteral(true)).isEqualTo("TRUE");
+            assertThat(Dialect.POSTGRES.booleanLiteral(false)).isEqualTo("FALSE");
+        }
+
+        @Test
+        @DisplayName("NULLs are placed by a CASE, T-SQL having neither NULLS LAST nor a boolean to sort")
+        void nullOrdering() {
+            assertThat(Dialect.SQLSERVER.orderByTerms("[x]", true))
+                    .containsExactly("CASE WHEN [x] IS NULL THEN 1 ELSE 0 END ASC", "[x] DESC");
+        }
+
+        @Test
+        @DisplayName("strings are compared and ordered under a binary collation")
+        void collation() {
+            assertThat(Dialect.SQLSERVER.exactStringComparison("[name]"))
+                    .isEqualTo("([name]) COLLATE Latin1_General_100_BIN2");
+            assertThat(Dialect.SQLSERVER.exactStringOrder("[name]"))
+                    .isEqualTo("([name]) COLLATE Latin1_General_100_BIN2");
+        }
+
+        @Test
+        @DisplayName("a LIKE pattern's [ is bracketed, and a computed pattern declines")
+        void like() {
+            assertThat(Dialect.SQLSERVER.like("x", "N'[a%'", Optional.of("[a%"), false))
+                    .contains("(x LIKE N'[[]a%')");
+            assertThat(Dialect.SQLSERVER.like("x", "y", Optional.empty(), true)).isEmpty();
         }
     }
 
@@ -89,7 +145,7 @@ final class DialectTest {
     class Like {
 
         @Test
-        @DisplayName("every dialect but SQLite renders LIKE as written")
+        @DisplayName("every dialect but SQLite and SQL Server renders LIKE as written")
         void likeAsWritten() {
             for (Dialect d : new Dialect[] {Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL,
                     Dialect.DUCKDB}) {
@@ -137,6 +193,21 @@ final class DialectTest {
         @DisplayName("LIMIT with an offset")
         void withOffset() {
             assertThat(Dialect.GENERIC.limit(10, 5)).isEqualTo("LIMIT 10 OFFSET 5");
+        }
+
+        @Test
+        @DisplayName("SQL Server has no LIMIT; its OFFSET … FETCH always names the offset")
+        void sqlserver() {
+            assertThat(Dialect.SQLSERVER.limit(10, 0)).isEqualTo("OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
+            assertThat(Dialect.SQLSERVER.limit(10, 5)).isEqualTo("OFFSET 5 ROWS FETCH NEXT 10 ROWS ONLY");
+        }
+
+        @Test
+        @DisplayName("and only SQL Server needs an ORDER BY for it to be legal")
+        void needsOrderBy() {
+            for (Dialect d : Dialect.values()) {
+                assertThat(d.limitNeedsOrderBy()).as("%s", d).isEqualTo(d == Dialect.SQLSERVER);
+            }
         }
     }
 
@@ -198,6 +269,8 @@ final class DialectTest {
             assertThat(Dialect.byName("mariadb")).isEqualTo(Dialect.MYSQL);
             assertThat(Dialect.byName("DuckDB")).isEqualTo(Dialect.DUCKDB);
             assertThat(Dialect.byName("sqlite")).isEqualTo(Dialect.SQLITE);
+            assertThat(Dialect.byName("SQLServer")).isEqualTo(Dialect.SQLSERVER);
+            assertThat(Dialect.byName("mssql")).isEqualTo(Dialect.SQLSERVER);
             assertThat(Dialect.byName("h2")).isEqualTo(Dialect.GENERIC);
             assertThat(Dialect.byName("wat")).isEqualTo(Dialect.GENERIC);
         }
@@ -211,6 +284,8 @@ final class DialectTest {
             assertThat(Dialect.fromUrl("jdbc:duckdb:/tmp/x.duckdb")).isEqualTo(Dialect.DUCKDB);
             assertThat(Dialect.fromUrl("jdbc:duckdb:")).isEqualTo(Dialect.DUCKDB);
             assertThat(Dialect.fromUrl("jdbc:sqlite:/tmp/x.db")).isEqualTo(Dialect.SQLITE);
+            assertThat(Dialect.fromUrl("jdbc:sqlserver://h:1433;databaseName=db"))
+                    .isEqualTo(Dialect.SQLSERVER);
             assertThat(Dialect.fromUrl("jdbc:h2:mem:x")).isEqualTo(Dialect.GENERIC);
         }
 
@@ -327,17 +402,38 @@ final class DialectTest {
     class LateralAsOf {
 
         @Test
-        @DisplayName("POSTGRES and DUCKDB, which spell LATERAL alike, support a LATERAL AS-OF push")
+        @DisplayName("POSTGRES and DUCKDB, which spell LATERAL alike, and SQLSERVER support an AS-OF push")
         void postgresSupports() {
             assertThat(Dialect.POSTGRES.supportsLateralAsOf()).isTrue();
             assertThat(Dialect.DUCKDB.supportsLateralAsOf()).isTrue();
+            assertThat(Dialect.SQLSERVER.supportsLateralAsOf()).isTrue();
         }
 
         @Test
-        @DisplayName("GENERIC (H2, no LATERAL) and MYSQL (version-gated) fall back to in-engine")
+        @DisplayName("LATERAL … LIMIT 1 ON TRUE, or SQL Server's APPLY … TOP 1")
+        void spellings() {
+            assertThat(Dialect.POSTGRES.nearestRowJoin("l a", "b.x", "FROM r b WHERE p", "b.t DESC",
+                    "b", false))
+                    .contains("l a LEFT JOIN LATERAL (SELECT b.x FROM r b WHERE p ORDER BY b.t DESC LIMIT 1) b ON TRUE");
+            assertThat(Dialect.DUCKDB.nearestRowJoin("l a", "b.x", "FROM r b WHERE p", "b.t DESC",
+                    "b", true))
+                    .contains("l a JOIN LATERAL (SELECT b.x FROM r b WHERE p ORDER BY b.t DESC LIMIT 1) b ON TRUE");
+            assertThat(Dialect.SQLSERVER.nearestRowJoin("l a", "b.x", "FROM r b WHERE p", "b.t DESC",
+                    "b", false))
+                    .contains("l a OUTER APPLY (SELECT TOP 1 b.x FROM r b WHERE p ORDER BY b.t DESC) b");
+            assertThat(Dialect.SQLSERVER.nearestRowJoin("l a", "b.x", "FROM r b WHERE p", "b.t DESC",
+                    "b", true))
+                    .contains("l a CROSS APPLY (SELECT TOP 1 b.x FROM r b WHERE p ORDER BY b.t DESC) b");
+            assertThat(Dialect.MYSQL.nearestRowJoin("l a", "b.x", "FROM r b", "b.t", "b", true))
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("GENERIC (H2, no LATERAL), MYSQL (version-gated) and SQLITE fall back to in-engine")
         void genericAndMysqlDoNot() {
             assertThat(Dialect.GENERIC.supportsLateralAsOf()).isFalse();
             assertThat(Dialect.MYSQL.supportsLateralAsOf()).isFalse();
+            assertThat(Dialect.SQLITE.supportsLateralAsOf()).isFalse();
         }
     }
 
@@ -384,6 +480,17 @@ final class DialectTest {
         }
 
         @Test
+        @DisplayName("SQLSERVER casts ISO strings; a TIMESTAMP is a DATETIME2 of the UTC wall clock")
+        void sqlserver() {
+            assertThat(Dialect.SQLSERVER.dateLiteral(date)).contains("CAST('2026-06-15' AS DATE)");
+            assertThat(Dialect.SQLSERVER.timeLiteral(time)).contains("CAST('13:40' AS TIME)");
+            assertThat(Dialect.SQLSERVER.timestampLiteral(instant))
+                    .contains("CAST('2026-06-15 13:40:00.0000000' AS DATETIME2)");
+            assertThat(Dialect.SQLSERVER.timestampLiteral(Instant.parse("2026-06-15T13:40:00.1234567Z")))
+                    .contains("CAST('2026-06-15 13:40:00.1234567' AS DATETIME2)");
+        }
+
+        @Test
         @DisplayName("DUCKDB renders PostgreSQL's typed literals")
         void duckdb() {
             assertThat(Dialect.DUCKDB.dateLiteral(date)).contains("DATE '2026-06-15'");
@@ -410,6 +517,8 @@ final class DialectTest {
                     .isEqualTo(PushdownTarget.sql("duckdb"));
             assertThat(Dialect.SQLITE.pushdownTarget())
                     .isEqualTo(PushdownTarget.sql("sqlite"));
+            assertThat(Dialect.SQLSERVER.pushdownTarget())
+                    .isEqualTo(PushdownTarget.sql("sqlserver"));
         }
 
         @Test
@@ -515,9 +624,10 @@ final class DialectTest {
         }
 
         @Test
-        @DisplayName("SQLite has no session time zone to pin")
+        @DisplayName("SQLite and SQL Server have no session time zone to pin")
         void sqliteHasNone() {
             assertThat(Dialect.SQLITE.pinSessionToUtcSql()).isEmpty();
+            assertThat(Dialect.SQLSERVER.pinSessionToUtcSql()).isEmpty();
         }
     }
 
@@ -596,7 +706,8 @@ final class DialectTest {
                 Dialect.POSTGRES, new Answer(true,  false, false, true,  true,  true,  true,  true),
                 Dialect.MYSQL,    new Answer(false, false, true,  true,  false, false, true,  false),
                 Dialect.DUCKDB,   new Answer(true,  true,  false, false, true,  true,  true,  true),
-                Dialect.SQLITE,   new Answer(true,  true,  false, false, true,  false, false, false));
+                Dialect.SQLITE,   new Answer(true,  true,  false, false, true,  false, false, false),
+                Dialect.SQLSERVER, new Answer(false, false, true, true,  true,  true,  false, false));
 
         @Test
         @DisplayName("a dialect with no row here is a dialect nobody reviewed")

@@ -47,6 +47,7 @@ final class PushdownSpellingsTest {
     private static final PushdownTarget GENERIC = PushdownTarget.sql("");
     private static final PushdownTarget DUCKDB = PushdownTarget.sql("duckdb");
     private static final PushdownTarget SQLITE = PushdownTarget.sql("sqlite");
+    private static final PushdownTarget SQLSERVER = PushdownTarget.sql("sqlserver");
     private static final PushdownTarget MONGO = PushdownTarget.mongo();
 
     private static Optional<String> render(String function, PushdownTarget target,
@@ -442,12 +443,69 @@ final class PushdownSpellingsTest {
         }
     }
 
+    /**
+     * SQL Server, whose T-SQL names half of these differently and whose default collation
+     * ignores case — each spelling run against a SQL Server by the agreement suite.
+     */
+    @Nested
+    @DisplayName("SQL Server, in T-SQL's own names")
+    final class SqlServer {
+
+        @Test
+        @DisplayName("an extraction is DATEPART over the value switched to UTC")
+        void extraction() {
+            assertThat(render("YEAR", SQLSERVER, "[at]"))
+                    .contains("DATEPART(YEAR, SWITCHOFFSET([at], '+00:00'))");
+            assertThat(render("SECOND", SQLSERVER, "[at]"))
+                    .contains("DATEPART(SECOND, SWITCHOFFSET([at], '+00:00'))");
+        }
+
+        @Test
+        @DisplayName("DATE_TRUNC declines: DATETRUNC is 2022's, a version no declared dialect confirms")
+        void noDateTrunc() {
+            assertThat(render("DATE_TRUNC", SQLSERVER, "'day'", "[at]")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("ROUND always takes its places, and truncates through its third argument")
+        void rounding() {
+            assertThat(render("Round", SQLSERVER, "x")).contains("ROUND(x, 0)");
+            assertThat(render("Round", SQLSERVER, "x", "2")).contains("ROUND(x, 2)");
+            assertThat(render("Fix", SQLSERVER, "x")).contains("ROUND(x, 0, 1)");
+            assertThat(render("Int", SQLSERVER, "x")).contains("FLOOR(x)");
+            assertThat(render("Ceil", SQLSERVER, "x")).contains("CEILING(x)");
+        }
+
+        @Test
+        @DisplayName("IsNull is the BIT the question answers as")
+        void isNull() {
+            assertThat(render("IsNull", SQLSERVER, "[x]"))
+                    .contains("(CASE WHEN [x] IS NULL THEN 1 ELSE 0 END)");
+        }
+
+        @Test
+        @DisplayName("Replace matches under a binary collation, the default ignoring case")
+        void replace() {
+            assertThat(render("Replace", SQLSERVER, "[s]", "N'a'", "N'b'"))
+                    .contains("REPLACE(([s]) COLLATE Latin1_General_100_BIN2, N'a', N'b')");
+        }
+
+        @Test
+        @DisplayName("counting and slicing decline: LEN counts UTF-16 units and drops trailing spaces")
+        void noCountingOrSlicing() {
+            for (String function : List.of("Len", "Left", "Right", "Mid")) {
+                assertThat(render(function, SQLSERVER, "a")).as(function).isEmpty();
+                assertThat(render(function, SQLSERVER, "a", "b")).as(function).isEmpty();
+            }
+        }
+    }
+
     @Test
     @DisplayName("the transcendental numerics decline: a different double, or no answer at all")
     void transcendentalsDecline() {
         for (String function : List.of("Sqr", "Log", "Exp", "Sin", "Cos", "Tan", "Atn",
                 "Power")) {
-            for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, MONGO)) {
+            for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, SQLSERVER, MONGO)) {
                 assertThat(render(function, target, "a"))
                         .as("%s on %s", function, target).isEmpty();
                 assertThat(render(function, target, "a", "b"))
@@ -477,7 +535,7 @@ final class PushdownSpellingsTest {
 
     private static boolean spellsAnything(ScalarFunction fn) {
         List<String> arguments = List.of("a", "b", "c");
-        for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, MONGO)) {
+        for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, SQLSERVER, MONGO)) {
             for (int count = 0; count <= arguments.size(); count++) {
                 if (fn.pushdown().render(target, arguments.subList(0, count)).isPresent()) {
                     return true;

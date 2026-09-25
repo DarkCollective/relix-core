@@ -57,6 +57,16 @@ final class Spellings {
     /** @see #POSTGRES */
     static final String SQLITE = "sqlite";
 
+    /** @see #POSTGRES */
+    static final String SQLSERVER = "sqlserver";
+
+    /**
+     * SQL Server's binary collation. A string function whose answer depends on case —
+     * {@code REPLACE} — is handed its argument under it, since the default collation
+     * there is case-insensitive.
+     */
+    static final String SQLSERVER_EXACT = "COLLATE Latin1_General_100_BIN2";
+
     /**
      * The unidentified backend, whose variant is the empty string.
      *

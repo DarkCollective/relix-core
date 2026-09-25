@@ -184,7 +184,8 @@ public final class JdbcCatalogProvider implements CatalogProvider {
         try (ResultSet rs = meta.getColumns(null, null, table, "%")) {
             while (rs.next()) {
                 columns.add(new ColumnDefinition(
-                        rs.getString("COLUMN_NAME"), mapSqlType(rs.getInt("DATA_TYPE"))));
+                        rs.getString("COLUMN_NAME"),
+                        mapSqlType(rs.getInt("DATA_TYPE"), rs.getString("TYPE_NAME"))));
             }
         }
         return columns;
@@ -221,6 +222,29 @@ public final class JdbcCatalogProvider implements CatalogProvider {
                     config.url(), config.user().get(), config.password().orElse(null));
         }
         return DriverManager.getConnection(config.url());
+    }
+
+    /**
+     * Maps a column's {@link java.sql.Types} code and the driver's name for its type to
+     * the closest relix {@link ScalarType}.
+     *
+     * <p>The name is consulted for the one family a code does not settle: a timestamp
+     * carrying its own offset that a driver reports under a code of its own — SQL
+     * Server's {@code datetimeoffset} is {@code -155} — which the code alone would leave
+     * as {@code ANY}, a string once read. It is the list the connector reads such a
+     * column by, so the catalog and the read cannot disagree about which columns are
+     * instants.
+     *
+     * @param sqlType  the {@code DATA_TYPE} the driver reports
+     * @param typeName the {@code TYPE_NAME} the driver reports; may be null
+     * @return the relix type
+     */
+    static ScalarType mapSqlType(int sqlType, String typeName) {
+        if (typeName != null && JdbcDataSourceConnector.OFFSET_BEARING_TYPE_NAMES
+                .contains(typeName.toLowerCase(java.util.Locale.ROOT))) {
+            return ScalarType.TIMESTAMP;
+        }
+        return mapSqlType(sqlType);
     }
 
     /** Maps a {@link java.sql.Types} code to the closest relix {@link ScalarType}. */

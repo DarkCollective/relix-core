@@ -56,8 +56,8 @@ import java.util.regex.Pattern;
  * <p>The {@link #GENERIC} dialect emits the exact SQL the planner produced before
  * dialects existed for every name that is a plain identifier (unquoted identifiers,
  * {@code LIMIT n [OFFSET m]}), so it is a safe default for H2, PostgreSQL and MySQL.
- * The {@link #POSTGRES}, {@link #MYSQL}, {@link #DUCKDB} and {@link #SQLITE} dialects add
- * identifier quoting, which is correct when the relix
+ * The {@link #POSTGRES}, {@link #MYSQL}, {@link #DUCKDB}, {@link #SQLITE} and
+ * {@link #SQLSERVER} dialects add identifier quoting, which is correct when the relix
  * schema's column names match the database's stored case (always true for
  * introspected {@code conn.table} references).
  *
@@ -70,10 +70,10 @@ import java.util.regex.Pattern;
  * {@link #quote} reads the quoting each constant declares, and {@link #boolAnd}
  * renders SQL-92 that no backend lacks.
  *
- * <p>Every constant renders {@code LIMIT n [OFFSET m]}. A backend whose row-limiting
- * is {@code OFFSET … FETCH} needs more than an arm of {@link #limit}: that form is legal
- * only after an {@code ORDER BY}, so the pushdown planner must also decline a limit fold
- * over an unordered sub-tree.
+ * <p>Every constant but {@link #SQLSERVER} renders {@code LIMIT n [OFFSET m]}. SQL Server's
+ * row-limiting is {@code OFFSET … FETCH}, which needs more than an arm of {@link #limit}:
+ * that form is legal only after an {@code ORDER BY}, so the pushdown planner also
+ * declines a limit fold over an unordered sub-tree — {@link #limitNeedsOrderBy}.
  */
 public enum Dialect {
 
@@ -105,7 +105,17 @@ public enum Dialect {
      * {@link #GENERIC}, which is what a SQLite connection resolved to before it had a
      * constant of its own.
      */
-    SQLITE("\"", "\"", true);
+    SQLITE("\"", "\"", true),
+
+    /**
+     * Microsoft SQL Server: bracket-quoted identifiers, and the first backend here whose
+     * differences are structural rather than spellings. It has no {@code LIMIT} — its
+     * {@code OFFSET … FETCH} is legal only after an {@code ORDER BY}, so a limit folds
+     * only over a sort ({@link #limitNeedsOrderBy}) — no {@code NULLS LAST}, no boolean
+     * values, no {@code LATERAL} (its {@code APPLY} is the same thing spelled otherwise),
+     * no session time zone, and a case-insensitive default collation.
+     */
+    SQLSERVER("[", "]", true);
 
     /** A name every backend reads bare, up to case folding. */
     private static final Pattern PLAIN_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
@@ -197,11 +207,13 @@ public enum Dialect {
      * @return the literal, quotes included; never null
      */
     public String stringLiteral(String value) {
-        String escaped = switch (this) {
-            case GENERIC, POSTGRES, DUCKDB, SQLITE -> value.replace("'", "''");
-            case MYSQL                             -> value.replace("\\", "\\\\").replace("'", "''");
+        return switch (this) {
+            case GENERIC, POSTGRES, DUCKDB, SQLITE -> "'" + value.replace("'", "''") + "'";
+            case MYSQL -> "'" + value.replace("\\", "\\\\").replace("'", "''") + "'";
+            // T-SQL reads a backslash as itself; N marks the literal Unicode, without which
+            // a character outside the database's code page arrives as '?'.
+            case SQLSERVER -> "N'" + value.replace("'", "''") + "'";
         };
-        return "'" + escaped + "'";
     }
 
     /**
@@ -213,6 +225,11 @@ public enum Dialect {
      * universal — see the class documentation on {@code OFFSET … FETCH} — and a
      * constant that cannot spell {@code LIMIT} should not be able to inherit it.
      *
+     * <p>SQL Server has no {@code LIMIT}: it renders
+     * {@code OFFSET m ROWS FETCH NEXT n ROWS ONLY}, which it accepts only after an
+     * {@code ORDER BY} — see {@link #limitNeedsOrderBy}, which is what stops the planner
+     * asking for one without.
+     *
      * @param count  the maximum number of rows
      * @param offset the number of leading rows to skip (0 = none)
      * @return the SQL clause, without a leading space
@@ -221,6 +238,26 @@ public enum Dialect {
         return switch (this) {
             case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE ->
                     offset > 0 ? "LIMIT " + count + " OFFSET " + offset : "LIMIT " + count;
+            case SQLSERVER -> "OFFSET " + offset + " ROWS FETCH NEXT " + count + " ROWS ONLY";
+        };
+    }
+
+    /**
+     * Whether this dialect's row-limiting clause is legal only after an {@code ORDER BY},
+     * so that a limit over an unordered sub-tree must not fold.
+     *
+     * <p>{@code OFFSET … FETCH} is the standard's row limiting and requires an ordering on
+     * SQL Server, as it does on Oracle. The {@code ORDER BY (SELECT NULL)} idiom would make
+     * it legal, and would also make it the one fold here whose rows are chosen by the
+     * database's plan rather than by anything the query said — so the limit runs in the
+     * engine instead, over the rows the rest of the statement returns.
+     *
+     * @return {@code true} when a limit folds only onto a statement that has an {@code ORDER BY}
+     */
+    public boolean limitNeedsOrderBy() {
+        return switch (this) {
+            case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE -> false;
+            case SQLSERVER -> true;
         };
     }
 
@@ -243,6 +280,10 @@ public enum Dialect {
      * driver — which is the database, for an embedded backend — is the user's to choose,
      * so it gets the portable form too.
      *
+     * <p>SQL Server has neither {@code NULLS LAST} nor a boolean value to sort on, so
+     * the portable form is itself a syntax error there. Its leading key is the NULL test
+     * spelled as a number: {@code CASE WHEN e IS NULL THEN 1 ELSE 0 END}.
+     *
      * @param expr       the rendered key expression (already quoted)
      * @param descending whether the key itself sorts descending
      * @return the {@code ORDER BY} terms for this key, in order; never empty
@@ -252,6 +293,8 @@ public enum Dialect {
         return switch (this) {
             case POSTGRES, DUCKDB -> List.of(expr + direction + " NULLS LAST");
             case GENERIC, MYSQL, SQLITE -> List.of("(" + expr + " IS NULL) ASC", expr + direction);
+            case SQLSERVER -> List.of("CASE WHEN " + expr + " IS NULL THEN 1 ELSE 0 END ASC",
+                    expr + direction);
         };
     }
 
@@ -271,6 +314,10 @@ public enum Dialect {
      * {@code *}, {@code ?} and {@code [} bracketed so that they match themselves. A
      * pattern that is not a literal cannot be translated here and declines.
      *
+     * <p>{@link #SQLSERVER}'s {@code LIKE} honours the collation, which the caller has
+     * already made exact, but also reads {@code [} as opening a character class, so a
+     * literal pattern has each one written {@code [[]} and a computed one declines.
+     *
      * @param subject the rendered expression being matched; must not be null
      * @param pattern the rendered pattern, used where the dialect reads {@code LIKE}
      *                as the engine does; must not be null
@@ -285,6 +332,28 @@ public enum Dialect {
                     "(" + subject + (negated ? " NOT LIKE " : " LIKE ") + pattern + ")");
             case SQLITE -> literal.map(text -> "(" + subject
                     + (negated ? " NOT GLOB " : " GLOB ") + stringLiteral(glob(text)) + ")");
+            // T-SQL's LIKE also reads [ as the start of a character class, so a literal
+            // pattern has each one bracketed, and one that is not a literal cannot be.
+            case SQLSERVER -> literal.map(text -> "(" + subject
+                    + (negated ? " NOT LIKE " : " LIKE ")
+                    + stringLiteral(text.replace("[", "[[]")) + ")");
+        };
+    }
+
+    /**
+     * Writes a boolean value as a SQL literal.
+     *
+     * <p>{@code TRUE} and {@code FALSE} everywhere but SQL Server, which has no boolean
+     * type — its {@code BIT} holds {@code 1} and {@code 0}, and {@code TRUE} is read as a
+     * column name.
+     *
+     * @param value the value
+     * @return the literal
+     */
+    public String booleanLiteral(boolean value) {
+        return switch (this) {
+            case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE -> value ? "TRUE" : "FALSE";
+            case SQLSERVER -> value ? "1" : "0";
         };
     }
 
@@ -341,6 +410,10 @@ public enum Dialect {
         return Optional.of("COUNT(*) = COUNT(CASE WHEN " + predicateSql + " THEN 1 END)");
     }
 
+    /** The same, to {@code DATETIME2}'s hundred-nanosecond precision. */
+    private static final DateTimeFormatter TIMESTAMP_UTC_FRACTION =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSS");
+
     /** UTC wall-clock form ({@code 2026-06-15 13:40:00}) used for zone-less timestamp literals. */
     private static final DateTimeFormatter TIMESTAMP_UTC =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -367,6 +440,8 @@ public enum Dialect {
         return switch (this) {
             case GENERIC                 -> Optional.of("'" + iso + "'");
             case POSTGRES, MYSQL, DUCKDB -> Optional.of("DATE '" + iso + "'");
+            // T-SQL has no typed literal syntax; a CAST of the ISO string is its spelling.
+            case SQLSERVER               -> Optional.of("CAST('" + iso + "' AS DATE)");
             case SQLITE                  -> Optional.empty();
         };
     }
@@ -383,6 +458,7 @@ public enum Dialect {
         return switch (this) {
             case GENERIC                 -> Optional.of("'" + iso + "'");
             case POSTGRES, MYSQL, DUCKDB -> Optional.of("TIME '" + iso + "'");
+            case SQLSERVER               -> Optional.of("CAST('" + iso + "' AS TIME)");
             case SQLITE                  -> Optional.empty();
         };
     }
@@ -400,6 +476,12 @@ public enum Dialect {
      * column as; against a {@code TIMESTAMPTZ} column it compares instants directly. {@code SQLITE} declines (see
      * {@link #dateLiteral}).
      *
+     * <p>{@code SQLSERVER} gets a {@code DATETIME2} of the UTC wall clock: a
+     * {@code DATETIME2} column holds the wall clock the engine reads as UTC, and against a
+     * {@code DATETIMEOFFSET} column the literal is converted at offset {@code +00:00}, so
+     * it names the same instant either way — and the column, not the literal, keeps its
+     * type, so an index on it still serves the comparison.
+     *
      * @param value the instant; must not be null
      * @return the literal, or empty when this dialect declines it
      */
@@ -409,6 +491,8 @@ public enum Dialect {
             case GENERIC          -> Optional.of("'" + utc + "'");
             case POSTGRES, DUCKDB -> Optional.of("TIMESTAMP WITH TIME ZONE '" + value + "'");   // ISO instant with Z
             case MYSQL            -> Optional.of("TIMESTAMP '" + utc + "'");
+            case SQLSERVER        -> Optional.of("CAST('" + TIMESTAMP_UTC_FRACTION.format(
+                    LocalDateTime.ofInstant(value, ZoneOffset.UTC)) + "' AS DATETIME2)");
             case SQLITE           -> Optional.empty();
         };
     }
@@ -442,7 +526,8 @@ public enum Dialect {
             case DUCKDB -> value.getNano() % 1_000 == 0
                     ? Optional.of("to_microseconds(" + microseconds(value) + ")")
                     : Optional.empty();
-            case GENERIC, MYSQL, SQLITE -> Optional.empty();
+            // T-SQL has no interval type at all.
+            case GENERIC, MYSQL, SQLITE, SQLSERVER -> Optional.empty();
         };
     }
 
@@ -470,6 +555,8 @@ public enum Dialect {
      * whether two strings are equal, and Postgres's defaults are deterministic, so
      * {@code 'Gold' = 'gold'} is false there as it is here. {@link #DUCKDB}'s default
      * collation is binary, so it answers {@code true} for the plainer reason.
+     * {@link #SQLSERVER}'s default, {@code SQL_Latin1_General_CP1_CI_AS}, is
+     * case-insensitive, so it answers {@code false} as MySQL does.
      *
      * <p>This is a claim about <b>equality alone</b>, and the separation is the whole
      * reason there are two methods: the same Postgres that compares equal strings
@@ -493,7 +580,7 @@ public enum Dialect {
     public boolean comparesStringsExactly() {
         return switch (this) {
             case GENERIC, POSTGRES, DUCKDB, SQLITE -> true;
-            case MYSQL -> false;
+            case MYSQL, SQLSERVER -> false;
         };
     }
 
@@ -531,7 +618,7 @@ public enum Dialect {
     public boolean ordersStringsExactly() {
         return switch (this) {
             case GENERIC, DUCKDB, SQLITE -> true;
-            case POSTGRES, MYSQL -> false;
+            case POSTGRES, MYSQL, SQLSERVER -> false;
         };
     }
 
@@ -558,6 +645,15 @@ public enum Dialect {
      * wrapped separately by {@link #exactStringOrder}, and separately because the two
      * are not the same set of backends: Postgres needs the second and not the first.
      *
+     * <p>SQL Server's is {@code (e) COLLATE Latin1_General_100_BIN2}. A binary collation
+     * makes {@code 'Gold' = 'gold'} false, and it is still not all the way to exact: SQL
+     * Server compares strings <em>padded</em>, as the standard's {@code PAD SPACE}
+     * says, so {@code 'a' = 'a '} is true there under every collation it has. relix
+     * compares them as different values. That difference is recorded rather than worked
+     * round — no collation removes it, and declining every string comparison to avoid
+     * values that differ only in trailing spaces would cost every such query a full
+     * read.
+     *
      * @param expression an already-rendered expression of string type; must not be null
      * @return the expression, wrapped if this dialect needs it to compare exactly
      */
@@ -565,6 +661,7 @@ public enum Dialect {
         return switch (this) {
             case GENERIC, POSTGRES, DUCKDB, SQLITE -> expression;
             case MYSQL -> "CONVERT(" + expression + " USING utf8mb4) COLLATE utf8mb4_0900_bin";
+            case SQLSERVER -> "(" + expression + ") " + SQLSERVER_EXACT;
         };
     }
 
@@ -582,6 +679,13 @@ public enum Dialect {
      * already code-point ordered. That the two coincide on one backend and not on the
      * other is exactly why they are two methods.
      *
+     * <p>SQL Server reuses its comparison wrapping too, and it orders by UTF-16 code
+     * unit rather than by code point — the same difference H2 has as the generic
+     * dialect, confined to a character outside the basic multilingual plane compared
+     * with one in {@code U+E000..U+FFFF}. A code-point order exists there only through a
+     * {@code VARCHAR} under a {@code _UTF8} collation, which would change what a
+     * {@code MIN} returns and what a {@code <} against a literal compares.
+     *
      * <p>Like the comparison wrapping, this costs the column's index for the term it
      * wraps, and the alternative is not an indexed sort but no fold at all — every row
      * crossing the wire to be sorted here.
@@ -593,9 +697,12 @@ public enum Dialect {
         return switch (this) {
             case GENERIC, DUCKDB, SQLITE -> expression;
             case POSTGRES                -> "(" + expression + ") COLLATE \"C\"";
-            case MYSQL    -> exactStringComparison(expression);
+            case MYSQL, SQLSERVER        -> exactStringComparison(expression);
         };
     }
+
+    /** SQL Server's binary collation, which compares by code unit and is case- and accent-sensitive. */
+    private static final String SQLSERVER_EXACT = "COLLATE Latin1_General_100_BIN2";
 
     /** The declared value of {@code collation} that overrides the dialect's default. */
     private static final String COLLATION_EXACT = "exact";
@@ -690,6 +797,10 @@ public enum Dialect {
             // SQLite has no session time zone to pin: its date functions compute at UTC
             // unless a query asks for 'localtime', and relix folds none of them.
             case SQLITE   -> Optional.empty();
+            // Nor has SQL Server: DATETIME2 is zone-less and DATETIMEOFFSET carries its
+            // own offset, and neither reads a session setting. Its extractions are spelled
+            // through SWITCHOFFSET(…, '+00:00') instead, which is UTC whatever the column.
+            case SQLSERVER -> Optional.empty();
         };
     }
 
@@ -715,6 +826,7 @@ public enum Dialect {
             case MYSQL    -> PushdownTarget.sql("mysql");
             case DUCKDB   -> PushdownTarget.sql("duckdb");
             case SQLITE   -> PushdownTarget.sql("sqlite");
+            case SQLSERVER -> PushdownTarget.sql("sqlserver");
         };
     }
 
@@ -727,6 +839,8 @@ public enum Dialect {
      *       {@code true}.</li>
      *   <li>{@link #SQLITE}: {@code true} — window functions arrived in SQLite 3.25
      *       (2018), and the corpus's window cases run against it in the gate.</li>
+     *   <li>{@link #SQLSERVER}: {@code true} — {@code ROWS BETWEEN} frames arrived in
+     *       SQL Server 2012, which predates every release still in support.</li>
      *   <li>{@link #MYSQL}: {@code false} — MySQL 5.x predates window-function
      *       support; since the declared dialect cannot confirm the server version,
      *       window operators fall back to in-engine execution for safety.</li>
@@ -736,7 +850,7 @@ public enum Dialect {
      */
     public boolean supportsWindowFunctions() {
         return switch (this) {
-            case GENERIC, POSTGRES, DUCKDB, SQLITE -> true;
+            case GENERIC, POSTGRES, DUCKDB, SQLITE, SQLSERVER -> true;
             case MYSQL -> false;
         };
     }
@@ -755,20 +869,55 @@ public enum Dialect {
      *   <li>{@link #GENERIC}: {@code false} — the generic target is H2, whose 2.x
      *       releases have no {@code LATERAL} support, so AS-OF runs in-engine.</li>
      *   <li>{@link #SQLITE}: {@code false} — SQLite has no {@code LATERAL}.</li>
+     *   <li>{@link #SQLSERVER}: {@code true} — it has no {@code LATERAL} either, but
+     *       {@code OUTER APPLY}/{@code CROSS APPLY} is the same correlated join, and
+     *       {@link #nearestRowJoin} spells it.</li>
      *   <li>{@link #MYSQL}: {@code false} — {@code LATERAL} arrived only in MySQL
      *       8.0.14, and the declared dialect cannot confirm the server version, so
      *       AS-OF falls back to in-engine execution for safety (as window functions do).</li>
      * </ul>
      *
-     * @return {@code true} when the dialect can execute a pushed {@code LATERAL} AS-OF
+     * <p>Answered by whether {@link #nearestRowJoin} has a spelling, which is the
+     * exhaustive switch: there is one list of the backends that fold an AS-OF, not two.
+     *
+     * @return {@code true} when the dialect can execute a pushed nearest-row AS-OF
      */
     public boolean supportsLateralAsOf() {
-        // A boolean is enough only while every backend that has the construct also
-        // spells it `LATERAL`. One spelling it `CROSS APPLY`/`OUTER APPLY` turns this
-        // into a rendering question and moves it into the AS-OF renderer (#869).
+        return nearestRowJoin("", "", "", "", "", false).isPresent();
+    }
+
+    /**
+     * Renders the {@code FROM} clause of an AS-OF join folded as a correlated
+     * nearest-row lookup — for each left row, the one right row a sub-select filters by
+     * the match condition and orders by the match column — or empty where this dialect
+     * has no such construct ({@link #supportsLateralAsOf}).
+     *
+     * <p>PostgreSQL and DuckDB spell it {@code LEFT JOIN LATERAL (… LIMIT 1) r ON TRUE},
+     * or {@code JOIN LATERAL} to drop an unmatched left row. SQL Server has the same
+     * construct under another name — {@code OUTER APPLY (SELECT TOP 1 …) r}, or
+     * {@code CROSS APPLY} — with no {@code ON} and no {@code LIMIT}; both of its halves
+     * were checked against a running server.
+     *
+     * @param left    the left table and its alias, as they appear in {@code FROM}
+     * @param columns the sub-select's select list
+     * @param source  the sub-select's {@code FROM … WHERE …}
+     * @param orderBy the sub-select's ordering, nearest row first
+     * @param alias   the quoted alias the sub-select's columns are read through
+     * @param inner   whether a left row with no match is dropped rather than NULL-padded
+     * @return the {@code FROM} clause, or empty when this dialect cannot fold the join
+     */
+    public Optional<String> nearestRowJoin(String left, String columns, String source,
+                                           String orderBy, String alias, boolean inner) {
         return switch (this) {
-            case POSTGRES, DUCKDB -> true;
-            case GENERIC, MYSQL, SQLITE -> false;
+            case POSTGRES, DUCKDB -> Optional.of(left
+                    + (inner ? " JOIN LATERAL (" : " LEFT JOIN LATERAL (")
+                    + "SELECT " + columns + " " + source + " ORDER BY " + orderBy + " LIMIT 1) "
+                    + alias + " ON TRUE");
+            case SQLSERVER -> Optional.of(left
+                    + (inner ? " CROSS APPLY (" : " OUTER APPLY (")
+                    + "SELECT TOP 1 " + columns + " " + source + " ORDER BY " + orderBy + ") "
+                    + alias);
+            case GENERIC, MYSQL, SQLITE -> Optional.empty();
         };
     }
 
@@ -841,6 +990,7 @@ public enum Dialect {
             case "mysql", "mariadb"       -> MYSQL;
             case "duckdb"                 -> DUCKDB;
             case "sqlite"                 -> SQLITE;
+            case "sqlserver", "mssql"     -> SQLSERVER;
             default                       -> GENERIC;   // h2, ansi, unknown
         };
     }
@@ -859,6 +1009,9 @@ public enum Dialect {
         }
         if (lower.startsWith("jdbc:sqlite:")) {
             return SQLITE;
+        }
+        if (lower.startsWith("jdbc:sqlserver:")) {
+            return SQLSERVER;
         }
         return GENERIC;
     }

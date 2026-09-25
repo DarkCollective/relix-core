@@ -81,11 +81,11 @@ where it can fold. That is why the two features compound — see
 | γ aggregation | `GROUP BY` | any grouping key is not a bare column — a computed key such as `YEAR(ts)`, or a renamed one — or an aggregate has no SQL spelling |
 | ∀ universal | `GROUP BY … HAVING` | there are no grouping keys |
 | τ sort | `ORDER BY` | a projection, sort or limit is already folded, or a sort key is not a bare column. Above a γ the key may be one of its output columns |
-| λ limit | `LIMIT`/`OFFSET` | a limit is already folded |
+| λ limit | `LIMIT`/`OFFSET`, or `OFFSET … FETCH` on SQL Server | a limit is already folded, or — on SQL Server, whose `OFFSET … FETCH` is legal only after an `ORDER BY` — nothing below it is sorted |
 | `TOP` | `ORDER BY … LIMIT` | it is per-group (`PER …`) — only the whole-relation form folds |
 | ⨝ theta join | `JOIN … ON` | either side is not a bare table scan, the two sides are on different connections or are the same relation (a self-join), or the condition has an untranslatable part |
 | ⋈ natural join | `JOIN … ON` equating the shared columns | either side is not a bare table scan, the two sides are on different connections or are the same relation, or a shared column has a different type on each side |
-| `ASOF` join | `LEFT JOIN LATERAL (… ORDER BY … LIMIT 1) ON TRUE`, or `JOIN LATERAL` for the `INNER` form | the dialect is not PostgreSQL or DuckDB, or the join carries a `WITHIN` tolerance |
+| `ASOF` join | `LEFT JOIN LATERAL (… ORDER BY … LIMIT 1) ON TRUE`, or `JOIN LATERAL` for the `INNER` form | the dialect is not PostgreSQL, DuckDB or SQL Server (which spells it `OUTER APPLY (SELECT TOP 1 …)`), or the join carries a `WITHIN` tolerance |
 | `IJOIN` interval | `JOIN … ON` over the endpoints | either side is not a bare scan, or they are on different connections |
 | `WINDOW` / `ROLLING` | `OVER (PARTITION BY … ORDER BY …)` | the dialect is MySQL, or a projection, grouping or limit is already folded |
 
@@ -191,13 +191,13 @@ large table. Of the built-in scalar functions, **twenty-one** have a SQL spellin
 
 | Function | SQL |
 |---|---|
-| `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND` | `EXTRACT(unit FROM e)`; SQLite declines them |
-| `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL and DuckDB, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect declines it |
-| `Abs`, `Int`, `Ceil`, `Sgn`, `Round` | `ABS`, `FLOOR`, `CEILING`, `SIGN`, `ROUND`; SQLite, which rounds in floating point, declines `Int`, `Ceil` and `Round` |
-| `Fix` | `TRUNCATE(e, 0)` on MySQL, `TRUNC(e)` on PostgreSQL and DuckDB; the generic dialect declines it |
+| `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND` | `EXTRACT(unit FROM e)`; `DATEPART(unit, SWITCHOFFSET(e, '+00:00'))` on SQL Server; SQLite declines them |
+| `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL and DuckDB, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect, SQLite and SQL Server decline it |
+| `Abs`, `Int`, `Ceil`, `Sgn`, `Round` | `ABS`, `FLOOR`, `CEILING`, `SIGN`, `ROUND` (`ROUND(e, 0)` on SQL Server); SQLite, which rounds in floating point, declines `Int`, `Ceil` and `Round` |
+| `Fix` | `TRUNCATE(e, 0)` on MySQL, `TRUNC(e)` on PostgreSQL and DuckDB, `ROUND(e, 0, 1)` on SQL Server; the generic dialect and SQLite decline it |
 | `Coalesce`, `Nz` (two-argument form) | `COALESCE(…)` |
-| `IsNull` | `(e IS NULL)` |
-| `Replace` | `REPLACE(s, find, replacement)` |
+| `IsNull` | `(e IS NULL)`; `(CASE WHEN e IS NULL THEN 1 ELSE 0 END)` on SQL Server |
+| `Replace` | `REPLACE(s, find, replacement)`, the string under a binary collation on SQL Server |
 | `Len`, `Left`, `Right`, `Mid` | `CHAR_LENGTH`, `LEFT`, `RIGHT`, `SUBSTRING` on **MySQL, PostgreSQL and DuckDB**; `LENGTH` and `SUBSTR` on **SQLite**; nowhere else |
 
 Everything else is evaluated in the engine, and two families are worth knowing by
@@ -313,7 +313,7 @@ number and the orders agree exactly. The difference needs both an unusual backen
 and unusual data.
 
 Two things make it avoidable when it matters. Naming the dialect (`dialect: mysql`,
-`dialect: postgres`, `dialect: duckdb`, `dialect: sqlite`) moves the connection off `generic` and onto a checked answer.
+`dialect: postgres`, `dialect: duckdb`, `dialect: sqlite`, `dialect: sqlserver`) moves the connection off `generic` and onto a checked answer.
 Declaring `collation: database` tells relix to make no assumption about string
 comparison at all, at the cost of computing those in the engine — see
 [connection](../language/connection.md).
@@ -323,6 +323,7 @@ comparison at all, at the cost of computing those in the engine — see
 | `generic` (default) | unquoted, unless not a plain identifier | no `DATE_TRUNC`; relies on the backend folding unquoted identifiers, and on its string comparison being the common one — see below |
 | `postgres` | `"quoted"` | with DuckDB, the only dialects that fold an `ASOF` join, `DURATION` literals and `NULLS LAST`; string *ordering* is collated, string equality is not |
 | `mysql` | `` `quoted` `` | no window functions, so those are computed in the engine; `DATE_TRUNC` folds through `DATE_FORMAT`; string comparison and ordering are collated |
+| `sqlserver` | `[bracketed]` | `OFFSET … FETCH`, so a limit folds only over a sort; NULLs placed with `CASE`; `ASOF` through `APPLY`; no `DURATION`, `DATE_TRUNC` or string counting; string comparison and ordering are collated — see below |
 | `sqlite` | `"quoted"` | no date or time types, so no temporal literal, `EXTRACT` or `DATE_TRUNC` folds; `LIKE` is sent as `GLOB`; rounding runs in the engine; strings compare and order exactly |
 | `duckdb` | `"quoted"` | PostgreSQL's SQL — `NULLS LAST`, `date_trunc`, an `ASOF` join through `LATERAL`, window functions — with a binary default collation, so neither string comparison nor string ordering is collated |
 
@@ -372,6 +373,44 @@ Its `ROUND`, `FLOOR` and `CEILING` answer in binary floating point, so `Round`, 
 and `Ceil` are computed here. It has no `LATERAL`, so an `ASOF` join runs in the
 engine. A SQLite connection, like a DuckDB one, names a file: `jdbc:sqlite::memory:` is
 private to the JDBC connection that opened it.
+
+### SQL Server, and the clauses it spells otherwise
+
+SQL Server is recognised from a `jdbc:sqlserver:` URL, or named with
+`dialect: sqlserver`. Most of what relix renders it spells otherwise, and three of
+the differences change *what* folds rather than how it is written:
+
+- **A limit needs a sort.** T-SQL has no `LIMIT`; its `OFFSET … FETCH` is legal only
+  after an `ORDER BY`. So `λ 10 (τ oid (Orders))` folds, into
+  `ORDER BY … OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY`, and `λ 10 (Orders)` does not —
+  the rows are read and the first ten kept here. The `ORDER BY (SELECT NULL)` idiom
+  would make it legal, and would also let the database choose the rows.
+- **No session time zone.** `DATETIME2` is zone-less and `DATETIMEOFFSET` carries its
+  own offset, and neither reads a session setting, so there is none to pin. An
+  extraction is sent as `DATEPART(unit, SWITCHOFFSET(e, '+00:00'))`, which reads any of
+  them at UTC as relix does. `DATE_TRUNC` is not sent: `DATETRUNC` arrived in SQL
+  Server 2022, which a declared dialect cannot confirm.
+- **No boolean value.** `TRUE` is written `1`, `IsNull` is a `CASE`, and NULLs are
+  placed last with `CASE WHEN e IS NULL THEN 1 ELSE 0 END` rather than a boolean key.
+
+An `ASOF` join folds as `OUTER APPLY (SELECT TOP 1 …)`, or `CROSS APPLY` for the
+`INNER` form — the same correlated lookup `LATERAL` is elsewhere. A string literal is
+written `N'…'`, so a character outside the database's code page survives the trip.
+`Len`, `Left`, `Right` and `Mid` are computed here: T-SQL's `LEN` counts UTF-16 units
+and ignores trailing spaces.
+
+SQL Server's default collation, `SQL_Latin1_General_CP1_CI_AS`, is case-insensitive,
+so strings are compared under `Latin1_General_100_BIN2`, in the places MySQL's are
+converted. Two differences remain that no collation removes, and both are narrow:
+
+- **Trailing spaces.** SQL Server compares strings padded, as the SQL standard's
+  `PAD SPACE` rule says, so `'a' = 'a '` is true there under every collation it has;
+  relix compares them as different values. A column whose values differ only in
+  trailing spaces — a `CHAR(n)` column, say — compared or grouped on SQL Server can
+  answer differently than in the engine.
+- **Ordering beyond the basic multilingual plane.** A binary collation orders by
+  UTF-16 code unit, as H2 does, and differs from relix's code-point order only for a
+  supplementary character compared with one in `U+E000..U+FFFF`.
 
 ### Strings, and the collation they are compared under
 
@@ -449,7 +488,8 @@ folded.
 
 So relix **pins the session to UTC** on every connection it opens to an identified
 backend — `SET TIME ZONE 'UTC'` on PostgreSQL, `SET time_zone = '+00:00'` on MySQL,
-`SET TimeZone = 'UTC'` on DuckDB — and a temporal fold means the same thing wherever it runs. On PostgreSQL there is
+`SET TimeZone = 'UTC'` on DuckDB (SQL Server has no session zone, and is handled by
+reading each value at UTC instead) — and a temporal fold means the same thing wherever it runs. On PostgreSQL there is
 no other way to say it: the driver takes the session's zone from the client
 machine's default and ignores one named in the connection string, so without this a
 query's answers moved with the time zone of the host the engine ran on.

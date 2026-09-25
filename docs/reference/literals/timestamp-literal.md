@@ -18,7 +18,8 @@ read as UTC.
 time (an offset is normalised to UTC; an offsetless payload is interpreted as
 UTC). A malformed payload is a positioned parse error. It infers as the TIMESTAMP
 scalar type and pushes down to SQL (per dialect: a UTC wall-clock for
-GENERIC/MYSQL, a Z-instant for POSTGRES and DUCKDB) and to Mongo ($date). SQLite,
+GENERIC/MYSQL, a Z-instant for POSTGRES and DUCKDB, a `DATETIME2` of the UTC
+wall-clock for SQLSERVER) and to Mongo ($date). SQLite,
 which has no date type, is sent none: a predicate holding one runs in the engine. Single- or
 double-quoted payloads are accepted.
 

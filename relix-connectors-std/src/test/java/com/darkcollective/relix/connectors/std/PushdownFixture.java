@@ -127,26 +127,56 @@ final class PushdownFixture {
          * literal, so its dates are written as plain strings — the same text, stored the
          * same way the other backends' implicit casts would have stored it.
          */
-        SQLITE("DATETIME", "TIMESTAMP", "");
+        SQLITE("DATETIME", "TIMESTAMP", "", false),
+
+        /**
+         * SQL Server, whose pair is {@code DATETIME2}, zone-less, and
+         * {@code DATETIMEOFFSET}, which carries its own offset — seeded here at
+         * {@code +00:00}, since a string with no offset is read as one. Its strings need
+         * two things the others do not: {@code NVARCHAR} columns, since a
+         * {@code VARCHAR} holds only its code page and the fixture's emoji would arrive as
+         * {@code ?}, and {@code N'…'} literals, for the same reason on the way in. Nor does
+         * it read a typed {@code DATE '…'} literal.
+         */
+        SQLSERVER("DATETIME2", "DATETIMEOFFSET", "", true);
 
         private final String unconverted;
         private final String converted;
         private final String dateKeyword;
+        private final boolean nationalStrings;
 
         Flavour(String unconverted, String converted) {
-            this(unconverted, converted, "DATE ");
+            this(unconverted, converted, "DATE ", false);
         }
 
-        Flavour(String unconverted, String converted, String dateKeyword) {
+        Flavour(String unconverted, String converted, String dateKeyword,
+                boolean nationalStrings) {
             this.unconverted = unconverted;
             this.converted = converted;
             this.dateKeyword = dateKeyword;
+            this.nationalStrings = nationalStrings;
         }
 
         /** A date as this backend's seed script writes one. */
         String date(String iso) {
             return dateKeyword + "'" + iso + "'";
         }
+
+        /**
+         * One statement of the seed script, in this backend's string types: unchanged,
+         * except where strings must be declared and written as national characters.
+         */
+        String adapt(String sql) {
+            if (!nationalStrings) {
+                return sql;
+            }
+            return NATIONAL_LITERAL.matcher(sql.replace("VARCHAR(", "NVARCHAR("))
+                    .replaceAll(m -> "N" + java.util.regex.Matcher.quoteReplacement(m.group()));
+        }
+
+        /** A SQL string literal, embedded quotes doubled. */
+        private static final java.util.regex.Pattern NATIONAL_LITERAL =
+                java.util.regex.Pattern.compile("'(?:[^']|'')*'");
     }
 
     /**
@@ -195,29 +225,29 @@ final class PushdownFixture {
         String q = connection.getMetaData().getIdentifierQuoteString();
         String lines = q + "order-lines" + suffix + q;
         try (Statement st = connection.createStatement()) {
-            st.execute("DROP TABLE IF EXISTS " + lines);
-            st.execute("DROP TABLE IF EXISTS " + orders);
-            st.execute("DROP TABLE IF EXISTS " + customers);
-            st.execute("DROP TABLE IF EXISTS " + probes);
-            st.execute("DROP TABLE IF EXISTS " + history);
-            st.execute("CREATE TABLE " + orders + " ("
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + lines));
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + orders));
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + customers));
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + probes));
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + history));
+            st.execute(flavour.adapt("CREATE TABLE " + orders + " ("
                     + "oid INT, cid INT, region VARCHAR(10)" + collate
                     + ", code VARCHAR(20)" + collate
                     + ", amount INT, qty INT"
                     + ", placed " + flavour.unconverted
-                    + ", stamped " + flavour.converted + ")");
-            st.execute("CREATE TABLE " + customers + " ("
+                    + ", stamped " + flavour.converted + ")"));
+            st.execute(flavour.adapt("CREATE TABLE " + customers + " ("
                     + "cid INT, name VARCHAR(20)" + collate
-                    + ", tier VARCHAR(10)" + collate + ", joined DATE)");
+                    + ", tier VARCHAR(10)" + collate + ", joined DATE)"));
             // `stamped` repeats `placed`, including its NULL. The near-midnight and
             // end-of-month values are the ones a truncation moves across a boundary
             // when a session time zone shifts the wall clock the server reads.
-            st.execute("INSERT INTO " + orders + " VALUES "
+            st.execute(flavour.adapt("INSERT INTO " + orders + " VALUES "
                     + "(1, 10, 'west', 'AB-1', 100,  2,    '2024-01-15 08:30:00', '2024-01-15 08:30:00'), "
                     + "(2, 10, 'west', 'AB-2', 250,  1,    '2024-02-15 23:45:10', '2024-02-15 23:45:10'), "
                     + "(3, 20, 'east', 'XY-1', 100,  4,    '2024-02-29 00:00:00', '2024-02-29 00:00:00'), "
                     + "(4, 20, 'east', NULL,   NULL, 3,    '2023-12-31 23:59:59', '2023-12-31 23:59:59'), "
-                    + "(5, NULL, NULL, 'AB-3', 50,   NULL, NULL,                  NULL)");
+                    + "(5, NULL, NULL, 'AB-3', 50,   NULL, NULL,                  NULL)"));
             // The last three names are what a string spelling has to survive, and each
             // is one specific hazard rather than decoration. A leading and trailing
             // TAB, because SQL TRIM removes spaces and String.strip removes every
@@ -231,7 +261,7 @@ final class PushdownFixture {
             // a backslash escape means a tab in MySQL and a backslash in H2, so a
             // fixture using one would seed two different tables and every disagreement
             // after it would be its fault.
-            st.execute("INSERT INTO " + customers + " VALUES "
+            st.execute(flavour.adapt("INSERT INTO " + customers + " VALUES "
                     + "(10, 'Ada',      'gold',   " + flavour.date("2020-03-01") + "), "
                     + "(20, 'grace',    NULL,     " + flavour.date("2021-07-14") + "), "
                     + "(30, 'Alan',     'silver', NULL), "
@@ -248,29 +278,29 @@ final class PushdownFixture {
                     // characters and nothing before them — which is what makes an
                     // ORDER BY here tell code-point order from UTF-16 order. In row 60
                     // the leading 'a' decides and the emoji is never reached.
-                    + "(80, '\uD83D\uDE00',    'bronze', " + flavour.date("2023-06-06") + ")");
+                    + "(80, '\uD83D\uDE00',    'bronze', " + flavour.date("2023-06-06") + ")"));
 
             // The AS-OF pair. `ts` takes the unconverted type, the one the server hands
             // back as written: which wall clock a converted column presents is the
             // question `stamped` above is for, and asking two questions with one column
             // would leave a failure meaning either.
-            st.execute("CREATE TABLE " + probes + " ("
+            st.execute(flavour.adapt("CREATE TABLE " + probes + " ("
                     + "pid INT, sym VARCHAR(10)" + collate
-                    + ", ts " + flavour.unconverted + ")");
-            st.execute("CREATE TABLE " + history + " ("
+                    + ", ts " + flavour.unconverted + ")"));
+            st.execute(flavour.adapt("CREATE TABLE " + history + " ("
                     + "hid INT, sym VARCHAR(10)" + collate
-                    + ", ts " + flavour.unconverted + ", px INT)");
+                    + ", ts " + flavour.unconverted + ", px INT)"));
             // Three rows an hour apart in partition A, one in B, and none in C — so a
             // probe can fall before, on, between and after them, and a partition can be
             // empty. B's row is at 10:30 rather than on the hour on purpose: a probe of
             // B's at 11:00 is nearer in time to A's 11:00 row than to B's own, so a fold
             // that dropped the partition equality would answer this row and no other
             // differently.
-            st.execute("INSERT INTO " + history + " VALUES "
+            st.execute(flavour.adapt("INSERT INTO " + history + " VALUES "
                     + "(1, 'A', '2024-03-01 10:00:00', 100), "
                     + "(2, 'A', '2024-03-01 11:00:00', 110), "
                     + "(3, 'A', '2024-03-01 12:00:00', 120), "
-                    + "(4, 'B', '2024-03-01 10:30:00', 200)");
+                    + "(4, 'B', '2024-03-01 10:30:00', 200)"));
             // Every probe is a boundary. Read backward (`>=`), 1 has no match, 2 matches
             // the row it sits on, 3 the row before it, 4 the last row, 5 B's row rather
             // than A's nearer one, and 6 nothing, its partition being empty. Read forward
@@ -279,7 +309,7 @@ final class PushdownFixture {
             // and a match value the comparison cannot decide. 9 is A's partition spelled
             // in lower case: the same partition to a case-insensitive collation and a
             // different one to the engine, which is what a string join key has to survive.
-            st.execute("INSERT INTO " + probes + " VALUES "
+            st.execute(flavour.adapt("INSERT INTO " + probes + " VALUES "
                     + "(1, 'A',  '2024-03-01 09:00:00'), "
                     + "(2, 'A',  '2024-03-01 11:00:00'), "
                     + "(3, 'A',  '2024-03-01 11:30:00'), "
@@ -288,14 +318,14 @@ final class PushdownFixture {
                     + "(6, 'C',  '2024-03-01 11:00:00'), "
                     + "(7, NULL, '2024-03-01 11:00:00'), "
                     + "(8, 'A',  NULL), "
-                    + "(9, 'a',  '2024-03-01 11:00:00')");
+                    + "(9, 'a',  '2024-03-01 11:00:00')"));
 
             // Two lines on order 1, one with no price on order 3, and one whose order
             // does not exist, so a join over it drops a row from each side.
-            st.execute("CREATE TABLE " + lines + " (lid INT, oid INT, "
-                    + q + "unit-price" + q + " INT)");
-            st.execute("INSERT INTO " + lines + " VALUES "
-                    + "(1, 1, 10), (2, 1, 20), (3, 3, NULL), (4, 99, 5)");
+            st.execute(flavour.adapt("CREATE TABLE " + lines + " (lid INT, oid INT, "
+                    + q + "unit-price" + q + " INT)"));
+            st.execute(flavour.adapt("INSERT INTO " + lines + " VALUES "
+                    + "(1, 1, 10), (2, 1, 20), (3, 3, NULL), (4, 99, 5)"));
         }
     }
 

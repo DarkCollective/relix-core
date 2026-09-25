@@ -47,12 +47,17 @@ final class TypeCheckFunctions {
         return List.of(
                 // The one built-in whose SQL form is an operator rather than a call —
                 // and an exact one: SQL's IS NULL asks the same question of the same
-                // three-valued world, so there is no NULL rule to reconcile.
+                // three-valued world, so there is no NULL rule to reconcile. SQL Server
+                // has no boolean value for it to produce, so there it is the BIT the
+                // question answers as, 1 or 0.
                 TYPECHECK.fn("IsNull", BOOLEAN, PURE_DETERMINISTIC, List.of(p("value", ANY)),
                         (target, arguments) ->
-                                target.isFamily(PushdownTarget.SQL) && arguments.size() == 1
-                                        ? java.util.Optional.of("(" + arguments.get(0) + " IS NULL)")
-                                        : java.util.Optional.empty(),
+                                !target.isFamily(PushdownTarget.SQL) || arguments.size() != 1
+                                        ? java.util.Optional.empty()
+                                        : target.isVariant(Spellings.SQLSERVER)
+                                        ? java.util.Optional.of("(CASE WHEN " + arguments.get(0)
+                                                + " IS NULL THEN 1 ELSE 0 END)")
+                                        : java.util.Optional.of("(" + arguments.get(0) + " IS NULL)"),
                         args -> BooleanValue.of(args.get(0).isNull())),
 
                 // "Numeric" means convertible, not typed NUMBER: a string of digits

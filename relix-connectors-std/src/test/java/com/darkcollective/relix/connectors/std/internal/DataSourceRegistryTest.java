@@ -234,6 +234,7 @@ final class DataSourceRegistryTest {
             assertThat(DataSourceRegistry.dialectToken("MariaDB")).contains("mariadb");
             assertThat(DataSourceRegistry.dialectToken("DuckDB")).contains("duckdb");
             assertThat(DataSourceRegistry.dialectToken("SQLite")).contains("sqlite");
+            assertThat(DataSourceRegistry.dialectToken("Microsoft SQL Server")).contains("sqlserver");
             assertThat(DataSourceRegistry.dialectToken("H2")).isEmpty();
             assertThat(DataSourceRegistry.dialectToken(null)).isEmpty();
         }
