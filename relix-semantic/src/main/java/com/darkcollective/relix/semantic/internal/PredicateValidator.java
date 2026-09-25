@@ -37,6 +37,7 @@ import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.OrPredicate;
 import com.darkcollective.relix.ast.PatternPredicate;
 import com.darkcollective.relix.ast.SetLiteralOperand;
+import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.UnaryOperand;
 import com.darkcollective.relix.ast.visitor.PredicateVisitor;
@@ -90,6 +91,11 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
     private final FunctionCatalog         functions;
     private final List<SemanticError>     errors;
     private final String                  filePath;
+    /**
+     * Where an error is placed when the offending operand carries no position of its
+     * own — the operator the expression belongs to.
+     */
+    private final SourceLocation          fallback;
     /** Short label included in error messages, e.g. {@code "Selection σ"}. */
     private final String                  context;
     /**
@@ -106,6 +112,7 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                        FunctionCatalog functions,
                        List<SemanticError> errors,
                        String filePath,
+                       SourceLocation fallback,
                        String context,
                        Set<String> parameters) {
         this.schema      = Objects.requireNonNull(schema,      "schema");
@@ -113,6 +120,7 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
         this.functions   = Objects.requireNonNull(functions,   "functions");
         this.errors      = Objects.requireNonNull(errors,      "errors");
         this.filePath    = Objects.requireNonNull(filePath,    "filePath");
+        this.fallback    = Objects.requireNonNull(fallback,    "fallback");
         this.context     = Objects.requireNonNull(context,     "context");
         this.parameters  = Objects.requireNonNull(parameters,  "parameters");
         this.typeInferrer = new OperandTypeInferrer(symbolTable, functions);
@@ -166,7 +174,7 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                 typeInferrer.infer(node.left(), schema),
                 typeInferrer.infer(node.right(), schema));
         if (cmpError != null) {
-            error(cmpError);
+            error(node.location(), cmpError);
         }
         return null;
     }
@@ -210,14 +218,14 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
     private void validateAttribute(AttributeOperand attr) {
         String qualifiedError = QualifiedReferences.resolutionError(attr, schema);
         if (qualifiedError != null) {
-            error(qualifiedError);
+            error(attr.location(), qualifiedError);
             return;
         }
         String colName = attr.unqualifiedName();
         if (schema.column(colName).isEmpty()
                 && schema.resolvePath(attr.name()).isEmpty()
                 && !parameters.contains(colName.toLowerCase(Locale.ROOT))) {
-            error("attribute '" + attr.name() + "' not found in schema"
+            error(attr.location(), "attribute '" + attr.name() + "' not found in input schema"
                     + Suggestions.columnHint(colName,
                             schema.columns().stream().map(ColumnDefinition::name).toList(),
                             !schema.isOpen()));
@@ -239,11 +247,11 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                 ResolvedFunction resolved =
                         ResolvedFunction.of(functions, fn.functionName(), symbolTable);
                 if (resolved.isUnknown()) {
-                    error("unknown function '" + fn.functionName() + "'");
+                    error(fn.location(), "unknown function '" + fn.functionName() + "'");
                 } else {
                     int argCount = fn.arguments().size();
                     if (!resolved.accepts(argCount)) {
-                        error("function '" + fn.functionName()
+                        error(fn.location(), "function '" + fn.functionName()
                                 + "' called with " + argCount
                                 + " argument(s) but expects " + resolved.expectedArity());
                     }
@@ -257,7 +265,7 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                         typeInferrer.infer(arith.left(), schema), arith.operator(),
                         typeInferrer.infer(arith.right(), schema));
                 if (r.isError()) {
-                    error(r.error());
+                    error(arith.location(), r.error());
                 }
             }
             case UnaryOperand unary -> {
@@ -265,7 +273,7 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                 TemporalArithmetic.Result r =
                         TemporalArithmetic.unary(typeInferrer.infer(unary.operand(), schema));
                 if (r.isError()) {
-                    error(r.error());
+                    error(unary.location(), r.error());
                 }
             }
             // A boolean-valued condition operand (e.g. IIf's test): validate its
@@ -301,7 +309,16 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
     // Error helper
     // =========================================================================
 
-    private void error(String message) {
-        errors.add(SemanticError.error(filePath, 0, 0, context + ": " + message));
+    /**
+     * Records an error at {@code at}, the construct at fault, or at the operator the
+     * expression belongs to when that construct was built without a position. A
+     * diagnostic with neither is reported against the file.
+     */
+    private void error(SourceLocation at, String message) {
+        SourceLocation where = at.line() > 0 ? at : fallback;
+        errors.add(where.line() > 0
+                ? SemanticError.error(where.filePath(), where.line(), where.column(),
+                        context + ": " + message)
+                : SemanticError.error(filePath, 0, 0, context + ": " + message));
     }
 }

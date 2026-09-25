@@ -754,12 +754,12 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                             + "(use SUM, AVG, COUNT, MIN, or MAX)");
                 }
                 new PredicateValidator(input, symbolTable, functions, errors, filePath,
-                        "Window " + a.operator().name(), parameters)
+                        node.location(), "Window " + a.operator().name(), parameters)
                         .validateExpression(a.argument());
             }
             case WindowFunction.RankingWindow r -> {
                 r.ntileCount().ifPresent(c -> new PredicateValidator(
-                        input, symbolTable, functions, errors, filePath,
+                        input, symbolTable, functions, errors, filePath, node.location(),
                         "Window " + r.function().name(), parameters).validateExpression(c));
                 if (r.function() == RankingFunction.NTILE) {
                     validateNtileArgument(node, r.ntileCount());
@@ -767,7 +767,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             }
             case WindowFunction.OffsetWindow o -> {
                 var v = new PredicateValidator(input, symbolTable, functions, errors, filePath,
-                        "Window " + o.function().name(), parameters);
+                        node.location(), "Window " + o.function().name(), parameters);
                 v.validateExpression(o.expression());
                 o.defaultValue().ifPresent(v::validateExpression);
                 validateOffsetArgument(node, o.offset());
@@ -1697,7 +1697,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 // A derived grouping key (e.g. YEAR(ts)) — validate its attribute
                 // references and function calls just like an aggregate argument.
                 new PredicateValidator(input, symbolTable, functions, errors, filePath,
-                        "Aggregation γ group-by", parameters)
+                        node.location(), "Aggregation γ group-by", parameters)
                         .validateExpression(key.expression());
             }
         }
@@ -1706,7 +1706,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             // The argument (and the ARGMAX/ARGMIN yield) are full expressions: validate
             // their attribute references and function calls against the input schema.
             var operandValidator = new PredicateValidator(
-                    input, symbolTable, functions, errors, filePath,
+                    input, symbolTable, functions, errors, filePath, node.location(),
                     "Aggregation γ " + agg.operator().name(), parameters);
             operandValidator.validateExpression(agg.argument());
             agg.yieldExpr().ifPresent(operandValidator::validateExpression);
@@ -1751,7 +1751,8 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 columnNotFound(loc, context, attr.name(), input);
             }
         } else {
-            new PredicateValidator(input, symbolTable, functions, errors, filePath, context, parameters)
+            new PredicateValidator(input, symbolTable, functions, errors, filePath, loc, context,
+                    parameters)
                     .validateExpression(spec.expression());
         }
     }
@@ -1987,8 +1988,8 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      * @param context   short label for error messages (e.g. {@code "Selection σ"})
      */
     private void validatePredicate(Predicate predicate, Schema schema, String context) {
-        predicate.accept(new PredicateValidator(
-                schema, symbolTable, functions, errors, filePath, context, parameters));
+        predicate.accept(new PredicateValidator(schema, symbolTable, functions, errors, filePath,
+                predicate.location(), context, parameters));
     }
 
     /**

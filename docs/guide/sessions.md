@@ -132,7 +132,7 @@ for (Diagnostic problem : relix.validate("Bad := { σ nope = 1 (Orders) };")) {
 ```
 
 ```
-ERROR: Selection σ: attribute 'nope' not found in schema (available: order_id, customer_id, status, amount)
+ERROR: Selection σ: attribute 'nope' not found in input schema (available: order_id, customer_id, status, amount)
 ```
 
 Check `severity()` rather than treating every diagnostic as a refusal — a warning is a
