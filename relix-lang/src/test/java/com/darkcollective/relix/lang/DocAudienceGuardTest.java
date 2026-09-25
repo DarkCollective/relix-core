@@ -334,6 +334,10 @@ final class DocAudienceGuardTest {
                     .filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".java"))
                     .filter(p -> relativeToRoot(p).matches("relix-[a-z-]+/src/main/.*"))
+                    // An .internal package is never exported by the published jar, so a
+                    // public class there is the engine's own and its Javadoc is not read
+                    // by a user (#1141).
+                    .filter(p -> !relativeToRoot(p).contains("/internal/"))
                     .sorted()
                     .toList();
             assertThat(files).as("main sources were found").isNotEmpty();

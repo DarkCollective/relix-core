@@ -16,6 +16,7 @@
 package com.darkcollective.relix.semantic;
 
 import com.darkcollective.relix.ast.RelNode;
+import com.darkcollective.relix.semantic.internal.SchemaAnnotationsAccess;
 import com.darkcollective.relix.symbol.Schema;
 
 import java.util.Collections;
@@ -45,6 +46,11 @@ import java.util.Optional;
  * </pre>
  */
 public final class SchemaAnnotations {
+
+    static {
+        // The analyser, in semantic.internal, writes annotations; a caller only reads them.
+        SchemaAnnotationsAccess.install(SchemaAnnotations::put);
+    }
 
     private final IdentityHashMap<RelNode, Schema> map;
 

@@ -17,6 +17,7 @@ package com.darkcollective.relix.parser;
 
 import org.junit.jupiter.api.Test;
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.*;
 
 
 final class SemiAntiJoinParserTest extends ParserTestSupport {

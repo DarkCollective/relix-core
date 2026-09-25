@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.optimizer;
 
+import com.darkcollective.relix.optimizer.internal.OptimizationContext;
 import com.darkcollective.relix.semantic.SemanticAssertions;
 
 /**

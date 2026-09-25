@@ -3,6 +3,7 @@
 # Syntax:
 attr LIKE "pattern"
 attr NOT LIKE "pattern"
+attr LIKE <string expression>     -- the pattern can also be a column or expression
 
 σ name LIKE "A%" (Customers)
 σ email NOT LIKE "%@example.com" (Users)
@@ -14,7 +15,8 @@ for exactly one character. NOT LIKE keeps rows that do NOT match. This is the
 standard way to filter by a partial string without needing a full regular expression.
 
 # Technical Description:
-LIKE forms a PatternPredicate over the column operand and a string-literal pattern.
+LIKE forms a PatternPredicate over two operands: the value and the pattern, which
+may be any string expression.
 Wildcards: `%` translates to `.*` (any run of characters) and `_` to `.` (any
 single character); all other regex metacharacters in the pattern are escaped, so the
 pattern is treated as a literal substring except for `%` and `_`. Matching is
@@ -91,9 +93,34 @@ Seven characters exactly, and the right seven. `XY-1001` is the correct length
 but the wrong prefix; `AB-2001-X` has the right prefix but is too long. Both are
 dropped, because an anchored pattern has to account for the whole value.
 
+The pattern does not have to be a literal. It can be any string expression, such
+as a column, so the patterns can come from data. Here each family's prefix lives
+in a table of rules:
+
+```relix
+Rules := [
+| family | pattern |
+|--------|---------|
+| AB     | AB-%    |
+| XY     | XY-%    |
+];
+
+query { π family, sku (σ sku LIKE pattern (Products × Rules)) };
+```
+
+```
+ family  sku      
+ ──────  ─────────
+ AB      AB-1001  
+ AB      AB-1002  
+ XY      XY-1001  
+ AB      AB-2001-X
+(4 rows)
+```
+
 # Limitations:
-The pattern must be a string literal, not a column reference or expression.
-Matching is case-sensitive; use UCase() or LCase() on both sides for
+A pattern that is not a string literal is not pushed down to MongoDB, so that
+predicate runs in the engine. SQL sources receive it as written. Matching is case-sensitive; use UCase() or LCase() on both sides for
 case-insensitive matching:
   σ UCase(name) LIKE "ALICE%" (Users)
 

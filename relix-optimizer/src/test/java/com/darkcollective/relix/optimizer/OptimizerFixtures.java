@@ -15,6 +15,9 @@
  */
 package com.darkcollective.relix.optimizer;
 
+import com.darkcollective.relix.optimizer.internal.DeterminismSource;
+import com.darkcollective.relix.optimizer.internal.OptimizationContext;
+import com.darkcollective.relix.optimizer.internal.QueryOptimizer;
 import com.darkcollective.relix.cost.DistinctnessSource;
 import com.darkcollective.relix.cost.MonotoneGeneratorSource;
 import com.darkcollective.relix.events.QueryEventListener;
@@ -31,21 +34,21 @@ import com.darkcollective.relix.function.FunctionCatalog;
  * correctly decline to fire. This is where a test that is <em>about</em> one of them gets
  * a context that can.
  */
-final class OptimizerFixtures {
+public final class OptimizerFixtures {
 
     /** The installed libraries — the same set the engine would discover at run time. */
-    static final FunctionCatalog FUNCTIONS = FunctionCatalog.discover();
+    public static final FunctionCatalog FUNCTIONS = FunctionCatalog.discover();
 
     private OptimizerFixtures() {
     }
 
     /** A context over the installed function libraries. */
-    static OptimizationContext context() {
+    public static OptimizationContext context() {
         return context(DistinctnessSource.NONE);
     }
 
     /** A context over the installed libraries, with a per-leaf distinctness source. */
-    static OptimizationContext context(DistinctnessSource distinctness) {
+    public static OptimizationContext context(DistinctnessSource distinctness) {
         return new OptimizationContext(QueryEventListener.NONE, distinctness,
                 MonotoneGeneratorSource.NONE, FUNCTIONS);
     }
@@ -60,20 +63,20 @@ final class OptimizerFixtures {
      * table. A test that is <em>about</em> the gate supplies
      * {@link DeterminismSource#NONE} or a source of its own instead.
      */
-    static final DeterminismSource REPRODUCIBLE = expression -> true;
+    public static final DeterminismSource REPRODUCIBLE = expression -> true;
 
     /** A context whose determinism source vouches for everything. */
-    static OptimizationContext reproducible() {
+    public static OptimizationContext reproducible() {
         return reproducible(DistinctnessSource.NONE);
     }
 
     /** A context whose determinism source vouches for everything, plus a distinctness source. */
-    static OptimizationContext reproducible(DistinctnessSource distinctness) {
+    public static OptimizationContext reproducible(DistinctnessSource distinctness) {
         return context(distinctness, REPRODUCIBLE);
     }
 
     /** A context over the installed libraries, with both per-run lookups stated. */
-    static OptimizationContext context(DistinctnessSource distinctness,
+    public static OptimizationContext context(DistinctnessSource distinctness,
                                        DeterminismSource determinism) {
         return new OptimizationContext(QueryEventListener.NONE, distinctness,
                 MonotoneGeneratorSource.NONE, FUNCTIONS, determinism);

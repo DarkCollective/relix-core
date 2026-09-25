@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan;
 
+import com.darkcollective.relix.plan.internal.Planner;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;

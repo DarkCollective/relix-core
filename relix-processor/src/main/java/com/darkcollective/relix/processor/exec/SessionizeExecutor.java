@@ -22,7 +22,7 @@ import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.plan.PhysicalNode;
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.eval.OperandEvaluator;
 import com.darkcollective.relix.processor.eval.ValueComparator;

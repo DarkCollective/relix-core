@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.value;
 
+import com.darkcollective.relix.value.internal.JsonValues;
 import com.darkcollective.relix.json.JsonStrings;
 import com.darkcollective.relix.json.JsonWriter;
 import org.junit.jupiter.api.DisplayName;

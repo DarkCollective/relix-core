@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.plan;
 
+import com.darkcollective.relix.plan.internal.PhysicalPlanPrinter;
+import com.darkcollective.relix.plan.internal.Planner;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.events.QueryEventListener;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;

@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.lang;
 
-import com.darkcollective.relix.ast.AstEquivalence;
+import com.darkcollective.relix.ast.internal.AstEquivalence;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.lang.ast.AssignmentStatement;
 import com.darkcollective.relix.lang.ast.DefRelationStatement;

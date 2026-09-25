@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast;
 
+import com.darkcollective.relix.ast.internal.TemporalLiterals;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;

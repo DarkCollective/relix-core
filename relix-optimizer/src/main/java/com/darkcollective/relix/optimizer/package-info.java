@@ -14,34 +14,10 @@
  * limitations under the License.
  */
 /**
- * Query optimizer for Relix relational algebra expressions.
+ * What the optimizer reports about a rewrite.
  *
- * <p>The optimizer takes a fully-analysed
- * {@link com.darkcollective.relix.semantic.SemanticModel} and rewrites each
- * query's {@link com.darkcollective.relix.ast.RelNode} tree to a semantically
- * equivalent but more efficient form.
- *
- * <h2>Core types</h2>
- * <ul>
- *   <li>{@link com.darkcollective.relix.optimizer.QueryOptimizer} — entry
- *       point; applies all rule phases and returns per-query
- *       {@link com.darkcollective.relix.optimizer.OptimizationResult}s.</li>
- *   <li>{@link com.darkcollective.relix.optimizer.OptimizationRule} — interface
- *       implemented by every individual transformation rule.</li>
- *   <li>{@link com.darkcollective.relix.optimizer.OptimizationCode} — stable
- *       enumeration of every known rule, each with a unique code string and
- *       human-readable description.</li>
- *   <li>{@link com.darkcollective.relix.optimizer.TransformationRecord} —
- *       immutable record of a single rule firing: code, relation name, detail,
- *       and source location.</li>
- *   <li>{@link com.darkcollective.relix.optimizer.OptimizationContext} —
- *       mutable collector that accumulates records during an optimization run.</li>
- *   <li>{@link com.darkcollective.relix.optimizer.OptimizationResult} —
- *       immutable result for one query: original tree, optimized tree, and
- *       the list of transformations applied.</li>
- *   <li>{@link com.darkcollective.relix.optimizer.OptimizationReport} —
- *       renders an 80-column audit report in the same style as
- *       {@link com.darkcollective.relix.semantic.IrReport}.</li>
- * </ul>
+ * <p>A {@link com.darkcollective.relix.optimizer.TransformationRecord} says which rule
+ * fired, on what, and why; its {@link com.darkcollective.relix.optimizer.OptimizationCode}
+ * names the rule. {@code Relation.rewrites()} returns them.
  */
 package com.darkcollective.relix.optimizer;

@@ -16,7 +16,7 @@
 package com.darkcollective.relix.lang.ast;
 
 import com.darkcollective.relix.ast.Operand;
-import com.darkcollective.relix.ast.visitor.OperandPrettyPrinter;
+import com.darkcollective.relix.ast.visitor.internal.OperandPrettyPrinter;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.lang.ast.source.ColumnBinding;
 import com.darkcollective.relix.lang.ast.source.ApiKeyAuth;

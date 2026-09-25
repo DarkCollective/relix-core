@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.processor.connector;
 
+import com.darkcollective.relix.processor.connector.internal.DriverDownloader;
 import java.io.IOException;
 import java.net.URI;
 

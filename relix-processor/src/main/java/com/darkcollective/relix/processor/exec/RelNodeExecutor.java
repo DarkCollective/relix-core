@@ -18,14 +18,15 @@ package com.darkcollective.relix.processor.exec;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.events.QueryEventListener;
 import com.darkcollective.relix.plan.PlanEstimates;
+import com.darkcollective.relix.plan.PlannedQuery;
 import com.darkcollective.relix.cost.ObservedCardinalities;
-import com.darkcollective.relix.plan.Planner;
+import com.darkcollective.relix.plan.internal.Planner;
 
 import java.util.Objects;
 import com.darkcollective.relix.plan.PhysicalNode;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 
 import java.util.stream.Stream;
 
@@ -133,7 +134,7 @@ public final class RelNodeExecutor {
     /**
      * Plans {@code node}, emitting a {@link com.darkcollective.relix.events.QueryEvent}
      * to {@code listener} for each physical decision — used by
-     * {@link com.darkcollective.relix.processor.QueryExecutor#trace}.
+     * {@link com.darkcollective.relix.processor.internal.QueryExecutor#trace}.
      *
      * @param node     the logical node to plan; must not be null
      * @param ctx      the shared execution context; must not be null
@@ -143,19 +144,6 @@ public final class RelNodeExecutor {
     public PhysicalNode plan(RelNode node, ExecutionContext ctx, QueryEventListener listener) {
         return planWithEstimates(node, ctx, listener).plan();
     }
-
-    /**
-     * A planned tree together with the cardinality estimates the planner computed for
-     * it.
-     *
-     * <p>The estimates are a side table rather than a component of the nodes — see
-     * {@link PlanEstimates} — so they have to travel alongside the plan rather than
-     * inside it. This record is that pairing.
-     *
-     * @param plan      the planned physical tree
-     * @param estimates the per-node estimated row counts
-     */
-    public record PlannedQuery(PhysicalNode plan, PlanEstimates estimates) {}
 
     /**
      * Plans {@code node} and returns the plan together with its cardinality estimates

@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.plan;
 
+import com.darkcollective.relix.plan.internal.PhysicalPlanJson;
+import com.darkcollective.relix.plan.internal.PhysicalPlanPrinter;
 import com.darkcollective.relix.json.JsonReader;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;

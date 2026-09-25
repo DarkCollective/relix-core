@@ -36,7 +36,7 @@ import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.ShadowPolicy;
-import com.darkcollective.relix.symbol.table.InMemorySymbolTable;
+import com.darkcollective.relix.symbol.table.internal.InMemorySymbolTable;
 import com.darkcollective.relix.symbol.relation.DatabaseRelationSymbol;
 import com.darkcollective.relix.symbol.relation.InlineRelationSymbol;
 import com.darkcollective.relix.symbol.relation.QueryRelationSymbol;

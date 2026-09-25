@@ -16,8 +16,8 @@
 package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.plan.PhysicalNode;
-import com.darkcollective.relix.processor.ArrayRow;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ArrayRow;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
@@ -90,7 +90,7 @@ final class SpoolExecutorTest {
 
     private static EvalCtx ctx(SpoolCache spools) {
         return new EvalCtx(null, null, null, null, Map.of(), spools, 0,
-                ExecutionContext.UNLIMITED_MATERIALIZED_ROWS, null);
+                ExecutionContext.UNLIMITED_MATERIALIZED_ROWS, WorkBudget.UNLIMITED, null);
     }
 
     private static List<Row> drain(Stream<Row> stream) {

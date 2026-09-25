@@ -63,7 +63,7 @@ import java.util.stream.Stream;
  *       {@code AggregateExecutor.executeStreamingAggregate}).</li>
  * </ul>
  *
- * @see com.darkcollective.relix.processor.DataSourceConnector
+ * @see com.darkcollective.relix.processor.internal.DataSourceConnector
  */
 @FunctionalInterface
 interface ChildDispatch {
@@ -86,9 +86,9 @@ interface ChildDispatch {
      * {@link MaterializationBudget} on the way in, so a blocking operator cannot swallow
      * a table without either stopping at the cap or saying how much it held.
      *
-     * @throws com.darkcollective.relix.processor.eval.EvaluationException if {@code owner}
+     * @throws com.darkcollective.relix.processor.EvaluationException if {@code owner}
      *         would buffer more rows than
-     *         {@link com.darkcollective.relix.processor.ExecutionContext#maxMaterializedRows()}
+     *         {@link com.darkcollective.relix.processor.internal.ExecutionContext#maxMaterializedRows()}
      */
     default List<Row> materialize(PhysicalNode node, EvalCtx ctx, PhysicalNode owner) {
         return MaterializationBudget.drain(owner, execute(node, ctx), ctx);
@@ -102,7 +102,7 @@ interface ChildDispatch {
      * <p>The caller still owns the returned stream and must close it, exactly as with
      * {@link #execute}: this adds metering, not lifecycle.
      *
-     * @throws com.darkcollective.relix.processor.eval.EvaluationException if {@code owner}
+     * @throws com.darkcollective.relix.processor.EvaluationException if {@code owner}
      *         would buffer more rows than the cap
      */
     default Stream<Row> buffering(PhysicalNode node, EvalCtx ctx, PhysicalNode owner) {
@@ -120,7 +120,7 @@ interface ChildDispatch {
      *
      * @param held what {@code owner} is currently holding, polled after each row is
      *             handed on
-     * @throws com.darkcollective.relix.processor.eval.EvaluationException if {@code owner}
+     * @throws com.darkcollective.relix.processor.EvaluationException if {@code owner}
      *         holds more rows than the cap
      */
     default Stream<Row> holding(PhysicalNode node, EvalCtx ctx, PhysicalNode owner,

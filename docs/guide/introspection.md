@@ -42,8 +42,10 @@ relix.relation("τ kind, component (relix.version)").toList().forEach(System.out
 ```
 
 ```
+(component=clf, kind=connector, version=<version>)
 (component=csv, kind=connector, version=<version>)
 (component=gedcom, kind=connector, version=<version>)
+(component=log, kind=connector, version=<version>)
 (component=org.h2.Driver, kind=driver, version=2.2)
 (component=relix-engine, kind=engine, version=<version>)
 (component=relix-embed, kind=facade, version=unknown)
@@ -67,7 +69,7 @@ System.out.println("this session can read CSV: " + connectors.contains("csv"));
 ```
 
 ```
-connectors: [csv, gedcom]
+connectors: [clf, csv, gedcom, log]
 this session can read CSV: true
 ```
 

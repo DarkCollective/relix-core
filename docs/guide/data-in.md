@@ -60,7 +60,7 @@ type you gave it; the supplier is called **once per scan**, so nothing is produc
 query reads it, and a second query gets a second stream.
 
 ```java
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.value.NumberValue;
@@ -71,8 +71,8 @@ Schema shipments = new Schema(List.of(
         new ColumnDefinition("carrier", ScalarType.STRING)));
 
 relix.source("Shipments", shipments, () -> Stream.of(
-        ArrayRow.of(shipments, NumberValue.of("1"), new StringValue("Rail")),
-        ArrayRow.of(shipments, NumberValue.of("2"), new StringValue("Air"))));
+        Row.of(shipments, NumberValue.of("1"), new StringValue("Rail")),
+        Row.of(shipments, NumberValue.of("2"), new StringValue("Air"))));
 
 for (Row row : relix.relation("Shipments").toList()) {
     System.out.println(row.get("order_id").asDisplayString()
@@ -85,7 +85,7 @@ for (Row row : relix.relation("Shipments").toList()) {
 2 Air
 ```
 
-Rows are built with `ArrayRow.of(schema, values)`, in the heading's column order. The
+Rows are built with `Row.of(schema, values)`, in the heading's column order. The
 engine closes the stream it is handed, so a supplier holding a resource releases it
 through `Stream.onClose`.
 
@@ -150,7 +150,7 @@ class Ledger implements RelixConnector {
     public Stream<Row> open(ConnectorConfig config, String table, Schema schema) {
         // Both halves of the declaration arrive here: the connection's own properties as
         // the config, and the source's `table:` as the name to read.
-        return Stream.of(ArrayRow.of(schema, NumberValue.of("1"), NumberValue.of("100"),
+        return Stream.of(Row.of(schema, NumberValue.of("1"), NumberValue.of("100"),
                 new StringValue(config.require("origin") + "/" + table)));
     }
 }

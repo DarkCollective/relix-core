@@ -23,7 +23,7 @@
  * built-ins ({@link com.darkcollective.relix.processor.generator.RangeGenerator},
  * {@link com.darkcollective.relix.processor.generator.NaturalsGenerator},
  * {@link com.darkcollective.relix.processor.generator.PrimesGenerator})
- * and doubles as the {@link com.darkcollective.relix.semantic.GeneratorCatalog} seam
+ * and doubles as the {@link com.darkcollective.relix.semantic.internal.GeneratorCatalog} seam
  * so the same definitions supply schemas to semantic analysis and rows to execution
  * (served by {@code GeneratorDataSourceConnector}).
  *

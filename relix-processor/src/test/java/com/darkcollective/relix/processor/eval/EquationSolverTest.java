@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.processor.EvaluationException;
+
 import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.AttributeOperand;

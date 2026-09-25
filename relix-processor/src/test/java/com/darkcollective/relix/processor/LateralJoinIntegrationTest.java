@@ -15,8 +15,10 @@
  */
 package com.darkcollective.relix.processor;
 
-import com.darkcollective.relix.processor.eval.EvaluationException;
-import com.darkcollective.relix.semantic.SemanticResult;
+import com.darkcollective.relix.processor.internal.QueryExecutor;
+import com.darkcollective.relix.processor.internal.QueryResult;
+import com.darkcollective.relix.processor.EvaluationException;
+import com.darkcollective.relix.semantic.internal.SemanticResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Nested;

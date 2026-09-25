@@ -20,7 +20,7 @@ import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.lang.ast.NamedQueryTarget;
 import com.darkcollective.relix.lang.ast.QueryStatement;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.semantic.SemanticModel;

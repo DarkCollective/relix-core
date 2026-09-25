@@ -95,6 +95,17 @@ try (Relix relix = Relix.open()) {
 (component=relix-embed)
 ```
 
+`Relix.version()` is the engine's own version, the value the engine's row in that
+relation reports, for a program that wants it without running a query:
+
+```java
+System.out.println(Relix.version());
+```
+
+```
+<version>
+```
+
 Provider discovery is a classpath scan, so a missing connector or function library
 fails nothing a compiler can see. Asking this relation is how the failure becomes
 visible before a query depends on it — filter it by `kind` to list the connectors,

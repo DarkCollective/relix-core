@@ -118,7 +118,7 @@ final class TruthRelationNodeTest {
         @DisplayName("accept dispatches to the visitor's TruthRelationNode arm")
         void acceptDispatchesToVisit() {
             assertThat(TruthRelationNode.empty(SourceLocation.UNKNOWN)
-                    .accept(new com.darkcollective.relix.ast.visitor.PrettyPrinter()))
+                    .accept(new com.darkcollective.relix.ast.visitor.internal.PrettyPrinter()))
                     .isEqualTo("EMPTY");
         }
 

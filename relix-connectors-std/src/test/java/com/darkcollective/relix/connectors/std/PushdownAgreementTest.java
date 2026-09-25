@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.connectors.std;
 
-import com.darkcollective.relix.plan.Dialect;
+import com.darkcollective.relix.plan.internal.Dialect;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;

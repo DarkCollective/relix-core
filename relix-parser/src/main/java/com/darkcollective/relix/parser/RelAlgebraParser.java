@@ -16,6 +16,7 @@
 package com.darkcollective.relix.parser;
 
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.*;
 
 import java.io.IOException;
 import java.io.InputStream;

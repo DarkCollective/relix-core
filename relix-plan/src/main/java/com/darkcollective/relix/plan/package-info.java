@@ -14,22 +14,12 @@
  * limitations under the License.
  */
 /**
- * Physical query planning.
+ * The physical plan: what the engine will run.
  *
- * <p>Bridges logical relational algebra and execution: the
- * {@link com.darkcollective.relix.plan.Planner} translates an optimised logical
- * {@link com.darkcollective.relix.ast.RelNode} tree into a
- * {@link com.darkcollective.relix.plan.PhysicalNode} plan that fixes the physical
- * strategy (join algorithm, build side) and carries each operator's resolved
- * output schema.
- *
- * <h2>Core types</h2>
- * <ul>
- *   <li>{@link com.darkcollective.relix.plan.PhysicalNode} — sealed hierarchy of
- *       executable physical operators (its nested records).</li>
- *   <li>{@link com.darkcollective.relix.plan.Planner} — logical → physical
- *       translation, including cost-based join-strategy selection and view
- *       inlining.</li>
- * </ul>
+ * <p>{@link com.darkcollective.relix.plan.PhysicalNode} is the plan tree, one record per
+ * physical operator. {@link com.darkcollective.relix.plan.PlanEstimates} carries each
+ * node's estimated row count beside the tree rather than inside it, and
+ * {@link com.darkcollective.relix.plan.PlannedQuery} pairs the two, as
+ * {@code Relation.plan()} returns them.
  */
 package com.darkcollective.relix.plan;

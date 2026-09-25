@@ -15,8 +15,9 @@
  */
 package com.darkcollective.relix.connectors.std;
 
+import com.darkcollective.relix.connectors.std.internal.ConnectionPool;
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
-import com.darkcollective.relix.plan.Dialect;
+import com.darkcollective.relix.plan.internal.Dialect;
 import com.darkcollective.relix.semantic.SemanticFixtures;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;

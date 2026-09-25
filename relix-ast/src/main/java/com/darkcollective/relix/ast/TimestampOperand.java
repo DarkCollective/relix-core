@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast;
 
+import com.darkcollective.relix.ast.internal.TemporalLiterals;
 import com.darkcollective.relix.ast.visitor.OperandVisitor;
 
 import java.time.Instant;

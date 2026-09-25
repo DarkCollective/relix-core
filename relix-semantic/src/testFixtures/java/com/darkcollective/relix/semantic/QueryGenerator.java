@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.semantic;
 
+import com.darkcollective.relix.semantic.internal.SchemaInference;
+import com.darkcollective.relix.semantic.internal.SchemaInferenceVisitor;
 import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.AggregateOperator;
 import com.darkcollective.relix.ast.ArithmeticOperator;

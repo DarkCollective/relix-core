@@ -164,15 +164,18 @@ final class SourceConfigParser {
     }
 
     /**
-     * Parses an HTTP method, restricted to the two read methods {@code GET} and
-     * {@code POST} (Relix is read-only by design — see {@link HttpMethod}).
+     * Parses an HTTP method, restricted to the read methods {@code GET},
+     * {@code POST} and {@code QUERY} (Relix is read-only by design — see
+     * {@link HttpMethod}). {@code QUERY} needs no token of its own: the
+     * {@code query} statement keyword already lexes case-insensitively.
      */
     private HttpMethod parseHttpMethod() {
         HttpMethod m = switch (parser.current.type()) {
             case GET  -> HttpMethod.GET;
             case POST -> HttpMethod.POST;
+            case QUERY -> HttpMethod.QUERY;
             default -> throw parser.error(
-                    "Expected HTTP method GET or POST (Relix is read-only; "
+                    "Expected HTTP method GET, POST or QUERY (Relix is read-only; "
                     + "PUT/PATCH/DELETE/HEAD are not supported)");
         };
         parser.advance();

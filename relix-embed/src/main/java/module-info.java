@@ -37,8 +37,12 @@ module com.darkcollective.relix.embed {
     requires transitive com.darkcollective.relix.value;
     requires transitive com.darkcollective.relix.processor;
 
-    // The .relix grammar. A frontend may name a frontend.
+    // The .relix grammar. A frontend may name a frontend. The lexer too, which
+    // Relix.tokens makes lenient for highlighting.
     requires com.darkcollective.relix.lang;
+    requires com.darkcollective.relix.parser;
+    // Sandbox.load reads its configuration with it.
+    requires com.darkcollective.relix.json;
 
     // The phases the terminals expose, and the types they answer with. `transitive`
     // where a public signature names one, so a caller who depends on the facade can use

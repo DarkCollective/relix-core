@@ -29,7 +29,7 @@
  *       a {@code boolean}.  NULL values follow SQL three-valued logic.</li>
  * </ul>
  *
- * <p>{@link com.darkcollective.relix.processor.eval.EvaluationException} is the
+ * <p>{@link com.darkcollective.relix.processor.EvaluationException} is the
  * unchecked exception thrown when evaluation cannot proceed (unknown column,
  * type mismatch, bad function arity, etc.).
  */

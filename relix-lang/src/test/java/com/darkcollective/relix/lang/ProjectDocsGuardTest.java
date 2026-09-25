@@ -233,13 +233,20 @@ final class ProjectDocsGuardTest {
     void everyReferencePageIsRegisteredAndReachable() {
         Path root = repoRoot();
         String index = read(root.resolve("docs/reference/README.md"));
-        // The second half of this check asks whether `:doc <key>` can reach the page, and
-        // that registry belongs to the console tooling. Where it is absent the index half
-        // still runs: a tree without the tool still has a manual whose pages must be
-        // reachable from its own contents.
-        Path entries = root.resolve(
-                "relix-console/src/main/java/com/darkcollective/relix/console/docs/DocEntry.java");
-        String docEntry = Files.isRegularFile(entries) ? read(entries) : null;
+        // The second half of this check asks whether a page is in an index a tool can
+        // find it by: the published jar's (Relix.referencePages()), or, for a page about a
+        // front end, that front end's. Where neither file is present the index half still
+        // runs: a tree without them still has a manual whose pages must be reachable from
+        // its own contents.
+        String docEntry = null;
+        for (String index2 : List.of(
+                "relix-embed/src/main/java/com/darkcollective/relix/embed/ReferenceIndex.java",
+                "relix-console/src/main/java/com/darkcollective/relix/console/docs/DocEntry.java")) {
+            Path f = root.resolve(index2);
+            if (Files.isRegularFile(f)) {
+                docEntry = (docEntry == null ? "" : docEntry) + read(f);
+            }
+        }
 
         List<String> unlinked = new ArrayList<>();
         List<String> unreachable = new ArrayList<>();
@@ -261,7 +268,8 @@ final class ProjectDocsGuardTest {
                         + "in the rendered manual")
                 .isEmpty();
         assertThat(unreachable)
-                .as("language pages absent from DocEntry.ALL — they cannot be reached by "
+                .as("language pages absent from the reference index (ReferenceIndex, or DocEntry "
+                        + "for a front end's page) — they cannot be reached by "
                         + "`:doc <key>` or `relix help`, so the page exists but no user can "
                         + "find it from inside the tool (function pages are checked by "
                         + "relix-console's FunctionPageReachabilityTest)")

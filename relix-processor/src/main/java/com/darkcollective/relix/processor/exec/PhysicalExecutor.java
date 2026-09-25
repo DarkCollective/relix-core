@@ -16,7 +16,7 @@
 package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.plan.PhysicalNode;
-import com.darkcollective.relix.processor.ExecutionContext;
+import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
 
 import java.util.stream.Stream;
@@ -31,7 +31,7 @@ import java.util.stream.Stream;
  * {@link PhysicalNode.Join} states its algorithm (hash vs nested-loop), build
  * side, and equi-join key columns.  This executor therefore performs no cost
  * estimation, key extraction, or schema inference — it mechanically runs what the
- * {@link com.darkcollective.relix.plan.Planner} chose.
+ * {@link com.darkcollective.relix.plan.internal.Planner} chose.
  *
  * <p>Streaming unary operators chain onto the input stream; operators that need
  * random access or full buffering (sort, aggregation, the build side of a join,
@@ -94,7 +94,18 @@ public final class PhysicalExecutor {
         }
     }
 
+    /**
+     * Runs one operator and charges each row it yields to the execution's work budget.
+     *
+     * <p>Every operator's output passes through here, since this is also the seam the
+     * operator groups recurse through, so the budget sees every row that moves between
+     * two operators. With no limit set the stream is returned as it is.
+     */
     private Stream<Row> execute(PhysicalNode node, EvalCtx ctx) {
+        return ctx.work().meter(run(node, ctx));
+    }
+
+    private Stream<Row> run(PhysicalNode node, EvalCtx ctx) {
         return switch (node) {
             case PhysicalNode.Scan s      -> leaf.executeScan(s, ctx);
             // ∅ — no rows, and nothing to run: the sub-plan the optimizer proved

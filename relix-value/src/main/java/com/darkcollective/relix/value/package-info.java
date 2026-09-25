@@ -14,37 +14,16 @@
  * limitations under the License.
  */
 /**
- * Runtime scalar value types for query execution.
+ * One field of one row: the sealed {@link com.darkcollective.relix.value.Value}
+ * hierarchy.
  *
- * <p>The sealed {@link com.darkcollective.relix.value.Value} interface
- * represents a single scalar value produced or consumed during query evaluation.
- * Its permitted subtypes map onto the {@link com.darkcollective.relix.symbol.ScalarType}
- * lattice:
- *
- * <ul>
- *   <li>{@link com.darkcollective.relix.value.StringValue} — textual data</li>
- *   <li>{@link com.darkcollective.relix.value.NumberValue} — arbitrary-precision
- *       decimal numbers ({@link java.math.BigDecimal})</li>
- *   <li>{@link com.darkcollective.relix.value.BooleanValue} — boolean flags;
- *       prefer the {@code TRUE}/{@code FALSE} constants</li>
- *   <li>{@link com.darkcollective.relix.value.NullValue} — the absent value
- *       (SQL {@code NULL}); use the singleton {@code INSTANCE}</li>
- *   <li>{@link com.darkcollective.relix.value.DateValue},
- *       {@link com.darkcollective.relix.value.TimeValue},
- *       {@link com.darkcollective.relix.value.TimestampValue},
- *       {@link com.darkcollective.relix.value.DurationValue} — the four temporal kinds,
- *       each holding the corresponding {@link java.time} value</li>
- *   <li>{@link com.darkcollective.relix.value.StructValue},
- *       {@link com.darkcollective.relix.value.ArrayValue} — nested values, which report
- *       {@link com.darkcollective.relix.symbol.ScalarType#ANY}</li>
- * </ul>
- *
- * <p>Every subtype is immutable.  Use exhaustive pattern matching on the sealed
- * hierarchy rather than {@code instanceof} chains.
- *
- * <p>Two utilities operate on values alone and so live beside them:
- * {@link com.darkcollective.relix.value.ValuePath} reads a dotted/indexed path into a
- * nested value, and {@link com.darkcollective.relix.value.JsonValues} converts between
- * JSON text and a {@code Value} tree.
+ * <p>Strings, numbers, booleans and NULL; the four temporal kinds
+ * ({@link com.darkcollective.relix.value.DateValue},
+ * {@link com.darkcollective.relix.value.TimeValue},
+ * {@link com.darkcollective.relix.value.TimestampValue},
+ * {@link com.darkcollective.relix.value.DurationValue}); and the nested
+ * {@link com.darkcollective.relix.value.StructValue} and
+ * {@link com.darkcollective.relix.value.ArrayValue}. The hierarchy is sealed, so a
+ * {@code switch} over a value is exhaustive.
  */
 package com.darkcollective.relix.value;

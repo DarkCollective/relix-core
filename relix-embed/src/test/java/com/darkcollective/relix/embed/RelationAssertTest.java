@@ -180,7 +180,7 @@ final class RelationAssertTest {
                 relix.source("Feed", schema, () -> {
                     scans.incrementAndGet();
                     return java.util.stream.Stream.of(
-                            com.darkcollective.relix.processor.ArrayRow.of(schema,
+                            com.darkcollective.relix.processor.internal.ArrayRow.of(schema,
                                     com.darkcollective.relix.value.NumberValue.of("1")));
                 });
 

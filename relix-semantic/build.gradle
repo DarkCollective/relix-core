@@ -13,7 +13,7 @@ plugins {
 dependencies {
     api project(':relix-lang-ast')   // Script, Statement, SourceConfig types in public API
     api project(':relix-symbol')     // SymbolTable, Schema in public API
-    api project(':relix-json')       // JsonWriter — in LogicalPlanJson.write(...) signature
+    implementation project(':relix-json')   // the plan and snapshot writers; no public signature names it
     api project(':relix-events')     // QueryEvent — in SemanticAnalyzer.withSessionEvents(...)
 
     // The function SPI: FunctionCatalog is what the pipeline resolves calls

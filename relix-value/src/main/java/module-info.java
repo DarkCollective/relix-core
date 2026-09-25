@@ -23,8 +23,8 @@
  * matched against the schema that describes it.
  *
  * <p>The module holds nothing but those values and the two utilities that operate on
- * them alone — {@link com.darkcollective.relix.value.ValuePath} (dotted/indexed access
- * into a nested value) and {@link com.darkcollective.relix.value.JsonValues} (JSON text
+ * them alone — {@link com.darkcollective.relix.value.internal.ValuePath} (dotted/indexed access
+ * into a nested value) and {@link com.darkcollective.relix.value.internal.JsonValues} (JSON text
  * to and from a {@code Value} tree). It deliberately knows nothing about rows,
  * operators, or execution: its one dependency is the type system it reports against, so
  * it can sit near the bottom of the module graph and be required by both the metadata
@@ -34,4 +34,5 @@ module com.darkcollective.relix.value {
     requires transitive com.darkcollective.relix.symbol;  // ScalarType — in Value's API
 
     exports com.darkcollective.relix.value;
+    exports com.darkcollective.relix.value.internal to com.darkcollective.relix.connectors.std, com.darkcollective.relix.function, com.darkcollective.relix.function.builtin, com.darkcollective.relix.processor;
 }

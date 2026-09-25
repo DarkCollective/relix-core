@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.semantic;
 
+import com.darkcollective.relix.semantic.internal.SemanticAnalyzer;
 import com.darkcollective.relix.lang.ast.Script;
 import com.darkcollective.relix.lang.ast.ScriptParseException;
 

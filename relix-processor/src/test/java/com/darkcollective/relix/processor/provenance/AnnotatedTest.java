@@ -18,7 +18,7 @@ package com.darkcollective.relix.processor.provenance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.symbol.ColumnDefinition;

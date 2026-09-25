@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.provenance;
 
+import com.darkcollective.relix.provenance.internal.BuiltinSemiringLibrary;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;

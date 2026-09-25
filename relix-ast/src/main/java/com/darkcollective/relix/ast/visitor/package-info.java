@@ -14,43 +14,11 @@
  * limitations under the License.
  */
 /**
- * Visitor interfaces and bundled implementations for traversing the relational
- * algebra AST.
+ * The visitor interfaces over the expression tree: {@link com.darkcollective.relix.ast.visitor.RelNodeVisitor},
+ * {@link com.darkcollective.relix.ast.visitor.PredicateVisitor} and
+ * {@link com.darkcollective.relix.ast.visitor.OperandVisitor}.
  *
- * <h2>Visitor interfaces</h2>
- *
- * <p>Three generic visitor interfaces mirror the three sealed hierarchies in the
- * parent package:
- *
- * <ul>
- *   <li>{@link com.darkcollective.relix.ast.visitor.RelNodeVisitor RelNodeVisitor&lt;R&gt;}
- *       — one {@code visit} method per {@link com.darkcollective.relix.ast.RelNode}
- *       implementation.</li>
- *   <li>{@link com.darkcollective.relix.ast.visitor.OperandVisitor OperandVisitor&lt;R&gt;}
- *       — one {@code visit} method per {@link com.darkcollective.relix.ast.Operand}
- *       implementation.</li>
- *   <li>{@link com.darkcollective.relix.ast.visitor.PredicateVisitor PredicateVisitor&lt;R&gt;}
- *       — one {@code visit} method per {@link com.darkcollective.relix.ast.Predicate}
- *       implementation.</li>
- * </ul>
- *
- * <p>Because the root sealed interfaces are exhaustive, implementing a visitor
- * interface guarantees that every node type is handled — the compiler will flag
- * any missing {@code visit} overload.
- *
- * <h2>Bundled implementations</h2>
- *
- * <ul>
- *   <li>{@link com.darkcollective.relix.ast.visitor.PrettyPrinter} — converts an
- *       entire {@link com.darkcollective.relix.ast.RelNode} tree to a Unicode
- *       relational algebra string. Use it directly via
- *       {@link com.darkcollective.relix.ast.RelNode#prettyPrint()}.</li>
- *   <li>{@link com.darkcollective.relix.ast.visitor.OperandPrettyPrinter} — formats
- *       operand expressions, handling operator precedence and string escaping.</li>
- *   <li>{@link com.darkcollective.relix.ast.visitor.PredicatePrettyPrinter} — formats
- *       predicate conditions using Unicode logical and comparison symbols.</li>
- * </ul>
- *
- * @see com.darkcollective.relix.ast.visitor.PrettyPrinter
+ * <p>Each hierarchy is sealed, so a {@code switch} over a node is exhaustive and is
+ * usually the simpler choice; a visitor suits a walk that dispatches on every kind.
  */
 package com.darkcollective.relix.ast.visitor;

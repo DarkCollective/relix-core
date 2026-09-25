@@ -161,7 +161,13 @@ chosen optimum. So such a predicate is left as a residual `σ` above the operato
 search space or group dimension) has nothing to prune and is unaffected.
 
 # Limitations:
-At least one constraint is required. Constraint operators are ≤, ≥, or =.
+At least one constraint is required, so `SUBJECT TO` cannot be left out:
+
+```relix-invalid
+query { OPTIMIZE MAXIMIZE SUM(value) (Candidates) };
+```
+
+ Constraint operators are ≤, ≥, or =.
 Infeasible groups produce no rows (MIP) / are skipped (LP). It materialises and
 never pushes down. Objective and constraints are linear in SUM form.
 

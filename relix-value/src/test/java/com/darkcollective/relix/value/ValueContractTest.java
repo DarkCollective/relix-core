@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.value;
 
+import com.darkcollective.relix.value.internal.JsonValues;
 import com.darkcollective.relix.symbol.ScalarType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

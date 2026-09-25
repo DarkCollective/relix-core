@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.processor;
 
+import com.darkcollective.relix.processor.internal.QueryExecutor;
+import com.darkcollective.relix.processor.internal.QueryResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

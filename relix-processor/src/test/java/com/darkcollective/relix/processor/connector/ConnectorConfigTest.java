@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.processor.connector;
 
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;

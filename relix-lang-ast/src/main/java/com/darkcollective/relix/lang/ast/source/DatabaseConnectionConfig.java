@@ -28,7 +28,7 @@ import java.util.Optional;
  * {@code source T from conn { … }} binding.
  *
  * <p>{@code url}, {@code user}, and {@code password} may contain {@code ${VAR}}
- * environment references (substituted before parsing).  {@code user} and
+ * placeholders, resolved when a query runs.  {@code user} and
  * {@code password} are optional (some drivers, e.g. embedded H2, need neither);
  * {@code dialect} is an optional hint that later drives SQL generation for
  * pushdown.

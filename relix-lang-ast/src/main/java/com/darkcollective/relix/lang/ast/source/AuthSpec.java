@@ -32,9 +32,8 @@ package com.darkcollective.relix.lang.ast.source;
  *   auth: apikey(query("api_key"), "${KEY}")   // sent as a URL query parameter
  * </pre>
  *
- * <p>All string payloads may contain {@code ${ENV}} placeholders; these are
- * resolved against the active environment before the script is parsed, so a
- * secret never appears literally in the source.
+ * <p>All string payloads may contain {@code ${ENV}} placeholders, so a secret never
+ * appears literally in the source. They are resolved when a query runs.
  */
 public sealed interface AuthSpec
         permits BearerAuth, BasicAuth, ApiKeyAuth {

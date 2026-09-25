@@ -112,6 +112,42 @@ so is the one above.
 
 It needs Java 21 and nothing else: no Docker, no network, no database.
 
+## Building against an unreleased engine
+
+A project that needs an engine change before it is released can use a snapshot or a
+local checkout.
+
+**Snapshots.** Every change to `main` publishes one to Central's snapshot repository,
+named for the release it leads to:
+
+```gradle
+repositories {
+    mavenCentral()
+    maven { url 'https://central.sonatype.com/repository/maven-snapshots/' }
+}
+
+dependencies {
+    implementation 'com.darkcollective.relix:relix:<next release>-SNAPSHOT'
+}
+```
+
+A snapshot changes with every push and is for development only. A release of anything
+built on Relix should depend on a release or a release candidate.
+
+**A local checkout.** A Gradle composite build compiles against a clone of this
+repository directly, with nothing published. In the consuming project's
+`settings.gradle`:
+
+```gradle
+includeBuild('../relix-core') {
+    dependencySubstitution {
+        substitute module('com.darkcollective.relix:relix') using project(':relix-dist')
+    }
+}
+```
+
+The dependency keeps whatever version it declares; the local build replaces it.
+
 ## Status
 
 Relix is under active development and has not had a stable release. Release

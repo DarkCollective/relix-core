@@ -540,6 +540,9 @@ class ScriptParserSourceTest {
 
         @Test @DisplayName("GET")  void get()  { assertThat(parseHttp("GET").method()).isEqualTo(HttpMethod.GET); }
         @Test @DisplayName("POST") void post() { assertThat(parseHttp("POST").method()).isEqualTo(HttpMethod.POST); }
+        // QUERY is the `query` statement keyword, read case-insensitively like every keyword.
+        @Test @DisplayName("QUERY") void queryMethod() { assertThat(parseHttp("QUERY").method()).isEqualTo(HttpMethod.QUERY); }
+        @Test @DisplayName("query, lower case") void queryLower() { assertThat(parseHttp("query").method()).isEqualTo(HttpMethod.QUERY); }
 
         // Relix is read-only by design: the mutating methods (and the bodyless
         // HEAD) are rejected at parse time — they lex as ordinary identifiers,

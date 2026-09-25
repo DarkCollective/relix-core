@@ -64,14 +64,14 @@
 # drawn on a re-run.
 #
 # count	file
-1	relix-semantic/src/test/java/com/darkcollective/relix/semantic/SemanticValidationTest.java
-26	relix-ast/src/test/java/com/darkcollective/relix/ast/AstEquivalenceTest.java
-7	relix-ast/src/test/java/com/darkcollective/relix/ast/RelNodeOperandsTest.java
-15	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/ColumnPruningPassTest.java
+1	relix-semantic/src/test/java/com/darkcollective/relix/semantic/internal/SemanticValidationTest.java
+26	relix-ast/src/test/java/com/darkcollective/relix/ast/internal/AstEquivalenceTest.java
+7	relix-ast/src/test/java/com/darkcollective/relix/ast/internal/RelNodeOperandsTest.java
+15	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/internal/ColumnPruningPassTest.java
 76	relix-ast/src/test/java/com/darkcollective/relix/ast/AstNodeUnaryTest.java
 79	relix-ast/src/testFixtures/java/com/darkcollective/relix/ast/AstLocations.java
 58	relix-ast/src/test/java/com/darkcollective/relix/ast/AstNodeRelationTest.java
-1	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/ExpressionSimplificationPassTest.java
+1	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/internal/ExpressionSimplificationPassTest.java
 50	relix-ast/src/test/java/com/darkcollective/relix/ast/AstValidationTest.java
 44	relix-ast/src/test/java/com/darkcollective/relix/ast/AstPredicateOperandTest.java
 33	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstScriptTest.java

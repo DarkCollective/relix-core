@@ -15,6 +15,9 @@
  */
 package com.darkcollective.relix.processor.connector;
 
+import com.darkcollective.relix.processor.connector.internal.ConnectorPluginLoader;
+import com.darkcollective.relix.processor.connector.internal.ConnectorRegistry;
+import com.darkcollective.relix.processor.connector.internal.DriverDownloader;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -23,6 +26,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -137,6 +141,29 @@ public final class ConnectorProvisioner {
     public static ConnectorProvisioner create(boolean enabled, Fetcher fetcher) {
         Supplier<ConnectorCatalog> source = () -> resolveCatalog(catalogLocation(), fetcher);
         return new ConnectorProvisioner(source, ConnectorPluginLoader.defaultDirectory(), fetcher, enabled);
+    }
+
+    /**
+     * Where connector plugins are installed and looked for: {@code ~/.relix/connectors}.
+     *
+     * @return the directory; it may not exist yet
+     * @since 1.0
+     */
+    public static Path defaultDirectory() {
+        return ConnectorPluginLoader.defaultDirectory();
+    }
+
+    /**
+     * The connector type tokens usable now: those shipped with the engine, and those of
+     * every plugin installed in {@link #defaultDirectory()}.
+     *
+     * @return the type tokens, such as {@code csv} or {@code jdbc}; never null
+     * @since 1.0
+     */
+    public static Set<String> installedTypes() {
+        try (ConnectorRegistry registry = ConnectorRegistry.create()) {
+            return Set.copyOf(registry.types());
+        }
     }
 
     /**

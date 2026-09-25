@@ -15,12 +15,14 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.processor.EvaluationException;
+
 import com.darkcollective.relix.value.BooleanValue;
 import com.darkcollective.relix.value.DateValue;
 import com.darkcollective.relix.value.DurationValue;
 import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.ArrayValue;
-import com.darkcollective.relix.value.CodePoints;
+import com.darkcollective.relix.value.internal.CodePoints;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.StructValue;
 import com.darkcollective.relix.value.TimeValue;

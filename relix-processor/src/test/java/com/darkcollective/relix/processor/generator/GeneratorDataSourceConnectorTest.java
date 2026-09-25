@@ -17,14 +17,14 @@ package com.darkcollective.relix.processor.generator;
 
 import com.darkcollective.relix.lang.ast.source.SourceConfig;
 import com.darkcollective.relix.processor.Row;
-import com.darkcollective.relix.processor.eval.EvaluationException;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.generator.GeneratorRegistry;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;
-import com.darkcollective.relix.symbol.table.InMemorySymbolTable;
+import com.darkcollective.relix.symbol.table.internal.InMemorySymbolTable;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

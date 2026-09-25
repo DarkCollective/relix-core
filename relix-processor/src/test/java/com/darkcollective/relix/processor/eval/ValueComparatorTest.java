@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.processor.EvaluationException;
+
 import com.darkcollective.relix.value.BooleanValue;
 import com.darkcollective.relix.value.DateValue;
 import com.darkcollective.relix.value.DurationValue;

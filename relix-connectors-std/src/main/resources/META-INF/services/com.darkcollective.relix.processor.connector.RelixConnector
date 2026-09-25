@@ -1,2 +1,3 @@
-com.darkcollective.relix.connectors.std.CsvConnector
-com.darkcollective.relix.connectors.std.GedcomConnector
+com.darkcollective.relix.connectors.std.internal.CsvConnector
+com.darkcollective.relix.connectors.std.internal.GedcomConnector
+com.darkcollective.relix.connectors.std.internal.LogConnector

@@ -75,8 +75,12 @@ many rows", write `COUNT(*)`.
 # Limitations:
 Must appear inside a γ. `COUNT(col)` counts non-NULL values, so it is a row count
 only when `col` is never NULL — use `COUNT(*)` when you mean "how many rows".
-`*` is special only as the sole argument to COUNT: `SUM(*)` is a syntax error,
-and `COUNT(a * b)` is still multiplication.
+`*` is special only as the sole argument to COUNT, and `COUNT(a * b)` is still
+multiplication. Any other aggregate needs an expression:
+
+```relix-invalid
+query { γ SUM(*) → total (Orders) };
+```
 
 # Alternatives:
 δ then a whole-relation COUNT for distinct-value counts; for "does any exist" a

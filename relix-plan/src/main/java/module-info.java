@@ -19,7 +19,7 @@
  * <p>This module turns an optimised logical
  * {@link com.darkcollective.relix.ast.RelNode} tree into an executable
  * {@link com.darkcollective.relix.plan.PhysicalNode} plan via the
- * {@link com.darkcollective.relix.plan.Planner}.  Planning fixes the physical
+ * {@link com.darkcollective.relix.plan.internal.Planner}.  Planning fixes the physical
  * strategy — join algorithm (hash vs nested-loop) and build side — using the
  * {@code relix-cost} model, and resolves each node's output schema up front, so
  * the execution engine can run the plan mechanically.
@@ -34,9 +34,8 @@ module com.darkcollective.relix.plan {
     // QueryEventListener — in the Planner's public constructor.
     requires transitive com.darkcollective.relix.events;
 
-    // JsonWriter — in PhysicalPlanJson.write(JsonWriter, …); transitive so a
-    // bundle assembler can drive one writer across modules.
-    requires transitive com.darkcollective.relix.json;
+    // PhysicalPlanJson writes with it. Not transitive: no public signature names it.
+    requires com.darkcollective.relix.json;
 
     // FunctionCatalog — in the Planner's public constructor, and the source of
     // every function's backend spelling (ADR-0026 S6). The default library is
@@ -49,4 +48,5 @@ module com.darkcollective.relix.plan {
     requires transitive com.darkcollective.relix.solver;
 
     exports com.darkcollective.relix.plan;
+    exports com.darkcollective.relix.plan.internal to com.darkcollective.relix.connectors.std, com.darkcollective.relix.embed, com.darkcollective.relix.processor;
 }

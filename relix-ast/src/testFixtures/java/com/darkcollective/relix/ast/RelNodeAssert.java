@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast;
 
+import com.darkcollective.relix.ast.internal.AstEquivalence;
 import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.api.Assertions;
 

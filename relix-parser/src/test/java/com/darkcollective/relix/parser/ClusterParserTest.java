@@ -17,6 +17,7 @@ package com.darkcollective.relix.parser;
 
 import org.junit.jupiter.api.Test;
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.*;
 
 /**
  * Tests for the connected-components operator {@code CLUSTER from, to AS label (R)}

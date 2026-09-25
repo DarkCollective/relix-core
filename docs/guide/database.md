@@ -326,7 +326,7 @@ A join has to have one side in hand before it can match the other against it. So
 reads do not overlap — the engine drains one input completely, then opens the second:
 
 ```java
-import com.darkcollective.relix.processor.ArrayRow;
+import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.value.NumberValue;
@@ -343,14 +343,14 @@ try (Relix timed = Relix.open()) {
         reads.add("opened Left");
         return IntStream.rangeClosed(1, 2).mapToObj(i -> {
             reads.add("  read Left " + i);
-            return ArrayRow.of(left, NumberValue.of(String.valueOf(i)));
+            return Row.of(left, NumberValue.of(String.valueOf(i)));
         });
     });
     timed.source("Right", right, () -> {
         reads.add("opened Right");
         return IntStream.rangeClosed(1, 2).mapToObj(i -> {
             reads.add("  read Right " + i);
-            return ArrayRow.of(right, NumberValue.of(String.valueOf(i)));
+            return Row.of(right, NumberValue.of(String.valueOf(i)));
         });
     });
 
@@ -393,7 +393,7 @@ import java.util.function.Supplier;
 Schema flaky = new Schema(List.of(new ColumnDefinition("id", ScalarType.NUMBER)));
 Supplier<Stream<Row>> failsAfterTwo = () -> Stream.concat(
         IntStream.rangeClosed(1, 2).mapToObj(i ->
-                (Row) ArrayRow.of(flaky, NumberValue.of(String.valueOf(i)))),
+                Row.of(flaky, NumberValue.of(String.valueOf(i)))),
         Stream.generate(() -> { throw new IllegalStateException("connection reset"); }));
 
 try (Relix partial = Relix.open()) {

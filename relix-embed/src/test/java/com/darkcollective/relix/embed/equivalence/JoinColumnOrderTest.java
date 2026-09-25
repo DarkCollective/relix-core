@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.embed.equivalence;
 
-import com.darkcollective.relix.optimizer.OptimizationResult;
+import com.darkcollective.relix.optimizer.internal.OptimizationResult;
 import com.darkcollective.relix.semantic.SemanticModel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

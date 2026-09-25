@@ -15,7 +15,9 @@
  */
 package com.darkcollective.relix.ast.visitor;
 
+import com.darkcollective.relix.ast.visitor.internal.PredicatePrettyPrinter;
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.*;
 
 /**
  * Visitor over the {@link com.darkcollective.relix.ast.Predicate} sealed hierarchy.

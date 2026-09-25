@@ -290,4 +290,29 @@ final class SchemaGraphTest {
                         EdgeOrigin.DECLARED))).toString())
                 .contains("1 relationship");
     }
+
+    @Nested
+    @DisplayName("an edge's identity")
+    class EdgeIdentity {
+
+        @Test
+        @DisplayName("ignores the name, the origin and which way round the edge was written")
+        void sameEdge() {
+            Relationship declared = edge("places", ORDERS, "customer_id", CUSTOMERS, "customer_id",
+                    EdgeOrigin.DECLARED);
+            Relationship learned = edge("Orders_customer", CUSTOMERS, "CUSTOMER_ID", ORDERS, "Customer_Id",
+                    EdgeOrigin.LEARNED);
+            assertThat(learned.edgeIdentity()).isEqualTo(declared.edgeIdentity());
+        }
+
+        @Test
+        @DisplayName("differs when the columns differ")
+        void differentColumns() {
+            Relationship byCustomer = edge("a", ORDERS, "customer_id", CUSTOMERS, "customer_id",
+                    EdgeOrigin.DECLARED);
+            Relationship byOrder = edge("a", ORDERS, "order_id", CUSTOMERS, "customer_id",
+                    EdgeOrigin.DECLARED);
+            assertThat(byOrder.edgeIdentity()).isNotEqualTo(byCustomer.edgeIdentity());
+        }
+    }
 }
