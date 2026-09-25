@@ -24,7 +24,7 @@ costs the reader nothing to recognise.
 TOP returns, per partition defined by the PER keys, the `count` rows ranked
 highest by the sort specifications (optionally skipping `offset` rows first) —
 the `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …) ≤ k` idiom. Requires ≥1 sort
-spec and ≥1 PER key. Output = full input rows (a windowed filter). It cannot
+spec. Output = full input rows (a windowed filter). It cannot
 desugar (no per-group ranking primitive) and does not push down ([bag]).
 
 # Examples:
@@ -82,11 +82,13 @@ group rather than the whole row — e.g. just the highest amount — reach for t
 `ARGMAX` aggregate instead.
 
 # Limitations:
-Requires both a sort spec and at least one PER key — a global "top N overall" is
-written `λ N (τ … )`, not TOP. (The optimizer *fuses* that pair into a keyless
-TOP for you — `LIM-003`, see the [optimizer](optimizer.md) page — so you get the
-bounded heap without a spelling for it.) Returns whole rows, not a single
-aggregated value.
+Requires at least one sort spec: without one, "highest" has no meaning.
+
+```relix-invalid
+query { TOP 3 (Orders) };
+```
+
+Returns whole rows, not a single aggregated value.
 
 The count and the offset are whole numbers; a fraction is a parse error:
 
@@ -96,7 +98,9 @@ query { TOP 2.5 amount DESC PER customer_id (Orders) };
 
 # Alternatives:
 γ with ARGMAX/ARGMIN returns one value from the extreme row per group (not the
-whole row, and only one). λ over τ for a global top-N without grouping.
+whole row, and only one). λ over τ for a global top-N without grouping, which
+the optimizer rewrites into a keyless TOP (`LIM-003`, see the
+[optimizer](optimizer.md) page).
 
 # See Also:
 [log source](../language/log-source.md) — TOP over a web server's access log, among other windowing examples on one real dataset
