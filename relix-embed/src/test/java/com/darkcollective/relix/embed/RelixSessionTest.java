@@ -19,6 +19,7 @@ import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.lang.ScriptParser;
+import com.darkcollective.relix.semantic.ScriptLoader;
 import com.darkcollective.relix.semantic.SemanticModel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -405,6 +406,36 @@ final class RelixSessionTest {
                 assertThat(relix.validate("query { σ x = 1 (NoSuchThing) };\n"))
                         .isNotEmpty()
                         .allSatisfy(d -> assertThat(d.location()).isPresent());
+            }
+        }
+
+        /**
+         * An import is parsed by the loader part-way through analysis rather than at the
+         * front door, so its syntax error once escaped {@code validate} as an exception
+         * naming no file. It is an error in that file, and is reported as one.
+         */
+        @Test
+        @DisplayName("a syntax error in an imported file is a diagnostic placed in that file")
+        void validateReportsImportedParseFailure() {
+            ScriptLoader loader = path -> Relix.parse("Orders := { SELECT a <> 1 (X) };", path);
+            try (Relix relix = Relix.builder().scriptLoader(loader).build()) {
+                List<Diagnostic> found = relix.validate("import \"lib.relix\";\nquery { Orders };");
+
+                assertThat(found).isNotEmpty();
+                Diagnostic first = found.getFirst();
+                assertThat(first.isError()).isTrue();
+                assertThat(first.message())
+                        .startsWith("Syntax error in RA expression:")
+                        .doesNotContain("(line ");
+                SourceLocation where = first.location().orElseThrow();
+                assertThat(where.filePath()).isEqualTo("lib.relix");
+                assertThat(where.line()).isEqualTo(1);
+                assertThat(where.column()).isEqualTo(23);
+
+                assertThatThrownBy(() -> relix.define("import \"lib.relix\";"))
+                        .as("the throwing API names the file, having no location to carry it")
+                        .isInstanceOf(RelixException.class)
+                        .hasMessageStartingWith("lib.relix:1:23: Syntax error in RA expression:");
             }
         }
 
