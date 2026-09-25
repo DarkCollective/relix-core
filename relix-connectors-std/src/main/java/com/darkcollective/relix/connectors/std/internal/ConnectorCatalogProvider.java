@@ -23,6 +23,7 @@ import com.darkcollective.relix.semantic.CatalogProvider;
 import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.Schema;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -90,6 +91,12 @@ public final class ConnectorCatalogProvider implements CatalogProvider, AutoClos
         Optional<RelationStatistics> own = connector(connection)
                 .flatMap(c -> c.tableStatistics(config(connection), table));
         return own.isPresent() ? own : delegate.tableStatistics(connection, table);
+    }
+
+    /** No connector enumerates its tables, so this is the delegate's answer. */
+    @Override
+    public Optional<List<String>> tables(ConnectionDeclaration connection) {
+        return delegate.tables(connection);
     }
 
     private Optional<RelixConnector> connector(ConnectionDeclaration connection) {

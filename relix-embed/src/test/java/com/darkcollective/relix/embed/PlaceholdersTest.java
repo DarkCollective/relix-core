@@ -17,6 +17,10 @@ package com.darkcollective.relix.embed;
 
 import com.darkcollective.relix.lang.ast.source.BearerAuth;
 import com.darkcollective.relix.lang.ast.source.HttpMethod;
+import com.darkcollective.relix.semantic.CatalogSnapshot;
+import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.symbol.ScalarType;
+import com.darkcollective.relix.symbol.Schema;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +35,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -270,6 +275,31 @@ final class PlaceholdersTest {
                 Relation orders = relix.relation("σ AMOUNT > 10 (wh.orders)");
                 assertThat(orders).hasRowCount(1);
             }
+        }
+    }
+
+    /**
+     * The session hands its catalog to the analyser behind a wrapper that resolves each
+     * connection's placeholders first, so everything the analyser asks of the catalog has
+     * to pass through it — including the tables a did-you-mean is drawn from.
+     */
+    @Test
+    @DisplayName("a misspelt table is suggested from the catalog through a placeholder connection")
+    void catalogSuggestsThroughPlaceholders() {
+        CatalogSnapshot snapshot = CatalogSnapshot.of(List.of(new CatalogSnapshot.Entry(
+                "wh", "orders",
+                Optional.of(new Schema(List.of(new ColumnDefinition("id", ScalarType.NUMBER)))),
+                Optional.empty(), CatalogSnapshot.Origin.INTROSPECTED, Instant.EPOCH)),
+                Instant.EPOCH);
+        try (Relix relix = Relix.builder().catalog(snapshot)
+                .placeholders(new Vault().with("DB_URL", "jdbc:h2:mem:unused")).build()) {
+            relix.define("connection wh from jdbc { url: \"${DB_URL}\" };");
+
+            assertThat(relix.validate("query { π id (wh.ordrs) };"))
+                    .extracting(Diagnostic::message)
+                    .anySatisfy(m -> org.assertj.core.api.Assertions.assertThat(m)
+                            .endsWith(" — did you mean 'wh.orders'?"));
+            assertThat(relix.validate("query { π id (wh.orders) };")).isEmpty();
         }
     }
 

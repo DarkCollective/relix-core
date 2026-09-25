@@ -151,6 +151,26 @@ final class ConnectorCatalogProviderTest {
     }
 
     @Test
+    @DisplayName("the tables a connection holds are the delegate's answer")
+    void tablesAreTheDelegates() {
+        CatalogProvider listing = new CatalogProvider() {
+            @Override
+            public Optional<Schema> tableSchema(ConnectionDeclaration connection, String table) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<List<String>> tables(ConnectionDeclaration connection) {
+                return Optional.of(List.of("orders"));
+            }
+        };
+        try (ConnectorCatalogProvider p = new ConnectorCatalogProvider(
+                ConnectorRegistry.createWith(List.of(new Describing())), listing)) {
+            assertThat(p.tables(connection("describing"))).contains(List.of("orders"));
+        }
+    }
+
+    @Test
     @DisplayName("a null connection is the delegate's, not a NullPointerException")
     void nullConnection() {
         try (ConnectorCatalogProvider p = provider(new Describing())) {

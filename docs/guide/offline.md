@@ -140,6 +140,29 @@ try (Relix offline = Relix.builder()
 That is the practical shape of it: **tune or validate a production query from a machine
 with no access to production**, and do it in CI.
 
+A snapshot also knows which tables it recorded, so a misspelt one is met with a suggestion
+rather than only a refusal:
+
+```java
+try (Relix offline = Relix.builder()
+        .catalog(CatalogSnapshot.parse(captured))
+        .build()) {
+
+    offline.define("""
+            connection warehouse from database { url: "jdbc:postgresql://nowhere/prod" };
+            """);
+
+    for (Diagnostic problem : offline.validate("query { warehouse.custmers };")) {
+        System.out.println(problem.message());
+    }
+}
+```
+
+```
+Cannot resolve schema for table 'custmers' in connection 'warehouse': no schema available (declare it with a 'source ... from warehouse' binding, or provide a catalog) — did you mean 'warehouse.customers'?
+Undefined relation: 'warehouse.custmers'
+```
+
 ## What a run adds
 
 A snapshot carries what the database *said*. A run carries what was actually there, and the
