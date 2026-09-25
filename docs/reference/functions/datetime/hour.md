@@ -22,7 +22,9 @@ Overnight records:
 
 # Pushdown:
 SQL: folds to `EXTRACT(HOUR FROM <col>)` on every dialect but SQLite,
-which has no date type to extract from.
+which has no date type to extract from. On SQL Server, which has no
+`EXTRACT`, it is `DATEPART(HOUR, SWITCHOFFSET(<col>, '+00:00'))` — the value
+switched to UTC first, so a `DATETIMEOFFSET` is read at UTC as the engine reads it.
 MongoDB: folds to `{"$hour": "$<col>"}` inside a `$project` stage (requires alias).
 
 # Limitations:

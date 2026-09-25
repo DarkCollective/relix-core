@@ -22,7 +22,9 @@ Spot a burst — how many events landed in each second of a minute:
 
 # Pushdown:
 SQL: folds to `EXTRACT(SECOND FROM <col>)` on every dialect but SQLite,
-which has no date type to extract from.
+which has no date type to extract from. On SQL Server, which has no
+`EXTRACT`, it is `DATEPART(SECOND, SWITCHOFFSET(<col>, '+00:00'))` — the value
+switched to UTC first, so a `DATETIMEOFFSET` is read at UTC as the engine reads it.
 MongoDB: folds to `{"$second": "$<col>"}` inside a `$project` stage (requires alias).
 
 # Limitations:

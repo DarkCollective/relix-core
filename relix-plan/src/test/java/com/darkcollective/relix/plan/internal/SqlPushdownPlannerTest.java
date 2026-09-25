@@ -449,6 +449,56 @@ final class SqlPushdownPlannerTest {
         }
     }
 
+    /**
+     * SQL Server, whose row limiting is legal only after an {@code ORDER BY} — the one
+     * dialect where what folds, rather than only how it is written, differs.
+     */
+    @Nested
+    @DisplayName("SQL Server's OFFSET … FETCH, which needs an ORDER BY")
+    class SqlServer {
+
+        private static final String SQLSERVER_ORDERS =
+                "connection db from database { url: \"jdbc:sqlserver://h:1433\" };\n"
+                + "source Orders from db { table: \"orders\", "
+                + "schema: { id: NUMBER, name: STRING, amount: NUMBER } };\n";
+
+        @Test
+        @DisplayName("a limit over a sort folds, as OFFSET … FETCH after the ORDER BY")
+        void limitOverSort() {
+            assertThat(scanOf(push(SQLSERVER_ORDERS + "query { λ 3 (τ amount DESC (Orders)) };")).nativeQuery())
+                    .isEqualTo("SELECT [id], [name], [amount] FROM [orders] ORDER BY "
+                            + "CASE WHEN [amount] IS NULL THEN 1 ELSE 0 END ASC, [amount] DESC "
+                            + "OFFSET 0 ROWS FETCH NEXT 3 ROWS ONLY");
+            assertThat(scanOf(push(SQLSERVER_ORDERS + "query { λ 3, 2 (τ id (Orders)) };")).nativeQuery())
+                    .endsWith("OFFSET 3 ROWS FETCH NEXT 2 ROWS ONLY");
+        }
+
+        @Test
+        @DisplayName("a limit over nothing that orders it declines, where every other dialect folds it")
+        void limitWithoutSortDeclines() {
+            assertThat(push(SQLSERVER_ORDERS + "query { λ 3 (Orders) };")).isEmpty();
+            assertThat(push(SQLSERVER_ORDERS + "query { λ 3 (σ amount > 0 (Orders)) };")).isEmpty();
+            // What sits beneath it still folds on its own.
+            assertThat(scanOf(push(SQLSERVER_ORDERS + "query { σ amount > 0 (Orders) };")).nativeQuery())
+                    .isEqualTo("SELECT [id], [name], [amount] FROM [orders] WHERE ([amount] > 0)");
+        }
+
+        @Test
+        @DisplayName("a string is compared under a binary collation, against a national literal")
+        void stringEquality() {
+            assertThat(scanOf(push(SQLSERVER_ORDERS + "query { σ name = 'ada' (Orders) };")).nativeQuery())
+                    .isEqualTo("SELECT [id], [name], [amount] FROM [orders] WHERE "
+                            + "(([name]) COLLATE Latin1_General_100_BIN2 = N'ada')");
+        }
+
+        @Test
+        @DisplayName("a LIKE pattern's [ is bracketed so it matches itself")
+        void likeBracket() {
+            assertThat(scanOf(push(SQLSERVER_ORDERS + "query { σ name LIKE '[a%' (Orders) };")).nativeQuery())
+                    .endsWith("WHERE (([name]) COLLATE Latin1_General_100_BIN2 LIKE N'[[]a%')");
+        }
+    }
+
     @Nested
     @DisplayName("A backend whose collation is not the engine's comparison")
     class StringCollation {

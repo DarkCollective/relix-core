@@ -60,6 +60,16 @@ final class JdbcCatalogProviderTest {
     }
 
     @Test
+    @DisplayName("a driver's own code for an offset-bearing timestamp is read by its type name")
+    void offsetBearingTypeName() {
+        // mssql-jdbc reports DATETIMEOFFSET as -155, a code java.sql.Types does not name,
+        // so the code alone would leave it ANY — a string once read.
+        assertThat(JdbcCatalogProvider.mapSqlType(-155, "datetimeoffset")).isEqualTo(ScalarType.TIMESTAMP);
+        assertThat(JdbcCatalogProvider.mapSqlType(-155, "something else")).isEqualTo(ScalarType.ANY);
+        assertThat(JdbcCatalogProvider.mapSqlType(java.sql.Types.DATE, null)).isEqualTo(ScalarType.DATE);
+    }
+
+    @Test
     @DisplayName("introspects column names and maps SQL types to relix types")
     void introspectsSchema() throws SQLException {
         String url = "jdbc:h2:mem:cat_intro;DB_CLOSE_DELAY=-1";

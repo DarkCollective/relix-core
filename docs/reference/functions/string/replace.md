@@ -27,9 +27,11 @@ Redact a token:
 
 # Pushdown:
 SQL: folds to `REPLACE(<s>, <find>, <replacement>)` on all dialects. It is the one
-string built-in that does. SQL's REPLACE searches case-sensitively whatever the
-column's collation, which is what the engine does; the rest of the string library
-is evaluated in-engine because SQL's same-named function answers differently —
+string built-in that does. Most SQL backends' REPLACE searches case-sensitively
+whatever the column's collation, which is what the engine does; SQL Server's
+searches under the collation, whose default ignores case, so there the string is
+handed over under a binary one: `REPLACE((<s>) COLLATE Latin1_General_100_BIN2, …)`.
+The rest of the string library is evaluated in-engine because SQL's same-named function answers differently —
 see [pushdown](../../advanced/pushdown.md).
 
 # Limitations:

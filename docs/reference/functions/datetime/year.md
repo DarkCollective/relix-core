@@ -22,7 +22,9 @@ Filter to one year:
 
 # Pushdown:
 SQL: folds to `EXTRACT(YEAR FROM <col>)` on every dialect but SQLite, which has
-no date type to extract from.
+no date type to extract from. On SQL Server, which has no
+`EXTRACT`, it is `DATEPART(YEAR, SWITCHOFFSET(<col>, '+00:00'))` — the value
+switched to UTC first, so a `DATETIMEOFFSET` is read at UTC as the engine reads it.
 MongoDB: folds to `{"$year": "$<col>"}` inside a `$project` pipeline stage when the
 argument is an attribute and an alias is supplied (e.g. `π YEAR(at) → yr (Events)`).
 

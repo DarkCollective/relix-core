@@ -212,6 +212,9 @@ public final class DataSourceRegistry implements ConnectionProvider {
         if (lower.contains("sqlite")) {
             return Optional.of("sqlite");
         }
+        if (lower.contains("sql server")) {
+            return Optional.of("sqlserver");
+        }
         return Optional.empty();
     }
 

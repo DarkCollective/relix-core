@@ -170,7 +170,14 @@ final class StringFunctions {
 
                 STRINGS.fn("Replace", STRING, PURE_DETERMINISTIC,
                         List.of(p("s", STRING), p("find", STRING), p("replacement", STRING)),
-                        Spellings.sql("REPLACE", 3),
+                        Spellings.firstOf(
+                                // SQL Server's REPLACE matches under the collation of its
+                                // first argument, which by default ignores case: 'Ada' with
+                                // 'a' replaced would lose its capital too.
+                                Spellings.on(Spellings.SQLSERVER, 3,
+                                        a -> "REPLACE((" + a.get(0) + ") " + Spellings.SQLSERVER_EXACT
+                                                + ", " + a.get(1) + ", " + a.get(2) + ")"),
+                                Spellings.sql("REPLACE", 3)),
                         args -> {
                             if (args.get(0).isNull()) {
                                 return NullValue.INSTANCE;
