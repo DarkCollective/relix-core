@@ -117,7 +117,7 @@ It needs Java 21 and nothing else: no Docker, no network, no database.
 A project that needs an engine change before it is released can use a snapshot or a
 local checkout.
 
-**Snapshots.** Every change to `main` publishes one to Central's snapshot repository,
+**Snapshots.** Every change merged to `develop` publishes one to Central's snapshot repository,
 named for the release it leads to:
 
 ```gradle
