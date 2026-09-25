@@ -21,14 +21,45 @@ Apache 2.0.
 
 ## How a pull request is merged
 
-This repository is published from a larger one, and every file here is
-regenerated on each publication. A pull request is therefore **not merged with
-the merge button**: once it is reviewed and approved, a maintainer applies the
-change upstream, and it arrives here with the next publication. Your authorship
-is kept in the commit, and the pull request is closed with a link to it.
+**Open your pull request against `develop`**, the integration branch. `main` is
+the default branch, so choose `develop` as the base when you open it; with the
+`gh` CLI that is `gh pr create --base develop`. Once it is reviewed and approved,
+a maintainer merges it there.
 
-That changes nothing about how you prepare the change — open it against `main`
-as usual.
+`develop` reaches `main` in small, frequent batches, and the batch is where the
+history is tidied: fixups are squashed into what they fix and messages reworded,
+without changing any content. A merged pull request's commits can therefore
+arrive on `main` under different hashes, and the issue it fixes is closed when
+the batch lands. Your authorship is kept throughout.
+
+`main` stays the default branch because it is what ships: scheduled workflows and
+dependency tracking follow the default branch, and they should see what is
+released rather than what is being integrated.
+
+### Promoting a batch (maintainers)
+
+1. Cut a promotion branch from `develop`:
+   `git fetch origin && git checkout -b promote/<yyyy-mm-dd> origin/develop`
+2. Tidy it — squash fixups, combine related commits, reword messages — with
+   `git rebase -i origin/main`, or `git reset --soft origin/main` and recommit.
+3. Prove that only the history changed: `git diff origin/develop promote/<yyyy-mm-dd>`
+   must print nothing. That is also what makes the batch's CI a test of exactly
+   what `develop` held.
+4. Open the pull request (`gh pr create --base main --head promote/<yyyy-mm-dd>`)
+   and merge it with **Rebase and merge**. A merge commit would add a commit of
+   its own, and a squash would collapse the tidied commits into one.
+5. Reset `develop` to the new `main`:
+   `git fetch origin && git push --force-with-lease origin origin/main:develop`.
+   Name `origin/main`, not a local `main`, which may be stale. Without this step
+   `develop` still holds the originals of commits `main` now has under other
+   hashes, and the next batch carries them twice.
+
+A branch still open at promotion time is based on the old `develop`. Rebase it
+onto the new one, keeping only its own commits:
+`git rebase --onto origin/develop <old develop tip> <branch>`, then
+`git push --force-with-lease`.
+
+A fix that has to go straight to `main` is merged back into `develop` afterwards.
 
 ## Before you start
 
