@@ -162,6 +162,11 @@ final class Placeholders {
                                                                 String table) {
                 return resolvedOrEmpty(connection).flatMap(c -> catalog.tableStatistics(c, table));
             }
+
+            @Override
+            public Optional<List<String>> tables(ConnectionDeclaration connection) {
+                return resolvedOrEmpty(connection).flatMap(catalog::tables);
+            }
         };
     }
 
