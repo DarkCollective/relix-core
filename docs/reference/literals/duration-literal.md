@@ -20,7 +20,9 @@ It infers as the DURATION scalar type.
 
 **Pushdown**: on **Postgres** a DURATION literal folds to `INTERVAL '<ISO-8601>'`
 (e.g. `INTERVAL 'PT30M'`), so predicates like `σ held > DURATION 'PT30M'` push to
-`WHERE ("held" > INTERVAL 'PT30M')`. On MySQL and GENERIC dialects, DURATION
+`WHERE ("held" > INTERVAL 'PT30M')`. On **DuckDB**, which rejects the ISO-8601
+string, it folds to an exact count of microseconds, `to_microseconds(1800000000)`;
+a duration finer than a microsecond does not push. On MySQL and GENERIC dialects, DURATION
 literals do **not** push (MySQL INTERVAL needs per-unit keywords that don't map
 cleanly to ISO-8601) — the predicate runs in-engine.
 
@@ -35,7 +37,8 @@ Scale a duration by a number (DURATION × NUMBER → DURATION):
   π id, (base_slot * 3) → triple_slot (Bookings)
 
 # Limitations:
-Only pushed to Postgres (as `INTERVAL`); MySQL and GENERIC run in-engine. Built from
+Only pushed to Postgres (as `INTERVAL`) and DuckDB (as `to_microseconds`); MySQL and
+GENERIC run in-engine. Built from
 exact time units (hours/minutes/seconds/days); calendar-aware spans like "1 month"
 are not a fixed DURATION.
 

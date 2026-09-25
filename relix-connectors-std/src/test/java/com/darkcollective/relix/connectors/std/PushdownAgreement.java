@@ -117,7 +117,7 @@ final class PushdownAgreement {
      *                 decides whether a given case is expected to fold
      */
     PushdownAgreement(String preamble, Dialect dialect) {
-        this(preamble, dialect, dialect != Dialect.MYSQL);
+        this(preamble, dialect, dialect.comparesStringsExactly());
     }
 
     /**

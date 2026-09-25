@@ -45,6 +45,7 @@ final class PushdownSpellingsTest {
     private static final PushdownTarget POSTGRES = PushdownTarget.sql("postgres");
     private static final PushdownTarget MYSQL = PushdownTarget.sql("mysql");
     private static final PushdownTarget GENERIC = PushdownTarget.sql("");
+    private static final PushdownTarget DUCKDB = PushdownTarget.sql("duckdb");
     private static final PushdownTarget MONGO = PushdownTarget.mongo();
 
     private static Optional<String> render(String function, PushdownTarget target,
@@ -353,12 +354,38 @@ final class PushdownSpellingsTest {
      * {@code relix-connectors-std}: the first needed a second backend to see at all, and
      * the second needed the harness to compare failures as well as rows.
      */
+    /**
+     * DuckDB, whose SQL is PostgreSQL's in every place a spelling differs — each one run
+     * against a DuckDB by the agreement suite, not assumed from the resemblance.
+     */
+    @Nested
+    @DisplayName("DuckDB takes PostgreSQL's spellings")
+    final class DuckDb {
+
+        @Test
+        @DisplayName("date_trunc in relix's argument order, and TRUNC for Fix")
+        void perDialect() {
+            assertThat(render("DATE_TRUNC", DUCKDB, "'day'", "\"at\""))
+                    .contains("date_trunc('day', \"at\")");
+            assertThat(render("Fix", DUCKDB, "\"x\"")).contains("TRUNC(\"x\")");
+        }
+
+        @Test
+        @DisplayName("it counts code points, so counting and slicing are offered to it")
+        void countingAndSlicing() {
+            assertThat(render("Len", DUCKDB, "\"s\"")).contains("CHAR_LENGTH(\"s\")");
+            assertThat(render("Left", DUCKDB, "\"s\"", "2")).contains("LEFT(\"s\", 2)");
+            assertThat(render("Right", DUCKDB, "\"s\"", "2")).contains("RIGHT(\"s\", 2)");
+            assertThat(render("Mid", DUCKDB, "\"s\"", "2", "3")).contains("SUBSTRING(\"s\", 2, 3)");
+        }
+    }
+
     @Test
     @DisplayName("the transcendental numerics decline: a different double, or no answer at all")
     void transcendentalsDecline() {
         for (String function : List.of("Sqr", "Log", "Exp", "Sin", "Cos", "Tan", "Atn",
                 "Power")) {
-            for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, MONGO)) {
+            for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, MONGO)) {
                 assertThat(render(function, target, "a"))
                         .as("%s on %s", function, target).isEmpty();
                 assertThat(render(function, target, "a", "b"))
@@ -388,7 +415,7 @@ final class PushdownSpellingsTest {
 
     private static boolean spellsAnything(ScalarFunction fn) {
         List<String> arguments = List.of("a", "b", "c");
-        for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, MONGO)) {
+        for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, MONGO)) {
             for (int count = 0; count <= arguments.size(); count++) {
                 if (fn.pushdown().render(target, arguments.subList(0, count)).isPresent()) {
                     return true;

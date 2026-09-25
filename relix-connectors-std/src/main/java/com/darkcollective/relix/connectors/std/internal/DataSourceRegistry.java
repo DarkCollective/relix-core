@@ -206,6 +206,9 @@ public final class DataSourceRegistry implements ConnectionProvider {
         if (lower.contains("mysql")) {
             return Optional.of("mysql");
         }
+        if (lower.contains("duckdb")) {
+            return Optional.of("duckdb");
+        }
         return Optional.empty();
     }
 

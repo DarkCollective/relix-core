@@ -56,8 +56,8 @@ import java.util.regex.Pattern;
  * <p>The {@link #GENERIC} dialect emits the exact SQL the planner produced before
  * dialects existed for every name that is a plain identifier (unquoted identifiers,
  * {@code LIMIT n [OFFSET m]}), so it is a safe default for H2, PostgreSQL, MySQL, and
- * SQLite.  The {@link #POSTGRES} and
- * {@link #MYSQL} dialects add identifier quoting, which is correct when the relix
+ * SQLite.  The {@link #POSTGRES}, {@link #MYSQL} and {@link #DUCKDB} dialects add
+ * identifier quoting, which is correct when the relix
  * schema's column names match the database's stored case (always true for
  * introspected {@code conn.table} references).
  *
@@ -70,7 +70,7 @@ import java.util.regex.Pattern;
  * {@link #quote} reads the quoting each constant declares, and {@link #boolAnd}
  * renders SQL-92 that no backend lacks.
  *
- * <p>All three constants render {@code LIMIT n [OFFSET m]}. A backend whose row-limiting
+ * <p>Every constant renders {@code LIMIT n [OFFSET m]}. A backend whose row-limiting
  * is {@code OFFSET … FETCH} needs more than an arm of {@link #limit}: that form is legal
  * only after an {@code ORDER BY}, so the pushdown planner must also decline a limit fold
  * over an unordered sub-tree.
@@ -87,7 +87,15 @@ public enum Dialect {
     POSTGRES("\"", "\"", true),
 
     /** MySQL / MariaDB: back-tick-quoted identifiers. */
-    MYSQL("`", "`", true);
+    MYSQL("`", "`", true),
+
+    /**
+     * DuckDB: double-quoted identifiers, and SQL deliberately shaped like PostgreSQL's —
+     * {@code NULLS LAST}, {@code date_trunc}, {@code LATERAL}, window functions. Where it
+     * differs from PostgreSQL it differs in the engine's favour: its default collation is
+     * binary, so it compares <em>and</em> orders strings exactly as the engine does.
+     */
+    DUCKDB("\"", "\"", true);
 
     /** A name every backend reads bare, up to case folding. */
     private static final Pattern PLAIN_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
@@ -180,8 +188,8 @@ public enum Dialect {
      */
     public String stringLiteral(String value) {
         String escaped = switch (this) {
-            case GENERIC, POSTGRES -> value.replace("'", "''");
-            case MYSQL             -> value.replace("\\", "\\\\").replace("'", "''");
+            case GENERIC, POSTGRES, DUCKDB -> value.replace("'", "''");
+            case MYSQL                     -> value.replace("\\", "\\\\").replace("'", "''");
         };
         return "'" + escaped + "'";
     }
@@ -201,7 +209,7 @@ public enum Dialect {
      */
     public String limit(long count, long offset) {
         return switch (this) {
-            case GENERIC, POSTGRES, MYSQL ->
+            case GENERIC, POSTGRES, MYSQL, DUCKDB ->
                     offset > 0 ? "LIMIT " + count + " OFFSET " + offset : "LIMIT " + count;
         };
     }
@@ -230,7 +238,7 @@ public enum Dialect {
     public List<String> orderByTerms(String expr, boolean descending) {
         String direction = descending ? " DESC" : " ASC";
         return switch (this) {
-            case POSTGRES -> List.of(expr + direction + " NULLS LAST");
+            case POSTGRES, DUCKDB -> List.of(expr + direction + " NULLS LAST");
             case GENERIC, MYSQL -> List.of("(" + expr + " IS NULL) ASC", expr + direction);
         };
     }
@@ -286,7 +294,7 @@ public enum Dialect {
         String iso = value.toString();
         return switch (this) {
             case GENERIC          -> "'" + iso + "'";
-            case POSTGRES, MYSQL  -> "DATE '" + iso + "'";
+            case POSTGRES, MYSQL, DUCKDB -> "DATE '" + iso + "'";
         };
     }
 
@@ -295,7 +303,7 @@ public enum Dialect {
         String iso = value.toString();
         return switch (this) {
             case GENERIC          -> "'" + iso + "'";
-            case POSTGRES, MYSQL  -> "TIME '" + iso + "'";
+            case POSTGRES, MYSQL, DUCKDB -> "TIME '" + iso + "'";
         };
     }
 
@@ -305,12 +313,17 @@ public enum Dialect {
      * string (matching how a zone-less SQL {@code TIMESTAMP} column is read);
      * {@code POSTGRES} emits an offset-aware {@code TIMESTAMP WITH TIME
      * ZONE '…Z'}; {@code MYSQL} emits a {@code TIMESTAMP '…'} of the UTC wall-clock.
+     *
+     * <p>{@code DUCKDB} takes PostgreSQL's form. Against a zone-less {@code TIMESTAMP}
+     * column DuckDB converts the literal to the session's wall clock, which relix pins to
+     * UTC ({@link #pinSessionToUtcSql}), so it compares the instant the engine reads the
+     * column as; against a {@code TIMESTAMPTZ} column it compares instants directly.
      */
     public String timestampLiteral(Instant value) {
         String utc = TIMESTAMP_UTC.format(LocalDateTime.ofInstant(value, ZoneOffset.UTC));
         return switch (this) {
             case GENERIC  -> "'" + utc + "'";
-            case POSTGRES -> "TIMESTAMP WITH TIME ZONE '" + value + "'";   // ISO instant with Z
+            case POSTGRES, DUCKDB -> "TIMESTAMP WITH TIME ZONE '" + value + "'";   // ISO instant with Z
             case MYSQL    -> "TIMESTAMP '" + utc + "'";
         };
     }
@@ -326,6 +339,11 @@ public enum Dialect {
      * as truly {@code 90 MINUTE} as {@code 1.5 HOUR}, and picking for the user is how a
      * literal starts meaning something the engine did not say.
      *
+     * <p>DuckDB rejects the ISO-8601 form (<code>INTERVAL 'PT30M'</code> is a conversion
+     * error there) but builds an interval from an exact count of microseconds, which
+     * names no calendar unit and so picks none for the user: {@code to_microseconds(n)}.
+     * A duration finer than a microsecond has no such count and declines.
+     *
      * <p>Alone among the four temporal literals this returns an {@link Optional},
      * because declining is a real answer for it: no fold is a slower plan, where a wrong
      * literal is a wrong result.
@@ -336,8 +354,17 @@ public enum Dialect {
     public Optional<String> durationLiteral(Duration value) {
         return switch (this) {
             case POSTGRES -> Optional.of("INTERVAL '" + value + "'");
+            case DUCKDB -> value.getNano() % 1_000 == 0
+                    ? Optional.of("to_microseconds(" + microseconds(value) + ")")
+                    : Optional.empty();
             case GENERIC, MYSQL -> Optional.empty();
         };
+    }
+
+    /** The whole duration as a count of microseconds; exact, since the caller checked the nanos. */
+    private static long microseconds(Duration value) {
+        return Math.addExact(Math.multiplyExact(value.getSeconds(), 1_000_000L),
+                value.getNano() / 1_000);
     }
 
     /**
@@ -356,7 +383,8 @@ public enum Dialect {
      * that answer was checked against a server rather than reasoned about: a
      * <em>deterministic</em> collation falls back to comparing bytes when it is asked
      * whether two strings are equal, and Postgres's defaults are deterministic, so
-     * {@code 'Gold' = 'gold'} is false there as it is here.
+     * {@code 'Gold' = 'gold'} is false there as it is here. {@link #DUCKDB}'s default
+     * collation is binary, so it answers {@code true} for the plainer reason.
      *
      * <p>This is a claim about <b>equality alone</b>, and the separation is the whole
      * reason there are two methods: the same Postgres that compares equal strings
@@ -379,7 +407,7 @@ public enum Dialect {
      */
     public boolean comparesStringsExactly() {
         return switch (this) {
-            case GENERIC, POSTGRES -> true;
+            case GENERIC, POSTGRES, DUCKDB -> true;
             case MYSQL -> false;
         };
     }
@@ -404,6 +432,11 @@ public enum Dialect {
      * — so on that backend the two questions have never disagreed, which is why one
      * boolean was enough until a Postgres was run.
      *
+     * <p>DuckDB answers {@code true} to both questions: its default collation compares
+     * UTF-8 bytes, which is code-point order. That was run rather than read — over the
+     * agreement fixture's {@code U+FF5E}/emoji pair, the one that tells code-point order
+     * from UTF-16 order.
+     *
      * <p>A {@code false} answer does not decline the fold: it renders the ordering under
      * an explicit exact collation, {@link #exactStringOrder}.
      *
@@ -411,7 +444,7 @@ public enum Dialect {
      */
     public boolean ordersStringsExactly() {
         return switch (this) {
-            case GENERIC -> true;
+            case GENERIC, DUCKDB -> true;
             case POSTGRES, MYSQL -> false;
         };
     }
@@ -444,7 +477,7 @@ public enum Dialect {
      */
     public String exactStringComparison(String expression) {
         return switch (this) {
-            case GENERIC, POSTGRES -> expression;
+            case GENERIC, POSTGRES, DUCKDB -> expression;
             case MYSQL -> "CONVERT(" + expression + " USING utf8mb4) COLLATE utf8mb4_0900_bin";
         };
     }
@@ -472,8 +505,8 @@ public enum Dialect {
      */
     public String exactStringOrder(String expression) {
         return switch (this) {
-            case GENERIC  -> expression;
-            case POSTGRES -> "(" + expression + ") COLLATE \"C\"";
+            case GENERIC, DUCKDB -> expression;
+            case POSTGRES        -> "(" + expression + ") COLLATE \"C\"";
             case MYSQL    -> exactStringComparison(expression);
         };
     }
@@ -565,6 +598,9 @@ public enum Dialect {
             case GENERIC  -> Optional.empty();
             case POSTGRES -> Optional.of("SET TIME ZONE 'UTC'");
             case MYSQL    -> Optional.of("SET time_zone = '+00:00'");
+            // Checked against a running DuckDB: the setting is `TimeZone`, and it is what
+            // a TIMESTAMPTZ is rendered in and what date_trunc over one truncates.
+            case DUCKDB   -> Optional.of("SET TimeZone = 'UTC'");
         };
     }
 
@@ -588,6 +624,7 @@ public enum Dialect {
             case GENERIC  -> PushdownTarget.sql("");
             case POSTGRES -> PushdownTarget.sql("postgres");
             case MYSQL    -> PushdownTarget.sql("mysql");
+            case DUCKDB   -> PushdownTarget.sql("duckdb");
         };
     }
 
@@ -596,7 +633,8 @@ public enum Dialect {
      * functions ({@code OVER (PARTITION BY … ORDER BY … ROWS …)}).
      *
      * <ul>
-     *   <li>{@link #GENERIC} (H2 2.x) and {@link #POSTGRES}: {@code true}.</li>
+     *   <li>{@link #GENERIC} (H2 2.x), {@link #POSTGRES} and {@link #DUCKDB}:
+     *       {@code true}.</li>
      *   <li>{@link #MYSQL}: {@code false} — MySQL 5.x predates window-function
      *       support; since the declared dialect cannot confirm the server version,
      *       window operators fall back to in-engine execution for safety.</li>
@@ -606,7 +644,7 @@ public enum Dialect {
      */
     public boolean supportsWindowFunctions() {
         return switch (this) {
-            case GENERIC, POSTGRES -> true;
+            case GENERIC, POSTGRES, DUCKDB -> true;
             case MYSQL -> false;
         };
     }
@@ -620,6 +658,8 @@ public enum Dialect {
      * <ul>
      *   <li>{@link #POSTGRES}: {@code true} — {@code LATERAL} has been supported since
      *       PostgreSQL 9.3 and is the canonical AS-OF spelling.</li>
+     *   <li>{@link #DUCKDB}: {@code true} — it spells {@code LATERAL} as PostgreSQL does,
+     *       and the AS-OF corpus runs against it in the gate.</li>
      *   <li>{@link #GENERIC}: {@code false} — the generic target is H2, whose 2.x
      *       releases have no {@code LATERAL} support, so AS-OF runs in-engine.</li>
      *   <li>{@link #MYSQL}: {@code false} — {@code LATERAL} arrived only in MySQL
@@ -634,7 +674,7 @@ public enum Dialect {
         // spells it `LATERAL`. One spelling it `CROSS APPLY`/`OUTER APPLY` turns this
         // into a rendering question and moves it into the AS-OF renderer (#869).
         return switch (this) {
-            case POSTGRES -> true;
+            case POSTGRES, DUCKDB -> true;
             case GENERIC, MYSQL -> false;
         };
     }
@@ -706,6 +746,7 @@ public enum Dialect {
         return switch (name.toLowerCase(Locale.ROOT)) {
             case "postgres", "postgresql" -> POSTGRES;
             case "mysql", "mariadb"       -> MYSQL;
+            case "duckdb"                 -> DUCKDB;
             default                       -> GENERIC;   // h2, ansi, sqlite, unknown
         };
     }
@@ -718,6 +759,9 @@ public enum Dialect {
         }
         if (lower.startsWith("jdbc:mysql:") || lower.startsWith("jdbc:mariadb:")) {
             return MYSQL;
+        }
+        if (lower.startsWith("jdbc:duckdb:")) {
+            return DUCKDB;
         }
         return GENERIC;
     }

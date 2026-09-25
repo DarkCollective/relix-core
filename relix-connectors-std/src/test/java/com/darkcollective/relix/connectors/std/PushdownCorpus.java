@@ -65,7 +65,7 @@ final class PushdownCorpus {
      * these questions, which is a thing a reviewer should have to see.
      */
     private static final Set<Dialect> ALL =
-            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL);
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
 
     /**
      * The dialects confirmed to count and slice a string by code point, as relix does.
@@ -78,7 +78,7 @@ final class PushdownCorpus {
      * character, not what a manual claims.
      */
     private static final Set<Dialect> COUNTS_CODE_POINTS =
-            EnumSet.of(Dialect.MYSQL, Dialect.POSTGRES);
+            EnumSet.of(Dialect.MYSQL, Dialect.POSTGRES, Dialect.DUCKDB);
 
     /**
      * The dialects that name a specific backend. GENERIC is not one of them, and a
@@ -86,25 +86,27 @@ final class PushdownCorpus {
      * unidentified backend is one no spelling has been confirmed against.
      */
     private static final Set<Dialect> IDENTIFIED =
-            EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL);
+            EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
 
     /**
-     * The dialects that fold an AS-OF join, which is Postgres and only Postgres.
+     * The dialects that fold an AS-OF join: Postgres, and DuckDB, which spells
+     * {@code LATERAL} the same way.
      *
      * <p>{@code Dialect.supportsLateralAsOf} is the answer, and it is a claim about
      * {@code LATERAL} rather than about the operator: H2 2.x has none, and MySQL grew one
-     * in 8.0.14 that a declared dialect cannot confirm the server is new enough for. So
-     * this is the one renderer whose SQL a single database is the only witness to, and
-     * naming the set here rather than inlining it is what makes the corpus say so.
+     * in 8.0.14 that a declared dialect cannot confirm the server is new enough for.
+     * DuckDB is the second witness to this renderer's SQL, and the first that runs in the
+     * gate rather than behind a container.
      */
-    private static final Set<Dialect> FOLDS_LATERAL_ASOF = EnumSet.of(Dialect.POSTGRES);
+    private static final Set<Dialect> FOLDS_LATERAL_ASOF =
+            EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB);
 
     /**
      * The dialects that execute a pushed {@code OVER} clause — see
      * {@code Dialect.supportsWindowFunctions}. MySQL is excluded there and so here.
      */
     private static final Set<Dialect> FOLDS_WINDOWS =
-            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES);
+            EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DUCKDB);
 
     /**
      * A backend that folds a case and is accepted to answer it differently.
