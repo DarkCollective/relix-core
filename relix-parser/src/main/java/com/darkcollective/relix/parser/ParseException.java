@@ -42,8 +42,22 @@ public final class ParseException extends RuntimeException {
     private final String diagnostic;
 
     public ParseException(String message, String input, Token token) {
-        super(message + " at line " + token.line() + ", column " + token.column()
-                + "; found " + describe(token));
+        this(message + " at line " + token.line() + ", column " + token.column()
+                + "; found " + describe(token), token, input);
+    }
+
+    /**
+     * A failure placed at {@code token} whose message already says what is wrong there,
+     * such as a join operator missing its condition, so it does not end in the
+     * token it was found at.
+     */
+    static ParseException at(String message, String input, Token token) {
+        return new ParseException(message + " at line " + token.line() + ", column "
+                + token.column(), token, input);
+    }
+
+    private ParseException(String fullMessage, Token token, String input) {
+        super(fullMessage);
         this.line = token.line();
         this.column = token.column();
         this.found = describe(token);
