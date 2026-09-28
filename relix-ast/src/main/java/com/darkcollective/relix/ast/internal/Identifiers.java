@@ -65,7 +65,7 @@ public final class Identifiers {
             "asc", "desc",
             "project", "select", "rename", "group", "sort", "limit", "distinct",
             "unnest", "with", "ordinality", "closure", "rclosure", "cluster",
-            "path", "hops", "as", "over", "fix", "forall", "sample", "seed",
+            "path", "hops", "as", "over", "fix", "iterate", "forall", "sample", "seed",
             "solve", "optimize", "allocate", "maximize", "minimize", "subject",
             "to", "top", "per", "rows", "cover", "exact", "downsample", "by",
             "using", "for", "lateral", "rolling", "window", "sessionize", "gap",

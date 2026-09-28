@@ -37,6 +37,7 @@ import com.darkcollective.relix.ast.DifferenceNode;
 import com.darkcollective.relix.ast.DistinctNode;
 import com.darkcollective.relix.ast.DivisionNode;
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.FullOuterJoinNode;
 import com.darkcollective.relix.ast.IntersectionNode;
 import com.darkcollective.relix.ast.LateralJoinNode;
@@ -161,6 +162,17 @@ final class RecursiveRefChecker {
             }
 
             // ── Non-monotone — recursive ref forbidden (record the first reason) ─
+            // ITERATE replaces its relation each round, so its output does not grow with
+            // anything it reads: a reference beneath it is non-monotone, in its base as
+            // in its step. Its step shadows our name iff the inner binder reuses it.
+            case IterateNode n -> {
+                String why = firstReason(forbidden, "under ITERATE");
+                int count = countRecursiveRefs(n.base(), name, why);
+                if (!n.name().equals(name)) {
+                    count += countRecursiveRefs(n.step(), name, why);
+                }
+                yield count;
+            }
             case DifferenceNode n -> countRecursiveRefs(n.left(), name, forbidden)
                     + countRecursiveRefs(n.right(), name, firstReason(forbidden, "right side of −"));
             case AntiJoinNode n -> countRecursiveRefs(n.left(), name, forbidden)

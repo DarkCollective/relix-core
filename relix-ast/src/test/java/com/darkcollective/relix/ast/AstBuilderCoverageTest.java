@@ -85,7 +85,7 @@ final class AstBuilderCoverageTest {
     final class Completeness {
 
         @Test
-        @DisplayName("RelNode — all 52 concrete node kinds")
+        @DisplayName("RelNode — all 53 concrete node kinds")
         void relNodesAreCovered() {
             assertThat(uncovered(RelNode.class))
                     .as("RelNode kinds with no AstBuilders factory")
@@ -114,9 +114,9 @@ final class AstBuilderCoverageTest {
     final class Counts {
 
         @Test
-        @DisplayName("RelNode permits 52 concrete kinds")
+        @DisplayName("RelNode permits 53 concrete kinds")
         void relNodeCount() {
-            assertThat(concreteKinds(RelNode.class)).hasSize(52);
+            assertThat(concreteKinds(RelNode.class)).hasSize(53);
         }
 
         @Test
@@ -190,6 +190,8 @@ final class AstBuilderCoverageTest {
             .of(ProduceBound.class, i -> AstBuilders.produceBound("n" + i, ComparisonOperator.LESS, AstBuilders.num("10")))
             .of(WindowFunction.class, i -> new WindowFunction.AggregateWindow(AggregateOperator.SUM, AstBuilders.attr("w" + i)))
             .of(WindowFrame.class, i -> new WindowFrame.BoundedFrame(i + 1))
+            .of(IterateStop.class, i -> new IterateStop.Rounds(i + 1))
+            .of(java.math.BigDecimal.class, i -> java.math.BigDecimal.valueOf(i + 1))
             .of(StructConstruction.Field[].class, i -> new StructConstruction.Field[]{new StructConstruction.Field("f" + i, AstBuilders.attr("v" + i))})
             .of(Optional.class, i -> Optional.of("o" + i))
             .of(AggregateOperator.class, i -> AggregateOperator.values()[i % AggregateOperator.values().length])

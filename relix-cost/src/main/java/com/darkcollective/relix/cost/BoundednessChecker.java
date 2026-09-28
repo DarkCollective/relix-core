@@ -25,6 +25,7 @@ import com.darkcollective.relix.ast.CoverNode;
 import com.darkcollective.relix.ast.DifferenceNode;
 import com.darkcollective.relix.ast.DownsampleNode;
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.DivisionNode;
 import com.darkcollective.relix.ast.FullOuterJoinNode;
 import com.darkcollective.relix.ast.IntersectionNode;
@@ -170,6 +171,7 @@ public final class BoundednessChecker {
             case PathNode ignored                -> "PATH";
             case TraceNode ignored               -> "TRACE";
             case FixpointNode ignored            -> "FIX (general recursion)";
+            case IterateNode ignored             -> "ITERATE";
             case WindowNode ignored              -> "WINDOW (cumulative / ranking / offset)";
             case SessionizeNode ignored          -> "SESSIONIZE";
             case PivotNode ignored               -> "PIVOT";
