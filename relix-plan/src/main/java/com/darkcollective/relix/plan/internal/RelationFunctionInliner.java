@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ConditionalJoinNode;
 import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.AggregationNode;
@@ -51,6 +52,7 @@ import com.darkcollective.relix.ast.ProjectedAttribute;
 import com.darkcollective.relix.ast.ProjectionNode;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationFunctionCall;
+import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.SolveNode;
@@ -59,9 +61,12 @@ import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.UnaryOperand;
 import com.darkcollective.relix.ast.UniversalNode;
 import com.darkcollective.relix.symbol.ParameterDefinition;
+import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.function.RelationFunctionSymbol;
 
 import java.util.HashMap;
+import java.util.Set;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -94,12 +99,120 @@ final class RelationFunctionInliner {
      * @return the substituted (inlined) body expression
      */
     static RelNode bind(RelationFunctionSymbol fn, List<Operand> args) {
+        return bindCall(fn, args).body();
+    }
+
+    /**
+     * A bound call: the substituted body, and the relation leaves standing for its relation
+     * arguments (by identity). Those leaves belong to the call site rather than to the
+     * function — an argument may itself be a call to the same function (a chain
+     * {@code step(Gen1)} where {@code Gen1 := { step(Start) }}) without that being
+     * recursion — so the planner plans them in the call site's scope.
+     *
+     * @param body                the substituted body
+     * @param arguments           the relation-argument leaves within it, each with the
+     *                            argument it was bound from
+     * @param recursiveReferences the arguments that name an enclosing binder, bound to it
+     *                            as recursive references, with the binder's schema
+     */
+    record Bound(RelNode body, Map<RelNode, Operand> arguments, Map<RelNode, Schema> recursiveReferences) {
+    }
+
+    /**
+     * As {@link #bind}, also reporting which leaves of the result are relation arguments.
+     *
+     * @param fn   the table-valued function whose body to bind; must not be null
+     * @param args the call arguments, in order; must not be null
+     * @return the bound body and its relation-argument leaves
+     */
+    static Bound bindCall(RelationFunctionSymbol fn, List<Operand> args) {
+        return bindCall(fn, args, Map.of());
+    }
+
+    /**
+     * As {@link #bindCall(RelationFunctionSymbol, List)}, inside the step of the binders in
+     * {@code binders} (lower-cased name to schema): an argument naming one of them is the
+     * relation that binder is building, and is bound as a recursive reference to it.
+     *
+     * @param fn      the table-valued function whose body to bind; must not be null
+     * @param args    the call arguments, in order; must not be null
+     * @param binders the {@code ITERATE} binders in scope, by lower-cased name
+     * @return the bound body, its relation-argument leaves and its recursive references
+     */
+    static Bound bindCall(RelationFunctionSymbol fn, List<Operand> args, Map<String, Schema> binders) {
+        Map<RelNode, Operand> arguments = new IdentityHashMap<>();
+        Map<RelNode, Schema> references = new IdentityHashMap<>();
         Map<String, Operand> binding = new HashMap<>();
+        Map<String, RelNode> relations = new HashMap<>();
+        Map<String, Operand> relationNames = new HashMap<>();
         List<ParameterDefinition> params = fn.parameters();
         for (int i = 0; i < params.size() && i < args.size(); i++) {
-            binding.put(params.get(i).name().toLowerCase(Locale.ROOT), args.get(i));
+            ParameterDefinition p = params.get(i);
+            String key = p.name().toLowerCase(Locale.ROOT);
+            if (p.isRelation()) {
+                // The validator admits only a relation's name here.
+                AttributeOperand name = (AttributeOperand) args.get(i);
+                relations.put(key, narrowed(p, name, arguments, binders, references));
+                relationNames.put(key, name);
+            } else {
+                binding.put(key, args.get(i));
+            }
         }
-        return substitute(fn.body(), binding);
+        // Scalars first: the relation pass inserts projections whose column references
+        // must not be taken for scalar parameters of the same name.
+        RelNode scalarsBound = substitute(fn.body(), binding);
+        return new Bound(relations.isEmpty() ? scalarsBound
+                : substituteRelations(scalarsBound, relations, relationNames), arguments, references);
+    }
+
+    /**
+     * What the body reads in place of a relation parameter: {@code ρ E (π <heading> (Arg))}.
+     * The projection is the point — the body was checked against the declared heading, so
+     * it must see exactly that, and not an extra column of the argument that a natural join
+     * in the body would otherwise silently match on. The rename keeps {@code E.col}
+     * resolving inside the body.
+     */
+    private static RelNode narrowed(ParameterDefinition parameter, AttributeOperand name,
+                                    Map<RelNode, Operand> arguments, Map<String, Schema> binders,
+                                    Map<RelNode, Schema> references) {
+        String relation = name.name();
+        List<ProjectedAttribute> columns = parameter.heading().orElseThrow().columns().stream()
+                .map(c -> AstBuilders.projected(AstBuilders.attr(c.name())))
+                .toList();
+        Schema binder = binders.get(relation.toLowerCase(Locale.ROOT));
+        RelNode argument;
+        if (binder != null) {
+            // The argument is the relation an enclosing ITERATE is building.
+            argument = AstBuilders.recRef(relation);
+            references.put(argument, binder);
+        } else {
+            argument = AstBuilders.rel(relation);
+            arguments.put(argument, name);
+        }
+        return AstBuilders.rename(parameter.name(), List.of(), AstBuilders.project(columns, argument));
+    }
+
+    /**
+     * Replaces each reference to a relation parameter: a relation leaf by the narrowed
+     * argument, and a nested call's argument by the argument's name, which that call
+     * narrows to its own heading in turn.
+     */
+    private static RelNode substituteRelations(RelNode node, Map<String, RelNode> relations,
+                                               Map<String, Operand> names) {
+        // A parameter's name has no dot, so a dotted relation name never matches one.
+        if (node instanceof RelationNode r) {
+            RelNode bound = relations.get(r.name().toLowerCase(Locale.ROOT));
+            if (bound != null) {
+                return bound;
+            }
+        }
+        RelNode rewritten = node instanceof RelationFunctionCall f
+                ? new RelationFunctionCall(f.functionName(), f.arguments().stream()
+                        .map(a -> a instanceof AttributeOperand name
+                                ? names.getOrDefault(name.name().toLowerCase(Locale.ROOT), a) : a)
+                        .toList(), f.location())
+                : node;
+        return rewritten.mapChildren(child -> substituteRelations(child, relations, names));
     }
 
     private static RelNode substitute(RelNode node, Map<String, Operand> b) {

@@ -33,6 +33,8 @@ import com.darkcollective.relix.lang.ast.source.SourceConfig;
 import com.darkcollective.relix.lang.ast.table.CsvInlineTable;
 import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
 import com.darkcollective.relix.symbol.ParameterDefinition;
+import com.darkcollective.relix.symbol.Schema;
+import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ArrayType;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.StructType;
@@ -229,6 +231,11 @@ public abstract class ScriptBuilders extends AstBuilders {
     /** A function parameter, {@code name: type}. */
     public static ParameterDefinition param(String name, ScalarType type) {
         return new ParameterDefinition(name, type);
+    }
+
+    /** A relation parameter — {@code name: RELATION(columns…)} — for a table-valued {@code def}. */
+    public static ParameterDefinition relationParam(String name, ColumnDefinition... columns) {
+        return ParameterDefinition.relation(name, new Schema(List.of(columns)));
     }
 
     /** An output column of a source schema. */

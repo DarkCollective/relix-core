@@ -455,7 +455,7 @@ public final class SymbolCollector {
                 .shadowPolicy(ShadowPolicy.PERMITTED)
                 .body(def.body());
         for (ParameterDefinition p : def.parameters()) {
-            builder.parameter(p.name(), p.type());
+            builder.parameter(p);
         }
         RelationFunctionSymbol sym = builder.build();
 

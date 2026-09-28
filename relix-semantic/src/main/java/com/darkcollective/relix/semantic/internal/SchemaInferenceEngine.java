@@ -90,21 +90,37 @@ public final class SchemaInferenceEngine {
         // includes catalog views (the relix.* namespace, e.g. the relix.dependencies
         // view derived from relix.plan): their body nodes must be annotated here so
         // the planner can inline them at execution time, exactly like user views.
-        for (Symbol sym : symbolTable.allSymbols()) {
-            if (sym instanceof QueryRelationSymbol qrs) {
-                inferQueryRelation(qrs);
+        //
+        // Phase 4a': infer the output schema of every table-valued function body.
+        //
+        // Neither can simply go first: a function body reads views, and a view can be
+        // a call (`Gen1 := { step(Start) }`), whose type is the function's. Run once
+        // each, views before functions, such a view kept the unresolved placeholder
+        // for good — invisible while the optimizer inlined it away, fatal once it was
+        // an argument inside an inlined body. So both passes repeat while either
+        // resolves something new; each round either resolves a symbol or ends it.
+        // The first round infers every view and function, a declared one included — that
+        // is what annotates its body for the planner; later rounds retry what is still
+        // unresolved.
+        int unresolved = Integer.MAX_VALUE;
+        boolean first = true;
+        while (true) {
+            for (Symbol sym : symbolTable.allSymbols()) {
+                if (sym instanceof QueryRelationSymbol qrs && (first || isUnresolved(qrs))) {
+                    inferQueryRelation(qrs);
+                }
             }
-        }
-
-        // Phase 4a': infer the output schema of every table-valued function body,
-        // after views (a TVF body commonly references base relations or views).
-        // The body's parameter references appear inside operands/predicates only, so
-        // they do not affect the output schema; an unresolved parameter operand types
-        // as ANY (it never reaches a relation leaf).
-        for (Symbol sym : symbolTable.allSymbols()) {
-            if (sym instanceof RelationFunctionSymbol rfs) {
-                inferRelationFunction(rfs);
+            for (Symbol sym : symbolTable.allSymbols()) {
+                if (sym instanceof RelationFunctionSymbol rfs && (first || rfs.returnSchema().isEmpty())) {
+                    inferRelationFunction(rfs);
+                }
             }
+            first = false;
+            int remaining = countUnresolved();
+            if (remaining == 0 || remaining >= unresolved) {
+                break;
+            }
+            unresolved = remaining;
         }
 
         // Phase 4b: infer schemas for root-query expressions.
@@ -120,9 +136,26 @@ public final class SchemaInferenceEngine {
         }
     }
 
+    private static boolean isUnresolved(QueryRelationSymbol qrs) {
+        return qrs.schema().equals(SymbolCollector.UNRESOLVED_SCHEMA);
+    }
+
+    private int countUnresolved() {
+        int n = 0;
+        for (Symbol sym : symbolTable.allSymbols()) {
+            if ((sym instanceof QueryRelationSymbol qrs && isUnresolved(qrs))
+                    || (sym instanceof RelationFunctionSymbol rfs && rfs.returnSchema().isEmpty())) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     /** Returns accumulated inference errors (defensive copy). */
     List<SemanticError> errors() {
-        return List.copyOf(errors);
+        // Distinct: a symbol that stays unresolved is re-inferred on each round of the
+        // view/function loop, and would otherwise report the same error once per round.
+        return List.copyOf(new java.util.LinkedHashSet<>(errors));
     }
 
     // =========================================================================
@@ -154,7 +187,10 @@ public final class SchemaInferenceEngine {
      * that call sites (and the planner) see it resolved.
      */
     private void inferRelationFunction(RelationFunctionSymbol rfs) {
-        Optional<Schema> schemaOpt = runVisitor(rfs.body(), rfs.namespace());
+        // The body sees its relation parameters as relations with their declared headings.
+        var visitor = new SchemaInferenceVisitor(ParameterScope.of(symbolTable, rfs), annotations,
+                errors, rfs.namespace(), functions);
+        Optional<Schema> schemaOpt = rfs.body().accept(visitor);
         schemaOpt.ifPresent(schema ->
                 symbolTable.register(rfs.withReturnSchema(schema))); // PERMITTED → silent overwrite
     }
