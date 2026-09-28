@@ -186,6 +186,13 @@ public final class Planner {
     private final Set<String> activeInlines = new HashSet<>();  // recursive-TVF guard
     /** Each relation argument's leaf, and the inlines active where its call was written. */
     private final Map<RelNode, Set<String>> argumentScopes = new IdentityHashMap<>();
+    /**
+     * Each relation argument, by identity, and the inlines active where it was first
+     * written. A body that passes its parameter on hands the inner call the very operand
+     * its own call was given, so the inner call finds the outer call's scope here.
+     */
+    private final Map<com.darkcollective.relix.ast.Operand, Set<String>> operandScopes =
+            new IdentityHashMap<>();
     /** The ITERATE binders whose step is being planned, by lower-cased name. */
     private final Map<String, Schema> iterateBinders = new HashMap<>();
     /** Every binder name in the query, lower-cased; set with {@link #sharedSites}. */
@@ -866,7 +873,9 @@ public final class Planner {
         try {
             RelationFunctionInliner.Bound bound =
                     RelationFunctionInliner.bindCall(fn, call.arguments(), Map.copyOf(iterateBinders));
-            bound.arguments().forEach(argument -> argumentScopes.put(argument, callSite));
+            call.arguments().forEach(argument -> operandScopes.putIfAbsent(argument, callSite));
+            bound.arguments().forEach((leaf, argument) ->
+                    argumentScopes.put(leaf, operandScopes.get(argument)));
             if (!bound.recursiveReferences().isEmpty()) {
                 // A reference to the enclosing ITERATE is typed by its binder; inference,
                 // which runs outside the binder here, keeps an annotation it is given.

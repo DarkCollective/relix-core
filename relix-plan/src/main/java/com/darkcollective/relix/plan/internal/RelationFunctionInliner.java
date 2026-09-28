@@ -67,7 +67,6 @@ import com.darkcollective.relix.symbol.function.RelationFunctionSymbol;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.IdentityHashMap;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -111,11 +110,12 @@ final class RelationFunctionInliner {
      * recursion — so the planner plans them in the call site's scope.
      *
      * @param body                the substituted body
-     * @param arguments           the relation-argument leaves within it
+     * @param arguments           the relation-argument leaves within it, each with the
+     *                            argument it was bound from
      * @param recursiveReferences the arguments that name an enclosing binder, bound to it
      *                            as recursive references, with the binder's schema
      */
-    record Bound(RelNode body, Set<RelNode> arguments, Map<RelNode, Schema> recursiveReferences) {
+    record Bound(RelNode body, Map<RelNode, Operand> arguments, Map<RelNode, Schema> recursiveReferences) {
     }
 
     /**
@@ -140,7 +140,7 @@ final class RelationFunctionInliner {
      * @return the bound body, its relation-argument leaves and its recursive references
      */
     static Bound bindCall(RelationFunctionSymbol fn, List<Operand> args, Map<String, Schema> binders) {
-        Set<RelNode> arguments = Collections.newSetFromMap(new IdentityHashMap<>());
+        Map<RelNode, Operand> arguments = new IdentityHashMap<>();
         Map<RelNode, Schema> references = new IdentityHashMap<>();
         Map<String, Operand> binding = new HashMap<>();
         Map<String, RelNode> relations = new HashMap<>();
@@ -152,7 +152,7 @@ final class RelationFunctionInliner {
             if (p.isRelation()) {
                 // The validator admits only a relation's name here.
                 AttributeOperand name = (AttributeOperand) args.get(i);
-                relations.put(key, narrowed(p, name.name(), arguments, binders, references));
+                relations.put(key, narrowed(p, name, arguments, binders, references));
                 relationNames.put(key, name);
             } else {
                 binding.put(key, args.get(i));
@@ -172,9 +172,10 @@ final class RelationFunctionInliner {
      * in the body would otherwise silently match on. The rename keeps {@code E.col}
      * resolving inside the body.
      */
-    private static RelNode narrowed(ParameterDefinition parameter, String relation,
-                                    Set<RelNode> arguments, Map<String, Schema> binders,
+    private static RelNode narrowed(ParameterDefinition parameter, AttributeOperand name,
+                                    Map<RelNode, Operand> arguments, Map<String, Schema> binders,
                                     Map<RelNode, Schema> references) {
+        String relation = name.name();
         List<ProjectedAttribute> columns = parameter.heading().orElseThrow().columns().stream()
                 .map(c -> AstBuilders.projected(AstBuilders.attr(c.name())))
                 .toList();
@@ -186,7 +187,7 @@ final class RelationFunctionInliner {
             references.put(argument, binder);
         } else {
             argument = AstBuilders.rel(relation);
-            arguments.add(argument);
+            arguments.put(argument, name);
         }
         return AstBuilders.rename(parameter.name(), List.of(), AstBuilders.project(columns, argument));
     }

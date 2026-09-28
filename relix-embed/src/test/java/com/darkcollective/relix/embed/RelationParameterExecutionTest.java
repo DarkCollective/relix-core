@@ -222,6 +222,25 @@ final class RelationParameterExecutionTest {
     }
 
     @Test
+    @DisplayName("a chain through a function that passes its parameter on")
+    void aChainThroughAForwardingFunction() {
+        // generation hands G on to neighbours; the chain's arguments are still the caller's.
+        assertThat(last(LIFE + """
+                def neighbours(G: RELATION(x: NUMBER, y: NUMBER)) : RELATION := {
+                  γ x, y, COUNT(*) → n (π x + dx → x, y + dy → y (G × Offsets))
+                };
+                def generation(G: RELATION(x: NUMBER, y: NUMBER)) : RELATION := {
+                  π x, y (σ n = 3 (neighbours(G))) ∪ π x, y (σ n = 2 (neighbours(G)) ⋈ G)
+                };
+                One := { generation(Blinker) };
+                Two := { generation(One) };
+                Three := { generation(Two) };
+                query { τ x, y (Three) };
+                """)).rows().hasRowCount(3)
+                .hasRowAt(0, "0", "1").hasRowAt(1, "1", "1").hasRowAt(2, "2", "1");
+    }
+
+    @Test
     @DisplayName("a function that calls itself in its body is still refused")
     void recursionIsStillRefused() {
         assertThatThrownBy(() -> last("""
