@@ -16,6 +16,9 @@
 package com.darkcollective.relix.parser;
 
 import com.darkcollective.relix.ast.AntiJoinNode;
+import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.ThetaJoinNode;
+import com.darkcollective.relix.ast.UnionNode;
 import org.junit.jupiter.api.Test;
 
 import static com.darkcollective.relix.ast.AstAssertions.assertThat;
@@ -144,6 +147,55 @@ final class ParserErrorTest extends ParserTestSupport {
         assertParseError("A JOIN x < 1 B")
                 .hasMessageContaining("'JOIN' is the natural join")
                 .at(1, 3);
+    }
+
+    @Test
+    public void reportsConditionAfterNaturalJoinsRightInput() {
+        String script = "Round3 JOIN Teams (Teams.team_id = home_id)";
+        assertThatThrownBy(() -> parse(script))
+                .hasMessage("'JOIN' is the natural join: it joins on the columns both inputs"
+                        + " share and takes no condition; to join on a condition, use ⨝ (><)"
+                        + " and write the condition between the inputs:"
+                        + " Round3 >< Teams.team_id = home_id Teams at line 1, column 8");
+        assertParseError(script).at(1, 8).found("'JOIN'");
+        assertThat(parse("Round3 >< Teams.team_id = home_id Teams"))
+                .as("the rewrite the message offers parses")
+                .isNode(ThetaJoinNode.class);
+        assertParseError("(A ∪ B) ⋈ s.B (x IN (1,2) AND NOT y LIKE 'a%')")
+                .hasMessageContaining(": … ⨝ x IN (1, 2) AND NOT y LIKE 'a%' s.B")
+                .at(1, 9);
+        assertParseError("A JOIN B (x = y) ∪ C").hasMessageContaining(": A >< x = y B");
+    }
+
+    @Test
+    public void reportsConditionAfterConditionedJoinsRightInput() {
+        for (String op : new String[] {"LJOIN", "SEMI", "ANTI", "▷", "><", "|><|", "ASOF"}) {
+            assertThatThrownBy(() -> parse("A " + op + " B (B.id <= A.id)"))
+                    .hasMessage("'" + op + "' takes its join condition between its two inputs,"
+                            + " not after them: A " + op + " B.id <= A.id B at line 1, column 3");
+        }
+        assertParseError("A ASOF INNER B (x = y)").hasMessageContaining(": A ASOF x = y B");
+        assertParseError("σ z = 1 (A SEMI B (x ∉ (1, 2)))")
+                .hasMessageContaining(": A SEMI x ∉ (1, 2) B")
+                .at(1, 12);
+        assertParseError("A ANTI B (x IS NULL) ∪ C").hasMessageContaining(": A ANTI x IS NULL B");
+    }
+
+    @Test
+    public void callOnAJoinsRightStillParses() {
+        assertThat(parse("A JOIN f(1)")).isNode(NaturalJoinNode.class);
+        assertThat(parse("A JOIN B (x)")).as("a call with no condition in it").isNode(NaturalJoinNode.class);
+        assertThat(parse("A JOIN f(g(x = 1))")).as("a condition inside a nested argument").isNode(NaturalJoinNode.class);
+        assertThat(parse("A >< f(x) = 1 B")).as("a condition starting with a call").isNode(ThetaJoinNode.class);
+        assertThat(parse("A >< IIf(x > 1, 1, 0) = y B"))
+                .as("a condition starting with a call whose argument compares")
+                .isNode(ThetaJoinNode.class);
+        assertThat(parse("A SEMI IIf(x > 1, 1, 0) = y B ∪ C"))
+                .as("the same, with an operator after the right input")
+                .isNode(UnionNode.class);
+        assertParseError("A JOIN B (x = y")
+                .as("an unclosed group is left to the call's own error")
+                .hasMessageContaining("Expected ')' after function call arguments");
     }
 
     @Test
