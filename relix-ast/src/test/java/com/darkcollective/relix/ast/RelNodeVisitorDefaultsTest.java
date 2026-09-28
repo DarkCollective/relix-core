@@ -60,6 +60,13 @@ final class RelNodeVisitorDefaultsTest {
     }
 
     @Test
+    void iterateDefaultThrows() {
+        assertThatThrownBy(() -> iterate("T", INPUT, INPUT, rounds(1)).accept(BARE))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("ITERATE");
+    }
+
+    @Test
     void recursiveRefDefaultThrows() {
         assertThatThrownBy(() -> recRef("T").accept(BARE))
                 .isInstanceOf(UnsupportedOperationException.class)
@@ -86,12 +93,14 @@ final class RelNodeVisitorDefaultsTest {
         RelNodeVisitor<String> overriding = new BareRelNodeVisitor<String>() {
             @Override public String visit(CoverNode node)        { return "cover"; }
             @Override public String visit(FixpointNode node)     { return "fix"; }
+            @Override public String visit(IterateNode node)      { return "iterate"; }
             @Override public String visit(RecursiveRefNode node) { return "ref"; }
             @Override public String visit(LateralJoinNode node)  { return "lateral"; }
             @Override public String visit(WhyNode node)          { return "why"; }
         };
         assertThat(cover().accept(overriding)).isEqualTo("cover");
         assertThat(fixpoint("T", INPUT, INPUT).accept(overriding)).isEqualTo("fix");
+        assertThat(iterate("T", INPUT, INPUT, rounds(1)).accept(overriding)).isEqualTo("iterate");
         assertThat(recRef("T").accept(overriding)).isEqualTo("ref");
         assertThat(lateral(INPUT, "explode").accept(overriding))
                 .isEqualTo("lateral");

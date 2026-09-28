@@ -167,6 +167,8 @@ public final class PhysicalNodeCorpus {
                         "route", TraceAlgorithm.RELAXATION,
                         Optional.of(ONE), Optional.of(ONE), LEFT),
                 new PhysicalNode.Fixpoint(SCHEMA, "T", LEFT, RIGHT),
+                new PhysicalNode.Iterate(SCHEMA, "It", LEFT, RIGHT,
+                        new com.darkcollective.relix.ast.IterateStop.Stable(50)),
                 new PhysicalNode.RecursiveRef(SCHEMA, "T"),
 
                 // ── blocking unary ──────────────────────────────────────────────

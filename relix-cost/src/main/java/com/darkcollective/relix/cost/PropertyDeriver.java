@@ -27,6 +27,7 @@ import com.darkcollective.relix.ast.PathNode;
 import com.darkcollective.relix.ast.TraceNode;
 import com.darkcollective.relix.ast.CoverNode;
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.RecursiveRefNode;
 import com.darkcollective.relix.ast.CompositionNode;
 import com.darkcollective.relix.ast.DifferenceNode;
@@ -260,6 +261,7 @@ public final class PropertyDeriver {
             case PathNode ignored -> RelationProperties.wholeRow();
             case TraceNode ignored -> RelationProperties.wholeRow();
             case FixpointNode ignored -> RelationProperties.wholeRow();
+            case IterateNode ignored -> RelationProperties.wholeRow();
             case CoverNode ignored -> RelationProperties.wholeRow();
             case TruthRelationNode ignored -> RelationProperties.wholeRow();
             case EmptyRelationNode ignored -> RelationProperties.wholeRow();

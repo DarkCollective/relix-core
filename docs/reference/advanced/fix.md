@@ -17,7 +17,8 @@ hierarchy traversal, parts explosions, and any "keep expanding until done"
 computation that a plain join can't express.
 
 The recursive name is bound inside the step only and refers to "everything
-computed so far".
+computed so far". There it also qualifies the relation's columns — `Reach.dst` —
+as the name of any relation does.
 
 # Technical Description:
 FIX computes the least fixpoint of `step` seeded by `base`, under set semantics
@@ -198,10 +199,12 @@ invents values exactly as a projection does.
 
 # Alternatives:
 CLOSURE / RCLOSURE for binary transitive closure (the specialised, preferred form
-when it suffices).
+when it suffices). ITERATE for a computation whose rounds replace one another
+rather than add to each other — PageRank, or a cellular automaton — which needs
+the aggregation and outer joins FIX's step forbids.
 
 # See Also:
-[closure](closure.md), [composition](../set-operations/composition.md), [natural-join](../joins/natural-join.md), [union](../set-operations/union.md)
+[closure](closure.md), [iterate](iterate.md), [composition](../set-operations/composition.md), [natural-join](../joins/natural-join.md), [union](../set-operations/union.md)
 
 # Notes:
 Two caps turn a runaway recursion into a clear error instead of a hang, and both

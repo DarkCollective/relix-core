@@ -17,6 +17,7 @@ package com.darkcollective.relix.plan.internal;
 
 import com.darkcollective.relix.ast.internal.AstEquivalence;
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.RelNode;
 
 import java.util.HashMap;
@@ -141,13 +142,18 @@ final class SharedSubexpressions {
         }
 
         /**
-         * A fixpoint's two children are reached differently: the base seeds the
+         * A fixpoint's or an iteration's two children are reached differently: the base seeds the
          * iteration once, the step runs on every round.
          */
         private void visitChildren(RelNode node, boolean perRound, Map<String, Sharing> sites) {
             if (node instanceof FixpointNode fix) {
                 visit(fix.base(), perRound, sites);
                 visit(fix.step(), true, sites);
+                return;
+            }
+            if (node instanceof IterateNode it) {
+                visit(it.base(), perRound, sites);
+                visit(it.step(), true, sites);
                 return;
             }
             node.children().forEach(child -> visit(child, perRound, sites));
