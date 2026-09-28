@@ -230,7 +230,8 @@ final class MaterializationBudget {
     static void charge(PhysicalNode owner, long held, EvalCtx ctx) {
         int cap = ctx.maxMaterializedRows();
         if (cap != ExecutionContext.UNLIMITED_MATERIALIZED_ROWS && held > cap) {
-            throw refuseAccumulated(owner, cap);
+            throw owner instanceof PhysicalNode.Iterate ? refuseRounds(owner, cap)
+                    : refuseAccumulated(owner, cap);
         }
     }
 
@@ -267,6 +268,20 @@ final class MaterializationBudget {
                 + "; it keeps a bounded number of rows per group, so its buffer grows "
                 + "with the number of groups rather than with the rows reaching it. "
                 + "Reduce the groups, or raise maxMaterializedRows");
+    }
+
+    /**
+     * An iteration's refusal. Not the accumulator's wording: an {@code ITERATE} keeps no
+     * running total, only whole rounds — the current one, the one being built and one
+     * kept to detect a cycle — so the lever is how large a round is, which neither the
+     * round cap nor a selection outside it changes.
+     */
+    private static EvaluationException refuseRounds(PhysicalNode owner, int cap) {
+        return new EvaluationException(
+                name(owner) + " held more than " + cap + " row" + (cap == 1 ? "" : "s")
+                + " across the rounds it keeps — the current round, the one being built and "
+                + "one kept to detect a cycle. Reduce what a round produces, or raise "
+                + "maxMaterializedRows");
     }
 
     /**

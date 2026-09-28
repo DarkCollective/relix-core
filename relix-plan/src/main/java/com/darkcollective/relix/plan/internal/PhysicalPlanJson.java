@@ -220,6 +220,10 @@ public final class PhysicalPlanJson {
                 tr.boundTarget().ifPresent(o -> w.name("boundTarget").value(o.accept(OPND)));
             }
             case PhysicalNode.Fixpoint f -> w.name("name").value(f.name());
+            case PhysicalNode.Iterate it -> {
+                w.name("name").value(it.name());
+                w.name("stop").value(it.stop().clause());
+            }
             case PhysicalNode.RecursiveRef r -> w.name("name").value(r.name());
             case PhysicalNode.Limit l -> {
                 w.name("count").value(l.count());

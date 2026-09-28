@@ -71,6 +71,7 @@ public sealed interface RelNode permits
         OptimizeNode,
         TopKNode,
         FixpointNode,
+        IterateNode,
         RecursiveRefNode,
         CoverNode,
         DownsampleNode,
@@ -127,6 +128,7 @@ public sealed interface RelNode permits
             case PathNode          ignored -> MaterializationMode.SET;
             case TraceNode         ignored -> MaterializationMode.BAG;
             case FixpointNode      ignored -> MaterializationMode.SET;
+            case IterateNode       ignored -> MaterializationMode.SET;
             case CoverNode         ignored -> MaterializationMode.BAG;
             case DownsampleNode    ignored -> MaterializationMode.BAG;
             case WindowNode        ignored -> MaterializationMode.BAG;
@@ -200,6 +202,7 @@ public sealed interface RelNode permits
             case SymmetricDifferenceNode n -> List.of(n.left(), n.right());
             case CompositionNode n     -> List.of(n.left(), n.right());
             case FixpointNode n        -> List.of(n.base(), n.step());
+            case IterateNode n         -> List.of(n.base(), n.step());
         };
     }
 
@@ -433,6 +436,11 @@ public sealed interface RelNode permits
                 RelNode base = f.apply(n.base()), step = f.apply(n.step());
                 yield (base == n.base() && step == n.step()) ? n
                         : new FixpointNode(n.name(), base, step, n.location());
+            }
+            case IterateNode n -> {
+                RelNode base = f.apply(n.base()), step = f.apply(n.step());
+                yield (base == n.base() && step == n.step()) ? n
+                        : new IterateNode(n.name(), base, step, n.stop(), n.location());
             }
         };
     }

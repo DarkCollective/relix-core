@@ -161,7 +161,17 @@ public interface RelNodeVisitor<R> {
     }
 
     /**
-     * Visits a recursive-reference ({@code FIX}-bound name) node.
+     * Visits a replace-each-round iteration ({@code ITERATE}) node.
+     *
+     * <p>Provided as a {@code default} that throws — see {@link #visit(FixpointNode)}.
+     */
+    default R visit(IterateNode node) {
+        throw new UnsupportedOperationException(
+                "IterateNode (ITERATE) handling is not implemented in this visitor");
+    }
+
+    /**
+     * Visits a recursive-reference ({@code FIX}- or {@code ITERATE}-bound name) node.
      *
      * <p>Provided as a {@code default} that throws — see {@link #visit(FixpointNode)}.
      */

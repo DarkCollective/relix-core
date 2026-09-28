@@ -170,7 +170,7 @@ final class Tokens {
             // Relational-algebra operators (unary, binary, set, advanced) +
             // arithmetic glyphs.
             case PROJECT, SELECT, RENAME, AGGREGATION, SORT, LIMIT, DISTINCT, UNNEST,
-                 CLOSURE, RCLOSURE, CLUSTER, PATH, FIX, KLEENE_PLUS,
+                 CLOSURE, RCLOSURE, CLUSTER, PATH, FIX, ITERATE, KLEENE_PLUS,
                  NATURAL_JOIN, THETA_JOIN, LEFT_OUTER_JOIN, RIGHT_OUTER_JOIN,
                  FULL_OUTER_JOIN, SEMI_JOIN, ANTI_JOIN, UNIVERSAL_SEMI_JOIN,
                  ASOF_JOIN, IJOIN, LATERAL,

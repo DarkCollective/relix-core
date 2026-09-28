@@ -318,7 +318,7 @@ relation_keyword  ::= "UNIT" | "DEE" | "EMPTY" | "DUM"
                     | "PROJECT" | "SELECT" | "RENAME" | "GROUP" | "SORT" | "ORDER"
                     | "LIMIT" | "DISTINCT" | "UNNEST" | "WHY"
                     | "CLOSURE" | "RCLOSURE" | "CLUSTER" | "PATH" | "TRACE" | "FIX"
-                    | "FORALL" | "SAMPLE" | "SOLVE" | "OPTIMIZE" | "TOP" | "COVER"
+                    | "ITERATE" | "FORALL" | "SAMPLE" | "SOLVE" | "OPTIMIZE" | "TOP" | "COVER"
                     | "DOWNSAMPLE" | "ROLLING" | "WINDOW" | "SESSIONIZE"
                     | "PIVOT" | "UNPIVOT" | "TREE"
 ```
@@ -329,7 +329,7 @@ relation_keyword  ::= "UNIT" | "DEE" | "EMPTY" | "DUM"
 /* Every unary operator takes its input LAST, in parentheses:  σ p (R). */
 unary_operation   ::= projection | selection | rename | aggregation | sort | limit
                     | distinct | why | unnest
-                    | closure | cluster | path | trace | fixpoint
+                    | closure | cluster | path | trace | fixpoint | iterate
                     | universal | sample | solve | optimize | top_k | cover
                     | downsample | rolling | window | sessionize | tree | pivot | unpivot
 
@@ -388,6 +388,14 @@ trace             ::= "TRACE" name edge_separator name "VIA" name
 
 /* FIX Reach (base, step): inside step, Reach names the relation being built. */
 fixpoint          ::= "FIX" IDENTIFIER "(" rel_expr "," rel_expr ")"
+
+/* ITERATE Board (base, step) ROUNDS 4: inside step, Board names the previous
+   round, and each round replaces it. ROUNDS, UNTIL and STABLE are matched by
+   their text rather than reserved, so they remain usable as names. */
+iterate           ::= "ITERATE" IDENTIFIER "(" rel_expr "," rel_expr ")" iterate_stop
+iterate_stop      ::= "ROUNDS" INTEGER
+                    | "UNTIL" ( "STABLE" | name ( "," name )* "WITHIN" NUMBER
+                                "PER" name ( "," name )* ) "MAX" INTEGER "ROUNDS"
 
 /* ∀ student : grade >= 50 (Results) */
 universal         ::= ( "∀" | "FORALL" ) ( name ( "," name )* )? ":" predicate input
@@ -526,7 +534,7 @@ array_construction  ::= "[" ( operand ( "," operand )* )? "]"
 
 ```ebnf
 /* In most positions any word is accepted as a name, reserved or not.
-   IDENTIFIER is the stricter form a few positions require (FIX, the PER
+   IDENTIFIER is the stricter form a few positions require (FIX, ITERATE, the PER
    list of OPTIMIZE and TOP, struct field names); a reserved word there
    must be backticked. */
 name              ::= WORD | DELIMITED_IDENTIFIER
@@ -540,7 +548,7 @@ reserved_word     ::= "TRUE" | "FALSE" | "NULL" | "UNIT" | "DEE" | "EMPTY" | "DU
                     | "ASC" | "DESC" | "PROJECT" | "SELECT" | "RENAME" | "GROUP" | "SORT"
                     | "ORDER" | "LIMIT" | "DISTINCT" | "UNNEST" | "WITH" | "ORDINALITY"
                     | "CLOSURE" | "RCLOSURE" | "CLUSTER" | "PATH" | "HOPS" | "AS" | "OVER"
-                    | "FIX" | "FORALL" | "SAMPLE" | "SEED" | "SOLVE" | "OPTIMIZE"
+                    | "FIX" | "ITERATE" | "FORALL" | "SAMPLE" | "SEED" | "SOLVE" | "OPTIMIZE"
                     | "ALLOCATE" | "MAXIMIZE" | "MINIMIZE" | "SUBJECT" | "TO" | "TOP" | "PER"
                     | "ROWS" | "COVER" | "EXACT" | "DOWNSAMPLE" | "BY" | "USING" | "FOR"
                     | "LATERAL" | "ROLLING" | "WINDOW" | "SESSIONIZE" | "GAP" | "TRACE"
@@ -622,7 +630,7 @@ are easy to miss in the rules above.
   the arrow is `→` or `->`.
 - **Reserved words as names.** A reserved word can name a column almost anywhere
   (`γ region, COUNT(*) → count (Orders)`). In relation position it cannot, nor as a
-  struct field, a `FIX` name or a `PER` key of `OPTIMIZE` or `TOP`; there it must be
+  struct field, a `FIX` or `ITERATE` name or a `PER` key of `OPTIMIZE` or `TOP`; there it must be
   backticked: `` π name (`order`) ``. Backticks are always safe.
 - **`query` names one plain name.** `query Totals;` works, but a dotted name needs
   the expression form: `query { relix.plan };`.

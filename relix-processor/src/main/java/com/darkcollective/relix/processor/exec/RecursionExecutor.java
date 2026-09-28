@@ -17,6 +17,7 @@ package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.ast.ObjectiveSense;
 import com.darkcollective.relix.ast.Operand;
+import com.darkcollective.relix.ast.IterateStop;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.TraceAlgorithm;
 import com.darkcollective.relix.processor.internal.ArrayRow;
@@ -634,6 +635,212 @@ final class RecursionExecutor {
     }
 
     /**
+     * Replace-each-round iteration for {@code ITERATE}: evaluate the base, then evaluate
+     * the step with the name bound to the <em>whole</em> previous round, the step's output
+     * replacing it, until the stop clause is met. Each round is deduplicated, as a
+     * {@code FIX} round is.
+     *
+     * <p>There are three ways this ends, and they are kept apart because a result that
+     * settled and one that ran out of rounds have the same shape:
+     * <ul>
+     *   <li><b>It stops as asked</b> — {@code ROUNDS n} ran its rounds, or an
+     *       {@code UNTIL} test passed — and the last round is the result.</li>
+     *   <li><b>It cycled.</b> A round reproduced an earlier round exactly. The step is
+     *       validated as deterministic, so the rounds after it repeat for ever and the
+     *       test can never pass: a proof that there is no answer, reported as an error
+     *       naming the period.</li>
+     *   <li><b>It reached its round cap</b> without either — an error, since returning
+     *       the last round would present an unsettled result as a settled one.</li>
+     * </ul>
+     *
+     * <p>Cycles are found with Brent's algorithm: one saved round, replaced at every
+     * power of two, and compared exactly with each new round. That holds one extra round
+     * rather than every round, and it finds a cycle within about twice the rounds it
+     * took to enter it, reporting its exact period. {@code ROUNDS n} skips it, being
+     * repetition that makes no claim to settle.
+     *
+     * <p>The {@code --max-fixpoint-rounds} and {@code --max-materialized-rows} guards
+     * apply as they do to {@code FIX}; the rows held are the current round, the one being
+     * built and the saved one.
+     */
+    Stream<Row> executeIterate(PhysicalNode.Iterate node, EvalCtx ctx) {
+        Schema schema = node.schema();
+        String name = node.name();
+        IterateStop stop = node.stop();
+        Convergence convergence = stop instanceof IterateStop.Converged c
+                ? Convergence.of(name, c, schema) : null;
+
+        Set<List<Value>> current = new LinkedHashSet<>();
+        try (Stream<Row> base = dispatch.buffering(node.base(), ctx, node)) {
+            base.forEach(row -> current.add(rowKey(row, schema)));
+        }
+        MaterializationBudget.charge(node, current.size(), ctx);
+
+        Set<List<Value>> state = current;
+        Map<List<Value>, List<Value>> keyed = convergence == null ? null : convergence.index(state, 0);
+        Set<List<Value>> saved = state;
+        int power = 1;
+        int sinceSaved = 0;
+
+        for (int round = 1; round <= stop.rounds(); round++) {
+            if (round > ctx.maxFixpointRounds()) {
+                throw new EvaluationException(
+                        "ITERATE '" + name + "' exceeded " + ctx.maxFixpointRounds()
+                        + " round(s); lower its round count or increase --max-fixpoint-rounds");
+            }
+            final int r = round;
+            final int size = state.size();
+            LOG.log(System.Logger.Level.DEBUG,
+                    () -> "ITERATE '" + name + "' round " + r + ": input=" + size);
+
+            EvalCtx stepCtx = ctx.withBinding(name, deltaAsRows(state, schema));
+            Set<List<Value>> next = new LinkedHashSet<>();
+            try (Stream<Row> step = dispatch.buffering(node.step(), stepCtx, node)) {
+                step.forEach(row -> next.add(rowKey(row, schema)));
+            }
+            MaterializationBudget.charge(node, state.size() + next.size()
+                    + (saved == state ? 0 : saved.size()), ctx);
+
+            switch (stop) {
+                case IterateStop.Rounds ignored -> {
+                    state = next;
+                    continue;
+                }
+                case IterateStop.Stable ignored -> {
+                    if (next.equals(state)) {
+                        return emit(schema, next);
+                    }
+                }
+                case IterateStop.Converged ignored -> {
+                    Map<List<Value>, List<Value>> nextKeyed = convergence.index(next, round);
+                    if (convergence.settled(keyed, nextKeyed)) {
+                        return emit(schema, next);
+                    }
+                    keyed = nextKeyed;
+                }
+            }
+
+            sinceSaved++;
+            if (next.equals(saved)) {
+                throw new EvaluationException(
+                        "ITERATE '" + name + "' cannot settle: round " + round
+                        + " is identical to round " + (round - sinceSaved) + ", so it repeats with "
+                        + "period " + sinceSaved + " and never meets its UNTIL test");
+            }
+            if (sinceSaved == power) {
+                saved = next;
+                power *= 2;
+                sinceSaved = 0;
+            }
+            state = next;
+        }
+
+        if (stop instanceof IterateStop.Rounds) {
+            return emit(schema, state);
+        }
+        throw new EvaluationException(
+                "ITERATE '" + name + "' did not settle within " + stop.rounds()
+                + " round(s): " + stop.clause() + " was still unmet after the last round. "
+                + "Raise the MAX, or check that the iteration converges");
+    }
+
+    private static Stream<Row> emit(Schema schema, Set<List<Value>> rows) {
+        return BagRelation.of(schema, deltaAsRows(rows, schema)).stream();
+    }
+
+    /**
+     * The {@code UNTIL c, … WITHIN ε PER k, …} test, with its column names resolved to
+     * positions in the iteration's schema once.
+     */
+    private record Convergence(String name, IterateStop.Converged stop, int[] columns, int[] keys) {
+
+        static Convergence of(String name, IterateStop.Converged stop, Schema schema) {
+            if (schema.isOpen()) {
+                throw new EvaluationException("ITERATE '" + name + "': UNTIL … WITHIN needs "
+                        + "the base's columns to be declared; its schema is read from the data");
+            }
+            return new Convergence(name, stop, positions(stop.columns(), schema),
+                    positions(stop.keys(), schema));
+        }
+
+        private static int[] positions(List<String> names, Schema schema) {
+            int[] at = new int[names.size()];
+            for (int i = 0; i < at.length; i++) {
+                at[i] = columnIndex(schema, names.get(i));
+            }
+            return at;
+        }
+
+        private static int columnIndex(Schema schema, String column) {
+            for (int i = 0; i < schema.columns().size(); i++) {
+                if (schema.columns().get(i).name().equalsIgnoreCase(column)) {
+                    return i;
+                }
+            }
+            throw new EvaluationException("ITERATE: no column '" + column + "' in its schema "
+                    + "— this is a validator bug");
+        }
+
+        /** Each row by its key, refusing a key that does not identify one row. */
+        Map<List<Value>, List<Value>> index(Set<List<Value>> rows, int round) {
+            Map<List<Value>, List<Value>> byKey = new HashMap<>(rows.size() * 2);
+            for (List<Value> row : rows) {
+                List<Value> key = new ArrayList<>(keys.length);
+                for (int k : keys) {
+                    key.add(row.get(k));
+                }
+                if (byKey.putIfAbsent(key, row) != null) {
+                    List<String> parts = new ArrayList<>(keys.length);
+                    for (int i = 0; i < keys.length; i++) {
+                        parts.add(stop.keys().get(i) + " = " + key.get(i).asDisplayString());
+                    }
+                    throw new EvaluationException("ITERATE '" + name + "': PER "
+                            + String.join(", ", stop.keys()) + " does not identify a row — "
+                            + (round == 0 ? "the base" : "round " + round)
+                            + " has two rows with " + String.join(", ", parts));
+                }
+            }
+            return byKey;
+        }
+
+        /**
+         * Whether no value moved by more than the tolerance, and no key came or went. A
+         * NULL is settled only against another NULL.
+         */
+        boolean settled(Map<List<Value>, List<Value>> before, Map<List<Value>, List<Value>> after) {
+            if (before.size() != after.size()) {
+                return false;
+            }
+            for (Map.Entry<List<Value>, List<Value>> e : after.entrySet()) {
+                List<Value> previous = before.get(e.getKey());
+                if (previous == null) {
+                    return false;
+                }
+                for (int i = 0; i < columns.length; i++) {
+                    int c = columns[i];
+                    if (!within(previous.get(c), e.getValue().get(c), stop.columns().get(i))) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private boolean within(Value before, Value after, String column) {
+            if (before.isNull() || after.isNull()) {
+                return before.isNull() && after.isNull();
+            }
+            if (!(before instanceof NumberValue b) || !(after instanceof NumberValue a)) {
+                throw new EvaluationException("ITERATE '" + name + "': UNTIL column '"
+                        + column + "' holds a value that "
+                        + "is not a number: "
+                        + (before instanceof NumberValue ? after : before).asDisplayString());
+            }
+            return a.value().subtract(b.value()).abs().compareTo(stop.tolerance()) <= 0;
+        }
+    }
+
+    /**
      * Converts a set of value-lists (the current delta) into {@link Row}s with the
      * given schema so the step sub-tree can evaluate against them.
      */
@@ -675,11 +882,23 @@ final class RecursionExecutor {
     Stream<Row> executeRecursiveRef(PhysicalNode.RecursiveRef node, EvalCtx ctx) {
         List<Row> bound = ctx.recursionBindings().get(node.name());
         if (bound == null) {
+            // Unreachable from a script, whose grammar puts every reference inside its
+            // binder; reachable from the embedding API, whose step handle can be kept and
+            // read after the step has been built.
             throw new EvaluationException(
-                    "Unbound recursive reference '" + node.name()
-                    + "' — this is a planner bug; RecursiveRef must appear inside a Fixpoint step");
+                    "'" + node.name() + "' is the relation a FIX or ITERATE step reads, and "
+                    + "means something only inside that step");
         }
-        return bound.stream();
+        // The rows were built under the binder's heading, whose columns answer to the
+        // base's name; the reference's own heading answers to the recursive name, which is
+        // what a qualified column in the step asks for. Same values, re-labelled: every
+        // binding is an ArrayRow of the binder's schema (deltaAsRows), the same width as
+        // this one. An open heading has no fixed width to re-label to.
+        Schema schema = node.schema();
+        if (schema.isOpen()) {
+            return bound.stream();
+        }
+        return bound.stream().map(row -> ((ArrayRow) row).withSchema(schema));
     }
 
     /**

@@ -29,6 +29,7 @@ import com.darkcollective.relix.ast.DivisionNode;
 import com.darkcollective.relix.ast.DownsampleNode;
 import com.darkcollective.relix.ast.EmptyRelationNode;
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.IntersectionNode;
@@ -160,6 +161,7 @@ public final class RelNodeOperands {
             case SymmetricDifferenceNode ignored -> { }
             case CompositionNode ignored -> { }
             case FixpointNode ignored -> { }
+            case IterateNode ignored -> { }
 
             // ── column-name-only operators ────────────────────────────────────────
             // Every field is a column name or a literal constant of the operator, not an
@@ -304,6 +306,7 @@ public final class RelNodeOperands {
             case SymmetricDifferenceNode ignored -> false;
             case CompositionNode ignored -> false;
             case FixpointNode ignored -> false;
+            case IterateNode ignored -> false;
         };
     }
 
@@ -361,6 +364,7 @@ public final class RelNodeOperands {
             case SymmetricDifferenceNode ignored -> node;
             case CompositionNode ignored -> node;
             case FixpointNode ignored -> node;
+            case IterateNode ignored -> node;
             case RenameNode ignored -> node;
             case UnnestNode ignored -> node;
             case ClusterNode ignored -> node;

@@ -39,6 +39,8 @@ import static com.darkcollective.relix.ast.AstBuilders.division;
 import static com.darkcollective.relix.ast.AstBuilders.downsample;
 import static com.darkcollective.relix.ast.AstBuilders.emptyOf;
 import static com.darkcollective.relix.ast.AstBuilders.fixpoint;
+import static com.darkcollective.relix.ast.AstBuilders.iterate;
+import static com.darkcollective.relix.ast.AstBuilders.untilConverged;
 import static com.darkcollective.relix.ast.AstBuilders.fullJoin;
 import static com.darkcollective.relix.ast.AstBuilders.groupBy;
 import static com.darkcollective.relix.ast.AstBuilders.intersection;
@@ -203,6 +205,9 @@ public final class RelNodeCorpus {
                 trace("src", "dst", true, "weight", ObjectiveSense.MINIMIZE, "route",
                         Optional.of(attr("from_bound")), Optional.of(attr("to_bound")), LEFT),
                 fixpoint("T", LEFT, RIGHT),
+                // The richest stop clause, so the round trip covers both name lists.
+                iterate("It", LEFT, RIGHT, untilConverged(List.of("rank", "hub"),
+                        new java.math.BigDecimal("0.0001"), List.of("node", "kind"), 100)),
 
                 // ── analytics ───────────────────────────────────────────────────
                 // A cumulative frame: the blocking general case (a BoundedFrame streams).

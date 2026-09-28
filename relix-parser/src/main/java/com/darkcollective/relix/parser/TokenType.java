@@ -88,6 +88,7 @@ public enum TokenType {
     PATH,
     HOPS,
     FIX,
+    ITERATE,
     KLEENE_PLUS,
     OVER,
 
