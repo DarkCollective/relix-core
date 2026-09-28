@@ -415,6 +415,9 @@ public final class RelAlgebraParser {
                 continue;
             }
 
+            if (operator.type() == TokenType.NATURAL_JOIN) {
+                rejectConditionAfterRightInput(operator, left);
+            }
             RelNode right = parseExpression(precedence + 1);
             if (operator.type() == TokenType.NATURAL_JOIN && isComparison(current.type())) {
                 // `A ⋈ A.x = B.y B`: the condition was read as the right input, and the
@@ -2306,6 +2309,7 @@ public final class RelAlgebraParser {
         if (current.type() != TokenType.IDENTIFIER) {
             return;
         }
+        rejectConditionAfterRightInput(operator, left);
         StringBuilder right = new StringBuilder(current.lexeme());
         int next = 1;
         while (peek(next).type() == TokenType.DOT && peek(next + 1).type() == TokenType.IDENTIFIER) {
@@ -2319,6 +2323,99 @@ public final class RelAlgebraParser {
                     + " between its two inputs, written after the operator: " + leftName + " "
                     + operator.lexeme() + " <condition> " + right, lexer.input(), operator);
         }
+    }
+
+    /**
+     * Refuses a join condition written in parentheses after the right input, SQL's
+     * {@code ON} clause without the {@code ON}: {@code Round3 JOIN Teams (Teams.team_id = home_id)}.
+     *
+     * <p>Left alone, {@code Teams (} is read as a table-valued function call and parsing
+     * stops at the comparison among its "arguments" (after a natural join), or the
+     * condition is read from {@code Teams} and stops at the parenthesis (after a
+     * conditioned one) — both describing the parser's reading rather than the mistake.
+     * Neither reading can succeed: a table-valued function's arguments are operands,
+     * which hold no comparison, connective, membership or pattern test outside a
+     * parenthesis of their own, and a condition cannot end in a call with nothing
+     * compared to it. So a parenthesised group holding one of those at its own level —
+     * and, after a conditioned join, ending the expression — is a misplaced condition,
+     * and the error rewrites it into the place it belongs.
+     */
+    private void rejectConditionAfterRightInput(Token operator, RelNode left) {
+        if (current.type() != TokenType.IDENTIFIER) {
+            return;
+        }
+        StringBuilder right = new StringBuilder(current.lexeme());
+        int open = 1;
+        while (peek(open).type() == TokenType.DOT && peek(open + 1).type() == TokenType.IDENTIFIER) {
+            right.append('.').append(peek(open + 1).lexeme());
+            open += 2;
+        }
+        if (peek(open).type() != TokenType.LPAREN) {
+            return;
+        }
+        boolean condition = false;
+        int depth = 0;
+        int close = open;
+        do {
+            TokenType type = peek(close).type();
+            if (type == TokenType.EOF) {
+                return;
+            }
+            if (type == TokenType.LPAREN) {
+                depth++;
+            } else if (type == TokenType.RPAREN) {
+                depth--;
+            } else if (depth == 1 && (isComparison(type) || isLogicalOperator(type)
+                    || type == TokenType.ELEMENT_OF || type == TokenType.NOT_ELEMENT_OF
+                    || type == TokenType.LIKE || type == TokenType.IS)) {
+                condition = true;
+            }
+            close++;
+        } while (depth > 0);
+        TokenType after = peek(close).type();
+        if (!condition || operator.type() != TokenType.NATURAL_JOIN
+                && after != TokenType.EOF && after != TokenType.RPAREN && !isBinaryRelOperator(after)) {
+            // After a conditioned join the group may be a call the condition starts with,
+            // `A >< IIf(x > 1, 1, 0) = y B`, whose arguments may compare; a misplaced
+            // condition is the last thing in the expression, with nothing left to be
+            // the right input.
+            return;
+        }
+        String leftName = left instanceof RelationNode named ? named.name() : "…";
+        String written = operator.type() == TokenType.NATURAL_JOIN
+                ? (operator.lexeme().equals("⋈") ? "⨝" : "><")
+                : operator.lexeme();
+        String rewrite = leftName + " " + written + " " + sourceText(open + 1, close - 1)
+                + " " + right;
+        String problem = operator.type() == TokenType.NATURAL_JOIN
+                ? "'" + operator.lexeme() + "' is the natural join: it joins on the columns both"
+                        + " inputs share and takes no condition; to join on a condition, use"
+                        + " ⨝ (><) and write the condition between the inputs: "
+                : "'" + operator.lexeme() + "' takes its join condition between its two inputs,"
+                        + " not after them: ";
+        throw ParseException.at(problem + rewrite, lexer.input(), operator);
+    }
+
+    /**
+     * The lookahead tokens from {@code from} up to but excluding {@code to}, spaced as
+     * they would be written: nothing around a dot, after an opening parenthesis or before
+     * a closing one or a comma.
+     */
+    private String sourceText(int from, int to) {
+        StringBuilder text = new StringBuilder();
+        TokenType previous = null;
+        for (int i = from; i < to; i++) {
+            Token token = peek(i);
+            TokenType type = token.type();
+            if (previous != null && previous != TokenType.DOT && previous != TokenType.LPAREN
+                    && type != TokenType.DOT && type != TokenType.RPAREN
+                    && type != TokenType.COMMA) {
+                text.append(' ');
+            }
+            text.append(token.lexeme());
+            previous = type;
+        }
+        return text.toString();
     }
 
     private static boolean isBinaryRelOperator(TokenType type) {
