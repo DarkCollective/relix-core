@@ -189,6 +189,7 @@ public final class PhysicalPlanPrinter {
                     + (tr.algorithm() == com.darkcollective.relix.plan.TraceAlgorithm.DIJKSTRA
                             ? " [dijkstra]" : "");
             case PhysicalNode.Fixpoint f -> "FIX " + f.name();
+            case PhysicalNode.Iterate it -> "ITERATE " + it.name() + " " + it.stop().clause();
             case PhysicalNode.RecursiveRef r -> "REF " + r.name();
             case PhysicalNode.Limit l    -> "Limit " + l.count()
                     + l.offset().map(o -> " OFFSET " + o).orElse("");

@@ -59,6 +59,7 @@ import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.ProductNode;
 import com.darkcollective.relix.ast.ProjectedAttribute;
 import com.darkcollective.relix.ast.ProjectionNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.RecursiveRefNode;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
@@ -299,8 +300,11 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
         Schema base = baseOpt.get();
 
         // 2. Bind name → base schema and infer the step (so its subtree, including
-        //    the recursive reference, gets annotated).  Pop the binding on exit.
-        recursionScopes.push(Map.entry(node.name(), base));
+        //    the recursive reference, gets annotated).  Pop the binding on exit.  The
+        //    binding is re-anchored to the recursive name, as `ρ name (base)` would be,
+        //    so that inside the step `name.col` resolves and the base's name does not:
+        //    the reference is the relation being built, not the base it started from.
+        recursionScopes.push(Map.entry(node.name(), stampProvenance(base, node.name())));
         try {
             node.step().accept(this);
         } finally {
@@ -313,6 +317,26 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
         return annotate(node, base);
     }
 
+    /**
+     * {@code ITERATE} is typed exactly as {@code FIX}: the name is bound to the base
+     * schema, re-anchored to the name, inside the step, and the output carries the base's heading. The step's
+     * positional compatibility with the base, and the stop clause's columns, are the
+     * validator's to check.
+     */
+    @Override
+    public Optional<Schema> visit(IterateNode node) {
+        Optional<Schema> baseOpt = node.base().accept(this);
+        if (baseOpt.isEmpty()) return Optional.empty();
+        Schema base = baseOpt.get();
+        recursionScopes.push(Map.entry(node.name(), stampProvenance(base, node.name())));
+        try {
+            node.step().accept(this);
+        } finally {
+            recursionScopes.pop();
+        }
+        return annotate(node, base);
+    }
+
     @Override
     public Optional<Schema> visit(RecursiveRefNode node) {
         // Resolve the recursive name against the in-scope FIX bindings, innermost
@@ -322,12 +346,19 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
                 return annotate(node, binding.getValue());
             }
         }
+        // No binder in scope: a reference built by the embedding API for a step that is
+        // not yet wrapped in its binder carries the binding's type already. Anything else
+        // outside a binder is an error, as it always was.
+        Optional<Schema> supplied = annotations.get(node);
+        if (supplied.isPresent()) {
+            return supplied;
+        }
         errors.add(SemanticError.error(
                 node.location().filePath(),
                 node.location().line(),
                 node.location().column(),
                 "Recursive reference '" + node.name()
-                        + "' is not bound by any enclosing FIX"));
+                        + "' is not bound by any enclosing FIX or ITERATE"));
         return Optional.empty();
     }
 

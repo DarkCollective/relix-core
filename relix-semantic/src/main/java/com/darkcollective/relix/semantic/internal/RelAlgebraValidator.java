@@ -43,6 +43,8 @@ import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.ElementOfPredicate;
 import com.darkcollective.relix.ast.EmptyRelationNode;
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
+import com.darkcollective.relix.ast.IterateStop;
 import com.darkcollective.relix.ast.FullOuterJoinNode;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.GroupingKey;
@@ -1062,7 +1064,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
 
         // Schema rule: the step must be union-compatible with the base (same rule
         // as ∪ — equal width, positionally compatible types, ANY/open universal).
-        checkFixpointUnionCompatible(node);
+        checkStepUnionCompatible("FIX", node.name(), node.base(), node.step(), node.location());
 
         // Monotonicity + linearity: walk the step, counting non-shadowed recursive
         // references to this binder and flagging any reached through a non-monotone
@@ -1079,6 +1081,78 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         return null;
     }
 
+    // =========================================================================
+    // Replace-each-round iteration (ITERATE)
+    // =========================================================================
+
+    /**
+     * {@code ITERATE} shares {@code FIX}'s schema rule and none of its step rules: a
+     * round replaces the relation rather than adding to it, so the step may read the
+     * bound name any number of times, through any operator. What it adds instead is
+     * that the step be reproducible — a round that could answer differently for the
+     * same input makes both convergence and a detected cycle meaningless — and that
+     * the stop clause name real columns.
+     */
+    @Override
+    public Void visit(IterateNode node) {
+        node.base().accept(this);
+        node.step().accept(this);
+        checkStepUnionCompatible("ITERATE", node.name(), node.base(), node.step(), node.location());
+
+        if (new RecursiveRefChecker(new ArrayList<>()).countRecursiveRefs(node.step(), node.name()) == 0) {
+            error(node.location(), "ITERATE '" + node.name() + "' does not iterate: its step "
+                    + "makes no reference to '" + node.name() + "', so every round computes the "
+                    + "same relation — use the step on its own");
+        }
+        if (!RelationDeterminism.isDeterministic(node.step(), symbolTable, functions)) {
+            error(node.location(), "ITERATE '" + node.name() + "': the step must give the same "
+                    + "result for the same input on every round, and this one calls a function "
+                    + "or samples in a way that need not (Rand, NOW, an unseeded SAMPLE, or a "
+                    + "user-defined function)");
+        }
+        if (node.stop() instanceof IterateStop.Converged converged) {
+            annotations.get(node.base()).ifPresent(base -> checkConvergence(node, converged, base));
+        }
+        return null;
+    }
+
+    private void checkConvergence(IterateNode node, IterateStop.Converged stop, Schema base) {
+        String what = "ITERATE '" + node.name() + "'";
+        checkDistinct(node.location(), what + ": UNTIL column", stop.columns());
+        checkDistinct(node.location(), what + ": PER key column", stop.keys());
+        for (String column : stop.columns()) {
+            if (stop.keys().stream().anyMatch(column::equalsIgnoreCase)) {
+                error(node.location(), what + ": '" + column + "' is both an UNTIL column "
+                        + "and a PER key — a key pairs rows across rounds and cannot also be "
+                        + "the value that moves");
+            }
+        }
+        if (base.isOpen()) return;   // schema-on-read: the columns are checked per row
+        for (String column : stop.columns()) {
+            Optional<ColumnDefinition> def = base.column(column);
+            if (def.isEmpty()) {
+                columnNotFound(node.location(), what + ": UNTIL column", column, base);
+            } else if (def.get().type() != ScalarType.NUMBER && def.get().type() != ScalarType.ANY) {
+                error(node.location(), what + ": UNTIL column '" + column
+                        + "' must be NUMBER (found " + def.get().type() + ")");
+            }
+        }
+        for (String key : stop.keys()) {
+            if (base.column(key).isEmpty()) {
+                columnNotFound(node.location(), what + ": PER key column", key, base);
+            }
+        }
+    }
+
+    private void checkDistinct(SourceLocation location, String what, List<String> names) {
+        Set<String> seen = new HashSet<>();
+        for (String name : names) {
+            if (!seen.add(name.toLowerCase(Locale.ROOT))) {
+                error(location, what + " '" + name + "' is named more than once");
+            }
+        }
+    }
+
     @Override
     public Void visit(RecursiveRefNode node) {
         // A leaf: existence/binding is resolved by inference, and its monotonicity
@@ -1087,14 +1161,15 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     }
 
     /**
-     * Verifies the {@code step} of a {@link FixpointNode} is union-compatible with
-     * its {@code base} (the schema rule of {@code docs/design/general-recursion-plan.md},
+     * Verifies the {@code step} of a {@link FixpointNode} or {@link IterateNode} is
+     * union-compatible with its {@code base} (the schema rule of {@code docs/design/general-recursion-plan.md},
      * Decision 5): equal width and positionally compatible column types, with
      * {@code ANY}/open schemas universal.  Mirrors the set-operation rule.
      */
-    private void checkFixpointUnionCompatible(FixpointNode node) {
-        Optional<Schema> baseOpt = annotations.get(node.base());
-        Optional<Schema> stepOpt = annotations.get(node.step());
+    private void checkStepUnionCompatible(String operator, String name, RelNode baseNode,
+                                          RelNode stepNode, SourceLocation location) {
+        Optional<Schema> baseOpt = annotations.get(baseNode);
+        Optional<Schema> stepOpt = annotations.get(stepNode);
         if (baseOpt.isEmpty() || stepOpt.isEmpty()) return; // inference failure already reported
 
         Schema base = baseOpt.get();
@@ -1105,7 +1180,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         if (base.isOpen() || step.isOpen()) return;
 
         if (base.width() != step.width()) {
-            error(node.location(), "FIX '" + node.name() + "': step is not union-compatible "
+            error(location, operator + " '" + name + "': step is not union-compatible "
                     + "with base — base has " + base.width() + " column(s), step has "
                     + step.width() + " column(s)");
             return;
@@ -1114,7 +1189,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             Type bt = base.columns().get(i).type();
             Type st = step.columns().get(i).type();
             if (!typesCompatible(bt, st)) {
-                error(node.location(), "FIX '" + node.name() + "': step is not union-compatible "
+                error(location, operator + " '" + name + "': step is not union-compatible "
                         + "with base — column " + (i + 1) + " type mismatch: base '"
                         + base.columns().get(i).name() + "' is " + bt + ", step '"
                         + step.columns().get(i).name() + "' is " + st);

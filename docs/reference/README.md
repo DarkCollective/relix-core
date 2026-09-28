@@ -255,6 +255,7 @@ includes a fully worked example.
 | [Bounded path reachability](advanced/path.md) | `PATH … HOPS m TO n AS` — pairs reachable within a hop window, with shortest distance |
 | [Optimal-path extraction](advanced/trace.md) | `TRACE … VIA … MINIMIZE\|MAXIMIZE AS` — cheapest/longest path with route array |
 | [General recursion](advanced/fix.md) | `FIX` — least-fixpoint recursion (WITH RECURSIVE) |
+| [Iteration](advanced/iterate.md) | `ITERATE` — repeat a step until it settles: PageRank, state machines, convergence |
 | [Goal-seek](advanced/solve.md) | `SOLVE` — fill the one blank in an equation, per row |
 | [Declarative optimisation](advanced/optimize.md) | `OPTIMIZE` — knapsack / allocation under constraints |
 | [Combinatorial covering](advanced/cover.md) | `COVER` — minimal all-pairs (pairwise) subset |

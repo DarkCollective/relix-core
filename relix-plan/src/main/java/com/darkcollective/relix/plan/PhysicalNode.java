@@ -210,6 +210,11 @@ public sealed interface PhysicalNode {
                 yield (lv == n.base() && rv == n.step()) ? n
                         : new Fixpoint(n.schema(), n.name(), lv, rv);
             }
+            case Iterate n -> {
+                PhysicalNode lv = f.apply(n.base()), rv = f.apply(n.step());
+                yield (lv == n.base() && rv == n.step()) ? n
+                        : new Iterate(n.schema(), n.name(), lv, rv, n.stop());
+            }
             case Join n -> {
                 PhysicalNode lv = f.apply(n.left()), rv = f.apply(n.right());
                 yield (lv == n.left() && rv == n.right()) ? n
@@ -612,7 +617,25 @@ public sealed interface PhysicalNode {
     }
 
     /**
-     * A reference to the recursive relation bound by an enclosing {@link Fixpoint}.
+     * Replace-each-round iteration (ITERATE): evaluates {@link #base()}, then
+     * evaluates {@link #step()} with the relation named {@link #name()} bound to the
+     * previous round's whole output, replacing it each round, until {@link #stop()}
+     * is satisfied. Output is the last round, under set semantics; materialises a
+     * set. Never pushed to a source.
+     *
+     * @param name the bound relation name (must match the {@link RecursiveRef} nodes
+     *             inside {@code step})
+     * @param base the relation the first round reads; planned independently
+     * @param step the body computing each round from the previous one
+     * @param stop when the iteration stops, and how it reports not stopping
+     */
+    record Iterate(Schema schema, String name, PhysicalNode base, PhysicalNode step,
+                   com.darkcollective.relix.ast.IterateStop stop) implements PhysicalNode {
+        @Override public List<PhysicalNode> children() { return List.of(base, step); }
+    }
+
+    /**
+     * A reference to the relation bound by an enclosing {@link Fixpoint} or {@link Iterate}.
      * At execution time, streams the current delta from the executor's recursion
      * binding map.  Always a leaf (no children); schema matches the enclosing
      * {@code Fixpoint}'s output schema.

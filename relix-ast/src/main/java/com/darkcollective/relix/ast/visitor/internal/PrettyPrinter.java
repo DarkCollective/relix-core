@@ -558,6 +558,26 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     }
 
     @Override
+    public String visit(IterateNode node) {
+        return "ITERATE " + q(node.name()) + " (" + node.base().accept(this)
+                + ", " + node.step().accept(this) + ")" + iterateStop(node.stop());
+    }
+
+    private static String iterateStop(IterateStop stop) {
+        return switch (stop) {
+            case IterateStop.Rounds r -> " ROUNDS " + r.rounds();
+            case IterateStop.Stable s -> " UNTIL STABLE MAX " + s.rounds() + " ROUNDS";
+            case IterateStop.Converged c -> " UNTIL " + names(c.columns())
+                    + " WITHIN " + c.tolerance().toPlainString()
+                    + " PER " + names(c.keys()) + " MAX " + c.rounds() + " ROUNDS";
+        };
+    }
+
+    private static String names(java.util.List<String> names) {
+        return names.stream().map(PrettyPrinter::q).collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    @Override
     public String visit(RecursiveRefNode node) {
         return q(node.name());
     }

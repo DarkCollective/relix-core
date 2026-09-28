@@ -160,6 +160,7 @@ final class NodeKindDerivationTest {
             Map.entry("PathNode", Distinctness.ESTABLISHES),
             Map.entry("TraceNode", Distinctness.ESTABLISHES),
             Map.entry("FixpointNode", Distinctness.ESTABLISHES),
+            Map.entry("IterateNode", Distinctness.ESTABLISHES),
             Map.entry("CoverNode", Distinctness.ESTABLISHES),
 
             // Grouping establishes a candidate key from the grouping columns.

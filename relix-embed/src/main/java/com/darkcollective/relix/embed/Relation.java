@@ -17,6 +17,10 @@ package com.darkcollective.relix.embed;
 
 import com.darkcollective.relix.ast.AllenRelation;
 import com.darkcollective.relix.ast.AstBuilders;
+import java.util.function.UnaryOperator;
+import java.util.IdentityHashMap;
+import com.darkcollective.relix.semantic.SchemaAnnotations;
+import com.darkcollective.relix.ast.IterateStop;
 import com.darkcollective.relix.ast.ConsolidationFunction;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.ObjectiveSense;
@@ -883,13 +887,68 @@ public final class Relation {
     /**
      * FIX — the least fixpoint of {@code step}, with this relation as the base.
      *
-     * @param name the name the step refers to itself by
-     * @param step the recursive step
+     * <p>The step is a function because it has to refer to the relation it is building,
+     * which does not exist until this call makes it: {@code step} is handed a relation
+     * standing for {@code name} — everything derived so far — and returns the rows to add
+     * from it. That relation has this one's heading, qualified by {@code name}, and means
+     * something only inside the step; reading it anywhere else is an error.
+     *
+     * {@snippet lang = "java":
+     * Relation reach = edges.fix("Reach", r ->
+     *         r.join(edges.rename("E", List.of("s", "nxt")),
+     *                         Expr.eq(attr("Reach.dst"), attr("E.s")))
+     *                 .project(List.of(projected(attr("Reach.src")),
+     *                                  projected(attr("E.nxt"), "dst"))));
+     * }
+     *
+     * @param name the name the step refers to the relation by
+     * @param step the recursive step, from the relation derived so far to the rows it adds
      * @return the fixpoint
      * @since 1.0
      */
-    public Relation fix(String name, Relation step) {
-        return derive(AstBuilders.fixpoint(name, node, other(step)), step);
+    public Relation fix(String name, UnaryOperator<Relation> step) {
+        Relation body = Objects.requireNonNull(step, "step").apply(bound(name));
+        return derive(AstBuilders.fixpoint(name, node, other(body)), body);
+    }
+
+    /**
+     * ITERATE — {@code step} applied round after round, with this relation as the first
+     * round and each round replacing the last, until {@code stop} says to stop.
+     *
+     * <p>As for {@link #fix}, the step is a function of a relation standing for
+     * {@code name} — here the previous round — with this one's heading qualified by
+     * {@code name}.
+     *
+     * @param name the name the step refers to the previous round by
+     * @param step the step, from the previous round to the next
+     * @param stop when to stop: {@code AstBuilders.rounds}, {@code untilStable} or
+     *             {@code untilConverged}
+     * @return the last round
+     * @since 1.0
+     */
+    public Relation iterate(String name, UnaryOperator<Relation> step, IterateStop stop) {
+        Relation body = Objects.requireNonNull(step, "step").apply(bound(name));
+        return derive(AstBuilders.iterate(name, node, other(body), stop), body);
+    }
+
+    /**
+     * The relation a binder's step reads: a reference to {@code name}, typed as
+     * {@code ρ name (this)} is, so its columns answer to {@code name}. The type is
+     * supplied here because the binder it belongs to does not exist yet; once the step is
+     * wrapped in it, analysis binds the reference in the usual way.
+     */
+    private Relation bound(String name) {
+        Objects.requireNonNull(name, "name");
+        RelNode ref = AstBuilders.recRef(name);
+        RelNode typed = AstBuilders.rename(name, List.of(), node);
+        SchemaAnnotations annotations = SchemaInference.annotate(model.symbolTable(), typed,
+                model.nodeSchemas(), model.functions());
+        Map<RelNode, Schema> entries = new IdentityHashMap<>(annotations.asMap());
+        annotations.get(typed).ifPresent(schema -> entries.put(ref, schema));
+        return new Relation(session, new SemanticModel(model.namespace(), model.symbolTable(),
+                model.sources(), model.connections(), model.statistics(),
+                new SchemaAnnotations(entries), model.schemaGraph(), model.rootQueries(),
+                model.functions()), ref);
     }
 
     /**

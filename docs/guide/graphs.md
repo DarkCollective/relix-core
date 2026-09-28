@@ -200,8 +200,7 @@ a base relation and a step that derives more rows from what has been found so fa
 until nothing new appears.
 
 The step refers to the accumulated result by the name `FIX` binds, and that name means
-nothing outside the operator — so a step is written inside its binder rather than composed
-separately:
+nothing outside the operator — so in a script a step is written inside its binder:
 
 ```java
 Relation explosion = relix.relation("""
@@ -248,6 +247,59 @@ System.out.println(relix.relation(fixpoint("Reach", edges, step)).count() + " pa
 ```
 7 pairs
 ```
+
+From combinators, `fix` takes the step as a function. It is handed a relation standing for
+the name — everything found so far, with the base's columns qualified by that name — and
+returns the rows to add:
+
+```java
+import com.darkcollective.relix.ast.Expr;
+
+Relation pairs = relix.relation("π src, dst (Edges)");
+Relation reach = pairs.fix("Reach", r ->
+        r.join(pairs.rename("E", List.of("s", "nxt")), Expr.eq(attr("Reach.dst"), attr("E.s")))
+                .project(List.of(projected(attr("Reach.src")), projected(attr("E.nxt"), "dst"))));
+
+System.out.println(reach.count() + " pairs");
+```
+
+```
+7 pairs
+```
+
+## Repeating until it settles
+
+`FIX` only ever adds rows. A computation whose rounds *replace* one another — a score
+refined until it stops moving, a state that evolves — is `ITERATE`. Here each node starts
+labelled with its own name and repeatedly takes the smallest label among itself and its
+neighbours, until no label changes: the connected components, found by propagation.
+
+```java
+Relation labels = relix.relation("""
+        ITERATE L (
+            π src → node, src → label (Edges) ∪ π dst → node, dst → label (Edges),
+            γ node, MIN(label) → label (
+                L
+                ∪ π dst → node, label (L ⋈ π src → node, dst (Edges))
+                ∪ π src → node, label (L ⋈ π dst → node, src (Edges)))
+        ) UNTIL STABLE MAX 20 ROUNDS
+        """);
+
+labels.sort(List.of(asc("node"))).toList().forEach(System.out::println);
+```
+
+```
+(node=A, label=A)
+(node=B, label=A)
+(node=C, label=A)
+(node=D, label=A)
+(node=E, label=E)
+(node=F, label=E)
+```
+
+From combinators it is `iterate`, whose step is a function of the previous round in the
+same way, and which takes the stopping rule — `rounds`, `untilStable` or `untilConverged`
+— as its last argument.
 
 ## When recursion does not terminate
 
