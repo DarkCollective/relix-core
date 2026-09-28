@@ -125,6 +125,7 @@ public final class PhysicalExecutor {
             case PhysicalNode.Path p          -> recursion.executePath(p, ctx);
             case PhysicalNode.Trace t         -> recursion.executeTrace(t, ctx);
             case PhysicalNode.Fixpoint f      -> recursion.executeFixpoint(f, ctx);
+            case PhysicalNode.Iterate it      -> recursion.executeIterate(it, ctx);
             case PhysicalNode.RecursiveRef r  -> recursion.executeRecursiveRef(r, ctx);
             case PhysicalNode.Limit l     -> unary.executeLimit(l, ctx);
             case PhysicalNode.Sort s      -> aggregates.executeSort(s, ctx);

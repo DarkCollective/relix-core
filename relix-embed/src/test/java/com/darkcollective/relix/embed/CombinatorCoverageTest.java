@@ -20,6 +20,7 @@ import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ConsolidationFunction;
 import com.darkcollective.relix.ast.EmptyRelationNode;
 import com.darkcollective.relix.ast.GroupingKey;
+import com.darkcollective.relix.ast.IterateStop;
 import com.darkcollective.relix.ast.ObjectiveSense;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.OptimizeConstraint;
@@ -80,7 +81,7 @@ final class CombinatorCoverageTest {
                     TruthRelationNode.class,
                     "the nullary UNIT/EMPTY literals take no input relation",
                     RecursiveRefNode.class,
-                    "bound inside fix(…) and meaningless outside its binder",
+                    "bound inside fix(…) or iterate(…) and meaningless outside its binder",
                     EmptyRelationNode.class,
                     "optimizer-only: ∅ has no surface syntax, which is why it must not gain one here"));
 
@@ -111,6 +112,13 @@ final class CombinatorCoverageTest {
         Class<?> type = parameter.getType();
         if (type == Relation.class) {
             return self;
+        }
+        if (type == java.util.function.UnaryOperator.class) {
+            // A binder's step: the relation standing for the bound name, returned as is.
+            return (java.util.function.UnaryOperator<Relation>) bound -> bound;
+        }
+        if (type == IterateStop.class) {
+            return new IterateStop.Rounds(1);
         }
         if (type == Predicate.class) {
             return AstBuilders.cmp(AstBuilders.attr("status"),

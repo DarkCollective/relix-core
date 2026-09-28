@@ -77,6 +77,7 @@ import com.darkcollective.relix.ast.WhyNode;
 import com.darkcollective.relix.ast.UnpivotNode;
 import com.darkcollective.relix.ast.WindowNode;
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.LateralJoinNode;
 import com.darkcollective.relix.ast.RecursiveRefNode;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
@@ -444,6 +445,10 @@ public final class CostEstimator {
             // for richer bodies), so the honest estimate is empty; the recursive
             // reference's extent (the accumulator) is likewise unknown here.
             case FixpointNode ignored -> OptionalLong.empty();
+            // ITERATE — the last round's size, which the step decides round by round. A
+            // numeric iteration keeps the base's rows and a state machine need not, so
+            // there is no estimate that is right for both.
+            case IterateNode ignored -> OptionalLong.empty();
             case RecursiveRefNode ignored -> OptionalLong.empty();
 
             // Lateral TVF join: conservatively |left| × |TVF_body| rows.

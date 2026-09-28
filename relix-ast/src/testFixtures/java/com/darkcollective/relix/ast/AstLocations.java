@@ -469,6 +469,12 @@ public final class AstLocations {
         }
 
         @Override
+        public RelNode visit(IterateNode node) {
+            return AstBuilders.iterate(node.name(), node.base().accept(this), node.step().accept(this),
+                    node.stop());
+        }
+
+        @Override
         public RelNode visit(RecursiveRefNode node) {
             return new RecursiveRefNode(node.name());
         }

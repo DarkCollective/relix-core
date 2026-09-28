@@ -61,11 +61,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 final class AstBuilderOrderTest {
 
     /**
-     * {@code fixpoint(name, base, step)} — the one node whose name scopes an input, so the
-     * name leads the two relations it binds them for. Listed rather than derived: there is
-     * exactly one, and a derivation from a hierarchy of one is a guess about the second.
+     * {@code fixpoint(name, base, step)} and {@code iterate(name, base, step, stop)} — the
+     * nodes whose name scopes an input, so the name leads the two relations it binds them
+     * for. Listed rather than derived: a binder is a fact about scoping, which a factory's
+     * parameter types cannot show.
      */
-    private static final Set<String> BINDERS = Set.of("fixpoint");
+    private static final Set<String> BINDERS = Set.of("fixpoint", "iterate");
 
     @Test
     @DisplayName("a unary operator's relation input is its last parameter")

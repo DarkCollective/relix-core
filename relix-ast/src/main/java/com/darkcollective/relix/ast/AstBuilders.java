@@ -16,6 +16,7 @@
 package com.darkcollective.relix.ast;
 
 import com.darkcollective.relix.ast.internal.TemporalLiterals;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -53,9 +54,10 @@ import java.util.OptionalLong;
  *       L&nbsp;⋈<sub>cond</sub>&nbsp;R, {@code union(a, b)} is A&nbsp;∪&nbsp;B. This is
  *       what puts {@code lateral(left, "f", args)} here rather than under (2) — its right
  *       input is a table-function call rather than a relation, but it is a join.</li>
- *   <li><b>A binder precedes what it scopes.</b> {@code fixpoint(name, base, step)} is the
- *       only node where a name scopes an input: {@code step} cannot be read without
- *       knowing what {@code name} binds, so it leads its two relations.</li>
+ *   <li><b>A binder precedes what it scopes.</b> {@code fixpoint(name, base, step)} and
+ *       {@code iterate(name, base, step, stop)} are the nodes where a name scopes an input:
+ *       {@code step} cannot be read without knowing what {@code name} binds, so it leads
+ *       its two relations.</li>
  * </ol>
  *
  * <p>{@code AstBuilderOrderTest} holds every factory to this, so the rule is checked
@@ -658,6 +660,27 @@ public abstract class AstBuilders {
     /** {@code FIX} — a monotone least fixpoint over {@code base} and {@code step}. */
     public static FixpointNode fixpoint(String name, RelNode base, RelNode step) {
         return new FixpointNode(name, base, step);
+    }
+
+    /** {@code ITERATE} — a replace-each-round iteration over {@code base} and {@code step}. */
+    public static IterateNode iterate(String name, RelNode base, RelNode step, IterateStop stop) {
+        return new IterateNode(name, base, step, stop);
+    }
+
+    /** {@code ROUNDS n} — an {@link IterateStop} applying the step exactly {@code n} times. */
+    public static IterateStop.Rounds rounds(int n) {
+        return new IterateStop.Rounds(n);
+    }
+
+    /** {@code UNTIL STABLE MAX n ROUNDS} — an {@link IterateStop} ending at the first unchanged round. */
+    public static IterateStop.Stable untilStable(int maxRounds) {
+        return new IterateStop.Stable(maxRounds);
+    }
+
+    /** {@code UNTIL c, … WITHIN ε PER k, … MAX n ROUNDS} — an {@link IterateStop} ending on numeric convergence. */
+    public static IterateStop.Converged untilConverged(List<String> columns, BigDecimal tolerance,
+                                                      List<String> keys, int maxRounds) {
+        return new IterateStop.Converged(columns, tolerance, keys, maxRounds);
     }
 
     // -------------------------------------------------------------------------

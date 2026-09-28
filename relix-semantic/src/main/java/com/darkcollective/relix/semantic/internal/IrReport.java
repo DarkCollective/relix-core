@@ -30,6 +30,7 @@ import com.darkcollective.relix.ast.DistinctNode;
 import com.darkcollective.relix.ast.DivisionNode;
 import com.darkcollective.relix.ast.DownsampleNode;
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.FullOuterJoinNode;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.IntersectionNode;
@@ -629,6 +630,7 @@ public final class IrReport {
             // and renders its base/step as the two children below; the recursive
             // reference is a bare name — it is not a symbol, so it carries no kind code.
             case FixpointNode     fx -> "FIX " + fx.name();
+            case IterateNode      it -> "ITERATE " + it.name() + " " + it.stop().clause();
             case RecursiveRefNode rr -> rr.name();
 
             // ── Covering reduction (COVER) ───────────────────────────────────
@@ -737,6 +739,7 @@ public final class IrReport {
             // General recursion (FIX): the binder shows its base and step subtrees;
             // the recursive reference is a leaf.
             case FixpointNode       fx -> List.of(fx.base(), fx.step());
+            case IterateNode        it -> List.of(it.base(), it.step());
             case RecursiveRefNode   ignored  -> List.of();
             // Covering reduction (COVER) — unary, one child.
             case CoverNode          cv -> List.of(cv.input());

@@ -83,6 +83,7 @@ import com.darkcollective.relix.ast.TruthRelationNode;
 import com.darkcollective.relix.ast.CoverNode;
 import com.darkcollective.relix.ast.DownsampleNode;
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.RecursiveRefNode;
 import com.darkcollective.relix.ast.UnpivotNode;
 import com.darkcollective.relix.ast.PivotNode;
@@ -612,6 +613,10 @@ public final class Planner {
             // fold into the source scan, but the binder itself never pushes.
             case FixpointNode fx -> new PhysicalNode.Fixpoint(
                     schemaOf(fx), fx.name(), plan(fx.base()), plan(fx.step()));
+            // Replace-each-round iteration (ITERATE) — planned exactly as FIX; the
+            // RecursiveRef leaf streams the previous round's whole output.
+            case IterateNode it -> new PhysicalNode.Iterate(
+                    schemaOf(it), it.name(), plan(it.base()), plan(it.step()), it.stop());
             case RecursiveRefNode r -> new PhysicalNode.RecursiveRef(schemaOf(r), r.name());
 
             // Covering reduction (COVER) — greedy in-engine executor (ADR-0012, slice 3).
@@ -1281,7 +1286,7 @@ public final class Planner {
      * the case where one evaluation cannot stand in for another, because the binding
      * changes with every fixpoint iteration.
      *
-     * <p>A {@link FixpointNode} binds its own name for the whole of its base and step,
+     * <p>A {@link FixpointNode} or {@link IterateNode} binds its own name for the whole of its base and step,
      * so a self-contained recursion answers {@code false} and can be shared like any
      * other sub-expression.
      */
@@ -1297,6 +1302,9 @@ public final class Planner {
         if (node instanceof FixpointNode fix) {
             inner = new HashSet<>(bound);
             inner.add(fix.name().toLowerCase(java.util.Locale.ROOT));
+        } else if (node instanceof IterateNode it) {
+            inner = new HashSet<>(bound);
+            inner.add(it.name().toLowerCase(java.util.Locale.ROOT));
         }
         for (RelNode child : node.children()) {
             if (referencesUnboundRecursion(child, inner)) {

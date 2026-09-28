@@ -529,6 +529,7 @@ public final class RelAlgebraParser {
             case PATH     -> parsePath();
             case TRACE    -> parseTrace();
             case FIX      -> parseFixpoint();
+            case ITERATE  -> parseIterate();
             case FORALL   -> parseUniversal();
             case SAMPLE   -> parseSample();
             case SOLVE    -> parseSolve();
@@ -1101,6 +1102,114 @@ public final class RelAlgebraParser {
 
         expect(TokenType.RPAREN, "Expected ')' after the FIX step expression");
         return new FixpointNode(name, base, step, loc(opTok));
+    }
+
+    /**
+     * Parses the replace-each-round iteration binder:
+     * {@code ITERATE name ( base , step ) <stop>}, where {@code <stop>} is one of
+     * {@code ROUNDS n}, {@code UNTIL STABLE MAX n ROUNDS} or
+     * {@code UNTIL c, … WITHIN ε PER k, … MAX n ROUNDS}. The current token is the
+     * {@code ITERATE} keyword. {@code name} is scoped exactly as for {@code FIX}: bound
+     * in {@code step}, an ordinary relation name in {@code base}.
+     *
+     * <p>{@code ROUNDS}, {@code UNTIL} and {@code STABLE} are contextual words matched
+     * by their text, as {@code ALL} is in {@code OVER ALL ROWS}, so none of them is
+     * taken from the names a script may give its columns and relations.
+     */
+    private IterateNode parseIterate() {
+        Token opTok = current;
+        expect(TokenType.ITERATE, "Expected 'ITERATE'");
+        Token nameTok = expect(TokenType.IDENTIFIER,
+                "Expected the iterated relation name after 'ITERATE'");
+        String name = nameTok.lexeme();
+
+        expect(TokenType.LPAREN, "Expected '(' after the ITERATE relation name");
+        RelNode base = parseExpression(0);
+        expect(TokenType.COMMA,
+                "Expected ',' between the base and step of ITERATE " + name + " (base, step)");
+        recursiveBinders.push(name);
+        RelNode step;
+        try {
+            step = parseExpression(0);
+        } finally {
+            recursiveBinders.pop();
+        }
+        expect(TokenType.RPAREN, "Expected ')' after the ITERATE step expression");
+        return new IterateNode(name, base, step, parseIterateStop(), loc(opTok));
+    }
+
+    private IterateStop parseIterateStop() {
+        if (matchWord("ROUNDS")) {
+            return new IterateStop.Rounds(parseRoundCount(0));
+        }
+        if (!matchWord("UNTIL")) {
+            throw error(current, "Expected 'ROUNDS n' or 'UNTIL …' after ITERATE (base, step)");
+        }
+        // Before WITHIN or a comma, STABLE is a column that happens to be called stable;
+        // anywhere else it is the stable form, which then demands its cap.
+        List<String> columns = new ArrayList<>();
+        Token first = current;
+        if (matchWord("STABLE")) {
+            if (current.type() != TokenType.WITHIN && current.type() != TokenType.COMMA) {
+                return new IterateStop.Stable(parseRoundCap());
+            }
+            columns.add(first.lexeme());
+            while (match(TokenType.COMMA)) {
+                columns.add(expectName("Expected a column name after ','").lexeme());
+            }
+        } else {
+            columns = parseIterateNames("Expected a column name after 'UNTIL'");
+        }
+        expect(TokenType.WITHIN, "Expected 'WITHIN' after the UNTIL column(s)");
+        Token tolTok = expect(TokenType.NUMBER, "Expected a tolerance after 'WITHIN'");
+        java.math.BigDecimal tolerance = new java.math.BigDecimal(tolTok.lexeme());
+        expect(TokenType.PER, "Expected 'PER' and the key column(s) after the WITHIN tolerance");
+        List<String> keys = parseIterateNames("Expected a key column name after 'PER'");
+        return new IterateStop.Converged(columns, tolerance, keys, parseRoundCap());
+    }
+
+    /** {@code MAX n ROUNDS}, mandatory after both {@code UNTIL} forms. */
+    private int parseRoundCap() {
+        expect(TokenType.MAX,
+                "Expected 'MAX n ROUNDS' — an ITERATE … UNTIL needs a round cap");
+        int n = parseRoundCount(1);
+        if (!matchWord("ROUNDS")) {
+            throw error(current, "Expected 'ROUNDS' after 'MAX " + n + "'");
+        }
+        return n;
+    }
+
+    private int parseRoundCount(int least) {
+        Token tok = expect(TokenType.NUMBER, "Expected a round count");
+        int n;
+        try {
+            n = Integer.parseInt(tok.lexeme());
+        } catch (NumberFormatException e) {
+            throw error(tok, "An ITERATE round count must be a whole number, got '"
+                    + tok.lexeme() + "'");
+        }
+        if (n < least) {
+            throw error(tok, "An ITERATE round count must be at least " + least + ", got " + n);
+        }
+        return n;
+    }
+
+    private List<String> parseIterateNames(String message) {
+        List<String> names = new ArrayList<>();
+        names.add(expectName(message).lexeme());
+        while (match(TokenType.COMMA)) {
+            names.add(expectName(message).lexeme());
+        }
+        return names;
+    }
+
+    /** Consumes the current token if it is the contextual word {@code word}, any case. */
+    private boolean matchWord(String word) {
+        if (isNameToken(current) && current.lexeme().equalsIgnoreCase(word)) {
+            advance();
+            return true;
+        }
+        return false;
     }
 
     /**
