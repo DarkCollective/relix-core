@@ -43,6 +43,9 @@ import com.darkcollective.relix.symbol.Type;
  * </pre>
  * Addition and multiplication are commutative, so both operand orders are
  * accepted; subtraction and division are order-sensitive.
+ *
+ * <p>Arithmetic with no temporal operand is {@code NUMBER}, except {@code +} with a
+ * {@code STRING} operand, which concatenates and is {@code STRING}.
  */
 final class TemporalArithmetic {
 
@@ -83,9 +86,11 @@ final class TemporalArithmetic {
         ScalarType l = scalar(left);
         ScalarType r = scalar(right);
 
-        // No temporal type involved → ordinary numeric arithmetic (unchanged).
+        // No temporal type involved → ordinary arithmetic, which is numeric except
+        // that + concatenates strings. The evaluator concatenates only STRING + STRING,
+        // so a STRING operand makes STRING the one result + can produce.
         if (!isTemporal(l) && !isTemporal(r)) {
-            return Result.ok(ScalarType.NUMBER);
+            return Result.ok(isConcatenation(l, op, r) ? ScalarType.STRING : ScalarType.NUMBER);
         }
         // A temporal type combined with an unknown operand (ANY or a non-scalar
         // struct/array) cannot be decided statically — stay lenient, no error.
@@ -95,6 +100,12 @@ final class TemporalArithmetic {
 
         ScalarType result = lookup(op, l, r);
         return result != null ? Result.ok(result) : Result.error(binaryMessage(op, l, r));
+    }
+
+    /** {@code true} if {@code left <op> right} is {@code +} with a {@code STRING} operand. */
+    private static boolean isConcatenation(ScalarType l, ArithmeticOperator op, ScalarType r) {
+        return op == ArithmeticOperator.PLUS
+                && (l == ScalarType.STRING || r == ScalarType.STRING);
     }
 
     /** Types a unary-minus expression {@code −operand}. */
