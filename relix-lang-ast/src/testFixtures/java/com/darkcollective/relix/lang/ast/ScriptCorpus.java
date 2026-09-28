@@ -74,7 +74,11 @@ public final class ScriptCorpus extends ScriptBuilders {
                 def("double", List.of(param("x", ScalarType.NUMBER)), ScalarType.NUMBER,
                         arith(attr("x"), com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
                                 num("2"))),
-                defRelation("ordersFor", List.of(param("cid", ScalarType.NUMBER)),
+                defRelation("ordersFor", List.of(param("cid", ScalarType.NUMBER),
+                                relationParam("Recent", new com.darkcollective.relix.symbol.ColumnDefinition(
+                                        "customer_id", ScalarType.NUMBER),
+                                        new com.darkcollective.relix.symbol.ColumnDefinition(
+                                                "note", ScalarType.ANY))),
                         select(cmp(attr("customer_id"),
                                 com.darkcollective.relix.ast.ComparisonOperator.EQUAL,
                                 attr("cid")), rel("Orders"))),

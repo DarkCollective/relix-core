@@ -173,6 +173,10 @@ final class ScriptBuilderCoverageTest {
     private static BuilderInvocation.Samples samples() {
         return new BuilderInvocation.Samples()
                 .of(String.class, i -> "n" + i)
+                .of(com.darkcollective.relix.symbol.ColumnDefinition[].class, i ->
+                        new com.darkcollective.relix.symbol.ColumnDefinition[]{
+                                new com.darkcollective.relix.symbol.ColumnDefinition("c" + i,
+                                        com.darkcollective.relix.symbol.ScalarType.NUMBER)})
                 .of(boolean.class, i -> i % 2 == 0)
                 .of(long.class, i -> (long) (i + 1))
                 .of(java.util.OptionalLong.class, i -> java.util.OptionalLong.of(i + 1))

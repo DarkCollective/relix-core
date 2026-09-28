@@ -161,7 +161,9 @@ and monotone — exactly what `FIX` already requires.
 # Limitations:
 v1 supports linear recursion only (exactly one reference to the bound name in the
 step). The step must be monotone — no difference, division, aggregation, or outer
-joins inside it. For the common two-column reachability case CLOSURE is simpler
+joins inside it — and it must read the bound name directly: passing it to a
+table-valued function would hide the body's operators from that check, so it is
+refused. For the common two-column reachability case CLOSURE is simpler
 and faster.
 
 **A FIX whose step computes new values may never finish.** The termination
