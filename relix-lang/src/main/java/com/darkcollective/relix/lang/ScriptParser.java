@@ -25,8 +25,10 @@ import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
 import com.darkcollective.relix.parser.ParseException;
 import com.darkcollective.relix.parser.RelAlgebraParser;
 import com.darkcollective.relix.symbol.ArrayType;
+import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ParameterDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
+import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.StructType;
 import com.darkcollective.relix.symbol.Type;
 
@@ -651,6 +653,13 @@ public final class ScriptParser {
                     Collections.unmodifiableList(params), relBody, loc(startTok));
         }
 
+        for (ParameterDefinition p : params) {
+            if (p.isRelation()) {
+                // A scalar function is evaluated per row, and a row cannot carry a relation.
+                throw error("Only a table-valued function (': RELATION') can take a relation "
+                        + "parameter, and '" + name + "' declares '" + p.name() + "' as one");
+            }
+        }
         ScalarType returnType = requireScalarType();
         consume(LangTokenType.ASSIGN);
 
@@ -668,8 +677,40 @@ public final class ScriptParser {
     private ParameterDefinition parseParameterDefinition() {
         String name = requireName("parameter name");
         consume(LangTokenType.COLON);
+        if (current.type() == LangTokenType.RELATION) {
+            advance();
+            return ParameterDefinition.relation(name, parseRelationHeading(name));
+        }
         ScalarType type = requireScalarType();
         return new ParameterDefinition(name, type);
+    }
+
+    /**
+     * The heading of a relation parameter — {@code (col [: TYPE], …)} after
+     * {@code RELATION}. A column with no type is {@code ANY}.
+     */
+    private Schema parseRelationHeading(String parameter) {
+        consume(LangTokenType.LPAREN);
+        List<ColumnDefinition> columns = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        do {
+            if (!columns.isEmpty()) {
+                advance();   // the comma
+            }
+            String column = requireColumnName("column name in relation parameter '" + parameter + "'");
+            if (!seen.add(column.toLowerCase(Locale.ROOT))) {
+                throw error("Relation parameter '" + parameter + "' names column '" + column
+                        + "' more than once");
+            }
+            Type type = ScalarType.ANY;
+            if (current.type() == LangTokenType.COLON) {
+                advance();
+                type = requireType();
+            }
+            columns.add(new ColumnDefinition(column, type));
+        } while (current.type() == LangTokenType.COMMA);
+        consume(LangTokenType.RPAREN);
+        return new Schema(columns);
     }
 
     // -------------------------------------------------------------------------
@@ -1008,9 +1049,10 @@ public final class ScriptParser {
      *   array  := '[' type ']'
      * </pre>
      *
-     * <p>Only a <em>column</em> may be nested. A {@code def}'s parameters and return type
-     * stay scalar ({@link #requireScalarType()}), because {@code ParameterDefinition} holds
-     * a {@code ScalarType} — widening that is a separate change with its own consequences
+     * <p>Only a <em>column</em> may be nested — including a column of a relation
+     * parameter's heading. A {@code def}'s scalar parameters and return type stay scalar
+     * ({@link #requireScalarType()}), because {@code ParameterDefinition} holds a
+     * {@code ScalarType} — widening that is a separate change with its own consequences
      * for every function signature.
      *
      * <p>There is no ambiguity with the {@code [required]} / {@code [default: …]} modifiers

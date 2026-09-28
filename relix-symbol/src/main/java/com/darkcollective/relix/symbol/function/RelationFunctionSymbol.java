@@ -37,7 +37,8 @@ import java.util.Set;
  * and yields a whole relation: its {@link #body()} is a relational-algebra
  * {@link RelNode} expression, and its return "type" is a relation schema rather
  * than a {@link ScalarType}.  A table-valued function is declared with
- * {@code def name(p: T, …): RELATION := \{ <RA expression> \}} and invoked in
+ * {@code def name(p: T, …): RELATION := \{ <RA expression> \}} — where a parameter
+ * may itself be a relation, {@code E: RELATION(src, dst)} — and invoked in
  * relation position (as a {@code RelationFunctionCall} {@link RelNode}).
  *
  * <p>Binding is by <em>substitution</em>: a call's argument expressions replace
@@ -206,6 +207,17 @@ public record RelationFunctionSymbol(
          */
         public Builder parameter(String name, ScalarType type) {
             parameters.add(new ParameterDefinition(name, type));
+            return this;
+        }
+
+        /**
+         * Appends a parameter — scalar or relation — to the end of the parameter list.
+         *
+         * @param parameter the parameter; must not be null
+         * @return this builder
+         */
+        public Builder parameter(ParameterDefinition parameter) {
+            parameters.add(Objects.requireNonNull(parameter, "parameter"));
             return this;
         }
 

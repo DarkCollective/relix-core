@@ -18,6 +18,8 @@ package com.darkcollective.relix.semantic.internal;
 import com.darkcollective.relix.semantic.SemanticError;
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.AntiJoinNode;
+import com.darkcollective.relix.ast.AttributeOperand;
+import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.AsOfJoinNode;
 import com.darkcollective.relix.ast.IntervalJoinNode;
 import com.darkcollective.relix.ast.ClosureNode;
@@ -253,7 +255,22 @@ final class RecursiveRefChecker {
 
             // ── Leaves that can hold no recursive reference ──────────────────────
             case RelationNode ignored         -> 0;
-            case RelationFunctionCall ignored -> 0;
+            // A relation argument naming the binder hands the relation to a function body.
+            // It is a reference — ITERATE counts it — but its monotonicity is the body's,
+            // which this walk cannot see, so a FIX may not do it.
+            case RelationFunctionCall call -> {
+                int count = 0;
+                for (Operand arg : call.arguments()) {
+                    if (arg instanceof AttributeOperand a && a.name().equalsIgnoreCase(name)) {
+                        error(call.location(), "Recursive relation '" + name + "' is passed to "
+                                + "table-valued function '" + call.functionName() + "', whose body "
+                                + "cannot be checked for monotonicity; FIX needs its step to read '"
+                                + name + "' directly");
+                        count++;
+                    }
+                }
+                yield count;
+            }
             case TruthRelationNode ignored    -> 0;
             case EmptyRelationNode ignored    -> 0;
         };

@@ -107,6 +107,8 @@ import com.darkcollective.relix.ast.WindowNode;
 import com.darkcollective.relix.ast.visitor.RelNodeVisitor;
 import com.darkcollective.relix.function.FunctionCatalog;
 import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.symbol.relation.RelationSymbol;
+import com.darkcollective.relix.symbol.ParameterDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Type;
 import com.darkcollective.relix.symbol.Schema;
@@ -118,6 +120,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -162,6 +165,13 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     private final SymbolTable             symbolTable;
     private final SchemaAnnotations       annotations;
     private final FunctionCatalog         functions;
+    /**
+     * The binders whose step is being validated, innermost first — a relation argument
+     * naming one is that binder's relation rather than a script relation. The value is
+     * the binder's schema, or empty for a FIX, whose name may not be passed at all.
+     */
+    private final java.util.ArrayDeque<Map.Entry<String, Optional<Schema>>> binders =
+            new java.util.ArrayDeque<>();
     private final List<SemanticError>     errors;
     private final String                  filePath;
     /**
@@ -241,11 +251,71 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         }
         // Arguments are bound by substitution into the body, so they must be constant
         // (ground) expressions: a column reference needs correlated evaluation, which
-        // is what the LATERAL join provides.
-        for (Operand arg : node.arguments()) {
-            validateConstantArgument(arg, node.functionName(), node.location());
+        // is what the LATERAL join provides. A relation parameter's argument is the one
+        // exception — it names a relation rather than computing a value.
+        List<ParameterDefinition> parameters = overloads.stream()
+                .filter(f -> f.parameters().size() == argCount)
+                .findFirst()
+                .map(RelationFunctionSymbol::parameters)
+                .orElse(List.of());
+        for (int i = 0; i < argCount; i++) {
+            Operand arg = node.arguments().get(i);
+            if (i < parameters.size() && parameters.get(i).isRelation()) {
+                validateRelationArgument(arg, parameters.get(i), node);
+            } else {
+                validateConstantArgument(arg, node.functionName(), node.location());
+            }
         }
         return null;
+    }
+
+    /**
+     * A relation argument is the name of a relation that has every column the parameter
+     * declares, each at a compatible type. It may have more: the body is handed the
+     * argument narrowed to the declared heading, so an extra column never reaches it.
+     */
+    private void validateRelationArgument(Operand arg, ParameterDefinition parameter,
+                                          RelationFunctionCall call) {
+        String what = "Table-valued function '" + call.functionName() + "': relation parameter '"
+                + parameter.name() + "'";
+        if (!(arg instanceof AttributeOperand name)) {
+            error(call.location(), what + " takes the name of a relation, not an expression; "
+                    + "to pass an expression, name it as a view first");
+            return;
+        }
+        for (Map.Entry<String, Optional<Schema>> binder : binders) {
+            if (binder.getKey().equalsIgnoreCase(name.name())) {
+                // A FIX name here is refused by the FIX's own reference check; an ITERATE's
+                // is the previous round, checked like any relation.
+                binder.getValue().ifPresent(schema -> checkHeading(parameter, name.name(), schema, what, call));
+                return;
+            }
+        }
+        Optional<RelationSymbol> relation = symbolTable.resolveRelation(name.name());
+        if (relation.isEmpty()) {
+            error(call.location(), what + " is given '" + name.name() + "', which is not a relation"
+                    + Suggestions.didYouMean(name.name(), relationCandidates()));
+            return;
+        }
+        checkHeading(parameter, name.name(), relation.get().schema(), what, call);
+    }
+
+    private void checkHeading(ParameterDefinition parameter, String argument, Schema actual,
+                              String what, RelationFunctionCall call) {
+        if (actual.isOpen() || actual.equals(SymbolCollector.UNRESOLVED_SCHEMA)) {
+            return;   // schema-on-read, or not yet inferred: nothing to check against
+        }
+        for (ColumnDefinition wanted : parameter.heading().orElseThrow().columns()) {
+            Optional<ColumnDefinition> column = actual.column(wanted.name());
+            if (column.isEmpty()) {
+                error(call.location(), what + " needs a column '" + wanted.name() + "', and '"
+                        + argument + "' has none");
+            } else if (!typesCompatible(wanted.type(), column.get().type())) {
+                error(call.location(), what + " needs column '" + wanted.name() + "' to be "
+                        + wanted.type() + ", and in '" + argument + "' it is "
+                        + column.get().type());
+            }
+        }
     }
 
     /**
@@ -300,6 +370,17 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             error(node.location(), "Table-valued function '" + node.functionName()
                     + "' called with " + argCount + " argument(s) but expects " + expected);
         }
+
+        // A relation argument names a relation, and LATERAL's arguments are the left
+        // side's values, row by row: a row cannot supply one.
+        overloads.stream()
+                .filter(f -> f.parameters().size() == argCount)
+                .findFirst()
+                .flatMap(f -> f.parameters().stream().filter(ParameterDefinition::isRelation).findFirst())
+                .ifPresent(p -> error(node.location(), "Table-valued function '"
+                        + node.functionName() + "' takes a relation parameter '" + p.name()
+                        + "', which LATERAL cannot supply: its arguments are the left side's "
+                        + "values, row by row"));
 
         // Build the set of valid column names from the left schema — these are
         // allowed as column references in LATERAL arguments.
@@ -1060,7 +1141,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         // (the recursive reference is annotated with the base schema by inference,
         // so references to its columns validate normally).
         node.base().accept(this);
-        node.step().accept(this);
+        withBinder(node.name(), Optional.empty(), node.step());
 
         // Schema rule: the step must be union-compatible with the base (same rule
         // as ∪ — equal width, positionally compatible types, ANY/open universal).
@@ -1096,7 +1177,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     @Override
     public Void visit(IterateNode node) {
         node.base().accept(this);
-        node.step().accept(this);
+        withBinder(node.name(), annotations.get(node.base()), node.step());
         checkStepUnionCompatible("ITERATE", node.name(), node.base(), node.step(), node.location());
 
         if (new RecursiveRefChecker(new ArrayList<>()).countRecursiveRefs(node.step(), node.name()) == 0) {
@@ -1150,6 +1231,15 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             if (!seen.add(name.toLowerCase(Locale.ROOT))) {
                 error(location, what + " '" + name + "' is named more than once");
             }
+        }
+    }
+
+    private void withBinder(String name, Optional<Schema> schema, RelNode step) {
+        binders.push(Map.entry(name, schema));
+        try {
+            step.accept(this);
+        } finally {
+            binders.pop();
         }
     }
 
@@ -2161,6 +2251,14 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      *
      * @return the set of known function names (original casing)
      */
+    private Set<String> relationCandidates() {
+        Set<String> names = new HashSet<>();
+        symbolTable.allSymbols().stream()
+                .filter(RelationSymbol.class::isInstance)
+                .forEach(r -> names.add(r.declaredName()));
+        return names;
+    }
+
     private Set<String> functionCandidates() {
         Set<String> names = new HashSet<>();
         functions.scalars().forEach(fn -> names.add(fn.signature().name()));

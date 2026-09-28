@@ -17,6 +17,7 @@ package com.darkcollective.relix.semantic.internal;
 
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.internal.OperandWalker;
+import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.internal.RelNodeOperands;
 import com.darkcollective.relix.ast.RelationFunctionCall;
@@ -143,11 +144,21 @@ public final class RelationDeterminism {
                     .map(symbol -> !(symbol instanceof QueryRelationSymbol view)
                             || bodyDeterministic(n.name(), view.body(), symbols, functions, visited))
                     .orElse(false);
+            // The body is walked in its parameter scope, where a relation parameter is a
+            // relation; what is passed for it is walked here, where it was written. A name
+            // that is no relation at all is an enclosing ITERATE's, whose step answers for it.
             case RelationFunctionCall n -> symbols.resolveFunction(n.functionName()).stream()
                     .filter(RelationFunctionSymbol.class::isInstance)
                     .map(RelationFunctionSymbol.class::cast)
                     .findFirst()
-                    .map(fn -> bodyDeterministic(n.functionName(), fn.body(), symbols, functions, visited))
+                    .map(fn -> bodyDeterministic(n.functionName(), fn.body(),
+                                    ParameterScope.of(symbols, fn), functions, visited)
+                            && n.arguments().stream()
+                                    .filter(AttributeOperand.class::isInstance)
+                                    .map(a -> ((AttributeOperand) a).name())
+                                    .filter(argument -> symbols.resolveRelation(argument).isPresent())
+                                    .allMatch(argument -> referencedBodiesDeterministic(
+                                            new RelationNode(argument), symbols, functions, visited)))
                     .orElse(false);
             default -> true;
         };
