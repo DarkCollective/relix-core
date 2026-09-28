@@ -127,6 +127,7 @@ import com.darkcollective.relix.symbol.table.SymbolTable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -183,6 +184,12 @@ public final class Planner {
     // on demand; an instance plans a single root, so widening the annotation set is safe.
     private SchemaAnnotations schemas;
     private final Set<String> activeInlines = new HashSet<>();  // recursive-TVF guard
+    /** Each relation argument's leaf, and the inlines active where its call was written. */
+    private final Map<RelNode, Set<String>> argumentScopes = new IdentityHashMap<>();
+    /** The ITERATE binders whose step is being planned, by lower-cased name. */
+    private final Map<String, Schema> iterateBinders = new HashMap<>();
+    /** Every binder name in the query, lower-cased; set with {@link #sharedSites}. */
+    private Set<String> binderNames = Set.of();
     private final CostEstimator costEstimator;
     private final PlanEstimates estimates = new PlanEstimates();
     private final StatisticsSource statistics;   // candidate keys for index-backed merge
@@ -472,6 +479,7 @@ public final class Planner {
         if (sharedSites == null) {
             // The first call is the root; every later one is a child of it (or, at
             // execution time, a LATERAL body, where sharing is declined anyway).
+            binderNames = binderNames(node);
             sharedSites = SharedSubexpressions.detect(node, this::shareable);
         }
         String digest = sharedSites.isEmpty() ? null : AstEquivalence.digest(node);
@@ -611,12 +619,30 @@ public final class Planner {
             // No pushdown by construction: pushdown renderers hit their default arm
             // for both node types, so σ/π below the FIX over a connection table still
             // fold into the source scan, but the binder itself never pushes.
-            case FixpointNode fx -> new PhysicalNode.Fixpoint(
-                    schemaOf(fx), fx.name(), plan(fx.base()), plan(fx.step()));
+            case FixpointNode fx -> {
+                PhysicalNode base = plan(fx.base());
+                yield new PhysicalNode.Fixpoint(schemaOf(fx), fx.name(), base, plan(fx.step()));
+            }
             // Replace-each-round iteration (ITERATE) — planned exactly as FIX; the
-            // RecursiveRef leaf streams the previous round's whole output.
-            case IterateNode it -> new PhysicalNode.Iterate(
-                    schemaOf(it), it.name(), plan(it.base()), plan(it.step()), it.stop());
+            // RecursiveRef leaf streams the previous round's whole output. Its step may
+            // pass the relation to a table-valued function, so while the step is planned
+            // the name is in scope for the inliner to bind.
+            case IterateNode it -> {
+                PhysicalNode base = plan(it.base());
+                String key = it.name().toLowerCase(java.util.Locale.ROOT);
+                Schema previous = iterateBinders.put(key, schemaOf(it));
+                PhysicalNode step;
+                try {
+                    step = plan(it.step());
+                } finally {
+                    if (previous == null) {
+                        iterateBinders.remove(key);
+                    } else {
+                        iterateBinders.put(key, previous);
+                    }
+                }
+                yield new PhysicalNode.Iterate(schemaOf(it), it.name(), base, step, it.stop());
+            }
             case RecursiveRefNode r -> new PhysicalNode.RecursiveRef(schemaOf(r), r.name());
 
             // Covering reduction (COVER) — greedy in-engine executor (ADR-0012, slice 3).
@@ -790,6 +816,20 @@ public final class Planner {
     }
 
     private PhysicalNode planRelation(RelationNode node) {
+        // A relation argument is planned where its call was written: it is the caller's
+        // relation, so the function it was passed to is not being inlined inside it.
+        Set<String> callSite = argumentScopes.get(node);
+        if (callSite != null && !callSite.equals(activeInlines)) {
+            Set<String> inside = Set.copyOf(activeInlines);
+            activeInlines.clear();
+            activeInlines.addAll(callSite);
+            try {
+                return planRelation(node);
+            } finally {
+                activeInlines.clear();
+                activeInlines.addAll(inside);
+            }
+        }
         RelationSymbol symbol = symbols.resolveRelation(node.name())
                 .orElseThrow(() -> new IllegalStateException("Unknown relation: '" + node.name() + "'"));
         if (symbol instanceof QueryRelationSymbol view) {
@@ -817,13 +857,24 @@ public final class Planner {
                         + "' with " + call.arguments().size() + " argument(s)"));
 
         String key = fn.canonicalName();
+        Set<String> callSite = Set.copyOf(activeInlines);
         if (!activeInlines.add(key)) {
             throw new IllegalStateException("Recursive table-valued function '"
                     + call.functionName() + "' cannot be inlined "
                     + "(recursive table-valued functions are not supported)");
         }
         try {
-            RelNode body = RelationFunctionInliner.bind(fn, call.arguments());
+            RelationFunctionInliner.Bound bound =
+                    RelationFunctionInliner.bindCall(fn, call.arguments(), Map.copyOf(iterateBinders));
+            bound.arguments().forEach(argument -> argumentScopes.put(argument, callSite));
+            if (!bound.recursiveReferences().isEmpty()) {
+                // A reference to the enclosing ITERATE is typed by its binder; inference,
+                // which runs outside the binder here, keeps an annotation it is given.
+                Map<RelNode, Schema> typed = new IdentityHashMap<>(this.schemas.asMap());
+                typed.putAll(bound.recursiveReferences());
+                this.schemas = new SchemaAnnotations(typed);
+            }
+            RelNode body = bound.body();
             // The substituted body is freshly built — its nodes are absent from the
             // annotation set, so re-infer (the substituted body has no parameter
             // references left to resolve) and merge before planning it.
@@ -1290,13 +1341,30 @@ public final class Planner {
      * so a self-contained recursion answers {@code false} and can be shared like any
      * other sub-expression.
      */
-    private static boolean referencesUnboundRecursion(RelNode node) {
+    private boolean referencesUnboundRecursion(RelNode node) {
         return referencesUnboundRecursion(node, Set.of());
     }
 
-    private static boolean referencesUnboundRecursion(RelNode node, Set<String> bound) {
+    /**
+     * A table-valued call reads a recursion too when one of its arguments names a binder:
+     * the relation is handed to the function's body, which the call node does not show. A
+     * name is taken to be a binder's whenever some binder in the query has it — which also
+     * holds of a real relation that a binder happens to share a name with, and so errs on
+     * the side of not sharing.
+     */
+    private boolean referencesUnboundRecursion(RelNode node, Set<String> bound) {
         if (node instanceof RecursiveRefNode ref) {
             return !bound.contains(ref.name().toLowerCase(java.util.Locale.ROOT));
+        }
+        if (node instanceof RelationFunctionCall call) {
+            for (com.darkcollective.relix.ast.Operand arg : call.arguments()) {
+                if (arg instanceof com.darkcollective.relix.ast.AttributeOperand a) {
+                    String name = a.name().toLowerCase(java.util.Locale.ROOT);
+                    if (binderNames.contains(name) && !bound.contains(name)) {
+                        return true;
+                    }
+                }
+            }
         }
         Set<String> inner = bound;
         if (node instanceof FixpointNode fix) {
@@ -1312,6 +1380,22 @@ public final class Planner {
             }
         }
         return false;
+    }
+
+    /** The names of every FIX and ITERATE in {@code root}, lower-cased. */
+    private static Set<String> binderNames(RelNode root) {
+        Set<String> names = new HashSet<>();
+        java.util.ArrayDeque<RelNode> pending = new java.util.ArrayDeque<>(List.of(root));
+        while (!pending.isEmpty()) {
+            RelNode node = pending.pop();
+            if (node instanceof FixpointNode fix) {
+                names.add(fix.name().toLowerCase(java.util.Locale.ROOT));
+            } else if (node instanceof IterateNode it) {
+                names.add(it.name().toLowerCase(java.util.Locale.ROOT));
+            }
+            pending.addAll(node.children());
+        }
+        return names;
     }
 
     /**

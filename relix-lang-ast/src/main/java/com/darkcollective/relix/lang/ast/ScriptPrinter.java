@@ -45,6 +45,7 @@ import com.darkcollective.relix.lang.ast.table.CsvInlineTable;
 import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
 import com.darkcollective.relix.symbol.ArrayType;
 import com.darkcollective.relix.symbol.ParameterDefinition;
+import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.StructType;
 import com.darkcollective.relix.symbol.Type;
@@ -250,9 +251,22 @@ public final class ScriptPrinter {
                 + " : RELATION := { " + expression(s.body()) + " };";
     }
 
+    /**
+     * A relation parameter's type — {@code RELATION(src, weight: NUMBER)}. An untyped
+     * column is ANY and is printed with no type, which is how it is written.
+     */
+    private static String relationType(Schema heading) {
+        StringJoiner columns = new StringJoiner(", ", "RELATION(", ")");
+        heading.columns().forEach(c -> columns.add(c.type() == ScalarType.ANY
+                ? c.name() : c.name() + ": " + c.type().display()));
+        return columns.toString();
+    }
+
     private static String parameters(List<ParameterDefinition> parameters) {
         StringJoiner joiner = new StringJoiner(", ", "(", ")");
-        parameters.forEach(p -> joiner.add(p.name() + ": " + p.type().display()));
+        parameters.forEach(p -> joiner.add(p.name() + ": " + p.heading()
+                .map(ScriptPrinter::relationType)
+                .orElseGet(() -> p.type().display())));
         return joiner.toString();
     }
 

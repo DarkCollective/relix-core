@@ -94,11 +94,18 @@ assignment_body   ::= "{" rel_expr "}"
 query_stmt        ::= "query" ( script_name | "{" rel_expr "}" ) ";"
 
 /* def f(x: NUMBER): NUMBER := { x * 2 };            a scalar function
-   def recent(n: NUMBER): relation := { λ n (…) };   a table-valued function */
-def_stmt          ::= "def" script_name "(" ( parameter ( "," parameter )* )? ")" ":"
-                      ( scalar_type ":=" "{" operand "}"
-                      | "relation" ":=" "{" rel_expr "}" ) ";"
-parameter         ::= script_name ":" scalar_type
+   def recent(n: NUMBER): relation := { λ n (…) };   a table-valued function
+   def srcs(E: RELATION(src, w: NUMBER)): relation := { π src (E) };
+                                                     a relation parameter, which
+   only a table-valued function may declare */
+def_stmt          ::= "def" script_name
+                      ( "(" ( scalar_param ( "," scalar_param )* )? ")" ":"
+                            scalar_type ":=" "{" operand "}"
+                      | "(" ( parameter ( "," parameter )* )? ")" ":"
+                            "relation" ":=" "{" rel_expr "}" ) ";"
+scalar_param      ::= script_name ":" scalar_type
+parameter         ::= scalar_param | script_name ":" relation_type
+relation_type     ::= "RELATION" "(" column_name ( ":" type )? ( "," column_name ( ":" type )? )* ")"
 
 /* relate "places" / "placed by" Orders.customer_id [0..*] -> Customers.customer_id [1..1]; */
 relate_stmt       ::= "relate" "symmetric"? NONBLANK_STRING_DQ ( "/" NONBLANK_STRING_DQ )?
@@ -200,7 +207,8 @@ column_binding    ::= "as" ( "query" | "path" | "header" ) "(" STRING_DQ ")"
                     | "at" STRING_DQ
 column_modifier   ::= "[" ( "required" | "default" ":" STRING_DQ ) "]"
 
-/* A column may be nested; a def parameter or return type may not. */
+/* A column may be nested — one of a relation parameter's too; a scalar def parameter
+   or return type may not. */
 type              ::= scalar_type
                     | "{" ( column_name ":" type ","? )+ "}"
                     | "[" type "]"

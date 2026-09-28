@@ -16,18 +16,31 @@
 package com.darkcollective.relix.symbol;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * A single typed parameter in a function signature.
+ * A single parameter in a function signature: a scalar, or — for a table-valued
+ * function only — a relation.
+ *
+ * <p>A <b>scalar</b> parameter has a {@link #type()} and no {@link #heading()}. A
+ * <b>relation</b> parameter ({@code E: RELATION(src, dst)}) has a heading — the columns
+ * the function body may read from it, each with a type or {@link ScalarType#ANY} — and
+ * reports {@link ScalarType#ANY} as its type, so that {@link
+ * com.darkcollective.relix.symbol.function.FunctionSymbol#parameterSignature()} stays a
+ * list of scalar types. A relation argument is a relation's name; the body sees it
+ * narrowed to the heading.
  *
  * <p>Parameter names are used only for documentation and error messages; overload
  * resolution is based solely on the ordered list of {@link #type()} values (the
  * <em>parameter signature</em>).
  *
- * @param name the parameter name as declared; must not be blank
- * @param type the scalar type of this parameter; must not be null
+ * @param name    the parameter name as declared; must not be blank
+ * @param type    the scalar type of this parameter; {@link ScalarType#ANY} for a relation
+ *                parameter; must not be null
+ * @param heading the columns of a relation parameter; empty for a scalar one; must not
+ *                be null
  */
-public record ParameterDefinition(String name, ScalarType type) {
+public record ParameterDefinition(String name, ScalarType type, Optional<Schema> heading) {
 
     public ParameterDefinition {
         Objects.requireNonNull(name, "name");
@@ -35,5 +48,42 @@ public record ParameterDefinition(String name, ScalarType type) {
             throw new IllegalArgumentException("Parameter name must not be blank");
         }
         Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(heading, "heading");
+        heading.ifPresent(h -> {
+            if (type != ScalarType.ANY) {
+                throw new IllegalArgumentException(
+                        "A relation parameter's type is ANY, not " + type);
+            }
+            if (h.isOpen() || h.columns().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "A relation parameter declares at least one column");
+            }
+        });
+    }
+
+    /**
+     * A scalar parameter.
+     *
+     * @param name the parameter name; must not be blank
+     * @param type its scalar type; must not be null
+     */
+    public ParameterDefinition(String name, ScalarType type) {
+        this(name, type, Optional.empty());
+    }
+
+    /**
+     * A relation parameter — {@code name: RELATION(columns…)}.
+     *
+     * @param name    the parameter name; must not be blank
+     * @param heading the columns the body may read; closed, and at least one
+     * @return the parameter
+     */
+    public static ParameterDefinition relation(String name, Schema heading) {
+        return new ParameterDefinition(name, ScalarType.ANY, Optional.of(heading));
+    }
+
+    /** {@return whether this is a relation parameter} */
+    public boolean isRelation() {
+        return heading.isPresent();
     }
 }
