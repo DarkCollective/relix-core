@@ -150,7 +150,7 @@ database_field    ::= "url" ":" STRING_DQ
                     | "schema" ":" schema_block
                     | "references" ":" references_block
 
-/* source Nums from generator { name: "Range", start: "1", end: "10" };
+/* source Nums from generator { name: "Range", lo: "1", hi: "10" };
    name required; every other field is an argument to the generator. */
 generator_source  ::= "generator" "{" ( generator_field ( ","? generator_field )* ","? )? "}"
 generator_field   ::= script_name ":" STRING_DQ
