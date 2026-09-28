@@ -160,12 +160,16 @@ public final class SemanticValidator {
      * resolves to the parameter rather than being reported as a missing column.
      */
     private void validateRelationFunctionTree(RelationFunctionSymbol rfs) {
+        // Only a scalar parameter is a value a bare column reference can mean; a relation
+        // parameter is a relation, and is resolved as one through the parameter scope.
         Set<String> params = rfs.parameters().stream()
+                .filter(p -> !p.isRelation())
                 .map(ParameterDefinition::name)
                 .map(n -> n.toLowerCase(Locale.ROOT))
                 .collect(Collectors.toUnmodifiableSet());
         String ctx = rfs.namespace() + "." + rfs.declaredName();
-        var validator = new RelAlgebraValidator(symbolTable, annotations, functions, errors, ctx, params);
+        var validator = new RelAlgebraValidator(ParameterScope.of(symbolTable, rfs), annotations,
+                functions, errors, ctx, params);
         rfs.body().accept(validator);
     }
 }

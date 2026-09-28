@@ -26,7 +26,10 @@ collapsed — and the step must be positionally union-compatible with the base,
 whose column names the output keeps.
 
 `name` is visible in the step only, where it also qualifies the relation's
-columns — `R.rank` — as the name of any relation does. Because nothing accumulates, the step is free
+columns — `R.rank` — as the name of any relation does. The step may hand the
+relation to a table-valued function that takes a relation parameter —
+`ITERATE G (Start, generation(G)) ROUNDS 5` — so a rule written once as a
+[function](../language/def-relation.md) is what each round applies. Because nothing accumulates, the step is free
 of FIX's rules: it may reference `name` any number of times, through any operator,
 aggregation and outer joins included. It must reference it at least once, and it
 must be deterministic — a step calling `Rand()` or `NOW()`, sampling without a

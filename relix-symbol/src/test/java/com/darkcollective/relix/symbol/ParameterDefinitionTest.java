@@ -55,6 +55,50 @@ final class ParameterDefinitionTest {
     }
 
     @Test
+    @DisplayName("A scalar parameter has no heading")
+    void scalarHasNoHeading() {
+        ParameterDefinition param = new ParameterDefinition("x", ScalarType.NUMBER);
+        assertThat(param.isRelation()).isFalse();
+        assertThat(param.heading()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A relation parameter carries its heading and reports ANY")
+    void relationCarriesItsHeading() {
+        Schema heading = new Schema(java.util.List.of(new ColumnDefinition("src", ScalarType.ANY)));
+        ParameterDefinition param = ParameterDefinition.relation("E", heading);
+        assertThat(param.isRelation()).isTrue();
+        assertThat(param.type()).isEqualTo(ScalarType.ANY);
+        assertThat(param.heading()).contains(heading);
+    }
+
+    @Test
+    @DisplayName("A relation parameter's type is ANY")
+    void relationTypeIsAny() {
+        Schema heading = new Schema(java.util.List.of(new ColumnDefinition("src", ScalarType.ANY)));
+        assertThatThrownBy(() -> new ParameterDefinition("E", ScalarType.NUMBER, java.util.Optional.of(heading)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("type is ANY");
+    }
+
+    @Test
+    @DisplayName("A relation parameter declares at least one column, and a closed heading")
+    void relationHeadingIsClosedAndNonEmpty() {
+        assertThatThrownBy(() -> ParameterDefinition.relation("E", Schema.empty()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("at least one column");
+        assertThatThrownBy(() -> ParameterDefinition.relation("E", Schema.open()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("Rejects a null heading")
+    void rejectsNullHeading() {
+        assertThatThrownBy(() -> new ParameterDefinition("x", ScalarType.ANY, null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
     @DisplayName("Rejects null type")
     void rejectsNullType() {
         assertThatThrownBy(() -> new ParameterDefinition("x", null))
