@@ -84,6 +84,49 @@ final class TemporalArithmeticTest {
         @Test void numberPlusNumberStaysNumber()       { assertThat(binary(NUMBER, PLUS, NUMBER)).isEqualTo(NUMBER); }
     }
 
+    /** {@code +} concatenates strings, so a STRING operand types it STRING (#36). */
+    @Nested
+    class Concatenation {
+        @Test void stringPlusStringIsString()   { assertThat(binary(STRING, PLUS, STRING)).isEqualTo(STRING); }
+        @Test void stringPlusUnknownIsString()  { assertThat(binary(STRING, PLUS, ANY)).isEqualTo(STRING); }
+        @Test void unknownPlusStringIsString()  { assertThat(binary(ANY, PLUS, STRING)).isEqualTo(STRING); }
+        @Test void unknownPlusUnknownIsNumber() { assertThat(binary(ANY, PLUS, ANY)).isEqualTo(NUMBER); }
+
+        @Test
+        @DisplayName("only + concatenates: every other operator over strings stays NUMBER")
+        void otherOperatorsStayNumeric() {
+            assertThat(binary(STRING, MINUS, STRING)).isEqualTo(NUMBER);
+            assertThat(binary(STRING, MULTIPLY, STRING)).isEqualTo(NUMBER);
+            assertThat(binary(STRING, DIVIDE, STRING)).isEqualTo(NUMBER);
+        }
+
+        @Test
+        @DisplayName("a view's concatenated column is typed STRING, and a FIX step building one "
+                + "is union-compatible with a STRING base")
+        void throughAnalysis() {
+            SemanticResult view = analyze("""
+                    T := [
+                    | a  | b  |
+                    |----|----|
+                    | ab | cd |
+                    ];
+                    V := { π a + b → c, a → d (T) };
+                    """);
+            assertThat(view).hasNoErrors();
+            var v = view.model().orElseThrow().symbolTable().lookupRelation("V").orElseThrow();
+            assertThat(v.schema().column("c").get().type()).isEqualTo(STRING);
+
+            assertThat(analyze("""
+                    T := [
+                    | s |
+                    |---|
+                    | a |
+                    ];
+                    query { FIX R (T, π s + "a" → s (σ Len(s) < 3 (R))) };
+                    """)).hasNoErrors();
+        }
+    }
+
     @Nested
     class IllegalBinary {
         @Test void cannotAddNumberToTimestamp() {
