@@ -146,7 +146,9 @@ query { π order_id, customer, region (Orders ⋈ North) };
 
 - [Every: related to all of a set](every.md) — when the filter is *matches all of*,
   not *matches any of*.
-- Existence and absence (planned): ⋉ is *at least one*, ▷ is *none*.
-- Summary (planned): when the answer has fewer rows than the input, it is a γ.
+- [Has at least one](existence.md) and [None, never, missing](absence.md) — ⋉ is *at
+  least one*, ▷ is *none*.
+- [How many, how much, per what](summary.md) — when the answer has fewer rows than the
+  input, it is a γ.
 - Reference pages (`docs/reference`): `selection`, `projection`,
   `semi-join`, `natural join`.

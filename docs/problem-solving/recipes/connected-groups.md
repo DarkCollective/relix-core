@@ -131,7 +131,8 @@ query { σ records > 1 (EntitySizes) };
 ## Related
 
 - [Every: related to all of a set](every.md)
-- Graph recipes (planned): reachable from (`CLOSURE`), shortest route (`PATH`)
+- [Reachable, how far, and by what route](reachability.md) — reachable from (`CLOSURE`),
+  shortest route (`PATH`)
 - Reference pages (`docs/reference`): `CLUSTER`,
   `theta join`,
   `rename`

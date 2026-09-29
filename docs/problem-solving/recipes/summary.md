@@ -131,8 +131,8 @@ query { DOWNSAMPLE at BY '5m' USING SUM PER region (Typed) };
 
 - [Which rows, and which columns](selection.md) — when the answer keeps the input's
   grain instead of collapsing it.
-- Ranking (planned): *the most* / *top N* wants the row, not the total (`TOP`,
-  `ARGMAX`).
-- Sequence (planned): *gaps between events* is `SESSIONIZE`, a cousin of the time
-  bucket.
+- [The most, the top N, the latest](ranking.md) — *the most* / *top N* wants the row,
+  not the total (`TOP`, `ARGMAX`).
+- [In a row, per visit, gaps](sequence.md) — *gaps between events* is `SESSIONIZE`, a
+  cousin of the time bucket.
 - Reference pages (`docs/reference`): `group`, `ROLLING`, `DOWNSAMPLE`.

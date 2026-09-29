@@ -66,7 +66,7 @@ query { π parent → ancestor (σ child = 4 (Ancestors)) };
 ```relix
 query {
     τ gen, ancestor (
-        π parent → ancestor, depth → gen (
+        π parent → ancestor, gen (
             σ child = 4 (PATH child, parent HOPS 1 TO 5 AS gen (ParentOf))))
 };
 ```

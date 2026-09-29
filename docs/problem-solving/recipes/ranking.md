@@ -152,5 +152,5 @@ a timestamp, so an arbitrary tie-break is the right behaviour.
   that holds it.
 - [Which rows, and which columns](selection.md) — `TOP` is a cousin of σ that keeps a
   ranked subset.
-- Sequence (planned): `WINDOW LAG`/`LEAD` compare a row with its neighbour in order.
+- [In a row, per visit, gaps](sequence.md) — `WINDOW LAG`/`LEAD` compare a row with its neighbour.
 - Reference pages (`docs/reference`): `top`, `window-ranking`, `argmax`.

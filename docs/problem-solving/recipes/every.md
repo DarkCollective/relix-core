@@ -158,7 +158,8 @@ query { Approved };
 ## Related
 
 - [Things that belong together](connected-groups.md)
-- Existence and absence (planned): ⋉ is *at least one*, ▷ is *none*
+- [Has at least one](existence.md) and [None, never, missing](absence.md) — ⋉ is *at
+  least one*, ▷ is *none*
 - Reference pages (`docs/reference`): `division`,
   `for-all`,
   `anti-join`
