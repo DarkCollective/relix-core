@@ -86,6 +86,19 @@ ext.docGuides = [
                         ':relix-lang' : ['*DocAudienceGuardTest'],
                 ],
         ],
+        solving    : [
+                title: 'the problem-solving manual (docs/problem-solving)',
+                docs : ['docs/problem-solving'],
+                pdf  : [task: 'solvingPdf', source: 'docs/problem-solving',
+                        out: 'problem-solving.pdf', profile: 'solving'],
+                tests: [
+                        // The manual's own scripts all run: an engine-side guard over
+                        // every recipe's relix blocks (the rendered-output diff follows
+                        // the front-end formatter, so it lives with the console tools).
+                        ':relix-embed': ['*ProblemSolvingManualTest'],
+                        ':relix-lang' : ['*DocAudienceGuardTest'],
+                ],
+        ],
 ]
 
 // The version the build is at, for a workflow deriving the snapshot version from it.
@@ -915,7 +928,7 @@ ext.docGuides.each { guide, spec ->
 
 tasks.register('pdfs') {
     group = 'documentation'
-    description = 'Render both manuals — the reference and the guide — as PDFs.'
+    description = 'Render the manuals — the reference, the guide and the problem-solving manual — as PDFs.'
     dependsOn rootProject.ext.docGuides.values().collect {
         rootProject.tasks.named(it.pdf.task)
     }
@@ -1214,7 +1227,7 @@ ext.docGuides.each { guide, spec ->
 
 tasks.register('guides') {
     group = 'documentation'
-    description = 'Checks every example in both manuals — the reference and the guide.'
+    description = 'Checks every example in the manuals — the reference, the guide and the problem-solving manual.'
     dependsOn rootProject.ext.docGuides.keySet().collect { rootProject.tasks.named("${it}Guide") }
 }
 

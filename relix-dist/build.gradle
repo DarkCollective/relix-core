@@ -144,6 +144,7 @@ def manualsZip = tasks.register('relixManualsZip', Zip) {
     archiveClassifier = 'manuals'
     from(rootProject.file('docs/reference')) { into 'reference' }
     from(rootProject.file('docs/guide')) { into 'guide' }
+    from(rootProject.file('docs/problem-solving')) { into 'problem-solving' }
     from(rootProject.file('README.md'))
     // A zip is reproducible only when its entries are ordered and undated.
     preserveFileTimestamps = false
