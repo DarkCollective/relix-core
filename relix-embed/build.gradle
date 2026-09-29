@@ -32,6 +32,7 @@ processResources {
 
 tasks.named('test') {
     inputs.dir("$rootDir/docs/guide").withPropertyName('programmingGuide')
+    inputs.dir("$rootDir/docs/problem-solving").withPropertyName('problemSolvingDocs')
     // ProgrammingGuideTest also runs the public README's example: the export's overlay
     // here, the root README in the public tree. Either may be absent, so `files`.
     inputs.files("$rootDir/tools/export/public/README.md", "$rootDir/README.md").withPropertyName('publicReadme')
