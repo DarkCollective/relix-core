@@ -51,7 +51,14 @@ Orders := { π to_timestamp(at) → at, usd  (OrdersRaw) };
 query { Orders ASOF Orders.at >= Rates.at Rates };
 ```
 
-<!-- output: paste from a run. Expected: 10:30 → 0.80 (the 09:00 rate); 13:00 → 0.82 (the 12:00 rate); 08:00 → NULL (no rate at or before it). The matched timestamp arrives as at_r. -->
+```
+ at                    usd  at_r                  rate
+ ────────────────────  ───  ────────────────────  ────
+ 2026-01-02T10:30:00Z  100  2026-01-02T09:00:00Z   0.8
+ 2026-01-02T13:00:00Z  200  2026-01-02T12:00:00Z  0.82
+ 2026-01-02T08:00:00Z   50  NULL                  NULL
+(3 rows)
+```
 
 By default an order with no prior rate keeps NULLs (left-outer). The 08:00 order has
 no rate before it. Add `INNER` to drop such rows, and now the conversion pays off:
@@ -60,7 +67,13 @@ no rate before it. Add `INNER` to drop such rows, and now the conversion pays of
 query { π at, usd, rate, usd * rate → gbp (Orders ASOF INNER Orders.at >= Rates.at Rates) };
 ```
 
-<!-- output: paste from a run. Expected: 10:30 → gbp 80, 13:00 → gbp 164. The 08:00 order is dropped. -->
+```
+ at                    usd  rate  gbp
+ ────────────────────  ───  ────  ───
+ 2026-01-02T10:30:00Z  100   0.8   80
+ 2026-01-02T13:00:00Z  200  0.82  164
+(2 rows)
+```
 
 `WITHIN DURATION 'PT30M'` adds a staleness bound — reject a match older than the
 tolerance — and `<=` flips the direction to *the next* rate at or after the order.
@@ -95,7 +108,12 @@ query {
 };
 ```
 
-<!-- output: paste from a run. Expected: R1 only. R2 checks in after the window ends; R3 is a different room. -->
+```
+ res  room  checkin               checkout              room_r  start                 finish
+ ───  ────  ────────────────────  ────────────────────  ──────  ────────────────────  ────────────────────
+ R1    101  2026-03-05T14:00:00Z  2026-03-08T11:00:00Z     101  2026-03-04T00:00:00Z  2026-03-06T00:00:00Z
+(1 row)
+```
 
 The interval join matches on **endpoints only**, so the same-room condition is a
 `σ` on top — and the right side's `room` arrives disambiguated as `room_r`.

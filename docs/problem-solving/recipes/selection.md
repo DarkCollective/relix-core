@@ -58,7 +58,12 @@ Dee has an order but is not a customer; Bo's big order is not paid.
 query { σ amount > 100 ∧ status = "paid" (Orders) };
 ```
 
-<!-- output: paste from a run. Expected: order 1 only (order 3 is over £100 but not paid). -->
+```
+ order_id  customer  amount  status
+ ────────  ────────  ──────  ──────
+        1  Ann          120  paid
+(1 row)
+```
 
 `π` chooses and **derives** columns; `expr → name` names a derived one. Name a view
 after what its rows are, and build on it:
@@ -69,7 +74,18 @@ query { π order_id, customer, amount (HighValue) };
 query { π order_id, amount, amount * 1.1 → with_surcharge (HighValue) };
 ```
 
-<!-- output: paste from a run. Expected: orders 1 and 3; surcharge 132 and 220. -->
+```
+ order_id  customer  amount
+ ────────  ────────  ──────
+        1  Ann          120
+        3  Bo           200
+(2 rows)
+ order_id  amount  with_surcharge
+ ────────  ──────  ──────────────
+        1     120             132
+        3     200             220
+(2 rows)
+```
 
 ## Recipe 2: keep the rows that are also in another table
 
@@ -83,7 +99,14 @@ North := { σ region = "North" (Customers) };
 query { Orders ⋉ Orders.customer = North.customer North };
 ```
 
-<!-- output: paste from a run. Expected: orders 1, 2 (Ann) and 4 (Cy). Bo is South; Dee is not a customer. -->
+```
+ order_id  customer  amount  status
+ ────────  ────────  ──────  ──────
+        1  Ann          120  paid
+        2  Ann           40  paid
+        4  Cy            90  paid
+(3 rows)
+```
 
 A plain join answers a *different* question — it brings the customer's columns along,
 so it is the right tool when you want them:
@@ -92,7 +115,14 @@ so it is the right tool when you want them:
 query { π order_id, customer, region (Orders ⋈ North) };
 ```
 
-<!-- output: paste from a run. Expected: orders 1, 2, 4 with region North. -->
+```
+ order_id  customer  region
+ ────────  ────────  ──────
+        1  Ann       North
+        2  Ann       North
+        4  Cy        North
+(3 rows)
+```
 
 ## Variations
 
@@ -123,7 +153,22 @@ query { π order_id, customer, region (Orders ⋈ North) };
   query { Orders ⋉ Orders.customer = Contacts.customer Contacts };
   ```
 
-  <!-- output: paste from a run. Expected: the join repeats orders 1 and 2 (5 rows); the semi-join keeps each once (3 rows). -->
+```
+ order_id  customer  amount
+ ────────  ────────  ──────
+        1  Ann          120
+        1  Ann          120
+        2  Ann           40
+        2  Ann           40
+        4  Cy            90
+(5 rows)
+ order_id  customer  amount  status
+ ────────  ────────  ──────  ──────
+        1  Ann          120  paid
+        2  Ann           40  paid
+        4  Cy            90  paid
+(3 rows)
+```
 
 - **NULL is not a value.** `σ status = "paid"` drops a row whose status is NULL,
   because `NULL = "paid"` is UNKNOWN, not false. If a missing status should count,

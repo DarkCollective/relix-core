@@ -51,7 +51,14 @@ appear twice for her two orders:
 query { Customers ⋉ Customers.customer = Orders.customer Orders };
 ```
 
-<!-- output: paste from a run. Expected: Ann, Bo, Cy — once each. Dee has no order, so she is absent. -->
+```
+ customer
+ ────────
+ Ann
+ Bo
+ Cy
+(3 rows)
+```
 
 **At least one that also passes a test** puts the test in the join condition. Which
 customers have *ever* ordered over £100?
@@ -60,7 +67,13 @@ customers have *ever* ordered over £100?
 query { Customers ⋉ Customers.customer = Orders.customer ∧ Orders.amount > 100 Orders };
 ```
 
-<!-- output: paste from a run. Expected: Ann (120) and Bo (200). Cy's only order is £30, so Cy drops out. -->
+```
+ customer
+ ────────
+ Ann
+ Bo
+(2 rows)
+```
 
 The condition is *exists an order that is both this customer's and over £100* — one
 qualifying order is enough to keep the customer.

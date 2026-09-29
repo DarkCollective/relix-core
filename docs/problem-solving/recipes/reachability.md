@@ -53,7 +53,17 @@ one or more hops — the direct edges plus every derived one.
 query { τ origin, dest (CLOSURE origin, dest (Edges)) };
 ```
 
-<!-- output: paste from a run. Expected: six pairs — the direct hops plus JFK→DEN and JFK→LAX-via-connections; each derived pair appears once (set semantics), so cycles terminate. -->
+```
+ origin  dest
+ ──────  ────
+ DEN     LAX
+ JFK     DEN
+ JFK     LAX
+ JFK     ORD
+ ORD     DEN
+ ORD     LAX
+(6 rows)
+```
 
 *"Can I get from JFK to anywhere?"* is then a plain σ on the result — and the optimiser
 folds that σ **into** the closure as a single-source search, so scoping to one origin
@@ -63,7 +73,14 @@ is an ordinary selection, not new syntax:
 query { σ origin = "JFK" (CLOSURE origin, dest (Edges)) };
 ```
 
-<!-- output: paste from a run. Expected: JFK to ORD, DEN and LAX. -->
+```
+ origin  dest
+ ──────  ────
+ JFK     ORD
+ JFK     LAX
+ JFK     DEN
+(3 rows)
+```
 
 `RCLOSURE` additionally pairs each node with itself, for when "stay put" is a valid
 route.
@@ -77,7 +94,14 @@ When the question caps the distance — *within two hops* — and wants to know 
 query { τ hops, dest (σ origin = "JFK" (PATH origin, dest HOPS 1 TO 2 AS hops (Edges))) };
 ```
 
-<!-- output: paste from a run. Expected: JFK→LAX and JFK→ORD at 1 hop (LAX is a direct flight), JFK→DEN at 2 hops. Anything 3+ hops away is excluded. -->
+```
+ origin  dest  hops
+ ──────  ────  ────
+ JFK     LAX      1
+ JFK     ORD      1
+ JFK     DEN      2
+(3 rows)
+```
 
 The distance is the **shortest** path length, so `(from, to)` is a candidate key — a
 pair never appears at two depths. As with `CLOSURE`, a σ on an endpoint seeds the
@@ -93,7 +117,17 @@ ordered array of nodes:
 query { τ origin, dest (TRACE origin, dest VIA cost MINIMIZE AS route (Flights)) };
 ```
 
-<!-- output: paste from a run. Expected: JFK→LAX costs 350 via [JFK, ORD, LAX], beating the 500 direct hop; each pair appears once, holding its optimum, with the route column naming the stops. -->
+```
+ origin  dest  cost  route
+ ──────  ────  ────  ───────────────
+ DEN     LAX     80  [DEN, LAX]
+ JFK     DEN    300  [JFK, ORD, DEN]
+ JFK     LAX    350  [JFK, ORD, LAX]
+ JFK     ORD    200  [JFK, ORD]
+ ORD     DEN    100  [ORD, DEN]
+ ORD     LAX    150  [ORD, LAX]
+(6 rows)
+```
 
 `TRACE` uses the whole `Flights` relation (it needs the weight), not the two-column
 `Edges`. Explode the route into rows with `μ route (…)` when you want one stop per row.

@@ -47,7 +47,14 @@ find it.
 query { SOLVE line_total = qty * unit_price (Invoice) };
 ```
 
-<!-- output: paste from a run. Expected: Widget → 15 (3 × 5); Gadget → qty 5 (60 ÷ 12); Sprocket → unit_price 2.5 (10 ÷ 4). -->
+```
+ item      qty  unit_price  line_total
+ ────────  ───  ──────────  ──────────
+ Widget      3           5          15
+ Gadget      5          12          60
+ Sprocket    4         2.5          10
+(3 rows)
+```
 
 Widget multiplies; Gadget and Sprocket divide. The direction is chosen per row from
 whichever column is NULL — one statement fills a different hole in each.
@@ -78,7 +85,13 @@ whichever column is NULL — one statement fills a different hole in each.
   query { SOLVE line_total = qty * unit_price (Check) };
   ```
 
-  <!-- output: paste from a run. Expected: Full unchanged (8); TwoBlank left with two NULLs — SOLVE cannot fill two holes. -->
+```
+ item      qty  unit_price  line_total
+ ────────  ───  ──────────  ──────────
+ Full        2           4           8
+ TwoBlank    3  NULL        NULL
+(2 rows)
+```
 
 - **It does not validate.** A `Full` row whose values are inconsistent (`2 × 4 ≠ 9`)
   is *not* corrected or flagged — there is no blank to fill. Checking a relationship is

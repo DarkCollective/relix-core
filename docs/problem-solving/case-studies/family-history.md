@@ -57,7 +57,14 @@ Ancestors := { CLOSURE child, parent (ParentOf) };
 query { π parent → ancestor (σ child = 4 (Ancestors)) };
 ```
 
-<!-- output: paste from a run. Expected: 3, 2, 1 — Cara, Bob, Ada. Cy (5) is not an ancestor; a sibling line is not on the path up. -->
+```
+ ancestor
+ ────────
+        3
+        2
+        1
+(3 rows)
+```
 
 ## Stage 2: how many generations back (graph — distance)
 
@@ -71,7 +78,14 @@ query {
 };
 ```
 
-<!-- output: paste from a run. Expected: Cara gen 1, Bob gen 2, Ada gen 3. -->
+```
+ ancestor  gen
+ ────────  ───
+        3    1
+        2    2
+        1    3
+(3 rows)
+```
 
 ## Stage 3: with birth years (time)
 
@@ -83,7 +97,14 @@ DanAncestors := { δ (π parent → id (σ child = 4 (Ancestors))) };
 query { τ born, name (People ⋉ People.id = DanAncestors.id DanAncestors) };
 ```
 
-<!-- output: paste from a run. Expected: Ada 1900, Bob 1925, Cara 1952 — oldest first. -->
+```
+ id  name  born
+ ──  ────  ────
+  1  Ada   1900
+  2  Bob   1925
+  3  Cara  1952
+(3 rows)
+```
 
 ## What this shows
 

@@ -42,7 +42,15 @@ Sessions := { SESSIONIZE ts GAP DURATION 'PT30M' PER user AS session (Events) };
 query { Sessions };
 ```
 
-<!-- output: paste from a run. Expected: user 1 → sessions 1, 1, 2 (the 70-minute gap opens a new one); user 2 → session 1. -->
+```
+ user  ts                    session
+ ────  ────────────────────  ───────
+    1  2026-01-01T10:00:00Z        1
+    1  2026-01-01T10:20:00Z        1
+    1  2026-01-01T11:30:00Z        2
+    2  2026-01-01T09:00:00Z        1
+(4 rows)
+```
 
 The session id is only useful once you aggregate over it — *how many visits, how long
 each* is an ordinary γ keyed on the emergent `(user, session)` grain:
@@ -51,7 +59,14 @@ each* is an ordinary γ keyed on the emergent `(user, session)` grain:
 query { γ user, session, COUNT(ts) → events, MIN(ts) → started, MAX(ts) → ended (Sessions) };
 ```
 
-<!-- output: paste from a run. Expected: user 1 has a 2-event session and a 1-event session; user 2 has one. -->
+```
+ user  session  events  started               ended
+ ────  ───────  ──────  ────────────────────  ────────────────────
+    1        1       2  2026-01-01T10:00:00Z  2026-01-01T10:20:00Z
+    1        2       1  2026-01-01T11:30:00Z  2026-01-01T11:30:00Z
+    2        1       1  2026-01-01T09:00:00Z  2026-01-01T09:00:00Z
+(3 rows)
+```
 
 ## Recipe 2: compare a row with its neighbour (LAG/LEAD)
 
@@ -72,7 +87,14 @@ WithPrev := { WINDOW LAG(reading) SORT day ASC AS prev (Meter) };
 query { π day, reading, reading - prev → change (WithPrev) };
 ```
 
-<!-- output: paste from a run. Expected: 2026-01-01 change NULL (no prior day); 2026-01-02 change 30; 2026-01-03 change −5. -->
+```
+ day         reading  change
+ ──────────  ───────  ──────
+ 2026-01-01      100  NULL
+ 2026-01-02      130      30
+ 2026-01-03      125      -5
+(3 rows)
+```
 
 `LEAD` is the mirror — it looks **forward** to the next row, for *time until the next
 event* or *the value that follows*:
@@ -81,7 +103,14 @@ event* or *the value that follows*:
 query { WINDOW LEAD(reading) SORT day ASC AS next_reading (Meter) };
 ```
 
-<!-- output: paste from a run. Expected: next_reading 130, 125, NULL (the last row has no successor). -->
+```
+ day         reading  next_reading
+ ──────────  ───────  ────────────
+ 2026-01-01      100           130
+ 2026-01-02      130           125
+ 2026-01-03      125  NULL
+(3 rows)
+```
 
 ## Variations
 

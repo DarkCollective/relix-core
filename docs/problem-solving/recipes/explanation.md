@@ -48,7 +48,14 @@ Aug := { WHY (π region, amount (Orders ⨝ Orders.cid = Customers.cid Customers
 query { Aug };
 ```
 
-<!-- output: paste from a run. Expected: the three joined rows, each with a nested provenance column naming its Orders and Customers source tuples. Render with --format json to read it whole. -->
+```
+ region  amount  provenance
+ ──────  ──────  ──────────────────────────────
+ west        40  [{coefficient: 1, variables: …
+ west        25  [{coefficient: 1, variables: …
+ east        10  [{coefficient: 1, variables: …
+(3 rows)
+```
 
 `provenance` is ordinary nested data — an array of *derivations* (the ways the row
 could arise), each an array of the source tuples that combined. So the ordinary
@@ -66,7 +73,15 @@ query {
 };
 ```
 
-<!-- output: paste from a run. Expected: each west result names two source tuples — one Orders row and one Customers row — with the ordinal distinguishing the two different Orders rows. -->
+```
+ region  amount  source     ordinal
+ ──────  ──────  ─────────  ───────
+ west        40  Customers        1
+ west        40  Orders           1
+ west        25  Customers        1
+ west        25  Orders           2
+(4 rows)
+```
 
 Each result names the two tuples that combined to produce it, because a join is a
 *joint* derivation — one derivation, several variables. A result reachable two ways (a

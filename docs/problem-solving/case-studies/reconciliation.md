@@ -65,7 +65,14 @@ query {
 };
 ```
 
-<!-- output: paste from a run. Expected: B 200→250 (differs), C 300→NULL (missing from the bank), D NULL→400 (missing from our ledger). A agrees, so it drops out. -->
+```
+ ref  ours  bank
+ ───  ────  ────
+ B     200   250
+ C     300  NULL
+ D    NULL   400
+(3 rows)
+```
 
 `Nz(ref, ref_r)` collapses the two key columns into one — for a ledger-only row the key is
 on the left, for a bank-only row on the right.

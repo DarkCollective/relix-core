@@ -62,7 +62,14 @@ RingMembers := { δ (π src → account (σ src = dst (Reach))) };
 query { RingMembers };
 ```
 
-<!-- output: paste from a run. Expected: 1001, 1002, 1003 — the three accounts on the loop. 1004 and the 2001→2002 pair are not on any cycle. -->
+```
+ account
+ ───────
+    1001
+    1002
+    1003
+(3 rows)
+```
 
 ## Stage 2: proximity to a flagged account (graph — bounded)
 
@@ -77,7 +84,15 @@ query {
 };
 ```
 
-<!-- output: paste from a run. Expected: 1001 (1 hop), 1002 and 1004 (2 hops), 1003 back to itself (3 hops). -->
+```
+ account  gen
+ ───────  ───
+    1001    1
+    1002    2
+    1004    2
+    1003    3
+(4 rows)
+```
 
 Put the holders back with an ordinary [existence](../recipes/existence.md) semi-join to
 `RingMembers` (each account once):
@@ -86,7 +101,14 @@ Put the holders back with an ordinary [existence](../recipes/existence.md) semi-
 query { π account, holder (Accounts ⋉ Accounts.account = RingMembers.account RingMembers) };
 ```
 
-<!-- output: paste from a run. Expected: 1001 Ada, 1002 Bo, 1003 Cy. -->
+```
+ account  holder
+ ───────  ──────
+    1001  Ada
+    1002  Bo
+    1003  Cy
+(3 rows)
+```
 
 ## Stage 3: why is this escalated (explanation)
 
@@ -98,7 +120,12 @@ Flagged := { π account (σ flagged = true (Accounts)) };
 query { WHY (π src, dst, amount (Transfers ⨝ Transfers.dst = Flagged.account Flagged)) };
 ```
 
-<!-- output: paste from a run. Expected: the 1002→1003 transfer, its provenance naming the Transfers row and the flagged Accounts row (1003, Cy). -->
+```
+ src   dst   amount  provenance
+ ────  ────  ──────  ──────────────────────────────
+ 1002  1003     480  [{coefficient: 1, variables: …
+(1 row)
+```
 
 ## What this shows
 

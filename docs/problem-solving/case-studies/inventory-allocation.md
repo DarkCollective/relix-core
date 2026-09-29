@@ -42,7 +42,13 @@ Each region can ship **50 units** this week.
 query { γ region, COUNT(*) → orders, SUM(units) → demanded, SUM(value) → value (Orders) };
 ```
 
-<!-- output: paste from a run. Expected: North 3 orders, 90 units demanded, 280 value; South 2 orders, 40 units, 140 value. North is over capacity (90 > 50); South is not. -->
+```
+ region  orders  demanded  value
+ ──────  ──────  ────────  ─────
+ North        3        90    280
+ South        2        40    140
+(2 rows)
+```
 
 ## Stage 2: what to ship (optimization)
 
@@ -54,7 +60,15 @@ Fulfil := { OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(units) <= 50 PER region 
 query { τ region, order (Fulfil) };
 ```
 
-<!-- output: paste from a run. Expected: North ships O1 + O3 (50 units, 160 value — beating O2 alone at 120); South ships O4 + O5 (it is within capacity, so all of it). -->
+```
+ order  region  value  units
+ ─────  ──────  ─────  ─────
+ O1     North     100     30
+ O3     North      60     20
+ O4     South      90     25
+ O5     South      50     15
+(4 rows)
+```
 
 ## Stage 3: what it comes to (summary again)
 
@@ -64,7 +78,13 @@ The chosen set is an ordinary relation, so summarise it the same way:
 query { γ region, SUM(value) → shipped_value, SUM(units) → shipped_units (Fulfil) };
 ```
 
-<!-- output: paste from a run. Expected: North 160 value at 50 units (full); South 140 value at 40 units (under capacity). -->
+```
+ region  shipped_value  shipped_units
+ ──────  ─────────────  ─────────────
+ North             160             50
+ South             140             40
+(2 rows)
+```
 
 ## What this shows
 

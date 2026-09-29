@@ -54,7 +54,14 @@ fixture or benchmark replays the same rows:
 query { SAMPLE 3 ROWS SEED 7 (Events) };
 ```
 
-<!-- output: paste from a run. Expected: ids 2, 3, 4 — and the same three on every run with SEED 7. Rows come back in reservoir order, not input order. -->
+```
+ id  region
+ ──  ──────
+  4  EMEA
+  2  EMEA
+  3  APAC
+(3 rows)
+```
 
 Ask for more than the relation holds and you get all of it, not an error:
 
@@ -62,7 +69,21 @@ Ask for more than the relation holds and you get all of it, not an error:
 query { SAMPLE 50 ROWS SEED 7 (Events) };
 ```
 
-<!-- output: paste from a run. Expected: all 10 rows. -->
+```
+ id  region
+ ──  ──────
+  1  EMEA
+  2  EMEA
+  3  APAC
+  4  EMEA
+  5  APAC
+  6  EMEA
+  7  APAC
+  8  EMEA
+  9  APAC
+ 10  EMEA
+(10 rows)
+```
 
 ## Recipe 2: a percentage (SAMPLE p)
 
@@ -73,7 +94,15 @@ Use it for a rough preview of a large input where the exact count does not matte
 query { SAMPLE 0.4 SEED 42 (Events) };
 ```
 
-<!-- output: paste from a run. Expected: about 40% of the rows — ids 3, 4, 7, 8 at SEED 42 (4 of 10). The count is approximate, not exactly 4. -->
+```
+ id  region
+ ──  ──────
+  3  APAC
+  4  EMEA
+  7  APAC
+  8  EMEA
+(4 rows)
+```
 
 ## Recipe 3: sample within a stratum
 
@@ -84,7 +113,13 @@ sample is drawn from just that subset:
 query { SAMPLE 2 ROWS SEED 1 (σ region = "APAC" (Events)) };
 ```
 
-<!-- output: paste from a run. Expected: 2 of the APAC rows — ids 7 and 9 at SEED 1. -->
+```
+ id  region
+ ──  ──────
+  7  APAC
+  9  APAC
+(2 rows)
+```
 
 For a sample of each stratum, run this per region (or union the per-region samples).
 

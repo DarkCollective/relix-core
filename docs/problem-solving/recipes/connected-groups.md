@@ -58,7 +58,14 @@ Links := {
 query { Links };
 ```
 
-<!-- output: paste from a run. Expected pairs: (1,2), (2,3), (4,5). -->
+```
+ a  b
+ ─  ─
+ 1  2
+ 2  3
+ 4  5
+(3 rows)
+```
 
 ## Step 2: the groups
 
@@ -72,7 +79,17 @@ Entities := { CLUSTER a, b AS entity_id (Links ∪ SelfLinks) };
 query { Entities };
 ```
 
-<!-- output: paste from a run. Expected: {1,2,3} one entity, {4,5} another, {6} a third. -->
+```
+ a  entity_id
+ ─  ─────────
+ 1          1
+ 2          1
+ 3          1
+ 4          2
+ 5          2
+ 6          3
+(6 rows)
+```
 
 Records 1 and 3 are in the same entity although they share neither an email nor a
 phone. That is the chain through record 2, and it is the reason to use `CLUSTER`
@@ -90,14 +107,30 @@ Grouped := {
 query { Grouped };
 ```
 
-<!-- output: paste from a run. -->
+```
+ entity_id  id  name
+ ─────────  ──  ──────────
+         1   1  Ann Lee
+         1   2  A. Lee
+         1   3  Annie Lee
+         2   4  Bob Ray
+         2   5  Robert Ray
+         3   6  Cy Tan
+(6 rows)
+```
 
 ```relix
 EntitySizes := { γ entity_id, COUNT(a) → records (Entities) };
 query { σ records > 1 (EntitySizes) };
 ```
 
-<!-- output: paste from a run. Expected: the two entities with duplicates. -->
+```
+ entity_id  records
+ ─────────  ───────
+         1        3
+         2        2
+(2 rows)
+```
 
 ## Pitfalls
 

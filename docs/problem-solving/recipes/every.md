@@ -78,7 +78,13 @@ FullyCertified := { Certifications ÷ Required };
 query { FullyCertified };
 ```
 
-<!-- output: paste from a run. Expected: Acme, Cobalt. -->
+```
+ supplier
+ ────────
+ Acme
+ Cobalt
+(2 rows)
+```
 
 Cobalt's extra `Organic` does not matter: division asks whether the set is
 **covered**, not whether it **matches**.
@@ -93,7 +99,13 @@ AlwaysOnTime := { ∀ supplier : status = "on time" (Deliveries) };
 query { AlwaysOnTime };
 ```
 
-<!-- output: paste from a run. Expected: Acme, Cobalt. -->
+```
+ supplier
+ ────────
+ Acme
+ Cobalt
+(2 rows)
+```
 
 ## Recipe 3: only from a set (− and ▷)
 
@@ -107,7 +119,13 @@ OnlyApproved := { π supplier (Certifications) − π supplier (Unapproved) };
 query { OnlyApproved };
 ```
 
-<!-- output: paste from a run. Expected: Acme, Birch. -->
+```
+ supplier
+ ────────
+ Acme
+ Birch
+(2 rows)
+```
 
 **Exactly the required set** is both at once:
 
@@ -116,7 +134,12 @@ ExactlyRequired := { FullyCertified ∩ OnlyApproved };
 query { ExactlyRequired };
 ```
 
-<!-- output: paste from a run. Expected: Acme. -->
+```
+ supplier
+ ────────
+ Acme
+(1 row)
+```
 
 ## Putting it together
 
@@ -127,7 +150,13 @@ Approved := { FullyCertified ∩ AlwaysOnTime };
 query { Approved };
 ```
 
-<!-- output: paste from a run. Expected: Acme, Cobalt. -->
+```
+ supplier
+ ────────
+ Acme
+ Cobalt
+(2 rows)
+```
 
 ## Pitfalls
 

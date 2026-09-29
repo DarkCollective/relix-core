@@ -58,7 +58,16 @@ query { γ COUNT(*) → full  (Method × Currency × Tier) };
 query { γ COUNT(*) → valid (Valid) };
 ```
 
-<!-- output: paste from a run. Expected: full 18; valid 14 (the four bank × non-USD combinations are removed). -->
+```
+ full
+ ────
+   18
+(1 row)
+ valid
+ ─────
+    14
+(1 row)
+```
 
 ## Stage 2: thin to a covering suite
 
@@ -70,7 +79,12 @@ impossible combinations are never demanded:
 query { γ COUNT(*) → chosen (COVER 2 (Valid)) };
 ```
 
-<!-- output: paste from a run. Expected: 8 — down from 14 valid combinations, and far below the exhaustive 18. -->
+```
+ chosen
+ ──────
+      8
+(1 row)
+```
 
 ## Stage 3: prove it covers (comparison)
 
@@ -81,7 +95,11 @@ suite is empty when the design is complete. The proof is an ordinary set differe
 query { (π method, currency (Valid)) − (π method, currency (COVER 2 (Valid))) };
 ```
 
-<!-- output: paste from a run. Expected: empty — every allowed (method, currency) pair is covered. -->
+```
+ method  currency
+ ──────  ────────
+(0 rows)
+```
 
 ## What this shows
 

@@ -52,7 +52,15 @@ disagree, symmetric difference is the whole answer:
 query { Yesterday ∆ Today };
 ```
 
-<!-- output: paste from a run. Expected: B/20, C/30 (gone from today) and B/25, D/40 (new today). A is in both, so it is absent. -->
+```
+ sku  price
+ ───  ─────
+ B       20
+ C       30
+ B       25
+ D       40
+(4 rows)
+```
 
 `∆` is `(R − S) ∪ (S − R)` — everything in exactly one side. Note that a *changed* row
 shows up as **two** rows: B's old `20` and its new `25`, unaligned. That is the limit
@@ -71,7 +79,15 @@ Recon := { Y ⟗ Y.sku = T.sku T };
 query { Recon };
 ```
 
-<!-- output: paste from a run. Expected: A 10/10; B 20/25; C 30/NULL; NULL/D 40. The right key is auto-renamed sku_r. -->
+```
+ sku   price_y  sku_r  price_t
+ ────  ───────  ─────  ───────
+ A          10  A           10
+ B          20  B           25
+ C          30  NULL   NULL
+ NULL  NULL     D           40
+(4 rows)
+```
 
 A full outer join keeps every key from both sides, filling the missing side with NULL.
 Now the discrepancies are exactly the rows where the two prices disagree **or** one
@@ -85,7 +101,14 @@ query {
 };
 ```
 
-<!-- output: paste from a run. Expected: B 20→25 (changed), C 30→NULL (removed), D NULL→40 (added). A is unchanged, so it drops out. -->
+```
+ sku  price_y  price_t
+ ───  ───────  ───────
+ B         20       25
+ C         30  NULL
+ D    NULL          40
+(3 rows)
+```
 
 `Nz(sku, sku_r)` collapses the two key columns into one — for a removed row the key is
 on the left, for an added row on the right. The row now reads as a diff: a value on

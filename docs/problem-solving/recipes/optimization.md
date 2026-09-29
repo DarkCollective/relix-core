@@ -42,7 +42,14 @@ schema unchanged — it is a filter that picks the optimal subset.
 query { OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(cost) <= 50 (Backlog) };
 ```
 
-<!-- output: paste from a run. Expected: SearchRevamp, Dashboards, DarkMode — value 220 at cost 45, the best reachable inside the budget. -->
+```
+ feature       value  cost
+ ────────────  ─────  ────
+ SearchRevamp     60    10
+ Dashboards      120    30
+ DarkMode         40     5
+(3 rows)
+```
 
 `SUM(value)` is what to maximise; `SUM(cost) <= 50` is the limit. The solver evaluates
 every feasible subset — you describe *what optimal means*, not how to search.
@@ -63,7 +70,14 @@ TeamBacklog := [
 query { OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(cost) <= 30 PER team (TeamBacklog) };
 ```
 
-<!-- output: paste from a run. Expected: search → Dashboards (120); mobile → MobileSync + DarkMode (140 at cost 25). Neither budget constrains the other. -->
+```
+ team    feature     value  cost
+ ──────  ──────────  ─────  ────
+ search  Dashboards    120    30
+ mobile  MobileSync    100    20
+ mobile  DarkMode       40     5
+(3 rows)
+```
 
 ## Variations
 

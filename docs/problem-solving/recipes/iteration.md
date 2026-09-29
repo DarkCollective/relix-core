@@ -61,7 +61,15 @@ Rank := { ITERATE R (
 query { τ rank DESC (Rank) };
 ```
 
-<!-- output: paste from a run. Expected: C 0.3942, A 0.3725, B 0.1958, D 0.0375 — the ranks sum to 1. -->
+```
+ page  rank
+ ────  ──────────────
+ C     0.394199878685
+ A      0.37249131329
+ B      0.19580880811
+ D             0.0375
+(4 rows)
+```
 
 The step reads the previous round's `(page, rank)` as `R`, passes each page's rank along
 its links (`rank / out` per link), sums what arrives at each destination, and keeps a
@@ -109,7 +117,16 @@ Later := { ITERATE Board (
 query { τ x, y (Later) };
 ```
 
-<!-- output: paste from a run. Expected: (1,3), (2,1), (2,3), (3,2), (3,3) — the same five-cell glider shape moved one cell diagonally from the start. -->
+```
+ x  y
+ ─  ─
+ 1  3
+ 2  1
+ 2  3
+ 3  2
+ 3  3
+(5 rows)
+```
 
 The step counts live neighbours (`Board × Offsets`, grouped), keeps cells with exactly
 three (a birth) and cells with exactly two that were already alive (survival). Rows are

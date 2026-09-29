@@ -50,7 +50,13 @@ Typed := { π to_timestamp(at) → at, region, amount (Orders) };
 query { γ region, COUNT(*) → orders, SUM(amount) → total, AVG(amount) → mean (Typed) };
 ```
 
-<!-- output: paste from a run. Expected: East orders 3 total 310 mean ≈103.33; West orders 2 total 175 mean 87.5. -->
+```
+ region  orders  total  mean
+ ──────  ──────  ─────  ──────────────
+ East         3    310  103.3333333333
+ West         2    175            87.5
+(2 rows)
+```
 
 **The keys are the grain.** `γ region` gives one row per region; add a key and the
 grain gets finer — one row per region *and* something else. Decide *"one row per
@@ -66,7 +72,16 @@ restarts it per group.
 query { ROLLING SUM(amount) OVER ALL ROWS SORT at ASC PER region AS running (Typed) };
 ```
 
-<!-- output: paste from a run. Expected: five rows; East accumulates 100, 220, 310; West 80, 175. -->
+```
+ at                    region  amount  running
+ ────────────────────  ──────  ──────  ───────
+ 2026-06-01T09:02:00Z  East       100      100
+ 2026-06-01T09:05:00Z  East       120      220
+ 2026-06-01T09:13:00Z  East        90      310
+ 2026-06-01T09:11:00Z  West        80       80
+ 2026-06-01T09:14:00Z  West        95      175
+(5 rows)
+```
 
 `OVER n ROWS` is the other frame — a trailing window of `n` rows, for a moving
 average.
@@ -80,7 +95,14 @@ floors each timestamp to the start of its window and consolidates within it.
 query { DOWNSAMPLE at BY '5m' USING SUM (Typed) };
 ```
 
-<!-- output: paste from a run. Expected: 09:00 → 100, 09:05 → 120, 09:10 → 265 (the 09:10 window holds three orders). -->
+```
+ bucket                sum_amount
+ ────────────────────  ──────────
+ 2026-06-01T09:00:00Z         100
+ 2026-06-01T09:05:00Z         120
+ 2026-06-01T09:10:00Z         265
+(3 rows)
+```
 
 `AVG`/`SUM` keep the numeric columns only — there is no average of a region name — so
 `region` is dropped unless it is a grouping key. Add `PER` to keep it and bucket
@@ -90,7 +112,15 @@ within each region:
 query { DOWNSAMPLE at BY '5m' USING SUM PER region (Typed) };
 ```
 
-<!-- output: paste from a run. Expected: East 09:00 → 100, East 09:05 → 120, East 09:10 → 90, West 09:10 → 175. -->
+```
+ region  bucket                sum_amount
+ ──────  ────────────────────  ──────────
+ East    2026-06-01T09:00:00Z         100
+ East    2026-06-01T09:05:00Z         120
+ West    2026-06-01T09:10:00Z         175
+ East    2026-06-01T09:10:00Z          90
+(4 rows)
+```
 
 ## Variations
 

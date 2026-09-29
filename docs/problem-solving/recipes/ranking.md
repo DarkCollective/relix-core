@@ -49,7 +49,18 @@ query { TOP 2 units DESC (Sales) };
 query { TOP 1 units DESC PER region (Sales) };
 ```
 
-<!-- output: paste from a run. Expected: top 2 overall are the two 30s (yo-yo, kite); top 1 per region is one North row (yo-yo) and South's globe. -->
+```
+ region  product  units
+ ──────  ───────  ─────
+ North   yo-yo       30
+ North   kite        30
+(2 rows)
+ region  product  units
+ ──────  ───────  ─────
+ North   yo-yo       30
+ South   globe       25
+(2 rows)
+```
 
 Note that `TOP 1 PER region` returns **one** North row even though two are tied — it
 keeps a fixed number of rows, and breaks the tie for you. Whether that is what you
@@ -65,7 +76,13 @@ inside a γ, so it composes with other aggregates.
 query { γ region, ARGMAX(units, product) → top_product, MAX(units) → best (Sales) };
 ```
 
-<!-- output: paste from a run. Expected: North → yo-yo (30), South → globe (25). MAX gives the number, ARGMAX gives which product. -->
+```
+ region  top_product  best
+ ──────  ───────────  ────
+ North   yo-yo          30
+ South   globe          25
+(2 rows)
+```
 
 `MAX(units)` gives the number; `ARGMAX(units, product)` gives *which product*
 achieved it — the row-with-the-maximum lookup SQL needs a window or a self-join for.
@@ -80,7 +97,14 @@ Ranked := { WINDOW RANK() SORT units DESC PER region AS rnk (Sales) };
 query { σ rnk ≤ 1 (Ranked) };
 ```
 
-<!-- output: paste from a run. Expected: both North leaders (yo-yo and kite, rnk 1) and South's globe — three rows, where TOP 1 gave two. -->
+```
+ region  product  units  rnk
+ ──────  ───────  ─────  ───
+ North   yo-yo       30    1
+ North   kite        30    1
+ South   globe       25    1
+(3 rows)
+```
 
 The three ranking functions differ only on ties, and the difference is the whole
 point of choosing between them:
@@ -111,7 +135,13 @@ Latest := { WINDOW ROW_NUMBER() SORT at DESC PER product AS rn (PriceHistory) };
 query { π product, at, price (σ rn = 1 (Latest)) };
 ```
 
-<!-- output: paste from a run. Expected: kite's 2026-06-03 row (price 9) and drum's only row (price 20). -->
+```
+ product  at          price
+ ───────  ──────────  ─────
+ kite     2026-06-03      9
+ drum     2026-06-05     20
+(2 rows)
+```
 
 Use `ROW_NUMBER` here, not `RANK`: you want exactly one row per key even if two share
 a timestamp, so an arbitrary tie-break is the right behaviour.

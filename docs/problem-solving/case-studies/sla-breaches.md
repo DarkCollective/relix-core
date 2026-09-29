@@ -48,7 +48,13 @@ Elapsed  := { π ticket, resolved - opened → took (Opened ⋈ Resolved) };
 query { Elapsed };
 ```
 
-<!-- output: paste from a run. Expected: T1 took PT2H, T2 took PT30H. T3 has no resolved event, so the inner join drops it. -->
+```
+ ticket  took
+ ──────  ─────
+ T1      PT2H
+ T2      PT30H
+(2 rows)
+```
 
 The breaches are a σ on the duration — comparing `DURATION`s directly:
 
@@ -56,7 +62,12 @@ The breaches are a σ on the duration — comparing `DURATION`s directly:
 query { σ took > DURATION 'PT8H' (Elapsed) };
 ```
 
-<!-- output: paste from a run. Expected: T2 (PT30H). -->
+```
+ ticket  took
+ ──────  ─────
+ T2      PT30H
+(1 row)
+```
 
 ## Stage 2: time in each status (sequence)
 
@@ -70,7 +81,16 @@ query {
 };
 ```
 
-<!-- output: paste from a run. Expected: each ticket's first event has a NULL gap; T1's resolved event is PT2H after its open, T2's is PT30H. -->
+```
+ ticket  at                    since_prev
+ ──────  ────────────────────  ──────────
+ T1      2026-06-01T09:00:00Z  NULL
+ T1      2026-06-01T11:00:00Z  PT2H
+ T2      2026-06-01T09:00:00Z  NULL
+ T2      2026-06-02T15:00:00Z  PT30H
+ T3      2026-06-01T09:00:00Z  NULL
+(5 rows)
+```
 
 ## What this shows
 

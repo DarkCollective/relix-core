@@ -55,7 +55,12 @@ ordered?
 query { Customers ▷ Customers.customer = Orders.customer Orders };
 ```
 
-<!-- output: paste from a run. Expected: Dee only. -->
+```
+ customer
+ ────────
+ Dee
+(1 row)
+```
 
 **"None over £100"** is not the same as "never ordered". *No order over £100* means
 everyone except the customers who have **at least one** such order — so build the
@@ -67,7 +72,13 @@ BigSpenders := { δ (π customer (σ amount > 100 (Orders))) };
 query { Customers − BigSpenders };
 ```
 
-<!-- output: paste from a run. Expected: Cy and Dee — Cy's only order is £30, Dee has none. -->
+```
+ customer
+ ────────
+ Cy
+ Dee
+(2 rows)
+```
 
 Note the shape: *none* is *everyone minus the ones with at least one*. Reaching
 straight for `σ amount ≤ 100` would be wrong — it would keep Cy's small order but say
@@ -101,7 +112,12 @@ Stocked := [
 query { π sku (Catalogue) − π sku (Stocked) };
 ```
 
-<!-- output: paste from a run. Expected: B — the one catalogue item with no Stocked row at all. -->
+```
+ sku
+ ───
+ B
+(1 row)
+```
 
 **Missing is not the same as present-but-empty.** C is stocked with a quantity of
 zero — it *has* a row, so it is not in the difference. "Not stocked" (B) and "out of
@@ -111,7 +127,12 @@ stock" (C) are different questions:
 query { π sku (σ qty = 0 (Stocked)) };
 ```
 
-<!-- output: paste from a run. Expected: C. -->
+```
+ sku
+ ───
+ C
+(1 row)
+```
 
 ## Variations
 

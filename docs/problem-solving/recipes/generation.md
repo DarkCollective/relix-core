@@ -62,7 +62,12 @@ Valid := { σ browser ≠ "Safari" ∨ os = "macOS" (Full) };
 query { γ COUNT(*) → valid_combos (Valid) };
 ```
 
-<!-- output: paste from a run. Expected: 14 — the 18 combinations minus Safari on Windows and Linux (2 browsers-off × 2 plans). -->
+```
+ valid_combos
+ ────────────
+           14
+(1 row)
+```
 
 ## Recipe 2: thin to a covering suite (COVER)
 
@@ -76,7 +81,19 @@ Suite := { COVER 2 (Valid) };
 query { τ browser, os (Suite) };
 ```
 
-<!-- output: paste from a run. Expected: 8 rows out of 14, and Safari appears only on macOS. -->
+```
+ browser  os       plan
+ ───────  ───────  ────
+ Chrome   Linux    Free
+ Chrome   Windows  Free
+ Chrome   macOS    Pro
+ Firefox  Linux    Pro
+ Firefox  Windows  Pro
+ Firefox  macOS    Free
+ Safari   macOS    Free
+ Safari   macOS    Pro
+(8 rows)
+```
 
 Eight cases instead of the full fourteen, yet every browser–os, browser–plan and
 os–plan pair is present somewhere. The `τ` only sorts for reading; `COVER` emits in
@@ -90,13 +107,23 @@ is complete, so no external oracle is needed:
 query { (π browser, os (Valid)) − (π browser, os (Suite)) };
 ```
 
-<!-- output: paste from a run. Expected: empty — every (browser, os) pair the constraint allows is covered. -->
+```
+ browser  os
+ ───────  ──
+(0 rows)
+```
 
 ```relix
 query { σ browser = "Safari" (Suite) };
 ```
 
-<!-- output: paste from a run. Expected: only Safari-on-macOS rows — the constraint held through the thinning. -->
+```
+ browser  os     plan
+ ───────  ─────  ────
+ Safari   macOS  Free
+ Safari   macOS  Pro
+(2 rows)
+```
 
 ## Variations
 

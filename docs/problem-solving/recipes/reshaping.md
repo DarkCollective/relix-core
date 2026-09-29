@@ -38,7 +38,13 @@ QuarterlySales := [
 query { PIVOT revenue BY quarter PER region (QuarterlySales) };
 ```
 
-<!-- output: paste from a run. Expected: one row per region; columns q1, q2; West's q2 is NULL (no such row). -->
+```
+ region  q1   q2
+ ──────  ───  ────
+ East    100   120
+ West     80  NULL
+(2 rows)
+```
 
 The column headers come from the **data**, so the output schema is *open* — downstream
 operators that need named columns may need a ρ. `UNPIVOT` is the reverse, folding
@@ -62,7 +68,13 @@ Gathered := { γ customer, COLLECT(order_id) → order_ids (Orders) };
 query { Gathered };
 ```
 
-<!-- output: paste from a run. Expected: Ann → [1, 2], Bo → [3]. -->
+```
+ customer  order_ids
+ ────────  ─────────
+ Ann       [1, 2]
+ Bo        [3]
+(2 rows)
+```
 
 `μ` (unnest) is the exact inverse — it explodes an array into one row per element, and
 `WITH ORDINALITY` records each element's position:
@@ -71,7 +83,14 @@ query { Gathered };
 query { μ order_ids WITH ORDINALITY pos (Gathered) };
 ```
 
-<!-- output: paste from a run. Expected: Ann/1/pos 1, Ann/2/pos 2, Bo/3/pos 1 — the ordinal restarts per input row. -->
+```
+ customer  order_ids  pos
+ ────────  ─────────  ───
+ Ann               1    1
+ Ann               2    2
+ Bo                3    1
+(3 rows)
+```
 
 `μ` is also how you flatten a source that already stores an array (a JSON field of
 line items, say) into flat rows.
@@ -95,7 +114,12 @@ Employees := [
 query { TREE id BY manager_id ORDER id ASC AS reports (Employees) };
 ```
 
-<!-- output: paste from a run. Expected: one row (root Ada), whose reports nests Bob (with Dan under him) and Cara. Render with --format json to see the whole nested value. -->
+```
+ id  manager_id  name  reports
+ ──  ──────────  ────  ──────────────────────────────
+  1           0  Ada   [{id: 2, manager_id: 1, name:…
+(1 row)
+```
 
 One row per root, each carrying its whole subtree in the added column — the recursive
 version of `COLLECT`, which nests a single level. From there it is ordinary nested

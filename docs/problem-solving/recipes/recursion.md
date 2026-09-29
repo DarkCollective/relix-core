@@ -51,7 +51,22 @@ Explosion := { FIX BOM (
 query { τ assembly, part (Explosion) };
 ```
 
-<!-- output: paste from a run. Expected: 11 (assembly, part) pairs — six direct edges plus five derived; Bike gains Rim, Spoke, Tyre via Wheel and Tube two levels down. -->
+```
+ assembly  part
+ ────────  ─────
+ Bike      Frame
+ Bike      Rim
+ Bike      Spoke
+ Bike      Tube
+ Bike      Tyre
+ Bike      Wheel
+ Tyre      Tube
+ Wheel     Rim
+ Wheel     Spoke
+ Wheel     Tube
+ Wheel     Tyre
+(11 rows)
+```
 
 Read the step: renaming `Contains` to `Edge(part, sub)` makes its first column share
 the name `part`, so `BOM ⋈ Edge` links each known part to what *it* contains; the
@@ -63,7 +78,17 @@ carried through unchanged:
 query { π part (σ assembly = "Bike" (Explosion)) };
 ```
 
-<!-- output: paste from a run. Expected: Frame, Wheel, Rim, Spoke, Tyre, Tube. -->
+```
+ part
+ ─────
+ Frame
+ Wheel
+ Rim
+ Spoke
+ Tyre
+ Tube
+(6 rows)
+```
 
 ## Variations
 
