@@ -21,92 +21,127 @@ from.
 
 ## The method
 
-- [Grain first](method/grain.md)
-- [Find the quantifier](method/quantifier.md)
-- [Decompose into views](method/decompose.md)
-- [Check your answer](method/verify.md)
+The four moves that turn a question into a query, in order.
+
+| Chapter | What it teaches |
+|---|---|
+| [Grain first](method/grain.md) | Decide *"one row per ___"* before choosing an operator |
+| [Find the quantifier](method/quantifier.md) | The word in the question that fixes the logic |
+| [Decompose into views](method/decompose.md) | Build the answer as a pipeline of named relations |
+| [Check your answer](method/verify.md) | The checklist that tells *runs* from *right* |
 
 ## Recipes: selection and summary
 
-- [Which rows, and which columns](recipes/selection.md)
-- [How many, how much, per what](recipes/summary.md)
+| Recipe | For |
+|---|---|
+| [Which rows, and which columns](recipes/selection.md) | Filtering rows and choosing columns, keeping the grain |
+| [How many, how much, per what](recipes/summary.md) | Totals and counts per group, running totals, time buckets |
 
 ## Recipes: ranking
 
-- [The most, the top N, the latest](recipes/ranking.md)
+| Recipe | For |
+|---|---|
+| [The most, the top N, the latest](recipes/ranking.md) | The top rows, the latest per key, and ties |
 
 ## Recipes: existence and absence
 
-- [Has at least one](recipes/existence.md)
-- [None, never, missing](recipes/absence.md)
+| Recipe | For |
+|---|---|
+| [Has at least one](recipes/existence.md) | Keeping an entity when a matching row exists |
+| [None, never, missing](recipes/absence.md) | Keeping an entity with no match; what a reference list lacks |
 
 ## Recipes: every and only
 
-- [Every: related to all of a set, or all rows pass a test](recipes/every.md)
+| Recipe | For |
+|---|---|
+| [Every: related to all of a set, or all rows pass a test](recipes/every.md) | Related to *all* of a set, or *every* row passing |
 
 ## Recipes: comparison
 
-- [What changed, what differs](recipes/comparison.md)
+| Recipe | For |
+|---|---|
+| [What changed, what differs](recipes/comparison.md) | Reconciling two snapshots, or two systems |
 
 ## Recipes: graphs
 
-- [Things that belong together](recipes/connected-groups.md)
-- [Reachable, how far, and by what route](recipes/reachability.md)
-- [When the rule is recursive](recipes/recursion.md)
+| Recipe | For |
+|---|---|
+| [Things that belong together](recipes/connected-groups.md) | Undirected groups — duplicates, households, rings |
+| [Reachable, how far, and by what route](recipes/reachability.md) | Directed reachability, distance, and the optimal route |
+| [When the rule is recursive](recipes/recursion.md) | General recursion when the two-column form will not do |
 
 ## Recipes: time
 
-- [As of, during, overlapping](recipes/temporal-alignment.md)
-- [In a row, per visit, gaps](recipes/sequence.md)
+| Recipe | For |
+|---|---|
+| [As of, during, overlapping](recipes/temporal-alignment.md) | The value as of a moment; overlapping periods |
+| [In a row, per visit, gaps](recipes/sequence.md) | Sessions, gaps, and each row's neighbour in order |
 
 ## Recipes: choosing and solving
 
-- [The best combination within limits](recipes/optimization.md)
-- [What value makes this true](recipes/equation.md)
-- [Enough cases to cover](recipes/generation.md)
+| Recipe | For |
+|---|---|
+| [The best combination within limits](recipes/optimization.md) | The best subset under a budget |
+| [What value makes this true](recipes/equation.md) | Filling the one value that satisfies an equation |
+| [Enough cases to cover](recipes/generation.md) | A covering test suite over a parameter space |
 
 ## Recipes: reshaping
 
-- [As columns, as a list, as a tree](recipes/reshaping.md)
+| Recipe | For |
+|---|---|
+| [As columns, as a list, as a tree](recipes/reshaping.md) | Pivoting, nesting, unnesting, folding to a tree |
 
 ## Recipes: explaining
 
-- [Why is this row here, where did it come from](recipes/explanation.md)
+| Recipe | For |
+|---|---|
+| [Why is this row here, where did it come from](recipes/explanation.md) | Reifying a result's lineage and reading it |
 
 ## Recipes: sampling
 
-- [A random, representative subset](recipes/sampling.md)
+| Recipe | For |
+|---|---|
+| [A random, representative subset](recipes/sampling.md) | A reproducible random sample |
 
 ## Recipes: iteration
 
-- [Iterate until it settles](recipes/iteration.md) *(verified against the ITERATE engine snapshot; reaches the front ends when the engine release carrying `ITERATE` is pinned)*
+| Recipe | For |
+|---|---|
+| [Iterate until it settles](recipes/iteration.md) | Converging, or simulating rounds, replacing state each time |
 
 ## Case studies
 
-Problems that cross several classes, each classified out loud before any code:
+Problems that cross several classes, each classified out loud before any code.
 
-- [Fraud rings](case-studies/fraud-rings.md) — existence + graph + explanation
-- [Family history](case-studies/family-history.md) — graph + time
-- [Inventory allocation](case-studies/inventory-allocation.md) — summary + optimization
-- [SLA breaches](case-studies/sla-breaches.md) — temporal alignment + sequence
-- [Reconciling two systems](case-studies/reconciliation.md) — comparison + federation
-- [Test planning](case-studies/test-planning.md) — generation
+| Case study | Classes it crosses |
+|---|---|
+| [Fraud rings](case-studies/fraud-rings.md) | Existence + graph + explanation |
+| [Family history](case-studies/family-history.md) | Graph + time |
+| [Inventory allocation](case-studies/inventory-allocation.md) | Summary + optimization |
+| [SLA breaches](case-studies/sla-breaches.md) | Temporal alignment + sequence |
+| [Reconciling two systems](case-studies/reconciliation.md) | Comparison + federation |
+| [Test planning](case-studies/test-planning.md) | Generation |
 
 ## Engineering the solution
 
-- [Engineering the solution](engineering.md) — reading a plan, what stops a pushdown,
-  bounding a generator, materialization budgets, working offline, moving into Java
+Making a correct query run well, and moving a solution into a program.
+
+| Chapter | Covers |
+|---|---|
+| [Engineering the solution](engineering.md) | Reading a plan, what stops a pushdown, bounding a generator, budgets, working offline, moving into Java |
 
 ## When Relix is not the tool
 
-- [When Relix is not the tool](not-the-tool.md) — row-at-a-time thinking forced into
-  sets, recursion where an operator would do, and what is genuinely out of range
-  (writes, text search, side effects — but not iterative numeric methods)
+Where to stop — the problems it does not do, and the ones it does that you might think it does not.
+
+| Chapter | Covers |
+|---|---|
+| [When Relix is not the tool](not-the-tool.md) | Row-at-a-time thinking forced into sets, recursion where an operator would do, and what is out of range |
 
 ## Recipe finder
 
-- [Recipe finder](finder.md) — by question word, by operator, by class
+Generated from each recipe's [coordinate](coordinate.md), never maintained by hand.
 
-Generated from each recipe's [coordinate](coordinate.md) by
-[`_generate_finder.py`](_generate_finder.py), never maintained by hand
-(`_generate_finder.py --check` fails when it is stale).
+| Index | By |
+|---|---|
+| [Recipe finder](finder.md) | Question word, operator, and class |
