@@ -14,9 +14,9 @@ generations back each one is, and show when each was born."*
   reachability gives the ancestors, and a bounded traversal gives the generation
   distance.
 - *"when each was born"* — a **time** attribute, joined back once the ancestors are
-  known. (In a real tree the source is a GEDCOM file, read through the engine's GEDCOM
-  connector; the shape below is the same, with the individuals and links as inline
-  stand-ins.)
+  known. (In a real tree the source is a GEDCOM file, read through the engine's
+  [GEDCOM connector](../../reference/language/gedcom-source.md); the shape below is the
+  same, with the individuals and links as inline stand-ins.)
 
 A parent-pointer tree is the same shape as the fraud graph and the bill of materials —
 this is *"follow the edge to any depth"*, and the operator is `CLOSURE` (or `FIX` when the
