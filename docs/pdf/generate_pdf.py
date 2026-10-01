@@ -122,6 +122,16 @@ MANUALS = {
         # A page is ordinary markdown prose.
         "narrative": True,
     },
+    "solving": {
+        "title": "Problem Solving with Relix",
+        "subtitle": "Problem-Solving Manual",
+        "tagline": (
+            "What kind of problem is this, and which parts of the language solve "
+            "it — a recipe book for readers who know the language."
+        ),
+        # A page is ordinary markdown prose.
+        "narrative": True,
+    },
 }
 
 

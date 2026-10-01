@@ -15,10 +15,10 @@
 #
 # What it releases is not what the private repository releases. There the assets are
 # the jlink platform archives, which are `relix-cli` — a module this tree does not
-# carry. Here they are the published artifact and the two manuals:
+# carry. Here they are the published artifact and the three manuals:
 #
 #   relix-<v>.jar / -sources.jar / -javadoc.jar / .pom   the coordinate
-#   reference.pdf, guide.pdf                              both manuals, sealed to the tag
+#   reference.pdf, guide.pdf, problem-solving.pdf         the manuals, sealed to the tag
 #   relix-mongo-connector-<v>.jar                         the out-of-tree plugin
 #   relix-connectors.json                                 the hosted connector catalog
 #   checksums.txt
@@ -198,6 +198,7 @@ jobs:
             assets/connector-catalog-entry.json
           cp build/docs/reference.pdf assets/relix-language-reference-"$VERSION".pdf
           cp build/docs/guide.pdf assets/relix-programming-guide-"$VERSION".pdf
+          cp build/docs/problem-solving.pdf assets/relix-problem-solving-"$VERSION".pdf
           ( cd assets && sha256sum -- *.jar *.pom *.zip *.pdf *.json > checksums.txt )
           cat assets/checksums.txt
 

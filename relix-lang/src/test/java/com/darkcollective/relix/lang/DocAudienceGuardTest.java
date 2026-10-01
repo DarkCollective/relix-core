@@ -179,6 +179,30 @@ final class DocAudienceGuardTest {
         }
     }
 
+    @Nested
+    @DisplayName("docs/problem-solving")
+    final class ProblemSolvingManual {
+
+        @Test
+        @DisplayName("cites no ADR, issue, or internal design document")
+        void citesNothingTheReaderCannotOpen() {
+            List<Excerpt> pages = solvingPages();
+            assertNoMatch(pages, ADR, "an ADR citation in the problem-solving manual");
+            assertNoMatch(pages, INTERNAL_DOC,
+                    "a path into internal design notes in the problem-solving manual");
+            assertNoMatch(pages, ISSUE_IN_MARKDOWN,
+                    "a GitHub issue reference in the problem-solving manual");
+        }
+
+        @Test
+        @DisplayName("promises no future capability")
+        void promisesNothing() {
+            assertNoMatch(solvingPages(), FUTURE_PROMISE,
+                    "a forward-looking promise in the problem-solving manual — a "
+                            + "limitation should read as a fact, not an IOU");
+        }
+    }
+
     /**
      * The website's own pages. Skipped where {@code relix-site/content} is absent: the
      * generator is this repository's rather than the engine's, and the public tree does
@@ -349,6 +373,10 @@ final class DocAudienceGuardTest {
 
     private static List<Excerpt> guidePages() {
         return markdownUnder("docs/guide", "programming guide pages");
+    }
+
+    private static List<Excerpt> solvingPages() {
+        return markdownUnder("docs/problem-solving", "problem-solving manual pages");
     }
 
     private static List<Excerpt> referencePages() {

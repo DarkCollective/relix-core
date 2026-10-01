@@ -17,6 +17,7 @@
 tasks.named('test') {
     inputs.dir("$rootDir/docs/reference").withPropertyName('referenceDocs')
     inputs.dir("$rootDir/docs/guide").withPropertyName('programmingGuide')
+    inputs.dir("$rootDir/docs/problem-solving").withPropertyName('problemSolvingDocs')
     // Declared only where the tree is there. These two belong to this repository
     // rather than to the engine, and the public tree carries neither — where a declared
     // input directory is absent Gradle fails the task during *configuration*, taking the

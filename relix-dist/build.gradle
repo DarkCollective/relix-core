@@ -144,6 +144,7 @@ def manualsZip = tasks.register('relixManualsZip', Zip) {
     archiveClassifier = 'manuals'
     from(rootProject.file('docs/reference')) { into 'reference' }
     from(rootProject.file('docs/guide')) { into 'guide' }
+    from(rootProject.file('docs/problem-solving')) { into 'problem-solving' }
     from(rootProject.file('README.md'))
     // A zip is reproducible only when its entries are ordered and undated.
     preserveFileTimestamps = false
@@ -169,15 +170,17 @@ publishing {
             // when the version number is already tagged and the mistake is expensive.
             // `validatePom` below asks the same questions during `check`.
             //
-            // The repository named here is the **public** one. A consumer who follows
-            // `url` or clones `scm` has only the coordinate to go on, and the monorepo
-            // these modules are assembled in is private: pointing them there publishes a
-            // 404 to everyone who is not us. relix-core is what the artifact's source
-            // actually is, and it is what releases it.
+            // `url` is the project's home page and `scm` is where its source lives —
+            // two different questions, so they name two different places. The home page
+            // is the website a reader who has only the coordinate should land on; the
+            // source is the **public** repository, relix-core, which is what the
+            // artifact actually is and what releases it. Both must stay off the monorepo
+            // these modules are assembled in, which is private: pointing either there
+            // publishes a 404 to everyone who is not us.
             pom {
                 name = 'relix'
                 description = project.description
-                url = 'https://github.com/DarkCollective/relix-core'
+                url = 'https://relix.darkcollective.com'
                 licenses {
                     license {
                         name = 'The Apache License, Version 2.0'
