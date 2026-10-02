@@ -72,7 +72,7 @@ final class ConditionalFunctions {
                 // makes the declaration true.
                 CONDITIONAL.lazy("Coalesce", ANY, PURE_DETERMINISTIC,
                         List.of(p("value", ANY), p("default", ANY)),
-                        Arity.atLeast(1), ConditionalFunctions::widest,
+                        Arity.atLeast(1), Category::widest,
                         Spellings.sql("COALESCE"),
                         ConditionalFunctions::coalesce));
     }
@@ -115,7 +115,7 @@ final class ConditionalFunctions {
     /** {@code IIf} returns one of its two branches; the condition's type says nothing. */
     private static ScalarType iifReturnType(List<ScalarType> argumentTypes) {
         return argumentTypes.size() == 3
-                ? widest(argumentTypes.subList(1, 3))
+                ? Category.widest(argumentTypes.subList(1, 3))
                 : ANY;
     }
 
@@ -128,28 +128,6 @@ final class ConditionalFunctions {
         if (argumentTypes.size() == 1) {
             return argumentTypes.get(0) == STRING ? STRING : ANY;
         }
-        return widest(argumentTypes);
-    }
-
-    /**
-     * The type every candidate shares, or {@code ANY} when they do not share one.
-     *
-     * <p>There is no lattice of scalar types to climb here: two types are either the
-     * same, in which case the result is known, or different, in which case the row
-     * decides and nothing narrower than {@code ANY} is true.
-     */
-    private static ScalarType widest(List<ScalarType> types) {
-        ScalarType agreed = null;
-        for (ScalarType type : types) {
-            if (type == ANY) {
-                return ANY;
-            }
-            if (agreed == null) {
-                agreed = type;
-            } else if (agreed != type) {
-                return ANY;
-            }
-        }
-        return agreed == null ? ANY : agreed;
+        return Category.widest(argumentTypes);
     }
 }

@@ -231,6 +231,10 @@ argument).
 [Nz](functions/conditional/nz.md),
 [Coalesce](functions/conditional/coalesce.md)
 
+**Ordering** —
+[LEAST](functions/ordering/least.md),
+[GREATEST](functions/ordering/greatest.md)
+
 **Type check** —
 [IsNull](functions/typecheck/isnull.md),
 [IsNumeric](functions/typecheck/isnumeric.md)

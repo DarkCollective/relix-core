@@ -135,7 +135,10 @@ final class FunctionCoverageTest {
             // ── Nested data ─────────────────────────────────────────────────────
             // Its argument is a constructed struct, since no literal spells an object.
             exact("entries", "Entries({ us: 3, gb: 7 })",
-                    "[{key: us, value: 3}, {key: gb, value: 7}]")
+                    "[{key: us, value: 3}, {key: gb, value: 7}]"),
+            // ── Ordering ────────────────────────────────────────────────────────
+            num  ("least",    "LEAST(5, 2, 8)",                    "2"),
+            num  ("greatest", "GREATEST(5, 2, 8)",                 "8")
     );
 
     /** Evaluates a scalar expression over a one-row relation, returning its display string. */

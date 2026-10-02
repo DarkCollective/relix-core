@@ -48,7 +48,7 @@ final class BuiltinFunctionLibraryTest {
      * The 52 the port had to reproduce function for function, plus {@code Entries} and
      * {@code Pi} — the two built-ins that were never in the library the port started from.
      */
-    private static final int BUILTIN_COUNT = 54;
+    private static final int BUILTIN_COUNT = 56;
 
     /** The eight aggregates: five SQL reducers, one that gathers, two that pick a row. */
     private static final int AGGREGATE_COUNT = 8;
@@ -117,7 +117,7 @@ final class BuiltinFunctionLibraryTest {
         }
 
         @Test
-        @DisplayName("the seven documented categories, complete")
+        @DisplayName("the eight documented categories, complete")
         void categories() {
             Map<String, Long> byCategory = FUNCTIONS.stream()
                     .collect(Collectors.groupingBy(fn -> fn.signature().category(),
@@ -130,7 +130,8 @@ final class BuiltinFunctionLibraryTest {
                     Map.entry("conditional", 3L),
                     Map.entry("typecheck", 2L),
                     Map.entry("conversion", 3L),
-                    Map.entry("nested", 1L));
+                    Map.entry("nested", 1L),
+                    Map.entry("ordering", 2L));
         }
 
         @Test
