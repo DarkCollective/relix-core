@@ -155,7 +155,7 @@ public sealed interface PhysicalNode {
             }
             case Roll n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Roll(n.schema(), n.seed(), in);
+                yield in == n.input() ? n : new Roll(n.schema(), n.seed(), n.weight(), in);
             }
             case Aggregate n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -687,10 +687,20 @@ public sealed interface PhysicalNode {
      * is deterministic.  The output schema equals the input schema; it delivers no
      * ordering.  Streaming output over a buffered (necessarily bounded) input — a
      * plan-time check rejects an unbounded face set.
+     *
+     * <p>When {@code weight} is present each face is drawn with probability proportional
+     * to that non-negative {@code NUMBER} expression over the face's columns (a loaded
+     * die); when absent, every face is equally likely.
      */
     record Roll(Schema schema, java.util.Optional<Long> seed,
-                PhysicalNode input) implements PhysicalNode {
+                java.util.Optional<Operand> weight, PhysicalNode input)
+            implements PhysicalNode {
         @Override public List<PhysicalNode> children() { return List.of(input); }
+
+        /** An unweighted (uniform) roll — the pre-weighting shape. */
+        Roll(Schema schema, java.util.Optional<Long> seed, PhysicalNode input) {
+            this(schema, seed, java.util.Optional.empty(), input);
+        }
     }
 
     /**

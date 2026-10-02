@@ -260,7 +260,8 @@ public sealed interface RelNode permits
             }
             case RollNode n -> {
                 RelNode in = f.apply(n.input());
-                yield in == n.input() ? n : new RollNode(n.seed(), in, n.location());
+                yield in == n.input() ? n
+                        : new RollNode(n.seed(), n.weight(), in, n.location());
             }
             case LimitNode n -> {
                 RelNode in = f.apply(n.input());

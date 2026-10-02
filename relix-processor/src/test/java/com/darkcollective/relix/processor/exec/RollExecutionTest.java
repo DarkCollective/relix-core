@@ -129,4 +129,84 @@ final class RollExecutionTest extends ProcessorTestSupport {
         // Even without a LIMIT, an empty face set terminates — there is nothing to draw.
         assertThat(firstN("Die := [| face |];\nquery { ROLL SEED 1 (Die) };", 10)).isEmpty();
     }
+
+    // ─── Weighted draws (ROLL BY) ───────────────────────────────────────────────
+
+    /** Takes the first {@code n} values of {@code column} from a possibly-unbounded query. */
+    private static List<String> draws(String src, String column, long n) {
+        SemanticModel model = model(src);
+        ExecutionContext ctx = ExecutionContext.inlineOnly(model);
+        QueryStatement query = model.rootQueries().getFirst();
+        try (Stream<Row> stream = EXECUTOR.execute(queryNode(query), ctx)) {
+            return stream.limit(n).map(r -> r.get(column).asDisplayString()).toList();
+        }
+    }
+
+    private static final String LOOT =
+            "Loot := [| item   | weight |\n" +
+            "         | common | 9      |\n" +
+            "         | rare   | 1      |];\n";
+
+    @RepeatedTest(5)
+    @DisplayName("a seeded weighted roll is reproducible")
+    void weightedSeededIsReproducible() {
+        String q = LOOT + "query { LIMIT 20 (ROLL BY weight SEED 5 (Loot)) };";
+        assertThat(draws(q, "item", 20)).isEqualTo(draws(q, "item", 20));
+    }
+
+    @Test
+    @DisplayName("draw frequencies track the weights — a 9:1 die favours the heavy face")
+    void proportionsTrackWeights() {
+        List<String> rolls = draws(
+                LOOT + "query { ROLL BY weight SEED 5 (Loot) };", "item", 2000);
+        long common = rolls.stream().filter("common"::equals).count();
+        long rare = rolls.stream().filter("rare"::equals).count();
+        assertThat(rare).as("the light face is still drawn sometimes").isPositive();
+        assertThat(common).as("the 9x face dominates").isGreaterThan(rare * 4);
+    }
+
+    @Test
+    @DisplayName("a zero-weight face is never drawn")
+    void zeroWeightNeverDrawn() {
+        String src = "Loot := [| item | weight |\n"
+                + "         | keep | 1      |\n"
+                + "         | skip | 0      |];\n"
+                + "query { ROLL BY weight SEED 1 (Loot) };";
+        List<String> rolls = draws(src, "item", 200);
+        assertThat(rolls).contains("keep").doesNotContain("skip");
+    }
+
+    @Test
+    @DisplayName("all-zero weights draw nothing — the empty stream, even unbounded")
+    void allZeroWeightsYieldNoRows() {
+        String src = "Loot := [| item | weight |\n"
+                + "         | a    | 0      |\n"
+                + "         | b    | 0      |];\n"
+                + "query { ROLL BY weight SEED 1 (Loot) };";
+        assertThat(draws(src, "item", 10)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a negative weight is a runtime error")
+    void negativeWeightIsError() {
+        String src = "Loot := [| item | weight |\n"
+                + "         | a    | 1      |\n"
+                + "         | b    | -1     |];\n"
+                + "query { ROLL BY weight SEED 1 (Loot) };";
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> draws(src, "item", 5))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("non-negative");
+    }
+
+    @Test
+    @DisplayName("the weight may be a computed expression over the face columns")
+    void computedWeight() {
+        String src = "Loot := [| item   | qty |\n"
+                + "         | common | 9   |\n"
+                + "         | rare   | 1   |];\n"
+                + "query { ROLL BY qty * 2 SEED 5 (Loot) };";
+        List<String> rolls = draws(src, "item", 2000);
+        assertThat(rolls.stream().filter("common"::equals).count())
+                .isGreaterThan(rolls.stream().filter("rare"::equals).count() * 4);
+    }
 }

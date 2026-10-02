@@ -64,6 +64,18 @@ final class IrReportTest {
         return IrReport.generate(model(src));
     }
 
+    @Test
+    @DisplayName("a weighted ROLL shows its BY expression in the IR")
+    void weightedRollShowsByExpression() {
+        String src = """
+                Faces := [| face | weight |
+                          | a    | 1      |
+                          | b    | 2      |];
+                query { λ 3 (ROLL BY weight SEED 7 (Faces)) };
+                """;
+        assertThat(report(src)).contains("ROLL BY weight");
+    }
+
     // =========================================================================
     // 1. Line-width contract
     // =========================================================================

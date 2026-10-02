@@ -416,8 +416,9 @@ sample            ::= "SAMPLE" NUMBER ( "SEED" INTEGER )? input
 shuffle           ::= "SHUFFLE" ( "SEED" INTEGER )? input
 
 /* ROLL (R): an endless uniform draw with replacement from the faces R (a die roll).
-   The result is unbounded — compose λ to take a finite number of rolls. */
-roll              ::= "ROLL" ( "SEED" INTEGER )? input
+   The result is unbounded — compose λ to take a finite number of rolls. A BY weight
+   expression draws each face with probability proportional to it (a loaded die). */
+roll              ::= "ROLL" ( "BY" operand )? ( "SEED" INTEGER )? input
 
 /* SOLVE total = price * qty (R) */
 solve             ::= "SOLVE" operand "=" operand input

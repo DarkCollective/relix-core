@@ -68,6 +68,47 @@ final class RollParserTest extends ParserTestSupport {
         assertThat(node.seed()).isEmpty();
     }
 
+    // ─── Weighted variants (ROLL BY) ───────────────────────────────────────────
+
+    @Test
+    void parsesWeightedRoll() {
+        RollNode node = (RollNode) parse("ROLL BY weight (Loot)");
+        assertThat(node.weight()).get().isInstanceOf(AttributeOperand.class);
+        assertThat(((AttributeOperand) node.weight().orElseThrow()).name()).isEqualTo("weight");
+        assertThat(node.seed()).isEmpty();
+        assertThat(((RelationNode) node.input()).name()).isEqualTo("Loot");
+    }
+
+    @Test
+    void weightFollowedByRelationIsNotACall() {
+        // The bare-column weight and the face relation's '(' must not read as weight(Loot):
+        // the adjacency rule (a call needs the '(' to abut the name) keeps them apart, so
+        // the weight is the bare column and the input is the relation Loot.
+        RollNode node = (RollNode) parse("ROLL BY weight (Loot)");
+        assertThat(node.weight()).get().isInstanceOf(AttributeOperand.class);
+        assertThat(((RelationNode) node.input()).name()).isEqualTo("Loot");
+    }
+
+    @Test
+    void parsesWeightedSeededRoll() {
+        RollNode node = (RollNode) parse("ROLL BY weight SEED 7 (Loot)");
+        assertThat(node.weight()).get().isInstanceOf(AttributeOperand.class);
+        assertThat(((AttributeOperand) node.weight().orElseThrow()).name()).isEqualTo("weight");
+        assertThat(node.seed()).contains(7L);
+    }
+
+    @Test
+    void parsesComputedWeight() {
+        RollNode node = (RollNode) parse("ROLL BY rarity * 2 (Loot)");
+        assertThat(node.weight()).get().isInstanceOf(BinaryArithmeticExpression.class);
+    }
+
+    @Test
+    void unweightedRollHasEmptyWeight() {
+        RollNode node = (RollNode) parse("ROLL (R)");
+        assertThat(node.weight()).isEmpty();
+    }
+
     // ─── Pretty printing ────────────────────────────────────────────────────
 
     @Test
@@ -90,6 +131,24 @@ final class RollParserTest extends ParserTestSupport {
     @Test
     void prettyPrintSeededRoundTrips() {
         RelNode original = roll(Optional.of(42L), rel("R"));
+        assertParsesTo(original.prettyPrint(), original);
+    }
+
+    @Test
+    void prettyPrintsWeighted() {
+        RelNode node = roll(Optional.empty(), attr("weight"), rel("Loot"));
+        assertPrettyPrints(node, "ROLL BY weight (Loot)");
+    }
+
+    @Test
+    void prettyPrintsWeightedSeeded() {
+        RelNode node = roll(Optional.of(7L), attr("weight"), rel("Loot"));
+        assertPrettyPrints(node, "ROLL BY weight SEED 7 (Loot)");
+    }
+
+    @Test
+    void prettyPrintWeightedRoundTrips() {
+        RelNode original = roll(Optional.of(42L), attr("weight"), rel("R"));
         assertParsesTo(original.prettyPrint(), original);
     }
 

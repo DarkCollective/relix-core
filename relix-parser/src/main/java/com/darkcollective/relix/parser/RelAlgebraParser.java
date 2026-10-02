@@ -1292,17 +1292,30 @@ public final class RelAlgebraParser {
     }
 
     /**
-     * Parses an endless-draw operator: {@code ROLL [SEED <integer>] (R)} — a die roll
-     * over the faces {@code R}. Keyword-only (no glyph), sharing the {@code SEED} clause
-     * with the sampling operators. The current token is the {@code ROLL} keyword.
+     * Parses an endless-draw operator:
+     * {@code ROLL [BY <weightExpr>] [SEED <integer>] (R)} — a die roll over the faces
+     * {@code R}, uniform by default or weighted by the {@code BY} expression. Keyword-only
+     * (no glyph), sharing the {@code SEED} clause with the sampling operators. The current
+     * token is the {@code ROLL} keyword.
+     *
+     * <p>The weight is a full scalar expression over the face columns. A bare column
+     * weight followed by the face relation's {@code (} is disambiguated from a function
+     * call by the adjacency rule — a call requires the {@code (} to abut the name — so
+     * {@code ROLL BY weight (Loot)} reads {@code weight} as the key, exactly as
+     * {@code τ name (Users)} does.
      */
     private RelNode parseRoll() {
         Token opTok = current;
         expect(TokenType.ROLL, "Expected 'ROLL'");
+        java.util.Optional<Operand> weight = java.util.Optional.empty();
+        if (match(TokenType.BY)) {
+            weight = java.util.Optional.of(parseOperand());
+        }
         java.util.Optional<Long> seed = parseSeedClause();
         RelNode input = parseParenthesizedRelation("Expected '(' after 'ROLL'" +
-                (seed.isPresent() ? " (or after 'SEED <n>')" : ""));
-        return new RollNode(seed, input, loc(opTok));
+                (weight.isPresent() || seed.isPresent()
+                        ? " (or after its 'BY'/'SEED' clause)" : ""));
+        return new RollNode(seed, weight, input, loc(opTok));
     }
 
     /**

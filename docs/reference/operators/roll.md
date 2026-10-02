@@ -3,9 +3,13 @@
 # Syntax:
 ROLL (Relation)
 ROLL SEED <integer> (Relation)
+ROLL BY <weightExpr> (Relation)
+ROLL BY <weightExpr> SEED <integer> (Relation)
 
 ROLL (Die)                -- an endless stream of random faces (non-deterministic)
 ROLL SEED 7 (Die)         -- a reproducible endless stream
+ROLL BY weight (Loot)     -- a loaded die: faces weighted by `weight`
+ROLL BY weight SEED 7 (Loot)
 
 # Description:
 ROLL turns a finite relation of "faces" into an **endless** stream of uniformly
@@ -30,6 +34,18 @@ The optional `SEED <integer>` clause makes the sequence reproducible: the same s
 and the same faces give the identical sequence of draws every run. Without a seed,
 each run draws fresh randomness — exactly the contract `SAMPLE` and `SHUFFLE` use.
 
+By default every face is equally likely. The optional `BY <weightExpr>` clause makes
+it a **loaded die**: each face is drawn with probability proportional to a
+non-negative `NUMBER` expression evaluated over that face's columns. A weighted
+encounter or loot table — a `common` face ten times as likely as a `rare` one — is a
+weight column rather than ten copies of a row:
+
+    ROLL BY weight SEED 7 (Loot)
+
+A zero-weight face is never drawn, a negative weight is an error, and a face set whose
+weights are all zero (like an empty one) yields no rows. `BY` precedes `SEED` when
+both are given.
+
 Keyword-only, with no glyph, like the rest of the random family.
 
 # Technical Description:
@@ -39,6 +55,12 @@ SEED clause initialises a seeded `java.util.Random`; without it,
 `ThreadLocalRandom.current()` supplies fresh randomness. The output schema equals
 the input schema; it carries no ordering, and it is `[bag]` by nature (a draw can
 repeat). It never pushes down to a backend.
+
+With a `BY` weight, ROLL builds a cumulative-weight table over the buffered faces once
+and draws by a binary search for a uniform point in `[0, Σw)`: each face's probability
+is `w / Σw`. A zero-weight face adds nothing to the table and so is never selected; a
+negative weight is a runtime error; and an all-zero (or empty) face set has total
+weight zero and yields no rows. A NULL weight counts as zero.
 
 ROLL is the one operator whose **output is unbounded regardless of its input** — it
 is where unboundedness originates when there is no unbounded generator in the tree.
@@ -61,6 +83,12 @@ A reproducible stream of random customers, with repeats:
 
 Draw from a filtered face set:
   LIMIT 5 (ROLL (σ active = true (Players)))
+
+A loaded die — draw faces weighted by a column:
+  LIMIT 10 (ROLL BY weight SEED 7 (Loot))
+
+A weight that is a computed expression over the face:
+  LIMIT 10 (ROLL BY rarity * bonus (Encounters))
 
 # Worked Example:
 A six-sided die, rolled five times with a fixed seed:
@@ -102,8 +130,9 @@ The result is unbounded, so it can only be consumed by streaming operators: a
 `LIMIT` (or another bound) must stand between a `ROLL` and any operator that buffers
 its input — `SORT`, `GROUP`, `SHUFFLE`, `SAMPLE n ROWS` — or that collects the whole
 result. The face set itself must be bounded; `ROLL` over an endless generator is
-rejected at plan time. Draws are uniform and independent; `ROLL` offers no built-in
-way to weight the faces (a loaded die). It never pushes down to a backend.
+rejected at plan time. Draws are independent — uniform by default, or weighted by a
+non-negative `BY` expression (a negative weight is an error). It never pushes down to a
+backend.
 
 # Alternatives:
 SHUFFLE for a random *permutation* (every row once, bounded). SAMPLE n ROWS for a

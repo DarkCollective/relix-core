@@ -346,8 +346,9 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(RollNode node) {
+        String weight = node.weight().map(w -> " BY " + w.accept(operandPrinter)).orElse("");
         String seed = node.seed().map(s -> " SEED " + s).orElse("");
-        return "ROLL" + seed + " (" + node.input().accept(this) + ")";
+        return "ROLL" + weight + seed + " (" + node.input().accept(this) + ")";
     }
 
     /** Renders a grouping key as {@code expression [→ alias]}. */
