@@ -86,6 +86,33 @@ final class MathFunctionsTest {
     }
 
     @Nested
+    @DisplayName("Modulo")
+    final class Modulo {
+
+        @Test
+        @DisplayName("truncates towards zero, so the remainder's sign follows the dividend")
+        void sign() {
+            assertThat(number(call("Mod", n("7"), n("3")))).isEqualTo("1");
+            assertThat(number(call("Mod", n("-7"), n("3")))).isEqualTo("-1");
+            assertThat(number(call("Mod", n("7"), n("-3")))).isEqualTo("1");
+            assertThat(number(call("Mod", n("-7"), n("-3")))).isEqualTo("-1");
+        }
+
+        @Test
+        @DisplayName("keeps the exact decimal remainder")
+        void decimal() {
+            assertThat(number(call("Mod", n("5.5"), n("2")))).isEqualTo("1.5");
+        }
+
+        @Test
+        @DisplayName("rejects a zero divisor rather than returning NULL or NaN")
+        void zeroDivisor() {
+            assertThatThrownBy(() -> call("Mod", n("7"), n("0")))
+                    .hasMessage("Mod: divisor must be non-zero");
+        }
+    }
+
+    @Nested
     @DisplayName("Transcendentals")
     final class Transcendentals {
 
@@ -158,6 +185,8 @@ final class MathFunctionsTest {
             }
             assertThat(call("Power", NULL, n("2")).isNull()).isTrue();
             assertThat(call("Power", n("2"), NULL).isNull()).isTrue();
+            assertThat(call("Mod", NULL, n("2")).isNull()).isTrue();
+            assertThat(call("Mod", n("2"), NULL).isNull()).isTrue();
         }
 
         @Test
@@ -171,6 +200,8 @@ final class MathFunctionsTest {
                     .hasMessage("Round: expected NUMBER argument, got STRING");
             assertThatThrownBy(() -> call("Power", s("x"), n("2")))
                     .hasMessage("Power: expected NUMBER argument, got STRING");
+            assertThatThrownBy(() -> call("Mod", s("x"), n("2")))
+                    .hasMessage("Mod: expected NUMBER argument, got STRING");
         }
     }
 }

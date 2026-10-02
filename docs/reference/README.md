@@ -201,6 +201,7 @@ argument).
 [Log](functions/math/log.md),
 [Exp](functions/math/exp.md),
 [Power](functions/math/power.md),
+[Mod](functions/math/mod.md),
 [Sin](functions/math/sin.md),
 [Cos](functions/math/cos.md),
 [Tan](functions/math/tan.md),

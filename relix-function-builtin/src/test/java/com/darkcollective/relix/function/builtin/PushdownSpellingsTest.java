@@ -275,6 +275,43 @@ final class PushdownSpellingsTest {
     }
 
     @Nested
+    @DisplayName("Mod — MOD where it means the same, declined where it does not")
+    final class Modulo {
+
+        @Test
+        @DisplayName("becomes MOD(x, y) where the dialect truncates and raises on zero as relix does")
+        void folds() {
+            assertThat(render("Mod", POSTGRES, "\"x\"", "\"y\"")).contains("MOD(\"x\", \"y\")");
+            assertThat(render("Mod", DUCKDB, "x", "y")).contains("MOD(x, y)");
+            assertThat(render("Mod", DB2, "x", "y")).contains("MOD(x, y)");
+            assertThat(render("Mod", GENERIC, "x", "y")).contains("MOD(x, y)");
+        }
+
+        @Test
+        @DisplayName("becomes a $mod array in MongoDB")
+        void mongo() {
+            assertThat(render("Mod", MONGO, "\"$x\"", "\"$y\""))
+                    .contains("{\"$mod\": [\"$x\", \"$y\"]}");
+        }
+
+        @Test
+        @DisplayName("declines MySQL, SQLite and SQL Server, whose modulo differs on an edge or a type")
+        void declines() {
+            assertThat(render("Mod", MYSQL, "`x`", "`y`")).isEmpty();
+            assertThat(render("Mod", SQLITE, "x", "y")).isEmpty();
+            assertThat(render("Mod", SQLSERVER, "x", "y")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("declines an argument count it has no spelling for, and an unknown family")
+        void declinesOtherwise() {
+            assertThat(render("Mod", POSTGRES, "x")).isEmpty();
+            assertThat(render("Mod", MONGO, "x", "y", "z")).isEmpty();
+            assertThat(render("Mod", new PushdownTarget("graphql", ""), "x", "y")).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("The string library, where SQL's same-named function is not always the same function")
     final class Strings {
 
@@ -569,7 +606,7 @@ final class PushdownSpellingsTest {
     @DisplayName("every other built-in is evaluated in-engine, and declines every target")
     void everythingElseDeclines() {
         List<String> spelled = List.of("year", "month", "day", "hour", "minute", "second",
-                "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "replace",
+                "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "mod", "replace",
                 "coalesce", "nz", "isnull", "len", "left", "right", "mid", "least", "greatest");
 
         List<String> unexpected = BuiltinCalls.all().stream()
