@@ -415,6 +415,30 @@ public final class Relation {
     }
 
     /**
+     * SHUFFLE — every row once, in a uniformly random order (non-deterministic).
+     *
+     * <p>The random-ordering sibling of {@link #sort(List)}: a full permutation, so it
+     * buffers its input and, like {@code τ}, is rejected over a provably unbounded input.
+     *
+     * @return the randomly permuted relation
+     * @since 1.0
+     */
+    public Relation shuffle() {
+        return derive(AstBuilders.shuffle(node));
+    }
+
+    /**
+     * SHUFFLE with a seed — a reproducible random permutation.
+     *
+     * @param seed the RNG seed; the same seed and input give the same order every run
+     * @return the randomly permuted relation
+     * @since 1.0
+     */
+    public Relation shuffle(long seed) {
+        return derive(AstBuilders.shuffle(Optional.of(seed), node));
+    }
+
+    /**
      * λ — at most {@code count} rows.
      *
      * <p>Wraps rather than replaces: λ over λ is well-defined and the tighter bound wins,

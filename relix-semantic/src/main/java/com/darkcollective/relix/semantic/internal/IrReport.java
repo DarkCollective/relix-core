@@ -61,6 +61,7 @@ import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.SessionizeNode;
 import com.darkcollective.relix.ast.SolveNode;
 import com.darkcollective.relix.ast.SortDirection;
+import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
@@ -586,6 +587,9 @@ public final class IrReport {
             case ReservoirSampleNode s -> "SAMPLE " + s.count() + " ROWS"
                     + s.seed().map(seed -> " SEED " + seed).orElse("");
 
+            case ShuffleNode s -> "SHUFFLE"
+                    + s.seed().map(seed -> " SEED " + seed).orElse("");
+
             case SolveNode s -> "SOLVE " + s.left().accept(OPND)
                     + " = " + s.right().accept(OPND);
 
@@ -701,6 +705,7 @@ public final class IrReport {
             case RenameNode     r -> List.of(r.input());
             case AggregationNode a -> List.of(a.input());
             case SortNode       s -> List.of(s.input());
+            case ShuffleNode    s -> List.of(s.input());
             case LimitNode      l -> List.of(l.input());
             case DistinctNode   d -> List.of(d.input());
             case UnnestNode     u -> List.of(u.input());

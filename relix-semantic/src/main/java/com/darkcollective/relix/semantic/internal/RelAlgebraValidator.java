@@ -85,6 +85,7 @@ import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.SessionizeNode;
 import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.SolveNode;
+import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.SourceLocation;
@@ -458,6 +459,14 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     public Void visit(ReservoirSampleNode node) {
         // The row count is a non-negative integer (guaranteed by the parser and the
         // node's own invariant); the output schema is the input schema unchanged.
+        node.input().accept(this);
+        return null;
+    }
+
+    @Override
+    public Void visit(ShuffleNode node) {
+        // A permutation imposes no requirement on its input beyond its own validity;
+        // the output schema is the input schema unchanged.
         node.input().accept(this);
         return null;
     }

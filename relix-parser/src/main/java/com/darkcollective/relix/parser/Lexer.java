@@ -107,6 +107,7 @@ public final class Lexer {
             Map.entry("iterate",  TokenType.ITERATE),
             Map.entry("forall",   TokenType.FORALL),
             Map.entry("sample",   TokenType.SAMPLE),
+            Map.entry("shuffle",  TokenType.SHUFFLE),
             Map.entry("seed",     TokenType.SEED),
             Map.entry("solve",    TokenType.SOLVE),
             Map.entry("optimize", TokenType.OPTIMIZE),

@@ -22,11 +22,12 @@ import com.darkcollective.relix.ast.visitor.RelNodeVisitor;
  * none of the {@code default} ones.
  *
  * <p>It exists to make the throwing defaults testable in isolation. {@code RelNodeVisitor}
- * declares five arms as {@code default}s that throw — {@code COVER}, {@code FIX}, a
- * {@code FIX}-bound reference, {@code LATERAL} and {@code WHY} — so a visitor with no
- * meaningful answer for one of them inherits the failure rather than carrying a stub.
- * Reaching that inherited failure from a test otherwise means writing out all
- * 47 abstract arms by hand, which is why it was only ever done once.
+ * declares several arms as {@code default}s that throw — {@code COVER}, {@code FIX},
+ * {@code ITERATE}, a {@code FIX}-bound reference, {@code LATERAL}, {@code WHY} and
+ * {@code SHUFFLE} — so a visitor with no meaningful answer for one of them inherits the
+ * failure rather than carrying a stub. Reaching that inherited failure from a test
+ * otherwise means writing out all 47 abstract arms by hand, which is why it was only ever
+ * done once.
  *
  * <p>Every implemented arm throws too, with the node kind in the message: a test that
  * lands on the wrong arm should say so rather than return a quiet {@code null}.

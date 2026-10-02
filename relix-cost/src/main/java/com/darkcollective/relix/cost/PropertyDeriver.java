@@ -57,6 +57,7 @@ import com.darkcollective.relix.ast.ReservoirSampleNode;
 import com.darkcollective.relix.ast.RightOuterJoinNode;
 import com.darkcollective.relix.ast.SampleNode;
 import com.darkcollective.relix.ast.SelectionNode;
+import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.SolveNode;
 import com.darkcollective.relix.ast.SortNode;
@@ -279,6 +280,9 @@ public final class PropertyDeriver {
             // left's candidate keys still uniquely identify output rows.
             case SelectionNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
             case SortNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            // SHUFFLE reorders rows and keeps each exactly once, so the input's
+            // distinctness survives — a permutation of a set is a set.
+            case ShuffleNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
             case LimitNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
             case SampleNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
             case ReservoirSampleNode ignored -> deriveAt(node.children().get(0), depth + 1, src);

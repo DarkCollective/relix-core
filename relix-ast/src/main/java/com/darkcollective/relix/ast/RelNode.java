@@ -58,6 +58,7 @@ public sealed interface RelNode permits
         CompositionNode,
         AggregationNode,
         SortNode,
+        ShuffleNode,
         LimitNode,
         DistinctNode,
         UnnestNode,
@@ -110,6 +111,7 @@ public sealed interface RelNode permits
     default MaterializationMode materializationMode() {
         return switch (this) {
             case SortNode          ignored -> MaterializationMode.SORTED;
+            case ShuffleNode       ignored -> MaterializationMode.BAG;
             case AggregationNode   ignored -> MaterializationMode.BAG;
             case UniversalNode     ignored -> MaterializationMode.BAG;
             case OptimizeNode      ignored -> MaterializationMode.BAG;
@@ -166,6 +168,7 @@ public sealed interface RelNode permits
             case RenameNode n          -> List.of(n.input());
             case AggregationNode n     -> List.of(n.input());
             case SortNode n            -> List.of(n.input());
+            case ShuffleNode n         -> List.of(n.input());
             case LimitNode n           -> List.of(n.input());
             case DistinctNode n        -> List.of(n.input());
             case UnnestNode n          -> List.of(n.input());
@@ -248,6 +251,10 @@ public sealed interface RelNode permits
             case SortNode n -> {
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n : new SortNode(n.sortSpecs(), in, n.location());
+            }
+            case ShuffleNode n -> {
+                RelNode in = f.apply(n.input());
+                yield in == n.input() ? n : new ShuffleNode(n.seed(), in, n.location());
             }
             case LimitNode n -> {
                 RelNode in = f.apply(n.input());

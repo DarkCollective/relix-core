@@ -129,6 +129,7 @@ public final class PhysicalExecutor {
             case PhysicalNode.RecursiveRef r  -> recursion.executeRecursiveRef(r, ctx);
             case PhysicalNode.Limit l     -> unary.executeLimit(l, ctx);
             case PhysicalNode.Sort s      -> aggregates.executeSort(s, ctx);
+            case PhysicalNode.Shuffle s   -> solver.executeShuffle(s, ctx);
             case PhysicalNode.Aggregate a -> aggregates.executeAggregate(a, ctx);
             case PhysicalNode.Universal u -> aggregates.executeUniversal(u, ctx);
             case PhysicalNode.Solve s     -> solver.executeSolve(s, ctx);

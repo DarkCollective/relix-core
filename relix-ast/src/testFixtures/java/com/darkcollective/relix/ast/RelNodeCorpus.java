@@ -69,6 +69,7 @@ import static com.darkcollective.relix.ast.AstBuilders.select;
 import static com.darkcollective.relix.ast.AstBuilders.semiJoin;
 import static com.darkcollective.relix.ast.AstBuilders.sessionize;
 import static com.darkcollective.relix.ast.AstBuilders.solve;
+import static com.darkcollective.relix.ast.AstBuilders.shuffle;
 import static com.darkcollective.relix.ast.AstBuilders.sort;
 import static com.darkcollective.relix.ast.AstBuilders.symmetricDifference;
 import static com.darkcollective.relix.ast.AstBuilders.topK;
@@ -163,6 +164,7 @@ public final class RelNodeCorpus {
                 rename("Renamed", cols("a", "b"), LEFT),
                 groupBy(cols("dept"), List.of(agg(AggregateOperator.SUM, "amount")), LEFT),
                 sort(List.of(asc("a"), desc("b")), LEFT),
+                shuffle(Optional.of(42L), LEFT),
                 limit(Optional.of(5L), 10L, LEFT),
                 distinct(LEFT),
                 unnest("tags", true, Optional.of("ordinality"), LEFT),

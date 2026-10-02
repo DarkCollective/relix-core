@@ -133,6 +133,7 @@ final class NodeKindDerivationTest {
             // Row-subset operators keep whatever the input had.
             Map.entry("SelectionNode", Distinctness.PRESERVES),
             Map.entry("SortNode", Distinctness.PRESERVES),
+            Map.entry("ShuffleNode", Distinctness.PRESERVES),
             Map.entry("LimitNode", Distinctness.PRESERVES),
             Map.entry("SampleNode", Distinctness.PRESERVES),
             Map.entry("ReservoirSampleNode", Distinctness.PRESERVES),

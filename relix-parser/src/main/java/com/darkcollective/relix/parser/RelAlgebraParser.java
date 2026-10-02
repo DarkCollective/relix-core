@@ -532,6 +532,7 @@ public final class RelAlgebraParser {
             case ITERATE  -> parseIterate();
             case FORALL   -> parseUniversal();
             case SAMPLE   -> parseSample();
+            case SHUFFLE  -> parseShuffle();
             case SOLVE    -> parseSolve();
             case OPTIMIZE -> parseOptimize();
             case TOP      -> parseTopK();
@@ -1273,6 +1274,20 @@ public final class RelAlgebraParser {
         RelNode input = parseParenthesizedRelation("Expected '(' after the sampling probability" +
                 (seed.isPresent() ? " (or after 'SEED <n>')" : ""));
         return new SampleNode(probability, seed, input, loc(opTok));
+    }
+
+    /**
+     * Parses a random-permutation operator: {@code SHUFFLE [SEED <integer>] (R)}.
+     * Keyword-only (no glyph), sharing the {@code SEED} clause with the sampling
+     * operators. The current token is the {@code SHUFFLE} keyword.
+     */
+    private RelNode parseShuffle() {
+        Token opTok = current;
+        expect(TokenType.SHUFFLE, "Expected 'SHUFFLE'");
+        java.util.Optional<Long> seed = parseSeedClause();
+        RelNode input = parseParenthesizedRelation("Expected '(' after 'SHUFFLE'" +
+                (seed.isPresent() ? " (or after 'SEED <n>')" : ""));
+        return new ShuffleNode(seed, input, loc(opTok));
     }
 
     /**

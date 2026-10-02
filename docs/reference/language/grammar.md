@@ -326,7 +326,7 @@ relation_keyword  ::= "UNIT" | "DEE" | "EMPTY" | "DUM"
                     | "PROJECT" | "SELECT" | "RENAME" | "GROUP" | "SORT" | "ORDER"
                     | "LIMIT" | "DISTINCT" | "UNNEST" | "WHY"
                     | "CLOSURE" | "RCLOSURE" | "CLUSTER" | "PATH" | "TRACE" | "FIX"
-                    | "ITERATE" | "FORALL" | "SAMPLE" | "SOLVE" | "OPTIMIZE" | "TOP" | "COVER"
+                    | "ITERATE" | "FORALL" | "SAMPLE" | "SHUFFLE" | "SOLVE" | "OPTIMIZE" | "TOP" | "COVER"
                     | "DOWNSAMPLE" | "ROLLING" | "WINDOW" | "SESSIONIZE"
                     | "PIVOT" | "UNPIVOT" | "TREE"
 ```
@@ -338,7 +338,7 @@ relation_keyword  ::= "UNIT" | "DEE" | "EMPTY" | "DUM"
 unary_operation   ::= projection | selection | rename | aggregation | sort | limit
                     | distinct | why | unnest
                     | closure | cluster | path | trace | fixpoint | iterate
-                    | universal | sample | solve | optimize | top_k | cover
+                    | universal | sample | shuffle | solve | optimize | top_k | cover
                     | downsample | rolling | window | sessionize | tree | pivot | unpivot
 
 input             ::= "(" rel_expr ")"
@@ -411,6 +411,9 @@ universal         ::= ( "∀" | "FORALL" ) ( name ( "," name )* )? ":" predicate
 /* SAMPLE 0.1 (R): each row with probability 0.1.  SAMPLE 100 ROWS (R): exactly 100. */
 sample            ::= "SAMPLE" NUMBER ( "SEED" INTEGER )? input
                     | "SAMPLE" INTEGER "ROWS" ( "SEED" INTEGER )? input
+
+/* SHUFFLE (R): every row once, in random order.  SHUFFLE SEED 7 (R): reproducible. */
+shuffle           ::= "SHUFFLE" ( "SEED" INTEGER )? input
 
 /* SOLVE total = price * qty (R) */
 solve             ::= "SOLVE" operand "=" operand input
@@ -556,7 +559,7 @@ reserved_word     ::= "TRUE" | "FALSE" | "NULL" | "UNIT" | "DEE" | "EMPTY" | "DU
                     | "ASC" | "DESC" | "PROJECT" | "SELECT" | "RENAME" | "GROUP" | "SORT"
                     | "ORDER" | "LIMIT" | "DISTINCT" | "UNNEST" | "WITH" | "ORDINALITY"
                     | "CLOSURE" | "RCLOSURE" | "CLUSTER" | "PATH" | "HOPS" | "AS" | "OVER"
-                    | "FIX" | "ITERATE" | "FORALL" | "SAMPLE" | "SEED" | "SOLVE" | "OPTIMIZE"
+                    | "FIX" | "ITERATE" | "FORALL" | "SAMPLE" | "SHUFFLE" | "SEED" | "SOLVE" | "OPTIMIZE"
                     | "ALLOCATE" | "MAXIMIZE" | "MINIMIZE" | "SUBJECT" | "TO" | "TOP" | "PER"
                     | "ROWS" | "COVER" | "EXACT" | "DOWNSAMPLE" | "BY" | "USING" | "FOR"
                     | "LATERAL" | "ROLLING" | "WINDOW" | "SESSIONIZE" | "GAP" | "TRACE"
