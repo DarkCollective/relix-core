@@ -592,6 +592,7 @@ public final class IrReport {
                     + s.seed().map(seed -> " SEED " + seed).orElse("");
 
             case RollNode s -> "ROLL"
+                    + s.weight().map(w -> " BY " + w.accept(OPND)).orElse("")
                     + s.seed().map(seed -> " SEED " + seed).orElse("");
 
             case SolveNode s -> "SOLVE " + s.left().accept(OPND)

@@ -245,8 +245,9 @@ public final class RelNodeOperands {
             // unseeded volatility lives in `usesSystemState`, like the sampling nodes.
             case ShuffleNode ignored -> { }
 
-            // ROLL likewise carries only an optional long seed — no expressions.
-            case RollNode ignored -> { }
+            // ROLL carries an optional long seed (no expression) and an optional
+            // per-face weight expression, when it is a weighted (loaded) draw.
+            case RollNode n -> n.weight().ifPresent(onOperand);
         }
     }
 
@@ -388,9 +389,17 @@ public final class RelNodeOperands {
             case SampleNode ignored -> node;
             case ReservoirSampleNode ignored -> node;
             case ShuffleNode ignored -> node;
-            case RollNode ignored -> node;
 
             // ── operators carrying expressions ────────────────────────────────────
+            case RollNode n -> {
+                if (n.weight().isEmpty()) {
+                    yield n;
+                }
+                Operand weight = onOperand.apply(n.weight().get());
+                yield weight == n.weight().get() ? n
+                        : new RollNode(n.seed(), java.util.Optional.of(weight),
+                                n.input(), n.location());
+            }
             case RelationNode n -> {
                 if (n.produceBound().isEmpty()) {
                     yield n;

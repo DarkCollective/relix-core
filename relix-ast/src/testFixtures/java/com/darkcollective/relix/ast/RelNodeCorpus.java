@@ -166,7 +166,7 @@ public final class RelNodeCorpus {
                 groupBy(cols("dept"), List.of(agg(AggregateOperator.SUM, "amount")), LEFT),
                 sort(List.of(asc("a"), desc("b")), LEFT),
                 shuffle(Optional.of(42L), LEFT),
-                roll(Optional.of(42L), LEFT),
+                roll(Optional.of(42L), attr("weight"), LEFT),
                 limit(Optional.of(5L), 10L, LEFT),
                 distinct(LEFT),
                 unnest("tags", true, Optional.of("ordinality"), LEFT),

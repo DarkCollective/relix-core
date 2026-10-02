@@ -437,6 +437,11 @@ public abstract class AstBuilders {
         return new RollNode(seed, input, SourceLocation.UNKNOWN);
     }
 
+    /** ROLL BY — an endless weighted (loaded) draw, with an optional seed. */
+    public static RollNode roll(Optional<Long> seed, Operand weight, RelNode input) {
+        return new RollNode(seed, Optional.of(weight), input, SourceLocation.UNKNOWN);
+    }
+
     /** λ — limit, no offset. */
     public static LimitNode limit(long count, RelNode input) {
         return new LimitNode(Optional.empty(), count, input);

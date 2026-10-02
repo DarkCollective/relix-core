@@ -448,7 +448,8 @@ public final class AstLocations {
 
         @Override
         public RelNode visit(RollNode node) {
-            return new RollNode(node.seed(), node.input().accept(this), SourceLocation.UNKNOWN);
+            return new RollNode(node.seed(), node.weight().map(AstLocations::stripLocations),
+                    node.input().accept(this), SourceLocation.UNKNOWN);
         }
 
         @Override

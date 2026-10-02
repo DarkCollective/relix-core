@@ -270,6 +270,16 @@ final class SolverExecutor {
      * rather than an endless one — otherwise a {@code λ} above it would never fill.
      * The stream the caller sees is unbounded, so a non-{@code λ} consumer drains it
      * forever; the executor is pull-based, so no work happens until it is pulled.
+     *
+     * <p><b>Weighted draws (a loaded die).</b> When the node carries a {@code BY} weight
+     * expression, each face is drawn with probability proportional to that non-negative
+     * {@code NUMBER} evaluated over the face: the weights are summed into a cumulative
+     * table once, and each draw is a binary search for a uniform point in {@code [0, Σw)}.
+     * A zero-weight face adds nothing to the table and so is never selected; a negative
+     * weight is a runtime error; and an all-zero (or empty) face set has total weight
+     * zero and yields the empty stream, exactly as an empty uniform {@code ROLL} does. A
+     * NULL weight counts as zero — an unknown weight draws nothing rather than failing an
+     * endless stream.
      */
     Stream<Row> executeRoll(PhysicalNode.Roll node, EvalCtx ctx) {
         List<Row> faces;
@@ -280,7 +290,61 @@ final class SolverExecutor {
             return Stream.empty();
         }
         Random rnd = node.seed().<Random>map(Random::new).orElseGet(ThreadLocalRandom::current);
-        return Stream.generate(() -> faces.get(rnd.nextInt(faces.size())));
+        if (node.weight().isEmpty()) {
+            return Stream.generate(() -> faces.get(rnd.nextInt(faces.size())));
+        }
+        return weightedRoll(node, faces, rnd, ctx);
+    }
+
+    /** The weighted draw: a cumulative-weight table built once, binary-searched per draw. */
+    private Stream<Row> weightedRoll(PhysicalNode.Roll node, List<Row> faces, Random rnd,
+                                     EvalCtx ctx) {
+        var weightExpr = node.weight().orElseThrow();
+        var eval = ctx.operandEval();
+        double[] cumulative = new double[faces.size()];
+        double total = 0.0;
+        for (int i = 0; i < faces.size(); i++) {
+            Value value = eval.evaluate(weightExpr, faces.get(i));
+            double weight;
+            if (value.isNull()) {
+                weight = 0.0;
+            } else if (value instanceof NumberValue number) {
+                weight = number.value().doubleValue();
+            } else {
+                throw new EvaluationException(
+                        "ROLL BY: weight must be a NUMBER, got " + value.type());
+            }
+            if (weight < 0.0) {
+                throw new EvaluationException(
+                        "ROLL BY: weight must be non-negative, got " + weight);
+            }
+            total += weight;
+            cumulative[i] = total;
+        }
+        if (total <= 0.0) {
+            return Stream.empty();
+        }
+        double totalWeight = total;
+        return Stream.generate(() -> faces.get(drawIndex(cumulative, rnd.nextDouble() * totalWeight)));
+    }
+
+    /**
+     * The index of the face a uniform point {@code target} in {@code [0, Σw)} lands on —
+     * the first cumulative weight strictly greater than it. A zero-weight face does not
+     * raise the running total, so no point can fall on it.
+     */
+    private static int drawIndex(double[] cumulative, double target) {
+        int lo = 0;
+        int hi = cumulative.length - 1;
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (cumulative[mid] > target) {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        return lo;
     }
 
     /**

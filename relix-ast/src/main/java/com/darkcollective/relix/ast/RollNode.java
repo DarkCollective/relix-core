@@ -45,27 +45,42 @@ import java.util.Optional;
  * seed, {@code ThreadLocalRandom} supplies fresh randomness each run, exactly as
  * unseeded {@code SAMPLE} and {@code SHUFFLE} do.
  *
+ * <p><b>Weighted draws (a loaded die).</b> When {@code weight} is present, each face
+ * is drawn with probability proportional to that non-negative {@code NUMBER}
+ * expression evaluated over the face's columns — {@code ROLL BY w (Faces)}. A
+ * zero-weight face is never drawn, a negative weight is an error, and an all-zero (or
+ * empty) face set yields no rows, exactly as an empty {@code ROLL} does. Without it,
+ * every face is equally likely.
+ *
  * <p>Examples:
  * <ul>
  *   <li>{@code LIMIT 1 (ROLL (Die))} — one random face (non-deterministic)</li>
  *   <li>{@code LIMIT 3 (ROLL SEED 7 (Die))} — three reproducible rolls</li>
+ *   <li>{@code LIMIT 3 (ROLL BY weight SEED 7 (Loot))} — three weighted draws</li>
  * </ul>
  *
  * @param seed     the optional RNG seed for a reproducible sequence of draws; empty = non-deterministic
+ * @param weight   the optional per-face weight expression; empty = uniform draws
  * @param input    the finite relation of faces to draw from; must not be null
  * @param location the source location of this node; never null
  */
-public record RollNode(Optional<Long> seed, RelNode input, SourceLocation location)
-        implements RelNode {
+public record RollNode(Optional<Long> seed, Optional<Operand> weight, RelNode input,
+                       SourceLocation location) implements RelNode {
     public RollNode {
         Objects.requireNonNull(seed, "seed");
+        Objects.requireNonNull(weight, "weight");
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(location, "location");
     }
 
-    /** Convenience constructor for tests; uses {@link SourceLocation#UNKNOWN} and no seed. */
+    /** Convenience constructor for tests; uses {@link SourceLocation#UNKNOWN} and no seed or weight. */
     public RollNode(RelNode input) {
-        this(Optional.empty(), input, SourceLocation.UNKNOWN);
+        this(Optional.empty(), Optional.empty(), input, SourceLocation.UNKNOWN);
+    }
+
+    /** Convenience constructor for an unweighted roll — the pre-weighting shape. */
+    public RollNode(Optional<Long> seed, RelNode input, SourceLocation location) {
+        this(seed, Optional.empty(), input, location);
     }
 
     @Override
