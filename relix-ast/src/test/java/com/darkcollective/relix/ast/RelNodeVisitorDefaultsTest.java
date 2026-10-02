@@ -96,6 +96,13 @@ final class RelNodeVisitorDefaultsTest {
     }
 
     @Test
+    void rollDefaultThrows() {
+        assertThatThrownBy(() -> AstBuilders.roll(INPUT).accept(BARE))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("ROLL");
+    }
+
+    @Test
     @DisplayName("An overriding visitor is dispatched to instead of the default")
     void overridingVisitorWins() {
         RelNodeVisitor<String> overriding = new BareRelNodeVisitor<String>() {
@@ -106,6 +113,7 @@ final class RelNodeVisitorDefaultsTest {
             @Override public String visit(LateralJoinNode node)  { return "lateral"; }
             @Override public String visit(WhyNode node)          { return "why"; }
             @Override public String visit(ShuffleNode node)      { return "shuffle"; }
+            @Override public String visit(RollNode node)         { return "roll"; }
         };
         assertThat(cover().accept(overriding)).isEqualTo("cover");
         assertThat(fixpoint("T", INPUT, INPUT).accept(overriding)).isEqualTo("fix");
@@ -115,6 +123,7 @@ final class RelNodeVisitorDefaultsTest {
                 .isEqualTo("lateral");
         assertThat(why(INPUT).accept(overriding)).isEqualTo("why");
         assertThat(AstBuilders.shuffle(INPUT).accept(overriding)).isEqualTo("shuffle");
+        assertThat(AstBuilders.roll(INPUT).accept(overriding)).isEqualTo("roll");
     }
 
     private static CoverNode cover() {

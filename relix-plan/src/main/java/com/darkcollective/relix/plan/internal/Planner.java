@@ -61,6 +61,7 @@ import com.darkcollective.relix.ast.OuterUnionNode;
 import com.darkcollective.relix.ast.ReservoirSampleNode;
 import com.darkcollective.relix.ast.SampleNode;
 import com.darkcollective.relix.ast.SolveNode;
+import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
@@ -561,6 +562,7 @@ public final class Planner {
             case LimitNode l      -> new PhysicalNode.Limit(schemaOf(l), l.offset(), l.count(), plan(l.input()));
             case SortNode s       -> new PhysicalNode.Sort(schemaOf(s), s.sortSpecs(), plan(s.input()));
             case ShuffleNode s    -> new PhysicalNode.Shuffle(schemaOf(s), s.seed(), plan(s.input()));
+            case RollNode s       -> new PhysicalNode.Roll(schemaOf(s), s.seed(), plan(s.input()));
             case AggregationNode a -> planAggregate(a);
             case UniversalNode u   -> new PhysicalNode.Universal(
                     schemaOf(u), u.groupingAttributes(), u.predicate(), plan(u.input()));

@@ -72,6 +72,7 @@ The everyday relational-algebra operators — the ones you reach for first.
 | [Distinct](operators/distinct.md) | `δ` / `DISTINCT` | Remove duplicate rows |
 | [Sort](operators/sort.md) | `τ` / `SORT` / `ORDER [BY]` | Order rows by one or more keys |
 | [Shuffle](operators/shuffle.md) | `SHUFFLE` | Return every row once, in a uniformly random order |
+| [Roll](operators/roll.md) | `ROLL` | Endless uniform draws with replacement from a finite face set (a die roll) |
 | [Limit](operators/limit.md) | `λ` / `LIMIT` | Take the first N rows (with optional offset) |
 
 ## 4. Predicates

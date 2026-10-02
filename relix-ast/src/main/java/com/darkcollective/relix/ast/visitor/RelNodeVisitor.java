@@ -219,4 +219,17 @@ public interface RelNodeVisitor<R> {
         throw new UnsupportedOperationException(
                 "ShuffleNode (SHUFFLE) handling is not implemented in this visitor");
     }
+
+    /**
+     * Visits an endless-draw ({@code ROLL}) node.
+     *
+     * <p>A {@code default} that throws rather than an abstract method: a visitor with no
+     * meaningful answer for an unbounded with-replacement draw inherits the failure
+     * instead of being forced to carry a stub. Visitors that do handle it — schema
+     * inference, validation, the executor — override this method.
+     */
+    default R visit(RollNode node) {
+        throw new UnsupportedOperationException(
+                "RollNode (ROLL) handling is not implemented in this visitor");
+    }
 }

@@ -368,6 +368,8 @@ public final class PhysicalPlanJson {
 
             case PhysicalNode.Shuffle s -> s.seed().ifPresent(seed -> w.name("seed").value(seed));
 
+            case PhysicalNode.Roll s -> s.seed().ifPresent(seed -> w.name("seed").value(seed));
+
             case PhysicalNode.Cover v -> {
                 w.name("exact").value(v.exact());
                 w.name("strength").value(v.strength());

@@ -34,6 +34,7 @@ import com.darkcollective.relix.ast.OptimizeNode;
 import com.darkcollective.relix.ast.OuterUnionNode;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.ReservoirSampleNode;
+import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
@@ -66,12 +67,17 @@ import java.util.Objects;
  * Streaming operators ({@code σ}, {@code π}, {@code λ}, {@code δ}, most joins, …)
  * may consume an unbounded input forever and are never flagged.
  *
- * <p>Boundedness is derived by {@link PropertyDeriver#boundedness}; because no
- * operator ever <em>produces</em> {@code UNBOUNDED} (it originates only at a leaf
- * and {@code λ} bounds it), a tree whose leaves are all
- * {@link Boundedness#BOUNDED} never trips this check — only a query reading an
- * unbounded generator ({@code Naturals}, {@code Primes}) or a streaming source
- * can trigger it.
+ * <p>Boundedness is derived by {@link PropertyDeriver#boundedness}. Unboundedness
+ * originates at a leaf (an unbounded generator such as {@code Naturals} or
+ * {@code Primes}, or a streaming source) and at {@code ROLL}, the one operator that
+ * <em>produces</em> {@code UNBOUNDED} from a finite input; {@code λ} bounds it again.
+ * A tree whose leaves are all {@link Boundedness#BOUNDED} and that contains no
+ * {@code ROLL} never trips this check.
+ *
+ * <p>{@code ROLL} is itself handled specially: it buffers its (finite) face set, so —
+ * like a blocking operator — its <em>input</em> must be bounded, and an unbounded one
+ * is flagged here even though {@code ROLL}'s output materialisation is
+ * {@link MaterializationMode#STREAM}.
  *
  * <p>{@link Boundedness#UNKNOWN} inputs are <em>not</em> flagged — only what is
  * provably unbounded.
@@ -106,6 +112,15 @@ public final class BoundednessChecker {
                             + label(node) + "; add a bound (e.g. λ n) below it");
                 }
             }
+        }
+        // ROLL streams its (unbounded) output but must buffer its face set to index it,
+        // so — like a blocking operator — its input must be bounded. ROLL itself is
+        // MaterializationMode.STREAM, so it is not caught by the branch above; its own
+        // output being unbounded is what a blocking operator *over* it is rejected over.
+        if (node instanceof RollNode
+                && PropertyDeriver.boundedness(node.children().get(0), source) == Boundedness.UNBOUNDED) {
+            errors.add("cannot materialise unbounded relation as the face set of ROLL; "
+                    + "add a bound (e.g. λ n) below it");
         }
         for (RelNode child : node.children()) {
             checkNode(child, source, errors);

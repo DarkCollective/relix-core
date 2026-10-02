@@ -439,6 +439,33 @@ public final class Relation {
     }
 
     /**
+     * ROLL — an endless uniform draw with replacement from this relation's rows (a die
+     * roll), non-deterministic.
+     *
+     * <p>The result is <b>unbounded</b>: compose {@link #limit(long)} to take a finite
+     * number of draws. A blocking terminal ({@link #toList()}, {@link #sort(List)}, …)
+     * over it is rejected, exactly as over any endless generator; this relation's own
+     * rows (the faces) must be bounded.
+     *
+     * @return an unbounded relation of uniform draws from this relation's rows
+     * @since 1.0
+     */
+    public Relation roll() {
+        return derive(AstBuilders.roll(node));
+    }
+
+    /**
+     * ROLL with a seed — a reproducible endless sequence of draws.
+     *
+     * @param seed the RNG seed; the same seed and faces give the same sequence every run
+     * @return an unbounded relation of uniform draws from this relation's rows
+     * @since 1.0
+     */
+    public Relation roll(long seed) {
+        return derive(AstBuilders.roll(Optional.of(seed), node));
+    }
+
+    /**
      * λ — at most {@code count} rows.
      *
      * <p>Wraps rather than replaces: λ over λ is well-defined and the tighter bound wins,
