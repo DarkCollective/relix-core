@@ -119,6 +119,7 @@ public enum TokenType {
     FORALL,
     SAMPLE,
     SHUFFLE,
+    ROLL,
     SEED,
     SOLVE,
     OPTIMIZE,

@@ -54,6 +54,7 @@ import com.darkcollective.relix.ast.RelationFunctionCall;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.RenameNode;
 import com.darkcollective.relix.ast.ReservoirSampleNode;
+import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.SampleNode;
 import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SelectionNode;
@@ -243,6 +244,9 @@ public final class RelNodeOperands {
             // SHUFFLE carries only an optional long seed — no expressions. Its
             // unseeded volatility lives in `usesSystemState`, like the sampling nodes.
             case ShuffleNode ignored -> { }
+
+            // ROLL likewise carries only an optional long seed — no expressions.
+            case RollNode ignored -> { }
         }
     }
 
@@ -267,6 +271,7 @@ public final class RelNodeOperands {
             case SampleNode n          -> n.seed().isEmpty();
             case ReservoirSampleNode n -> n.seed().isEmpty();
             case ShuffleNode n         -> n.seed().isEmpty();
+            case RollNode n            -> n.seed().isEmpty();
 
             case RelationNode ignored -> false;
             case RelationFunctionCall ignored -> false;
@@ -383,6 +388,7 @@ public final class RelNodeOperands {
             case SampleNode ignored -> node;
             case ReservoirSampleNode ignored -> node;
             case ShuffleNode ignored -> node;
+            case RollNode ignored -> node;
 
             // ── operators carrying expressions ────────────────────────────────────
             case RelationNode n -> {

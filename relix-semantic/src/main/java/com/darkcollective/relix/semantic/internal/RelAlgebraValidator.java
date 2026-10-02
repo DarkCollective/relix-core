@@ -85,6 +85,7 @@ import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.SessionizeNode;
 import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.SolveNode;
+import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SortSpecification;
@@ -467,6 +468,15 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     public Void visit(ShuffleNode node) {
         // A permutation imposes no requirement on its input beyond its own validity;
         // the output schema is the input schema unchanged.
+        node.input().accept(this);
+        return null;
+    }
+
+    @Override
+    public Void visit(RollNode node) {
+        // ROLL draws from its input's rows; it imposes no schema requirement beyond the
+        // input's validity (the face set must be bounded — a plan-time boundedness check,
+        // not a semantic one). The output schema is the input schema unchanged.
         node.input().accept(this);
         return null;
     }

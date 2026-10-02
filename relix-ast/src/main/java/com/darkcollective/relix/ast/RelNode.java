@@ -59,6 +59,7 @@ public sealed interface RelNode permits
         AggregationNode,
         SortNode,
         ShuffleNode,
+        RollNode,
         LimitNode,
         DistinctNode,
         UnnestNode,
@@ -169,6 +170,7 @@ public sealed interface RelNode permits
             case AggregationNode n     -> List.of(n.input());
             case SortNode n            -> List.of(n.input());
             case ShuffleNode n         -> List.of(n.input());
+            case RollNode n            -> List.of(n.input());
             case LimitNode n           -> List.of(n.input());
             case DistinctNode n        -> List.of(n.input());
             case UnnestNode n          -> List.of(n.input());
@@ -255,6 +257,10 @@ public sealed interface RelNode permits
             case ShuffleNode n -> {
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n : new ShuffleNode(n.seed(), in, n.location());
+            }
+            case RollNode n -> {
+                RelNode in = f.apply(n.input());
+                yield in == n.input() ? n : new RollNode(n.seed(), in, n.location());
             }
             case LimitNode n -> {
                 RelNode in = f.apply(n.input());

@@ -176,6 +176,7 @@ public final class PhysicalNodeCorpus {
                 new PhysicalNode.Sort(SCHEMA,
                         List.of(sortKey(X, SortDirection.DESC)), LEFT),
                 new PhysicalNode.Shuffle(SCHEMA, Optional.of(7L), LEFT),
+                new PhysicalNode.Roll(SCHEMA, Optional.of(7L), LEFT),
                 new PhysicalNode.Aggregate(SCHEMA, List.of(GroupingKey.column("x")),
                         List.of(AggregateFunction.simple(AggregateOperator.SUM, "x")),
                         true, SORTED_LEFT),

@@ -70,7 +70,7 @@
 7	relix-ast/src/test/java/com/darkcollective/relix/ast/internal/RelNodeOperandsTest.java
 15	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/internal/ColumnPruningPassTest.java
 76	relix-ast/src/test/java/com/darkcollective/relix/ast/AstNodeUnaryTest.java
-80	relix-ast/src/testFixtures/java/com/darkcollective/relix/ast/AstLocations.java
+81	relix-ast/src/testFixtures/java/com/darkcollective/relix/ast/AstLocations.java
 58	relix-ast/src/test/java/com/darkcollective/relix/ast/AstNodeRelationTest.java
 1	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/internal/ExpressionSimplificationPassTest.java
 50	relix-ast/src/test/java/com/darkcollective/relix/ast/AstValidationTest.java

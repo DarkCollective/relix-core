@@ -153,6 +153,10 @@ public sealed interface PhysicalNode {
                 PhysicalNode in = f.apply(n.input());
                 yield in == n.input() ? n : new Shuffle(n.schema(), n.seed(), in);
             }
+            case Roll n -> {
+                PhysicalNode in = f.apply(n.input());
+                yield in == n.input() ? n : new Roll(n.schema(), n.seed(), in);
+            }
             case Aggregate n -> {
                 PhysicalNode in = f.apply(n.input());
                 yield in == n.input() ? n : new Aggregate(n.schema(), n.groupingKeys(), n.aggregates(), n.streaming(), in);
@@ -673,6 +677,19 @@ public sealed interface PhysicalNode {
      */
     record Shuffle(Schema schema, java.util.Optional<Long> seed,
                    PhysicalNode input) implements PhysicalNode {
+        @Override public List<PhysicalNode> children() { return List.of(input); }
+    }
+
+    /**
+     * Endless uniform draw with replacement (ROLL): buffers the finite face set
+     * {@code input} and then emits an <b>unbounded</b> stream of independent uniform
+     * draws from it (a die roll).  When {@code seed} is present the sequence of draws
+     * is deterministic.  The output schema equals the input schema; it delivers no
+     * ordering.  Streaming output over a buffered (necessarily bounded) input — a
+     * plan-time check rejects an unbounded face set.
+     */
+    record Roll(Schema schema, java.util.Optional<Long> seed,
+                PhysicalNode input) implements PhysicalNode {
         @Override public List<PhysicalNode> children() { return List.of(input); }
     }
 

@@ -533,6 +533,7 @@ public final class RelAlgebraParser {
             case FORALL   -> parseUniversal();
             case SAMPLE   -> parseSample();
             case SHUFFLE  -> parseShuffle();
+            case ROLL     -> parseRoll();
             case SOLVE    -> parseSolve();
             case OPTIMIZE -> parseOptimize();
             case TOP      -> parseTopK();
@@ -1288,6 +1289,20 @@ public final class RelAlgebraParser {
         RelNode input = parseParenthesizedRelation("Expected '(' after 'SHUFFLE'" +
                 (seed.isPresent() ? " (or after 'SEED <n>')" : ""));
         return new ShuffleNode(seed, input, loc(opTok));
+    }
+
+    /**
+     * Parses an endless-draw operator: {@code ROLL [SEED <integer>] (R)} — a die roll
+     * over the faces {@code R}. Keyword-only (no glyph), sharing the {@code SEED} clause
+     * with the sampling operators. The current token is the {@code ROLL} keyword.
+     */
+    private RelNode parseRoll() {
+        Token opTok = current;
+        expect(TokenType.ROLL, "Expected 'ROLL'");
+        java.util.Optional<Long> seed = parseSeedClause();
+        RelNode input = parseParenthesizedRelation("Expected '(' after 'ROLL'" +
+                (seed.isPresent() ? " (or after 'SEED <n>')" : ""));
+        return new RollNode(seed, input, loc(opTok));
     }
 
     /**

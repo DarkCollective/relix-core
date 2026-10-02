@@ -427,6 +427,16 @@ public abstract class AstBuilders {
         return new ShuffleNode(seed, input, SourceLocation.UNKNOWN);
     }
 
+    /** ROLL — an endless uniform draw with replacement (non-deterministic). */
+    public static RollNode roll(RelNode input) {
+        return new RollNode(input);
+    }
+
+    /** ROLL SEED — a reproducible endless sequence of draws. */
+    public static RollNode roll(Optional<Long> seed, RelNode input) {
+        return new RollNode(seed, input, SourceLocation.UNKNOWN);
+    }
+
     /** λ — limit, no offset. */
     public static LimitNode limit(long count, RelNode input) {
         return new LimitNode(Optional.empty(), count, input);

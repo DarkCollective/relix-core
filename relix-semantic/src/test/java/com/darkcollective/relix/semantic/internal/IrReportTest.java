@@ -998,6 +998,18 @@ final class IrReportTest {
         }
 
         @Test
+        @DisplayName("Roll node label contains ROLL (streaming, no tag)")
+        void rollLabel() {
+            String src = """
+                    source Die from database { url: "j", table: "d",
+                        schema: { face: NUMBER } };
+                    Rolled := { LIMIT 5 (ROLL (Die)) };
+                    """;
+            String rpt = report(src);
+            assertThat(rpt).contains("ROLL");
+        }
+
+        @Test
         @DisplayName("COLLECT renders a nested array type code in the symbol table")
         void nestedArrayTypeCode() {
             String src = """
@@ -1727,6 +1739,24 @@ final class IrReportTest {
                     Shuffled := { SHUFFLE (Events) };
                     """);
             assertThat(unseeded).contains("SHUFFLE").doesNotContain("SEED");
+        }
+
+        @Test
+        @DisplayName("ROLL renders its SEED, and omits it when there is none")
+        void rollSeed() {
+            String seeded = report("""
+                    source Die from database { url: "${DB}", table: "die",
+                        schema: { face: NUMBER } };
+                    Rolled := { LIMIT 5 (ROLL SEED 7 (Die)) };
+                    """);
+            assertThat(seeded).contains("ROLL SEED 7");
+
+            String unseeded = report("""
+                    source Die from database { url: "${DB}", table: "die",
+                        schema: { face: NUMBER } };
+                    Rolled := { LIMIT 5 (ROLL (Die)) };
+                    """);
+            assertThat(unseeded).contains("ROLL").doesNotContain("SEED");
         }
 
         @Test

@@ -447,6 +447,11 @@ public final class AstLocations {
         }
 
         @Override
+        public RelNode visit(RollNode node) {
+            return new RollNode(node.seed(), node.input().accept(this), SourceLocation.UNKNOWN);
+        }
+
+        @Override
         public RelNode visit(SolveNode node) {
             return new SolveNode(stripLocations(node.left()), stripLocations(node.right()),
                     node.input().accept(this));

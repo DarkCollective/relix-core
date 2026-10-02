@@ -259,6 +259,31 @@ final class SolverExecutor {
     }
 
     /**
+     * Endless uniform draw with replacement (ROLL): buffers the finite face set, then
+     * emits an unbounded stream in which each row is an independent uniform draw from
+     * the faces — a die roll.  When a seed is present the sequence of draws is
+     * deterministic; without one, {@code ThreadLocalRandom} supplies fresh randomness.
+     *
+     * <p>The face set must be buffered to be indexed, and a plan-time boundedness check
+     * has already rejected an unbounded one, so the buffering here terminates.  An
+     * <em>empty</em> face set has nothing to draw, so the result is the empty stream
+     * rather than an endless one — otherwise a {@code λ} above it would never fill.
+     * The stream the caller sees is unbounded, so a non-{@code λ} consumer drains it
+     * forever; the executor is pull-based, so no work happens until it is pulled.
+     */
+    Stream<Row> executeRoll(PhysicalNode.Roll node, EvalCtx ctx) {
+        List<Row> faces;
+        try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
+            faces = input.toList();
+        }
+        if (faces.isEmpty()) {
+            return Stream.empty();
+        }
+        Random rnd = node.seed().<Random>map(Random::new).orElseGet(ThreadLocalRandom::current);
+        return Stream.generate(() -> faces.get(rnd.nextInt(faces.size())));
+    }
+
+    /**
      * Reservoir (fixed-count) sampling: keeps exactly {@code count} rows chosen
      * uniformly at random without replacement, via Vitter's Algorithm R — a single
      * streaming pass that holds at most {@code count} rows.  The first {@code count}
