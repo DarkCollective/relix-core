@@ -203,6 +203,7 @@ argument).
 [Cos](functions/math/cos.md),
 [Tan](functions/math/tan.md),
 [Atn](functions/math/atn.md),
+[Pi](functions/math/pi.md),
 [Rand](functions/math/rand.md)
 
 **Date / time** —

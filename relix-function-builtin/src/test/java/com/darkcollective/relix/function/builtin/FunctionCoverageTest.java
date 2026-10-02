@@ -100,6 +100,7 @@ final class FunctionCoverageTest {
             num("Tan", "0", n("0")),
             num("Atn", "0", n("0")),
             num("Power", "1024", n("2"), n("10")),
+            num("Pi", "3.141592653589793"),
             // ── Date/time ───────────────────────────────────────────────────────
             exact("NOW", "2026-07-08T13:40:30Z"),
             exact("CURRENT_DATE", "2026-07-08"),

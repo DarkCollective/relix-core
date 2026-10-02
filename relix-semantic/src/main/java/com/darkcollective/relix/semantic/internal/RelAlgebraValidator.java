@@ -2016,6 +2016,40 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     }
 
     /**
+     * Validates a scalar {@code def} body — the single operand expression a
+     * user-defined function computes. A body is not an RA tree, so the node
+     * visitor never reaches it; it is walked here directly for the two kinds of
+     * reference it may hold.
+     *
+     * <ul>
+     *   <li>Every {@link FunctionCall} must resolve, exactly as one at a
+     *       projection or predicate call site does (see
+     *       {@link #validateFunctionCall(FunctionCall)}). This is the gap the
+     *       method closes: an unknown call <em>inside</em> a body passed analysis
+     *       and failed only at run time, while the same call at an ordinary site
+     *       was caught.</li>
+     *   <li>Every {@link AttributeOperand} must name one of the function's
+     *       parameters. A body has no input relation, so a bare name is a
+     *       parameter or nothing ({@code def.md}: "a single operand expression
+     *       over the parameters").</li>
+     * </ul>
+     *
+     * <p>The in-scope parameter names are supplied to the constructor as
+     * {@code parameters}, so both checks read the field the table-valued-function
+     * path already uses.
+     */
+    void validateScalarFunctionBody(Operand body) {
+        OperandWalker.walk(body,
+                attr -> {
+                    if (!parameters.contains(attr.unqualifiedName().toLowerCase(Locale.ROOT))) {
+                        error(attr.location(), "Function body: '" + attr.name()
+                                + "' is not a parameter of this function");
+                    }
+                },
+                this::validateFunctionCall);
+    }
+
+    /**
      * Reports an illegal temporal-arithmetic combination anywhere inside {@code expr}
      * (ADR-0013) — {@code TIMESTAMP + TIMESTAMP}, {@code NUMBER ÷ DURATION} and the rest
      * of the pairs the type rule has no case for.
