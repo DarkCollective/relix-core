@@ -19,9 +19,9 @@ IIf **short-circuits**: the condition is evaluated, then *only* the branch it
 selects — the other is never evaluated (and a NULL condition evaluates neither).
 That is what makes IIf usable as a guard: the untaken branch may be an expression
 that would fail on those rows, such as converting a value that is not a number.
-[Nz](nz.md) and [Coalesce](coalesce.md) are lazy in the same way, and these three
-are the only built-ins that are — every other function evaluates all its
-arguments.
+[Switch](switch.md), [Nz](nz.md) and [Coalesce](coalesce.md) are lazy in the same
+way, and these four are the only built-ins that are — every other function evaluates
+all its arguments.
 
 # Examples:
 Pass/fail label:
@@ -41,7 +41,7 @@ in type). A NULL condition yields NULL — neither branch is evaluated in that c
 Nz / Coalesce specifically for substituting a value when something is NULL.
 
 # See Also:
-[nz](nz.md), [coalesce](coalesce.md), [isnull](../typecheck/isnull.md), [comparison](../../predicates/comparison.md)
+[switch](switch.md), [nz](nz.md), [coalesce](coalesce.md), [isnull](../typecheck/isnull.md), [comparison](../../predicates/comparison.md)
 
 # Notes:
 For "replace NULL with a default" the dedicated Nz/Coalesce read more clearly than

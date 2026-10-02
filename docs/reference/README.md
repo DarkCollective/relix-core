@@ -229,6 +229,7 @@ argument).
 
 **Conditional** —
 [IIf](functions/conditional/iif.md),
+[Switch](functions/conditional/switch.md),
 [Nz](functions/conditional/nz.md),
 [Coalesce](functions/conditional/coalesce.md)
 

@@ -126,6 +126,7 @@ final class FunctionCoverageTest {
             exact("iif",     "IIf(3 > 2, \"y\", \"n\")",           "y"),   // comparison-arg regression guard
             exact("nz",      "Nz(\"present\", \"fallback\")",      "present"),
             exact("coalesce","Coalesce(\"first\", \"second\")",    "first"),
+            exact("switch",  "Switch(1 > 2, \"a\", 3 > 2, \"b\", \"c\")", "b"),  // first match wins; else default
             // ── Type check ──────────────────────────────────────────────────────
             exact("isnull",   "IsNull(\"x\")",                     "false"),
             exact("isnumeric","IsNumeric(\"123\")",                "true"),
