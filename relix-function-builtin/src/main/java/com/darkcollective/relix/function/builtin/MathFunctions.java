@@ -165,6 +165,16 @@ final class MathFunctions {
                 MATH.fn("Atn", NUMBER, PURE_DETERMINISTIC, List.of(p("x", NUMBER)),
                         args -> approximate(args, "Atn", Math::atan)),
 
+                // Pi is the constant π — nullary, and the one math built-in that is a
+                // pure constant rather than a computation of its argument. It declares
+                // no backend spelling for the reason the transcendentals do not: a SQL
+                // PI() would reintroduce the last-place disagreement that a value folded
+                // here does not have, and the engine already folds a pure nullary call to
+                // its value. The radians-only trig functions are its first users —
+                // Sin(Pi() / 2) is 1.
+                MATH.fn("Pi", NUMBER, PURE_DETERMINISTIC, List.of(),
+                        args -> new NumberValue(BigDecimal.valueOf(Math.PI))),
+
                 MATH.fn("Power", NUMBER, PURE_DETERMINISTIC,
                         List.of(p("base", NUMBER), p("exp", NUMBER)),
                         MathFunctions::power),

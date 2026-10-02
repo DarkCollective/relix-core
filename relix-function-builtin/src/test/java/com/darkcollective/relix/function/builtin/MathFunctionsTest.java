@@ -116,6 +116,22 @@ final class MathFunctionsTest {
     }
 
     @Nested
+    @DisplayName("Pi")
+    final class Pi {
+
+        @Test
+        @DisplayName("is π as the nearest double, and a pure deterministic constant")
+        void pi() {
+            assertThat(number(call("Pi")).doubleValue()).isEqualTo(Math.PI);
+
+            var properties = BuiltinCalls.function("Pi").signature().properties();
+            assertThat(properties).contains(
+                    com.darkcollective.relix.symbol.FunctionProperty.PURE,
+                    com.darkcollective.relix.symbol.FunctionProperty.DETERMINISTIC);
+        }
+    }
+
+    @Nested
     @DisplayName("Rand")
     final class Rand {
 

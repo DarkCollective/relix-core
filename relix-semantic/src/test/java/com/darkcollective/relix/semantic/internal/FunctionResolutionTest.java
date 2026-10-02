@@ -137,6 +137,64 @@ final class FunctionResolutionTest {
     }
 
     // =========================================================================
+    // Scalar def bodies
+    // =========================================================================
+
+    @Nested
+    @DisplayName("a scalar def body is resolved like any other body")
+    final class ScalarDefBodies {
+
+        @Test
+        @DisplayName("an unknown function inside a def body is reported at analysis time")
+        void unknownFunctionInBody() {
+            // The bug: the same call at a projection site is caught, but inside a
+            // body it passed analysis and failed only when the function ran.
+            String src = "def f(x: NUMBER): NUMBER := { x * Bogus(x) };\n"
+                    + USERS + "query { π f(id) → p (Users) };";
+            assertThat(analyze(src)).messages()
+                    .anyMatch(e -> e.contains("Unknown function: 'Bogus'"));
+        }
+
+        @Test
+        @DisplayName("the error carries the body reference's own line and column")
+        void unknownFunctionHasLocation() {
+            String src = "def f(x: NUMBER): NUMBER := { Bogus(x) };\n"
+                    + USERS + "query { π f(id) → p (Users) };";
+            var located = analyze(src).errors().stream()
+                    .filter(e -> e.message().contains("Bogus"))
+                    .findFirst().orElseThrow();
+            org.assertj.core.api.Assertions.assertThat(located.line()).isEqualTo(1);
+            org.assertj.core.api.Assertions.assertThat(located.column()).isPositive();
+        }
+
+        @Test
+        @DisplayName("a parameter reference and a builtin call in a body both resolve")
+        void parameterAndBuiltinAreFine() {
+            String src = "def f(x: NUMBER): NUMBER := { Abs(x) * 2 };\n"
+                    + USERS + "query { π f(id) → p (Users) };";
+            assertThat(analyze(src)).hasNoErrors();
+        }
+
+        @Test
+        @DisplayName("a bare name in a body that is not a parameter is reported")
+        void nonParameterReference() {
+            String src = "def f(x: NUMBER): NUMBER := { x + y };\n"
+                    + USERS + "query { π f(id) → p (Users) };";
+            assertThat(analyze(src)).messages()
+                    .anyMatch(e -> e.contains("'y' is not a parameter"));
+        }
+
+        @Test
+        @DisplayName("one def body may call another declared def")
+        void bodyCallsAnotherDef() {
+            String src = "def g(x: NUMBER): NUMBER := { x + 1 };\n"
+                    + "def f(x: NUMBER): NUMBER := { g(x) * 2 };\n"
+                    + USERS + "query { π f(id) → p (Users) };";
+            assertThat(analyze(src)).hasNoErrors();
+        }
+    }
+
+    // =========================================================================
     // Return types
     // =========================================================================
 

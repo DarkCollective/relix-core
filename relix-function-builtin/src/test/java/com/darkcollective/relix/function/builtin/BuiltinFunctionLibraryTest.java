@@ -45,10 +45,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 final class BuiltinFunctionLibraryTest {
 
     /**
-     * The 52 the port had to reproduce function for function, plus {@code Entries}, which
-     * is the first built-in that was never in the library the port started from.
+     * The 52 the port had to reproduce function for function, plus {@code Entries} and
+     * {@code Pi} — the two built-ins that were never in the library the port started from.
      */
-    private static final int BUILTIN_COUNT = 53;
+    private static final int BUILTIN_COUNT = 54;
 
     /** The eight aggregates: five SQL reducers, one that gathers, two that pick a row. */
     private static final int AGGREGATE_COUNT = 8;
@@ -125,7 +125,7 @@ final class BuiltinFunctionLibraryTest {
 
             assertThat(byCategory).containsOnly(
                     Map.entry("string", 13L),
-                    Map.entry("math", 15L),
+                    Map.entry("math", 16L),
                     Map.entry("datetime", 16L),
                     Map.entry("conditional", 3L),
                     Map.entry("typecheck", 2L),
