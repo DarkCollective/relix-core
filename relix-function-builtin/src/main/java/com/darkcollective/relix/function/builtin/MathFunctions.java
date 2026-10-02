@@ -40,8 +40,8 @@ import static com.darkcollective.relix.function.builtin.Category.p;
 import static com.darkcollective.relix.symbol.ScalarType.NUMBER;
 
 /**
- * The numeric built-ins: sign and magnitude, the three roundings, the transcendentals,
- * and a random number.
+ * The numeric built-ins: sign and magnitude, the three roundings, the remainder, the
+ * transcendentals, and a random number.
  *
  * <p>The roundings are three different questions and keep three different answers:
  * {@code Int} goes to negative infinity, {@code Fix} towards zero, {@code Ceil} to
@@ -179,6 +179,15 @@ final class MathFunctions {
                         List.of(p("base", NUMBER), p("exp", NUMBER)),
                         MathFunctions::power),
 
+                // Mod(x, y) is the remainder, truncated towards zero so its sign follows
+                // the dividend — the SQL and Mongo convention, and what lets it fold to a
+                // backend's own MOD. It pairs with Fix, not Int:
+                // x = y * Fix(x / y) + Mod(x, y).
+                MATH.fn("Mod", NUMBER, PURE_DETERMINISTIC,
+                        List.of(p("x", NUMBER), p("y", NUMBER)),
+                        MathFunctions::modSpelling,
+                        MathFunctions::mod),
+
                 // Rand reads the global RNG, so it declares no optimizer contract at
                 // all: a folded or de-duplicated Rand() is the same number twice.
                 MATH.fn("Rand", NUMBER, VOLATILE, List.of(),
@@ -246,5 +255,58 @@ final class MathFunctions {
         double base = number(args.get(0), "Power").doubleValue();
         double exponent = number(args.get(1), "Power").doubleValue();
         return new NumberValue(BigDecimal.valueOf(Math.pow(base, exponent)));
+    }
+
+    /**
+     * The remainder, exact and truncated towards zero, so the result takes the sign of
+     * the dividend. A NULL in either argument returns NULL; a zero divisor is rejected,
+     * being the one argument for which no remainder exists.
+     */
+    private static Value mod(List<Value> args) {
+        if (args.get(0).isNull() || args.get(1).isNull()) {
+            return NullValue.INSTANCE;
+        }
+        BigDecimal x = number(args.get(0), "Mod");
+        BigDecimal y = number(args.get(1), "Mod");
+        if (y.signum() == 0) {
+            throw reject("Mod: divisor must be non-zero");
+        }
+        return new NumberValue(x.remainder(y));
+    }
+
+    /**
+     * {@code Mod} per backend. SQL {@code MOD(x, y)} and MongoDB {@code $mod} both
+     * truncate towards zero, as relix does, and both raise on a zero divisor — so a
+     * folded call computes the engine's answer or fails as the engine would. Three SQL
+     * dialects are declined, each for a reason that would otherwise let the folded call
+     * answer differently:
+     *
+     * <ul>
+     *   <li><b>MySQL</b> — {@code MOD} by zero returns NULL, or raises, according to
+     *       {@code sql_mode}, where relix always raises.</li>
+     *   <li><b>SQLite</b> — has no {@code MOD} function, and its {@code %} operator
+     *       truncates its operands to integers, so it is a different function on a
+     *       decimal column.</li>
+     *   <li><b>SQL Server</b> — spells modulo only as the {@code %} operator, whose
+     *       behaviour on a decimal column is not confirmed here.</li>
+     * </ul>
+     */
+    private static Optional<String> modSpelling(PushdownTarget target, List<String> arguments) {
+        if (arguments.size() != 2) {
+            return Optional.empty();
+        }
+        String x = arguments.get(0);
+        String y = arguments.get(1);
+        if (target.isFamily(PushdownTarget.SQL)) {
+            if (target.isVariant(Spellings.MYSQL) || target.isVariant(Spellings.SQLITE)
+                    || target.isVariant(Spellings.SQLSERVER)) {
+                return Optional.empty();
+            }
+            return Optional.of("MOD(" + x + ", " + y + ")");
+        }
+        if (target.isFamily(PushdownTarget.MONGO)) {
+            return Optional.of("{\"$mod\": [" + x + ", " + y + "]}");
+        }
+        return Optional.empty();
     }
 }
