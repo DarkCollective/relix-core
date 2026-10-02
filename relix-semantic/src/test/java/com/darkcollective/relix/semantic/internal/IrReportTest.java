@@ -985,6 +985,19 @@ final class IrReportTest {
         }
 
         @Test
+        @DisplayName("Shuffle node label contains SHUFFLE (buffers → [bag])")
+        void shuffleLabel() {
+            String src = """
+                    source Events from database { url: "j", table: "e",
+                        schema: { id: NUMBER } };
+                    Shuffled := { SHUFFLE (Events) };
+                    """;
+            String rpt = report(src);
+            assertThat(rpt).contains("SHUFFLE");
+            assertThat(rpt).contains("[bag]");
+        }
+
+        @Test
         @DisplayName("COLLECT renders a nested array type code in the symbol table")
         void nestedArrayTypeCode() {
             String src = """
@@ -1696,6 +1709,24 @@ final class IrReportTest {
                     Sampled := { SAMPLE 100 ROWS (Events) };
                     """);
             assertThat(unseeded).contains("SAMPLE 100 ROWS").doesNotContain("SEED");
+        }
+
+        @Test
+        @DisplayName("SHUFFLE renders its SEED, and omits it when there is none")
+        void shuffleSeed() {
+            String seeded = report("""
+                    source Events from database { url: "${DB}", table: "events",
+                        schema: { id: NUMBER } };
+                    Shuffled := { SHUFFLE SEED 7 (Events) };
+                    """);
+            assertThat(seeded).contains("SHUFFLE SEED 7");
+
+            String unseeded = report("""
+                    source Events from database { url: "${DB}", table: "events",
+                        schema: { id: NUMBER } };
+                    Shuffled := { SHUFFLE (Events) };
+                    """);
+            assertThat(unseeded).contains("SHUFFLE").doesNotContain("SEED");
         }
 
         @Test

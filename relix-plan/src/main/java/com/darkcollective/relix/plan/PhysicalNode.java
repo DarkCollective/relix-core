@@ -149,6 +149,10 @@ public sealed interface PhysicalNode {
                 PhysicalNode in = f.apply(n.input());
                 yield in == n.input() ? n : new Sort(n.schema(), n.sortSpecs(), in);
             }
+            case Shuffle n -> {
+                PhysicalNode in = f.apply(n.input());
+                yield in == n.input() ? n : new Shuffle(n.schema(), n.seed(), in);
+            }
             case Aggregate n -> {
                 PhysicalNode in = f.apply(n.input());
                 yield in == n.input() ? n : new Aggregate(n.schema(), n.groupingKeys(), n.aggregates(), n.streaming(), in);
@@ -659,6 +663,17 @@ public sealed interface PhysicalNode {
     record Sort(Schema schema, List<SortSpecification> sortSpecs, PhysicalNode input) implements PhysicalNode {
         @Override public List<PhysicalNode> children() { return List.of(input); }
         @Override public Ordering deliveredOrdering() { return Ordering.of(sortSpecs); }
+    }
+
+    /**
+     * Random permutation (SHUFFLE): buffers the input and returns every row exactly
+     * once in a uniformly random order (Fisher–Yates).  When {@code seed} is present
+     * the permutation is deterministic.  The output schema equals the input schema;
+     * it delivers no ordering (the default {@link Ordering#none()}).
+     */
+    record Shuffle(Schema schema, java.util.Optional<Long> seed,
+                   PhysicalNode input) implements PhysicalNode {
+        @Override public List<PhysicalNode> children() { return List.of(input); }
     }
 
     /**

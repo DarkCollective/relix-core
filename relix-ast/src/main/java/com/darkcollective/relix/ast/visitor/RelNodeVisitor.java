@@ -206,4 +206,17 @@ public interface RelNodeVisitor<R> {
         throw new UnsupportedOperationException(
                 "WhyNode (WHY) handling is not implemented in this visitor");
     }
+
+    /**
+     * Visits a random-permutation ({@code SHUFFLE}) node.
+     *
+     * <p>A {@code default} that throws rather than an abstract method: a visitor with no
+     * meaningful answer for a random permutation inherits the failure instead of being
+     * forced to carry a stub. Visitors that do handle it — schema inference, validation,
+     * the executor — override this method.
+     */
+    default R visit(ShuffleNode node) {
+        throw new UnsupportedOperationException(
+                "ShuffleNode (SHUFFLE) handling is not implemented in this visitor");
+    }
 }

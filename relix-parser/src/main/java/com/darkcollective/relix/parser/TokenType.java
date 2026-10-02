@@ -118,6 +118,7 @@ public enum TokenType {
     COMPOSITION,
     FORALL,
     SAMPLE,
+    SHUFFLE,
     SEED,
     SOLVE,
     OPTIMIZE,

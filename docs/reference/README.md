@@ -71,6 +71,7 @@ The everyday relational-algebra operators — the ones you reach for first.
 | [Rename](operators/rename.md) | `ρ` / `RENAME` | Rename a relation or its columns |
 | [Distinct](operators/distinct.md) | `δ` / `DISTINCT` | Remove duplicate rows |
 | [Sort](operators/sort.md) | `τ` / `SORT` / `ORDER [BY]` | Order rows by one or more keys |
+| [Shuffle](operators/shuffle.md) | `SHUFFLE` | Return every row once, in a uniformly random order |
 | [Limit](operators/limit.md) | `λ` / `LIMIT` | Take the first N rows (with optional offset) |
 
 ## 4. Predicates

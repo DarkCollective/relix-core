@@ -94,6 +94,13 @@ final class BoundednessCheckerTest {
         }
 
         @Test
+        @DisplayName("SHUFFLE over an unbounded input is rejected — it is blocking, like τ")
+        void shuffleOverUnbounded() {
+            assertThat(check(AstBuilders.shuffle(inf())))
+                    .singleElement().asString().contains("SHUFFLE");
+        }
+
+        @Test
         @DisplayName("ω (WHY) over an unbounded input is rejected — it is blocking")
         void whyOverUnbounded() {
             assertThat(check(new com.darkcollective.relix.ast.WhyNode(inf())))

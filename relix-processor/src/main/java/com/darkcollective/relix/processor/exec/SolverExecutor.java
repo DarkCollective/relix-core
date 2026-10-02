@@ -241,6 +241,24 @@ final class SolverExecutor {
     }
 
     /**
+     * Random permutation (SHUFFLE): buffers the whole input and returns its rows in a
+     * uniformly random order via {@link java.util.Collections#shuffle} (the Fisher–Yates
+     * shuffle).  When a seed is present the permutation is deterministic; without one,
+     * {@code ThreadLocalRandom} supplies fresh randomness.  Output rows are the full input
+     * rows and the schema equals the input schema.  Like {@code τ}, it is a blocking
+     * operator — a plan-time check rejects it over a provably unbounded input.
+     */
+    Stream<Row> executeShuffle(PhysicalNode.Shuffle node, EvalCtx ctx) {
+        List<Row> rows;
+        try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
+            rows = new ArrayList<>(input.toList());
+        }
+        Random rnd = node.seed().<Random>map(Random::new).orElseGet(ThreadLocalRandom::current);
+        java.util.Collections.shuffle(rows, rnd);
+        return BagRelation.of(node.schema(), rows).stream();
+    }
+
+    /**
      * Reservoir (fixed-count) sampling: keeps exactly {@code count} rows chosen
      * uniformly at random without replacement, via Vitter's Algorithm R — a single
      * streaming pass that holds at most {@code count} rows.  The first {@code count}

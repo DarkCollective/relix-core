@@ -338,6 +338,12 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         return "τ " + specs + " (" + node.input().accept(this) + ")";
     }
 
+    @Override
+    public String visit(ShuffleNode node) {
+        String seed = node.seed().map(s -> " SEED " + s).orElse("");
+        return "SHUFFLE" + seed + " (" + node.input().accept(this) + ")";
+    }
+
     /** Renders a grouping key as {@code expression [→ alias]}. */
     private String renderGroupingKey(GroupingKey key) {
         String expr = key.expression().accept(operandPrinter);

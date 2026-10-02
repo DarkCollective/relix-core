@@ -417,6 +417,16 @@ public abstract class AstBuilders {
         return new SortNode(sortSpecs, input);
     }
 
+    /** SHUFFLE — random permutation, non-deterministic. */
+    public static ShuffleNode shuffle(RelNode input) {
+        return new ShuffleNode(input);
+    }
+
+    /** SHUFFLE SEED — reproducible random permutation. */
+    public static ShuffleNode shuffle(Optional<Long> seed, RelNode input) {
+        return new ShuffleNode(seed, input, SourceLocation.UNKNOWN);
+    }
+
     /** λ — limit, no offset. */
     public static LimitNode limit(long count, RelNode input) {
         return new LimitNode(Optional.empty(), count, input);

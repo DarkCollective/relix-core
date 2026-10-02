@@ -85,7 +85,7 @@ final class AstBuilderCoverageTest {
     final class Completeness {
 
         @Test
-        @DisplayName("RelNode — all 53 concrete node kinds")
+        @DisplayName("RelNode — all 54 concrete node kinds")
         void relNodesAreCovered() {
             assertThat(uncovered(RelNode.class))
                     .as("RelNode kinds with no AstBuilders factory")
@@ -114,9 +114,9 @@ final class AstBuilderCoverageTest {
     final class Counts {
 
         @Test
-        @DisplayName("RelNode permits 53 concrete kinds")
+        @DisplayName("RelNode permits 54 concrete kinds")
         void relNodeCount() {
-            assertThat(concreteKinds(RelNode.class)).hasSize(53);
+            assertThat(concreteKinds(RelNode.class)).hasSize(54);
         }
 
         @Test
