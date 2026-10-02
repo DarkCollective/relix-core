@@ -85,7 +85,9 @@ final class LeafExecutor {
             // the columns the query reads, and a connector that resolves each column
             // independently then fetches only those. The two are the same heading wherever
             // nothing narrowed it, which is everywhere else.
-            case SourceRelationSymbol   src    -> ctx.connector().open(src.canonicalName(), scan.schema());
+            case SourceRelationSymbol   src    -> scan.httpPushdown().isPresent()
+                    ? ctx.connector().open(src.canonicalName(), scan.schema(), scan.httpPushdown().get())
+                    : ctx.connector().open(src.canonicalName(), scan.schema());
             case DatabaseRelationSymbol db     -> ctx.connector().open(db.canonicalName(), db.schema());
             // Views are inlined by the planner and never reach the executor.
             case QueryRelationSymbol    view   -> throw new EvaluationException(

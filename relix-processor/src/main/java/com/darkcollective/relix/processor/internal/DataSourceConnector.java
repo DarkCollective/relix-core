@@ -79,6 +79,28 @@ public interface DataSourceConnector extends AutoCloseable {
     Stream<Row> open(String relationName, Schema schema);
 
     /**
+     * Opens a stream of rows for the named relation, with request pushdown folded in.
+     *
+     * <p>The planner emits an {@link com.darkcollective.relix.plan.HttpScanPushdown} on a
+     * {@link com.darkcollective.relix.plan.PhysicalNode.Scan} over an HTTP source when it
+     * folds an adjacent {@code λ} into the source's declared {@code paginate} limit, or an
+     * {@code σ} equality into one of its {@code IN} columns. The default ignores it and
+     * falls back to {@link #open(String, Schema)}, so a connector that cannot narrow a
+     * request need not override this; the engine {@code λ}/{@code σ} left above the scan is
+     * the backstop that makes ignoring it correct.
+     *
+     * @param relationName the canonical (lower-cased) relation name
+     * @param schema       the expected schema
+     * @param pushdown     the limit and equalities folded into the request
+     * @return a stream of rows; the caller is responsible for closing it
+     * @throws EvaluationException if the relation cannot be opened
+     */
+    default Stream<Row> open(String relationName, Schema schema,
+                             com.darkcollective.relix.plan.HttpScanPushdown pushdown) {
+        return open(relationName, schema);
+    }
+
+    /**
      * Releases any resources the connector holds (e.g. a pool of database
      * connections).  The default does nothing, so simple lambda connectors need
      * not implement it; resource-backed connectors override it.  Overrides do not

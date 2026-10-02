@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.plan.HttpScanPushdown;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
 import com.darkcollective.relix.ast.ComparisonOperator;
@@ -155,11 +156,20 @@ public final class PhysicalPlanPrinter {
         }
     }
 
+    /** Renders a scan's folded HTTP request pushdown — the limit and equalities sent. */
+    private static String renderHttpPushdown(HttpScanPushdown pushdown) {
+        List<String> parts = new java.util.ArrayList<>();
+        pushdown.limit().ifPresent(n -> parts.add("limit " + n));
+        pushdown.equalities().forEach((column, value) -> parts.add(column + "=" + value));
+        return parts.isEmpty() ? "" : " ⟨request " + String.join(", ", parts) + "⟩";
+    }
+
     private static String label(PhysicalNode node) {
         return switch (node) {
             case PhysicalNode.Scan s     -> "Scan " + s.source().declaredName()
                     + s.produceBound().map(b -> " ⟨produce while "
-                            + DisplayLabels.produceBound(b) + "⟩").orElse("");
+                            + DisplayLabels.produceBound(b) + "⟩").orElse("")
+                    + s.httpPushdown().map(PhysicalPlanPrinter::renderHttpPushdown).orElse("");
             case PhysicalNode.PushedScan s -> "PushedScan [" + s.connectorType() + "/" + s.connection() + "] " + s.nativeQuery();
             case PhysicalNode.Spool sp   -> "Spool #" + sp.id();
             case PhysicalNode.Select s   -> "Select";

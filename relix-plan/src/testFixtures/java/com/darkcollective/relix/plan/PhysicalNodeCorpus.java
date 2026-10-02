@@ -40,6 +40,7 @@ import com.darkcollective.relix.symbol.relation.InlineRelationSymbol;
 
 import java.time.Duration;
 import java.util.List;
+import com.darkcollective.relix.plan.HttpScanPushdown;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -138,7 +139,9 @@ public final class PhysicalNodeCorpus {
                 new PhysicalNode.Scan(SCHEMA, SOURCE,
                         Optional.of(produceBound("x", ComparisonOperator.LESS,
                                 num("100"))),
-                        Optional.of("T")),
+                        Optional.of("T"),
+                        Optional.of(new HttpScanPushdown(Optional.of(10L),
+                                java.util.Map.of("x", "1")))),
                 new PhysicalNode.Empty(SCHEMA),
                 new PhysicalNode.PushedScan(SCHEMA, "jdbc", "db", "SELECT x FROM t",
                         Ordering.of(List.of(sortKey(X, SortDirection.ASC)))),

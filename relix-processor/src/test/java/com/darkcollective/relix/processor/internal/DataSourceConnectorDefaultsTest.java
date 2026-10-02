@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.processor.internal;
 
+import com.darkcollective.relix.plan.HttpScanPushdown;
 import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.symbol.Schema;
 import org.junit.jupiter.api.DisplayName;
@@ -60,6 +61,15 @@ final class DataSourceConnectorDefaultsTest {
         DataSourceConnector connector = lambdaConnector();
         connector.close();
         assertThatCode(connector::close).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("the request-pushdown open falls back to the schema-only open by default")
+    void requestPushdownOpenFallsBack() {
+        try (DataSourceConnector connector = lambdaConnector()) {
+            assertThat(connector.open("anything", Schema.empty(), HttpScanPushdown.none()))
+                    .isEmpty();
+        }
     }
 
     @Test
