@@ -111,6 +111,33 @@ final class Category {
         return new ParameterDefinition(name, type);
     }
 
+    /**
+     * The type every argument shares, or {@code ANY} when they do not share one — the
+     * result type of a function that returns one of its arguments ({@code Coalesce}) or
+     * the extreme of them ({@code LEAST}/{@code GREATEST}).
+     *
+     * <p>There is no lattice of scalar types to climb here: two types are either the
+     * same, in which case the result is known, or different, in which case the row
+     * decides and nothing narrower than {@code ANY} is true.
+     *
+     * @param types the argument types at the call site
+     * @return their common type, or {@code ANY}
+     */
+    static ScalarType widest(List<ScalarType> types) {
+        ScalarType agreed = null;
+        for (ScalarType type : types) {
+            if (type == ScalarType.ANY) {
+                return ScalarType.ANY;
+            }
+            if (agreed == null) {
+                agreed = type;
+            } else if (agreed != type) {
+                return ScalarType.ANY;
+            }
+        }
+        return agreed == null ? ScalarType.ANY : agreed;
+    }
+
     /** A function of fixed arity, evaluated in-engine only. */
     ScalarFunction fn(String name, ScalarType returns, Set<FunctionProperty> properties,
                       List<ParameterDefinition> parameters, Values body) {
@@ -157,6 +184,25 @@ final class Category {
                               Contextual body) {
         return strict(name, returns, properties, parameters, Arity.exactly(parameters.size()),
                 pushdown, body);
+    }
+
+    /**
+     * A strict function whose argument count is a range, whose result type follows its
+     * arguments, and that reads the ambient context — the shape of a variadic
+     * {@code LEAST}/{@code GREATEST} that ranks with the engine's own order.
+     *
+     * <p>Every argument is evaluated, so it is {@link StrictScalarFunction} rather than a
+     * special form; the {@code returnTypes} rule is what a {@link #lazy lazy} declaration
+     * would otherwise be needed for, without the laziness it does not have.
+     *
+     * @param returnTypes the result type for a call's argument types
+     */
+    ScalarFunction contextual(String name, ScalarType returns, Set<FunctionProperty> properties,
+                              List<ParameterDefinition> parameters, Arity arity,
+                              Function<List<ScalarType>, ScalarType> returnTypes,
+                              PushdownSpelling pushdown, Contextual body) {
+        return new StrictTyped(signature(name, returns, properties, parameters, arity),
+                returnTypes, pushdown, body);
     }
 
     /**
@@ -223,6 +269,23 @@ final class Category {
         @Override
         public Value invoke(FunctionContext context, List<Value> arguments) {
             return body.apply(context, arguments);
+        }
+    }
+
+    /** A strict function whose result type follows its arguments. */
+    private record StrictTyped(FunctionSignature signature,
+                              Function<List<ScalarType>, ScalarType> returnTypes,
+                              PushdownSpelling pushdown,
+                              Contextual body) implements StrictScalarFunction {
+
+        @Override
+        public Value invoke(FunctionContext context, List<Value> arguments) {
+            return body.apply(context, arguments);
+        }
+
+        @Override
+        public ScalarType returnTypeFor(List<ScalarType> argumentTypes) {
+            return returnTypes.apply(argumentTypes);
         }
     }
 

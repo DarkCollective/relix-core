@@ -356,6 +356,7 @@ final class PushdownCorpus {
         groups.put("the transcendentals, which answer in floating point", transcendentals());
         groups.put("the transcendentals outside their domain", transcendentalDomains());
         groups.put("the NULL functions — COALESCE and IS NULL", nullFunctions());
+        groups.put("ordering functions — LEAST/GREATEST, folded only where NULL propagates", ordering());
         groups.put("π and δ", projectionAndDistinct());
         groups.put("γ — every aggregate, over a column that holds a NULL", aggregates());
         groups.put("γ — an extremum over a string, which orders it", stringExtremum());
@@ -621,6 +622,21 @@ final class PushdownCorpus {
                 "π oid, Nz(amount, 0) → c (Orders)",
                 "π oid, IsNull(amount) → missing (Orders)",
                 "σ Coalesce(code, region) = 'east' (Orders)");
+    }
+
+    /**
+     * {@code LEAST}/{@code GREATEST} propagate a NULL argument as relix does only on MySQL
+     * and Db2; PostgreSQL, SQL Server and DuckDB skip it and SQLite has no such function, so
+     * the spelling is offered on those two alone and the rest evaluate in-engine. The Orders
+     * rows carry NULLs in {@code amount} and {@code qty}, so the comparison exercises exactly
+     * the NULL propagation the allow-list claims — a backend that skipped it would answer
+     * differently and turn this case red.
+     */
+    private static List<Case> ordering() {
+        Set<Dialect> propagating = EnumSet.of(Dialect.MYSQL, Dialect.DB2);
+        return List.of(
+                Case.of("π oid, LEAST(amount, qty) → lo (Orders)", propagating),
+                Case.of("π oid, GREATEST(amount, qty) → hi (Orders)", propagating));
     }
 
     /**

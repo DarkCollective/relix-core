@@ -540,12 +540,37 @@ final class PushdownSpellingsTest {
         }
     }
 
+    @Nested
+    @DisplayName("Ordering — LEAST / GREATEST on NULL-propagating dialects only")
+    final class Ordering {
+
+        @Test
+        @DisplayName("folds to LEAST/GREATEST(…) on MySQL and Db2, at any argument count")
+        void propagatingDialectsFold() {
+            assertThat(render("LEAST", MYSQL, "a", "b")).contains("LEAST(a, b)");
+            assertThat(render("LEAST", DB2, "a", "b", "c")).contains("LEAST(a, b, c)");
+            assertThat(render("GREATEST", MYSQL, "a", "b")).contains("GREATEST(a, b)");
+            assertThat(render("GREATEST", DB2, "a", "b")).contains("GREATEST(a, b)");
+        }
+
+        @Test
+        @DisplayName("declines where NULL is skipped, there is no such function, or it is Mongo")
+        void otherDialectsDecline() {
+            for (PushdownTarget target : List.of(POSTGRES, SQLSERVER, DUCKDB, SQLITE, GENERIC, MONGO)) {
+                assertThat(render("LEAST", target, "a", "b"))
+                        .as("LEAST on %s", target).isEmpty();
+                assertThat(render("GREATEST", target, "a", "b"))
+                        .as("GREATEST on %s", target).isEmpty();
+            }
+        }
+    }
+
     @Test
     @DisplayName("every other built-in is evaluated in-engine, and declines every target")
     void everythingElseDeclines() {
         List<String> spelled = List.of("year", "month", "day", "hour", "minute", "second",
                 "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "replace",
-                "coalesce", "nz", "isnull", "len", "left", "right", "mid");
+                "coalesce", "nz", "isnull", "len", "left", "right", "mid", "least", "greatest");
 
         List<String> unexpected = BuiltinCalls.all().stream()
                 .filter(fn -> !spelled.contains(fn.signature().canonicalName()))

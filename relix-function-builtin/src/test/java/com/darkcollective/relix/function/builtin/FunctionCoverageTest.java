@@ -130,7 +130,10 @@ final class FunctionCoverageTest {
             num("CInt", "4", n("3.7")),
             num("CDbl", "3.14", s("3.14")),
             // ── Nested ──────────────────────────────────────────────────────────
-            exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))));
+            exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
+            // ── Ordering ──────────────────────────────────────────────────────────
+            num("LEAST", "2", n("5"), n("2"), n("8")),
+            num("GREATEST", "8", n("5"), n("2"), n("8")));
 
     /**
      * {@code Rand} is deliberately absent from the table above and named here instead:
