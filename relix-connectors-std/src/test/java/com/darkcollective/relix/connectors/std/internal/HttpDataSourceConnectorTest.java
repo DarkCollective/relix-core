@@ -427,7 +427,7 @@ final class HttpDataSourceConnectorTest extends ProcessorTestSupport {
         }
 
         @Test
-        @DisplayName("a required IN column with no default is rejected (no predicate pushdown yet)")
+        @DisplayName("a required IN column with neither a pushed equality nor a default is rejected")
         void requiredInWithoutDefault() {
             var t = new RecordingTransport(200, "[]");
             assertThatThrownBy(() -> exec("""
@@ -441,7 +441,7 @@ final class HttpDataSourceConnectorTest extends ProcessorTestSupport {
                     query Api;
                     """, t))
                     .isInstanceOf(EvaluationException.class)
-                    .hasMessageContaining("predicate pushdown");
+                    .hasMessageContaining("equality predicate");
         }
 
         @Test
@@ -691,6 +691,96 @@ final class HttpDataSourceConnectorTest extends ProcessorTestSupport {
 
             assertThat(t.lastRequest.body().orElseThrow()).contains("{ posts { id author { name } } }");
             assertThat(rows.get(0)).hasValue("author_name", "Ada");
+        }
+    }
+
+    // ── request pushdown (#53 λ into paginate, #61 σ equality into IN columns) ────
+
+    @Nested
+    @DisplayName("request pushdown")
+    class RequestPushdown {
+
+        private static final String PAGED = """
+                source Paged from http {
+                    url:      "https://x/items",
+                    extract:  json("$.items[*]"),
+                    paginate: { limit: query("per_page") [default: 5] },
+                    schema:   { id: NUMBER, name: STRING }
+                };
+                """;
+
+        private static final String LOOKUP = """
+                source Lookup from http {
+                    url:    "https://x/spells/{index}",
+                    schema: { index: in STRING as path("index") [required],
+                              name: out STRING at "$.name" }
+                };
+                """;
+
+        private static final String FILTERED = """
+                source Filtered from http {
+                    url:      "https://x/items",
+                    extract:  json("$.items[*]"),
+                    schema:   { kind: in STRING as query("kind"), id: NUMBER, name: STRING }
+                };
+                """;
+
+        @Test
+        @DisplayName("a query λ overrides the declared paginate limit default")
+        void limitFoldedIntoPaginate() {
+            var t = new RecordingTransport(200, "{\"items\": [ {\"id\": 1, \"name\": \"a\"} ]}");
+            exec(PAGED + "query { λ 10 (Paged) };", t);
+            assertThat(t.lastRequest.url()).contains("per_page=10");
+        }
+
+        @Test
+        @DisplayName("without a λ the declared default is used")
+        void defaultLimitWithoutLambda() {
+            var t = new RecordingTransport(200, "{\"items\": [ {\"id\": 1, \"name\": \"a\"} ]}");
+            exec(PAGED + "query Paged;", t);
+            assertThat(t.lastRequest.url()).contains("per_page=5");
+        }
+
+        @Test
+        @DisplayName("a σ equality folds into a path segment and satisfies a required IN column")
+        void equalityFoldedIntoPath() {
+            var t = new RecordingTransport(200, "{\"name\": \"Fireball\"}");
+            var rows = exec(LOOKUP + "query { σ index = \"fireball\" (Lookup) };", t);
+            assertThat(t.lastRequest.url()).isEqualTo("https://x/spells/fireball");
+            assertThat(rows.get(0)).hasValue("name", "Fireball");
+        }
+
+        @Test
+        @DisplayName("a pushed IN column is echoed into the output row as the requested value")
+        void equalityEchoedIntoRow() {
+            var t = new RecordingTransport(200, "{\"name\": \"Fireball\"}");
+            var rows = exec(LOOKUP + "query { σ index = \"fireball\" (Lookup) };", t);
+            assertThat(rows.get(0)).hasValue("index", "fireball");
+        }
+
+        @Test
+        @DisplayName("non-limit paginate entries keep their declared defaults")
+        void nonLimitPaginateKeepsDefault() {
+            var t = new RecordingTransport(200, "{\"items\": [ {\"id\": 1, \"name\": \"a\"} ]}");
+            exec("""
+                    source Paged2 from http {
+                        url:      "https://x/items",
+                        extract:  json("$.items[*]"),
+                        paginate: { limit: query("per_page") [default: 5],
+                                    offset: query("off") [default: 0] },
+                        schema:   { id: NUMBER, name: STRING }
+                    };
+                    query { λ 10 (Paged2) };
+                    """, t);
+            assertThat(t.lastRequest.url()).contains("per_page=10").contains("off=0");
+        }
+
+        @Test
+        @DisplayName("a σ equality folds into a query parameter")
+        void equalityFoldedIntoQueryParam() {
+            var t = new RecordingTransport(200, "{\"items\": [ {\"id\": 1, \"name\": \"a\"} ]}");
+            exec(FILTERED + "query { σ kind = \"rare\" (Filtered) };", t);
+            assertThat(t.lastRequest.url()).contains("kind=rare");
         }
     }
 }

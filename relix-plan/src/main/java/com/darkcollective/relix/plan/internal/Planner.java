@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.plan.HttpScanPushdown;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
 import com.darkcollective.relix.plan.TraceAlgorithm;
@@ -27,12 +28,14 @@ import com.darkcollective.relix.ast.AntiJoinNode;
 import com.darkcollective.relix.ast.IntervalJoinNode;
 import com.darkcollective.relix.ast.PairwiseUniversalNode;
 import com.darkcollective.relix.ast.AttributeOperand;
+import com.darkcollective.relix.ast.BooleanOperand;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.CompositionNode;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.LateralJoinNode;
 import com.darkcollective.relix.ast.NumberOperand;
+import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
@@ -104,6 +107,8 @@ import com.darkcollective.relix.function.FunctionCatalog;
 import com.darkcollective.relix.function.FunctionContext;
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
 import com.darkcollective.relix.lang.ast.SourceDeclaration;
+import com.darkcollective.relix.lang.ast.source.ColumnDirection;
+import com.darkcollective.relix.lang.ast.source.ColumnSpec;
 import com.darkcollective.relix.lang.ast.source.HttpSourceConfig;
 
 import com.darkcollective.relix.plan.PhysicalNode.BuildSide;
@@ -131,6 +136,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -539,7 +545,7 @@ public final class Planner {
             // heading it carries is not walked here either.
             case EmptyRelationNode e -> new PhysicalNode.Empty(schemaOf(e));
 
-            case SelectionNode s  -> new PhysicalNode.Select(schemaOf(s), s.predicate(), plan(s.input()));
+            case SelectionNode s  -> planSelection(s);
             case ProjectionNode p -> planProjection(p);
             case RenameNode r     -> new PhysicalNode.Rename(
                     schemaOf(r), r.relationName(), r.pairs(), plan(r.input()));
@@ -559,7 +565,7 @@ public final class Planner {
                     schemaOf(t), t.fromColumn(), t.toColumn(), t.undirected(), t.weightColumn(),
                     t.sense(), t.pathColumn(), traceAlgorithm(t),
                     t.boundSource(), t.boundTarget(), plan(t.input()));
-            case LimitNode l      -> new PhysicalNode.Limit(schemaOf(l), l.offset(), l.count(), plan(l.input()));
+            case LimitNode l      -> planLimit(l);
             case SortNode s       -> new PhysicalNode.Sort(schemaOf(s), s.sortSpecs(), plan(s.input()));
             case ShuffleNode s    -> new PhysicalNode.Shuffle(schemaOf(s), s.seed(), plan(s.input()));
             case RollNode s       -> new PhysicalNode.Roll(schemaOf(s), s.seed(), s.weight(), plan(s.input()));
@@ -763,6 +769,150 @@ public final class Planner {
                 "builtin", node.keyword(), Provenance.BUILTIN, ShadowPolicy.FORBIDDEN,
                 Schema.empty(), rows);
         return new PhysicalNode.Scan(Schema.empty(), literal);
+    }
+
+    // ── HTTP request pushdown (query λ into paginate, σ equality into IN columns) ─────
+    //
+    // Both fold an adjacent operator into the HTTP scan's request and leave the operator
+    // itself in the plan as a backstop: the fetch returns fewer rows, and the engine λ/σ
+    // still guarantees the answer if the server ignores or clamps the parameter. So these
+    // are pure optimizations that can never change a result (the property that makes them
+    // safe to ship), and they compose — a pushed equality and a pushed limit, and either
+    // through a column-pruning projection.
+
+    private PhysicalNode planLimit(LimitNode node) {
+        PhysicalNode input = plan(node.input());
+        // A λ with a non-zero offset is not pushed: a page-size parameter caps a page, not
+        // a window, so the skipped rows must still be fetched for the engine to drop them.
+        if (node.offset().isEmpty() || node.offset().get() == 0L) {
+            input = pushLimitIntoHttpScan(input, node.count());
+        }
+        return new PhysicalNode.Limit(schemaOf(node), node.offset(), node.count(), input);
+    }
+
+    private PhysicalNode planSelection(SelectionNode node) {
+        PhysicalNode input = plan(node.input());
+        Map<String, String> equalities = pushableEqualities(node.predicate(), input);
+        if (!equalities.isEmpty()) {
+            input = mapHttpScan(input,
+                    scan -> scan.withHttpPushdown(httpPushdownOf(scan).withEqualities(equalities)));
+        }
+        return new PhysicalNode.Select(schemaOf(node), node.predicate(), input);
+    }
+
+    /** Folds {@code count} into an HTTP scan's declared {@code paginate} limit parameter. */
+    private PhysicalNode pushLimitIntoHttpScan(PhysicalNode input, long count) {
+        return mapHttpScan(input, scan -> {
+            HttpSourceConfig http = httpConfigOf(scan);
+            boolean declaresLimit = http != null
+                    && http.paginate().flatMap(p -> p.entry("limit")).isPresent();
+            return declaresLimit
+                    ? scan.withHttpPushdown(httpPushdownOf(scan).withLimit(count))
+                    : scan;
+        });
+    }
+
+    /** {@return the IN-column equalities in {@code predicate} pushable to the scan under {@code input}} */
+    private Map<String, String> pushableEqualities(Predicate predicate, PhysicalNode input) {
+        HttpSourceConfig http = httpConfigUnder(input);
+        if (http == null) {
+            return Map.of();
+        }
+        Map<String, String> found = new LinkedHashMap<>();
+        collectEqualities(predicate, http, found);
+        return found;
+    }
+
+    /** Gathers {@code col = literal} conjuncts on IN-bound columns from an AND-chain. */
+    private void collectEqualities(Predicate predicate, HttpSourceConfig http,
+                                   Map<String, String> out) {
+        switch (predicate) {
+            case AndPredicate and -> {
+                collectEqualities(and.left(), http, out);
+                collectEqualities(and.right(), http, out);
+            }
+            case ComparisonPredicate cmp when cmp.operator() == ComparisonOperator.EQUAL ->
+                    equalityBinding(cmp, http).ifPresent(e -> out.put(e.getKey(), e.getValue()));
+            default -> {
+                // Only AND-chains of equalities are pushable; everything else stays residual.
+            }
+        }
+    }
+
+    private Optional<Map.Entry<String, String>> equalityBinding(ComparisonPredicate cmp,
+                                                                HttpSourceConfig http) {
+        Optional<Map.Entry<String, String>> forward = columnLiteral(cmp.left(), cmp.right(), http);
+        return forward.isPresent() ? forward : columnLiteral(cmp.right(), cmp.left(), http);
+    }
+
+    private Optional<Map.Entry<String, String>> columnLiteral(Operand maybeColumn,
+                                                              Operand maybeLiteral,
+                                                              HttpSourceConfig http) {
+        if (!(maybeColumn instanceof AttributeOperand attribute)) {
+            return Optional.empty();
+        }
+        Optional<String> declared = inBoundColumn(attribute.unqualifiedName(), http);
+        Optional<String> literal = literalValue(maybeLiteral);
+        if (declared.isEmpty() || literal.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(Map.entry(declared.get(), literal.get()));
+    }
+
+    /** {@return the declared name of an IN column matching {@code name}, if any} */
+    private static Optional<String> inBoundColumn(String name, HttpSourceConfig http) {
+        return http.columns().stream()
+                .filter(c -> c.direction() == ColumnDirection.IN)
+                .filter(c -> c.name().equalsIgnoreCase(name))
+                .map(ColumnSpec::name)
+                .findFirst();
+    }
+
+    /** {@return the request-value string of a literal operand, for the literals REST can carry} */
+    private static Optional<String> literalValue(Operand operand) {
+        return switch (operand) {
+            case StringOperand s -> Optional.of(s.value());
+            case NumberOperand n -> Optional.of(n.value());
+            case BooleanOperand b -> Optional.of(Boolean.toString(b.value()));
+            default -> Optional.empty();   // dates, durations and expressions are not pushed
+        };
+    }
+
+    /** Applies {@code f} to an HTTP source Scan at, or just beneath (through a Project), {@code input}. */
+    private PhysicalNode mapHttpScan(PhysicalNode input,
+                                     java.util.function.UnaryOperator<PhysicalNode.Scan> f) {
+        return switch (input) {
+            case PhysicalNode.Scan scan when httpConfigOf(scan) != null -> f.apply(scan);
+            case PhysicalNode.Project project
+                    when project.input() instanceof PhysicalNode.Scan scan
+                    && httpConfigOf(scan) != null ->
+                    new PhysicalNode.Project(project.schema(), project.attributes(), f.apply(scan));
+            default -> input;
+        };
+    }
+
+    /** {@return the HTTP source config at, or just beneath (through a Project), {@code input}} */
+    private HttpSourceConfig httpConfigUnder(PhysicalNode input) {
+        return switch (input) {
+            case PhysicalNode.Scan scan -> httpConfigOf(scan);
+            case PhysicalNode.Project project when project.input() instanceof PhysicalNode.Scan scan ->
+                    httpConfigOf(scan);
+            default -> null;
+        };
+    }
+
+    /** {@return the HTTP source config a {@code Scan} reads, or null when it is not one} */
+    private HttpSourceConfig httpConfigOf(PhysicalNode.Scan scan) {
+        return scan.qualifier()
+                .map(name -> sources.get(name.toLowerCase(Locale.ROOT)))
+                .filter(declaration -> declaration != null
+                        && declaration.config() instanceof HttpSourceConfig)
+                .map(declaration -> (HttpSourceConfig) declaration.config())
+                .orElse(null);
+    }
+
+    private static HttpScanPushdown httpPushdownOf(PhysicalNode.Scan scan) {
+        return scan.httpPushdown().orElseGet(HttpScanPushdown::none);
     }
 
     /**

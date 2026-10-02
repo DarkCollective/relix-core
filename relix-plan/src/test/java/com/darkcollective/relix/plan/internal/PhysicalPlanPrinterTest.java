@@ -64,6 +64,23 @@ final class PhysicalPlanPrinterTest {
     }
 
     @Test
+    @DisplayName("a Scan's HTTP request pushdown shows the folded limit and equality")
+    void httpPushdownShowsFoldedRequest() {
+        var source = new com.darkcollective.relix.symbol.relation.InlineRelationSymbol(
+                "default", "Spells",
+                com.darkcollective.relix.symbol.Provenance.USER,
+                com.darkcollective.relix.symbol.ShadowPolicy.FORBIDDEN,
+                SCHEMA, List.of());
+        var scan = new PhysicalNode.Scan(SCHEMA, source, java.util.Optional.empty(),
+                java.util.Optional.of("Spells"),
+                java.util.Optional.of(new com.darkcollective.relix.plan.HttpScanPushdown(
+                        java.util.Optional.of(10L), java.util.Map.of("index", "fireball"))));
+
+        assertThat(PhysicalPlanPrinter.explain(scan))
+                .isEqualTo("Scan Spells ⟨request limit 10, index=fireball⟩\n");
+    }
+
+    @Test
     @DisplayName("a PushedScan leaf shows its connector type, connection, and native query")
     void sqlScanLeaf() {
         String out = PhysicalPlanPrinter.explain(sqlScan("SELECT x FROM t WHERE (x > 1)"));

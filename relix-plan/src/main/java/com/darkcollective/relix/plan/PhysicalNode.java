@@ -337,7 +337,8 @@ public sealed interface PhysicalNode {
      * @param qualifier    the name the query referenced the relation by, when known
      */
     record Scan(Schema schema, RelationSymbol source,
-                Optional<ProduceBound> produceBound, Optional<String> qualifier) implements PhysicalNode {
+                Optional<ProduceBound> produceBound, Optional<String> qualifier,
+                Optional<HttpScanPushdown> httpPushdown) implements PhysicalNode {
 
         /** Scan without a generator production bound. */
         public Scan(Schema schema, RelationSymbol source) {
@@ -347,6 +348,17 @@ public sealed interface PhysicalNode {
         /** Scan under no particular qualifier. */
         public Scan(Schema schema, RelationSymbol source, Optional<ProduceBound> produceBound) {
             this(schema, source, produceBound, Optional.empty());
+        }
+
+        /** Scan with no HTTP request pushdown folded into it. */
+        public Scan(Schema schema, RelationSymbol source,
+                    Optional<ProduceBound> produceBound, Optional<String> qualifier) {
+            this(schema, source, produceBound, qualifier, Optional.empty());
+        }
+
+        /** {@return a copy of this scan with {@code pushdown} folded into its request} */
+        public Scan withHttpPushdown(HttpScanPushdown pushdown) {
+            return new Scan(schema, source, produceBound, qualifier, Optional.of(pushdown));
         }
 
         @Override public List<PhysicalNode> children() { return List.of(); }
