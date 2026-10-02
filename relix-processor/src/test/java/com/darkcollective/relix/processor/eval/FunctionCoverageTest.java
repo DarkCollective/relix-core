@@ -102,6 +102,7 @@ final class FunctionCoverageTest {
             num  ("tan",     "Tan(0)",                             "0"),
             num  ("atn",     "Atn(0)",                             "0"),
             num  ("power",   "Power(2, 10)",                       "1024"),
+            num  ("mod",     "Mod(-7, 3)",                         "-1"),
             num  ("pi",      "Pi()",                               "3.141592653589793"),
             regex("rand",    "Rand()",                             "^0(\\.\\d+)?$"),
             // ── Date/Time (typed, ADR-0013) ─────────────────────────────────────
