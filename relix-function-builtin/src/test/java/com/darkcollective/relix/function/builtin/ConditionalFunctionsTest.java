@@ -153,6 +153,36 @@ final class ConditionalFunctionsTest {
             assertThat(function("Switch").signature().arity().accepts(5)).isTrue();
             assertThat(function("Switch").signature().arity().accepts(1)).isFalse();
         }
+
+        @Test
+        @DisplayName("Choose picks the value at its 1-based index")
+        void choose() {
+            assertThat(text(call("Choose", n("1"), s("a"), s("b"), s("c")))).isEqualTo("a");
+            assertThat(text(call("Choose", n("3"), s("a"), s("b"), s("c")))).isEqualTo("c");
+            assertThat(text(call("Choose", n("2"), s("a"), s("b")))).isEqualTo("b");
+        }
+
+        @Test
+        @DisplayName("an index that is NULL or out of range picks nothing, so the result is NULL")
+        void chooseOutOfRange() {
+            assertThat(call("Choose", NULL, s("a"), s("b")).isNull()).isTrue();
+            assertThat(call("Choose", n("0"), s("a"), s("b")).isNull()).isTrue();
+            assertThat(call("Choose", n("3"), s("a"), s("b")).isNull()).isTrue();
+        }
+
+        @Test
+        @DisplayName("a whole-valued decimal index still picks, matching a simple CASE")
+        void chooseDecimalIndex() {
+            assertThat(text(call("Choose", n("2.0"), s("a"), s("b")))).isEqualTo("b");
+            assertThat(call("Choose", n("2.5"), s("a"), s("b")).isNull()).isTrue();
+        }
+
+        @Test
+        @DisplayName("an index that is not a number is reported as such")
+        void chooseNonNumericIndex() {
+            assertThatThrownBy(() -> call("Choose", s("x"), s("a"), s("b")))
+                    .hasMessageContaining("Choose").hasMessageContaining("NUMBER");
+        }
     }
 
     @Nested
@@ -203,6 +233,20 @@ final class ConditionalFunctionsTest {
             assertThat(text(lazily("Switch",
                     Argument.of(BooleanValue.TRUE), Argument.of(s("taken")),
                     EXPLOSIVE))).isEqualTo("taken");
+        }
+
+        @Test
+        @DisplayName("Choose evaluates only the value it selects")
+        void choose() {
+            assertThat(text(lazily("Choose", Argument.of(n("2")),
+                    EXPLOSIVE, Argument.of(s("taken")), EXPLOSIVE))).isEqualTo("taken");
+        }
+
+        @Test
+        @DisplayName("an out-of-range Choose evaluates no value at all")
+        void chooseOutOfRange() {
+            assertThat(lazily("Choose", Argument.of(n("9")), EXPLOSIVE, EXPLOSIVE)
+                    .isNull()).isTrue();
         }
     }
 
@@ -264,6 +308,18 @@ final class ConditionalFunctionsTest {
             assertThat(returnType("Switch", ScalarType.ANY, ScalarType.STRING,
                     ScalarType.ANY, ScalarType.STRING, ScalarType.STRING))
                     .isEqualTo(ScalarType.STRING);
+        }
+
+        @Test
+        @DisplayName("Choose is the value branches' type, the index aside")
+        void choose() {
+            assertThat(returnType("Choose", ScalarType.NUMBER, ScalarType.STRING, ScalarType.STRING))
+                    .isEqualTo(ScalarType.STRING);
+            assertThat(returnType("Choose", ScalarType.NUMBER, ScalarType.STRING, ScalarType.NUMBER))
+                    .isEqualTo(ScalarType.ANY);
+            assertThat(returnType("Choose", ScalarType.NUMBER))
+                    .as("the index alone, with no values, is ANY")
+                    .isEqualTo(ScalarType.ANY);
         }
 
         @Test

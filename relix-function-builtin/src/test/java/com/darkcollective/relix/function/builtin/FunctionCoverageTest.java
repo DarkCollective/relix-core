@@ -125,6 +125,7 @@ final class FunctionCoverageTest {
             exact("Coalesce", "first", NullValue.INSTANCE, s("first")),
             exact("Switch", "b", com.darkcollective.relix.value.BooleanValue.FALSE, s("a"),
                     com.darkcollective.relix.value.BooleanValue.TRUE, s("b"), s("c")),
+            exact("Choose", "b", n("2"), s("a"), s("b"), s("c")),
             // ── Type check ──────────────────────────────────────────────────────
             exact("IsNull", "false", s("x")),
             exact("IsNumeric", "true", s("123")),

@@ -25,11 +25,15 @@ Switch **short-circuits**: conditions are evaluated left to right and evaluation
 at the first true one, whose value alone is then evaluated; a later value — and the
 default — is never touched once a branch is chosen. That is what makes an earlier
 condition a guard for a later value, exactly as it is for `IIf`. [IIf](iif.md),
-[Nz](nz.md) and [Coalesce](coalesce.md) are lazy in the same way; these four are the
-only built-ins that are.
+[Choose](choose.md), [Nz](nz.md) and [Coalesce](coalesce.md) are lazy in the same way;
+these five are the only built-ins that are.
 
-Switch runs in the engine and is not rendered to a backend `CASE` — a query over a
-database source evaluates it after the scan rather than pushing it down.
+Switch folds into a backend **searched `CASE`** — `CASE WHEN c1 THEN v1 … [ELSE
+default] END` — on every SQL dialect, so a query over a database source pushes it down.
+The two match exactly, skip-on-NULL included: a `CASE` arm whose condition is unknown
+(NULL) is not taken, just as Switch tries the next pair. (The two-way `IIf` is *not*
+pushed down, because its NULL condition yields NULL where a `CASE … ELSE` would take the
+else branch.) MongoDB, which has no `CASE`, evaluates it in-engine.
 
 # Examples:
 Size band from two thresholds, with a default:
@@ -44,18 +48,19 @@ No default — an unmatched row is NULL:
 # Limitations:
 Each condition must be BOOLEAN. The result type is ANY when the value branches differ
 in type. Order matters: the first true condition wins, so write the most specific or
-highest band first. With no default, a row that matches nothing yields NULL. Switch is
-evaluated in-engine and is not pushed down to SQL or MongoDB backends.
+highest band first. With no default, a row that matches nothing yields NULL. Switch
+folds to a searched `CASE` on SQL backends; on MongoDB it is evaluated in-engine.
 
 # Alternatives:
-[IIf](iif.md) for a single two-way choice. [Nz](nz.md) / [Coalesce](coalesce.md) for
+[IIf](iif.md) for a single two-way choice. [Choose](choose.md) to pick by a 1-based
+position rather than by conditions. [Nz](nz.md) / [Coalesce](coalesce.md) for
 substituting a value when something is NULL. When the branches are really a set of data
 bands — tiers, grades, price brackets — a lookup relation joined by range (a
 [theta join](../../joins/theta-join.md)) or nearest-below ([AS-OF join](../../joins/asof-join.md))
 keeps the bands as editable data rather than in the text of one expression.
 
 # See Also:
-[iif](iif.md), [nz](nz.md), [coalesce](coalesce.md), [comparison](../../predicates/comparison.md)
+[iif](iif.md), [choose](choose.md), [nz](nz.md), [coalesce](coalesce.md), [comparison](../../predicates/comparison.md)
 
 # Notes:
 Switch is VBA's `Switch`, and it reads best with the broadest-matching branch last and

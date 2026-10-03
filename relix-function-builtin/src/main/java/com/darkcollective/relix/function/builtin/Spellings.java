@@ -230,6 +230,62 @@ final class Spellings {
                 : Optional.empty();
     }
 
+    /**
+     * A searched {@code CASE} — {@code CASE WHEN c1 THEN v1 … [ELSE default] END} — in
+     * every SQL dialect, for the {@code (condition, value)} pairs and optional trailing
+     * default a {@code Switch} call carries. A searched {@code CASE} short-circuits and
+     * treats an unknown (NULL) condition as unmatched, which is exactly the engine's
+     * {@code Switch}, so the backend computes the same value. (A two-way {@code IIf} is
+     * <em>not</em> pushed down for the opposite reason: its NULL condition yields NULL
+     * where a {@code CASE … ELSE} would take the else branch.)
+     *
+     * <p>Declines below two arguments, which is not a call the engine admits.
+     *
+     * @return the spelling
+     */
+    static PushdownSpelling searchedCase() {
+        return (target, arguments) -> {
+            if (!target.isFamily(PushdownTarget.SQL) || arguments.size() < 2) {
+                return Optional.empty();
+            }
+            StringBuilder sql = new StringBuilder("CASE");
+            int pairs = arguments.size() / 2;
+            for (int i = 0; i < pairs; i++) {
+                sql.append(" WHEN ").append(arguments.get(2 * i))
+                        .append(" THEN ").append(arguments.get(2 * i + 1));
+            }
+            if (arguments.size() % 2 == 1) {                 // a trailing odd argument is the default
+                sql.append(" ELSE ").append(arguments.get(arguments.size() - 1));
+            }
+            return Optional.of(sql.append(" END").toString());
+        };
+    }
+
+    /**
+     * A simple {@code CASE} — {@code CASE index WHEN 1 THEN a WHEN 2 THEN b … END} — in
+     * every SQL dialect, for a {@code Choose} call's 1-based selector and its values. A
+     * simple {@code CASE} with integer labels is the engine's {@code Choose}: an index
+     * that is none of the positions — out of range, or NULL — matches no branch and the
+     * result is NULL.
+     *
+     * <p>Declines below two arguments (a selector and at least one value).
+     *
+     * @return the spelling
+     */
+    static PushdownSpelling indexedCase() {
+        return (target, arguments) -> {
+            if (!target.isFamily(PushdownTarget.SQL) || arguments.size() < 2) {
+                return Optional.empty();
+            }
+            StringBuilder sql = new StringBuilder("CASE ").append(arguments.get(0));
+            for (int position = 1; position < arguments.size(); position++) {
+                sql.append(" WHEN ").append(position)
+                        .append(" THEN ").append(arguments.get(position));
+            }
+            return Optional.of(sql.append(" END").toString());
+        };
+    }
+
     private static String call(String function, List<String> arguments) {
         return function + "(" + String.join(", ", arguments) + ")";
     }
