@@ -26,6 +26,7 @@ import java.util.List;
 import static com.darkcollective.relix.ast.AstBuilders.attr;
 import static com.darkcollective.relix.ast.AstBuilders.cmp;
 import static com.darkcollective.relix.ast.AstBuilders.condition;
+import static com.darkcollective.relix.ast.AstBuilders.not;
 import static com.darkcollective.relix.ast.AstBuilders.nullPred;
 import static com.darkcollective.relix.ast.AstBuilders.num;
 import static com.darkcollective.relix.ast.AstBuilders.project;
@@ -33,6 +34,7 @@ import static com.darkcollective.relix.ast.AstBuilders.projected;
 import static com.darkcollective.relix.ast.AstBuilders.rel;
 import static com.darkcollective.relix.ast.AstBuilders.select;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * A parenthesised predicate in <em>operand</em> position — the spelling that reads a
@@ -128,6 +130,60 @@ final class ConditionOperandParserTest extends ParserTestSupport {
             assertThat(stripLocations(parse("π IIf(amount > 100, \"big\", \"small\") → sz (Orders)")))
                     .isEqualTo(stripLocations(
                             parse("π IIf((amount > 100), \"big\", \"small\") → sz (Orders)")));
+        }
+    }
+
+    @Nested
+    @DisplayName("a condition inside a call inside a group")
+    class CallInsideGroup {
+
+        @Test
+        @DisplayName("an arithmetic group holding a call with a condition argument is arithmetic")
+        void conditionArgumentDoesNotMakeTheGroupAPredicate() {
+            // The = belongs to Iif's own argument list, so it says nothing about what
+            // the surrounding parenthesis opens. (The printer parenthesises a condition
+            // argument; the grouping it keeps around a + Iif(…) is the point.)
+            assertThat(parse("π 4 * (a + Iif(b = 1, 1, 0)) → r (T)").prettyPrint())
+                    .isEqualTo("π 4 * (a + Iif((b = 1), 1, 0)) → r (T)");
+        }
+
+        @Test
+        @DisplayName("a call alone in a group, with a condition argument, is an operand")
+        void callAloneInAGroup() {
+            assertThat(stripLocations(parse("π (Iif(b = 1, 1, 0)) → r (T)")))
+                    .isEqualTo(stripLocations(parse("π Iif(b = 1, 1, 0) → r (T)")));
+        }
+
+        @Test
+        @DisplayName("a comparison beside the call, at the group's own level, still makes a predicate")
+        void comparisonAtTheGroupsLevel() {
+            assertThat(stripLocations(parse("σ (Iif(b = 1, 1, 0) = 1) (T)")))
+                    .isEqualTo(stripLocations(parse("σ Iif(b = 1, 1, 0) = 1 (T)")));
+        }
+
+        @Test
+        @DisplayName("a predicate inside a plain nested group is still a predicate")
+        void nestedGroupStillCounts() {
+            assertParsesTo("σ ((amount > 100)) (Orders)",
+                    select(cmp(attr("amount"), ComparisonOperator.GREATER, num("100")),
+                            rel("Orders")));
+        }
+
+        @Test
+        @DisplayName("an operator keyword written against a parenthesis still makes a predicate")
+        void operatorKeywordAgainstAParenthesis() {
+            assertParsesTo("σ (NOT(amount > 100)) (Orders)",
+                    select(not(cmp(attr("amount"), ComparisonOperator.GREATER, num("100"))),
+                            rel("Orders")));
+        }
+
+        @Test
+        @DisplayName("a parenthesis set apart from a name is not a call, as the call parser reads it")
+        void spacedParenthesisIsNotACall() {
+            // The group's = is counted, so the parenthesis opens a predicate whose
+            // left operand is the bare name Iif — and the error is the predicate's.
+            assertThatThrownBy(() -> parse("π (Iif (b = 1, 1, 0)) → r (T)"))
+                    .hasMessageContaining("Expected comparison operator");
         }
     }
 
