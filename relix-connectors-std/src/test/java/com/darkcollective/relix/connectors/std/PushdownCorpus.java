@@ -560,6 +560,11 @@ final class PushdownCorpus {
                 Case.of("π oid, Round(amount - 99.5) → a (Orders)", ROUNDS_IN_DECIMAL),
                 Case.of("π oid, Round(amount - 99.5, 2) → a (Orders)", ROUNDS_IN_DECIMAL),
                 Case.of("π oid, Abs(Int(99.5 - amount)) → a (Orders)", ROUNDS_IN_DECIMAL),
+                // Inside an aggregate the argument is spelled for the connection too, so a
+                // rounding function declines on SQLite there exactly as it does outside
+                // one. It was spelled for the generic dialect, which folded it on SQLite
+                // and would have sent SQL Server a ROUND with no length.
+                Case.of("γ region, SUM(Round(amount - 99.5)) → s (Orders)", ROUNDS_IN_DECIMAL),
                 // Truncation towards zero has no single SQL name — MySQL spells it
                 // TRUNCATE(x, 0) and Postgres TRUNC(x) — so it is offered only to the
                 // dialects that name a backend.

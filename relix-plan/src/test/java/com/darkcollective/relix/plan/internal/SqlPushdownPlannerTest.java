@@ -511,6 +511,20 @@ final class SqlPushdownPlannerTest {
                             + "(([name]) COLLATE Latin1_General_100_BIN2 = N'ada')");
         }
 
+        /**
+         * A grouped aggregate's argument is spelled for this connection, as a window's
+         * is. It was spelled for the generic dialect, which here put a bare
+         * {@code '2026-01-02'} where T-SQL needs the {@code CAST} — and, for a
+         * function, {@code ROUND(e)} where T-SQL's {@code ROUND} requires a length.
+         */
+        @Test
+        @DisplayName("a grouped aggregate's argument is spelled for SQL Server, not the generic dialect")
+        void aggregateArgumentUsesTheDialect() {
+            assertThat(scanOf(push(SQLSERVER_ORDERS
+                    + "query { γ id, MAX(DATE '2026-01-02') → d (Orders) };")).nativeQuery())
+                    .contains("MAX(CAST('2026-01-02' AS DATE))");
+        }
+
         @Test
         @DisplayName("a LIKE pattern's [ is bracketed so it matches itself")
         void likeBracket() {
