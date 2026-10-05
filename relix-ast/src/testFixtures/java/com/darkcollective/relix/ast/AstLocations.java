@@ -454,8 +454,9 @@ public final class AstLocations {
 
         @Override
         public RelNode visit(SolveNode node) {
-            return new SolveNode(stripLocations(node.left()), stripLocations(node.right()),
-                    node.input().accept(this));
+            return new SolveNode(node.equations().stream()
+                    .map(e -> AstBuilders.equation(stripLocations(e.left()), stripLocations(e.right())))
+                    .toList(), node.input().accept(this));
         }
 
         @Override

@@ -16,6 +16,7 @@
 package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.ast.AllocationSpec;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.processor.EvaluationException;
@@ -23,6 +24,7 @@ import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.eval.AllocationRow;
 import com.darkcollective.relix.processor.eval.EquationSolver;
+import com.darkcollective.relix.processor.eval.EquationSystemSolver;
 import com.darkcollective.relix.processor.eval.SubsetOptimizer;
 import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.Value;
@@ -58,15 +60,20 @@ final class SolverExecutor {
     }
 
     /**
-     * Goal-seek: for each row, fills the single NULL participating column of the
-     * equation {@code left = right} by inverting the arithmetic.  Streaming and
-     * per-row — rows without exactly one NULL participating column pass through
-     * unchanged.
+     * Goal-seek: for each row, fills the NULL participating columns of the equations —
+     * one equation by inverting its arithmetic, several as a linear system.  Streaming
+     * and per-row — a row that cannot be solved passes through unchanged.
      */
     Stream<Row> executeSolve(PhysicalNode.Solve node, EvalCtx ctx) {
-        EquationSolver solver = new EquationSolver(ctx.operandEval());
-        return dispatch.execute(node.input(), ctx)
-                .map(row -> solver.solve(node.left(), node.right(), row));
+        List<SolveEquation> equations = node.equations();
+        if (equations.size() == 1) {
+            EquationSolver solver = new EquationSolver(ctx.operandEval());
+            SolveEquation only = equations.getFirst();
+            return dispatch.execute(node.input(), ctx)
+                    .map(row -> solver.solve(only.left(), only.right(), row));
+        }
+        EquationSystemSolver system = new EquationSystemSolver();
+        return dispatch.execute(node.input(), ctx).map(row -> system.solve(equations, row));
     }
 
     /**

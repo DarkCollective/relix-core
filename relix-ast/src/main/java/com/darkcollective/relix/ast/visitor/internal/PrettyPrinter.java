@@ -17,6 +17,7 @@ package com.darkcollective.relix.ast.visitor.internal;
 
 import com.darkcollective.relix.ast.visitor.RelNodeVisitor;
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.DisplayLabels;
 import com.darkcollective.relix.ast.internal.*;
 
 import java.util.stream.Collectors;
@@ -266,8 +267,8 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(SolveNode node) {
-        return "SOLVE " + node.left().accept(operandPrinter) + " = "
-                + node.right().accept(operandPrinter) + " (" + node.input().accept(this) + ")";
+        return DisplayLabels.solve(node.equations())
+                + " (" + node.input().accept(this) + ")";
     }
 
     @Override

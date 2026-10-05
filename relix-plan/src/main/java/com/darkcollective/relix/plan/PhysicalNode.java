@@ -16,6 +16,7 @@
 package com.darkcollective.relix.plan;
 
 import com.darkcollective.relix.plan.internal.Planner;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.ConsolidationFunction;
@@ -191,7 +192,7 @@ public sealed interface PhysicalNode {
             }
             case Solve n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Solve(n.schema(), n.left(), n.right(), in);
+                yield in == n.input() ? n : new Solve(n.schema(), n.equations(), in);
             }
             case Optimize n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -848,12 +849,15 @@ public sealed interface PhysicalNode {
     }
 
     /**
-     * Goal-seek (SOLVE): for each row of {@code input}, fills the single NULL
-     * column participating in the equation {@code left = right} by inverting the
-     * arithmetic.  Rows without exactly one NULL participating column pass through
-     * unchanged.  Output schema equals the input schema.
+     * Goal-seek (SOLVE): for each row of {@code input}, fills the NULL columns
+     * participating in {@code equations} — one equation by inverting its arithmetic,
+     * several as a system of linear equations.  Rows that cannot be solved pass
+     * through unchanged.  Output schema equals the input schema.
+     *
+     * <p>The equations are the planned form: every call to a user-defined function
+     * has been expanded into the arithmetic of its body.
      */
-    record Solve(Schema schema, Operand left, Operand right,
+    record Solve(Schema schema, List<SolveEquation> equations,
                  PhysicalNode input) implements PhysicalNode {
         @Override public List<PhysicalNode> children() { return List.of(input); }
     }

@@ -17,6 +17,7 @@ package com.darkcollective.relix.plan.internal;
 
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -281,8 +282,14 @@ public final class PhysicalPlanJson {
             }
 
             case PhysicalNode.Solve s -> {
-                w.name("left").value(s.left().accept(OPND));
-                w.name("right").value(s.right().accept(OPND));
+                w.name("equations").beginArray();
+                for (SolveEquation e : s.equations()) {
+                    w.beginObject();
+                    w.name("left").value(e.left().accept(OPND));
+                    w.name("right").value(e.right().accept(OPND));
+                    w.endObject();
+                }
+                w.endArray();
             }
 
             case PhysicalNode.Optimize o -> {

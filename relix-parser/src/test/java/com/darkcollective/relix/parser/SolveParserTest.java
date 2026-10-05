@@ -16,6 +16,8 @@
 package com.darkcollective.relix.parser;
 
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 import com.darkcollective.relix.ast.*;
 import com.darkcollective.relix.ast.internal.*;
 
@@ -64,12 +66,50 @@ final class SolveParserTest extends ParserTestSupport {
     @Test
     void capturesBothSides() {
         SolveNode node = (SolveNode) parse("SOLVE x = y (R)");
-        org.assertj.core.api.Assertions.assertThat(node.left())
+        org.assertj.core.api.Assertions.assertThat(node.equations().getFirst().left())
                 .isInstanceOfSatisfying(AttributeOperand.class,
                         a -> org.assertj.core.api.Assertions.assertThat(a.name()).isEqualTo("x"));
-        org.assertj.core.api.Assertions.assertThat(node.right())
+        org.assertj.core.api.Assertions.assertThat(node.equations().getFirst().right())
                 .isInstanceOfSatisfying(AttributeOperand.class,
                         a -> org.assertj.core.api.Assertions.assertThat(a.name()).isEqualTo("y"));
+    }
+
+    // ─── Systems ────────────────────────────────────────────────────────────
+
+    @Test
+    void parsesABracedSystem() {
+        assertParsesTo("SOLVE { total = a + b, diff = a - b } (Pairs)",
+                solve(List.of(
+                        equation(attr("total"),
+                                arith(attr("a"), ArithmeticOperator.PLUS, attr("b"))),
+                        equation(attr("diff"),
+                                arith(attr("a"), ArithmeticOperator.MINUS, attr("b")))),
+                        rel("Pairs")));
+    }
+
+    @Test
+    void oneBracedEquationIsThePlainForm() {
+        assertParsesTo("SOLVE { x = y } (R)", solve(attr("x"), attr("y"), rel("R")));
+    }
+
+    @Test
+    void prettyPrintsASystemInBraces() {
+        RelNode system = solve(List.of(
+                        equation(attr("x"), attr("y")),
+                        equation(attr("u"), arith(attr("v"), ArithmeticOperator.MULTIPLY, num("2")))),
+                rel("R"));
+        assertPrettyPrints(system, "SOLVE { x = y, u = v * 2 } (R)");
+        assertParsesTo(system.prettyPrint(), system);
+    }
+
+    @Test
+    void failsOnAnUnclosedSystem() {
+        assertParseError("SOLVE { x = y (R)").hasMessageContaining("'}'");
+    }
+
+    @Test
+    void failsOnAnEmptySystem() {
+        assertParseError("SOLVE { } (R)");
     }
 
     // ─── Pretty printing ────────────────────────────────────────────────────

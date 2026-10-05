@@ -74,6 +74,38 @@ failing the query. That is what makes it safe to run over a whole import.
 `SOLVE` is arithmetic, not search. It rearranges `+ − × ÷` and unary minus, per row, in
 pure Java — **no solver is involved**, so it works whatever else is on the classpath.
 
+Several equations solve for several blanks. Each service's CPUs are split between
+reserved capacity at 12 a CPU and burst capacity at 20, and the usage export carries a
+different half of the picture on each line:
+
+```java
+relix.table("Usage", List.of("service", "cpus", "charge", "reserved", "burst"), List.of(
+        Map.of("service", "search",  "cpus", 4, "charge", 64),
+        Map.of("service", "ingest",  "reserved", 6, "burst", 2),
+        Map.of("service", "reports", "cpus", 3)));
+
+Relation usage = relix.relation("Usage").solve(List.of(
+        equation(attr("cpus"), plus(attr("reserved"), attr("burst"))),
+        equation(attr("charge"),
+                plus(times(num(12), attr("reserved")), times(num(20), attr("burst"))))));
+
+System.out.println(usage.render());
+usage.toList().forEach(System.out::println);
+```
+
+```
+SOLVE { cpus = reserved + burst, charge = 12 * reserved + 20 * burst } (Usage)
+(service=search, cpus=4, charge=64, reserved=2, burst=2)
+(service=ingest, cpus=8, charge=112, reserved=6, burst=2)
+(service=reports, cpus=3, charge=NULL, reserved=NULL, burst=NULL)
+```
+
+Two equations, two blanks per row, and again the direction is per row: `search` is split
+into its reserved and burst CPUs, `ingest` gets its total and its charge. `reports` has
+three blanks for two equations, so it passes through. A system is solved by elimination
+when it is linear in the row's blanks — no product of two blanks, no blank in a divisor —
+and still nothing but arithmetic is involved.
+
 ## OPTIMIZE: choosing the best subset
 
 The other half is a real search. Reserved capacity is 16 CPUs per region, and the question

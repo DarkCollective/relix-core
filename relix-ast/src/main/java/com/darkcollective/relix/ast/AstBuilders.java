@@ -821,6 +821,16 @@ public abstract class AstBuilders {
         return new SolveNode(left, right, input);
     }
 
+    /** {@code SOLVE { … }} — solve a list of equations for the row's unknowns. */
+    public static SolveNode solve(List<SolveEquation> equations, RelNode input) {
+        return new SolveNode(equations, input);
+    }
+
+    /** One {@code SOLVE} equation, {@code left = right}. */
+    public static SolveEquation equation(Operand left, Operand right) {
+        return new SolveEquation(left, right);
+    }
+
     /** {@code OPTIMIZE} — subset selection (MIP mode). */
     public static OptimizeNode optimize(ObjectiveSense sense, Operand objective,
                                         List<OptimizeConstraint> constraints,

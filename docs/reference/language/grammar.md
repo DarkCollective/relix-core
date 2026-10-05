@@ -420,8 +420,10 @@ shuffle           ::= "SHUFFLE" ( "SEED" INTEGER )? input
    expression draws each face with probability proportional to it (a loaded die). */
 roll              ::= "ROLL" ( "BY" operand )? ( "SEED" INTEGER )? input
 
-/* SOLVE total = price * qty (R) */
-solve             ::= "SOLVE" operand "=" operand input
+/* SOLVE total = price * qty (R).  Several equations solve for as many blanks:
+   SOLVE { total = a + b, diff = a - b } (R) */
+solve             ::= "SOLVE" ( equation | "{" equation ( "," equation )* "}" ) input
+equation          ::= operand "=" operand
 
 /* OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(weight) <= 50 PER owner (Items)
    OPTIMIZE ALLOCATE (0, 1) MINIMIZE SUM(cost) SUBJECT TO SUM(share) = 1 -> share (Plans) */

@@ -417,7 +417,7 @@ final class QueryOptimizerTest {
                     node, "Q", SchemaAnnotations.empty(), new OptimizationContext());
 
             assertThat(result).isNode(SolveNode.class);
-            assertThat(((SolveNode) result).left()).isEqualTo(attr("total"));
+            assertThat(((SolveNode) result).equations().getFirst().left()).isEqualTo(attr("total"));
         }
 
         @Test

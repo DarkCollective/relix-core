@@ -59,6 +59,7 @@ import com.darkcollective.relix.ast.SampleNode;
 import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.SessionizeNode;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SortSpecification;
@@ -217,10 +218,10 @@ public final class RelNodeOperands {
                 n.boundSource().ifPresent(onOperand);
                 n.boundTarget().ifPresent(onOperand);
             }
-            case SolveNode n -> {
-                onOperand.accept(n.left());
-                onOperand.accept(n.right());
-            }
+            case SolveNode n -> n.equations().forEach(e -> {
+                onOperand.accept(e.left());
+                onOperand.accept(e.right());
+            });
             case OptimizeNode n -> {
                 onOperand.accept(n.objective());
                 n.constraints().forEach(c -> onOperand.accept(c.expr()));
@@ -504,10 +505,14 @@ public final class RelNodeOperands {
                                 source, target, n.location());
             }
             case SolveNode n -> {
-                Operand left  = onOperand.apply(n.left());
-                Operand right = onOperand.apply(n.right());
-                yield left == n.left() && right == n.right() ? n
-                        : new SolveNode(left, right, n.input(), n.location());
+                List<SolveEquation> equations = mapList(n.equations(), e -> {
+                    Operand left  = onOperand.apply(e.left());
+                    Operand right = onOperand.apply(e.right());
+                    return left == e.left() && right == e.right() ? e
+                            : new SolveEquation(left, right);
+                });
+                yield equations == n.equations() ? n
+                        : new SolveNode(equations, n.input(), n.location());
             }
             case OptimizeNode n -> {
                 Operand objective = onOperand.apply(n.objective());

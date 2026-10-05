@@ -1453,6 +1453,20 @@ final class PlannerTest {
     class Solve {
 
         @Test
+        @DisplayName("SOLVE plans its equations with every def expanded")
+        void expandsDefsInThePlan() {
+            PhysicalNode plan = planFirstQuery(
+                    "Loans := [| total | principal | rate |\n" +
+                    "           | 100 | 20 | 5 |];\n" +
+                    "def product(x: NUMBER, y: NUMBER) : NUMBER := { x * y };\n" +
+                    "query { SOLVE total = product(principal, rate) (Loans) };");
+
+            PhysicalNode.Solve s = assertThat(plan).asNode(PhysicalNode.Solve.class);
+            assertThat(s.equations().getFirst().right().accept(new com.darkcollective.relix.ast.visitor.internal.OperandPrettyPrinter()))
+                    .isEqualTo("principal * rate");
+        }
+
+        @Test
         @DisplayName("SOLVE translates to a PhysicalNode.Solve over its planned input")
         void translatesToPhysicalSolve() {
             PhysicalNode plan = planFirstQuery(
@@ -1462,8 +1476,8 @@ final class PlannerTest {
 
             PhysicalNode.Solve s = assertThat(plan).asNode(PhysicalNode.Solve.class);
             assertThat(s.input()).isNode(PhysicalNode.Scan.class);
-            assertThat(s.left()).isInstanceOf(com.darkcollective.relix.ast.AttributeOperand.class);
-            assertThat(s.right()).isInstanceOf(
+            assertThat(s.equations().getFirst().left()).isInstanceOf(com.darkcollective.relix.ast.AttributeOperand.class);
+            assertThat(s.equations().getFirst().right()).isInstanceOf(
                     com.darkcollective.relix.ast.BinaryArithmeticExpression.class);
             // Output schema equals the input schema (fills holes, adds nothing).
             assertThat(s.schema().columns().stream().map(c -> c.name()).toList())
