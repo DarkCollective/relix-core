@@ -1,12 +1,15 @@
 # Name: Goal-Seek (SOLVE)
 
 # Syntax:
-SOLVE <left-expression> = <right-expression> [PER <key>, ...] (Relation)
-SOLVE { <left> = <right>, <left> = <right>, ... } [PER <key>, ...] (Relation)
+SOLVE <left-expression> = <right-expression> [PER <key>, ...]
+      [WITHIN <tolerance>] [MAX <n> ROUNDS] (Relation)
+SOLVE { <left> = <right>, <left> = <right>, ... } [PER <key>, ...]
+      [WITHIN <tolerance>] [MAX <n> ROUNDS] (Relation)
 
 SOLVE total = principal * rate (Loans)
 SOLVE { cups = coffee + tea, revenue = 3.5 * coffee + 2.5 * tea } (Sales)
 SOLVE y = slope * x + intercept PER series (Points)
+SOLVE area = side * side (Squares)
 
 # Description:
 SOLVE fills in missing (NULL) values in an arithmetic equation, per row, by
@@ -16,7 +19,9 @@ missing it multiplies, if `rate` is missing it divides. It is a spreadsheet-styl
 goal-seek applied across every row at once.
 
 Give it several equations in braces and it solves them together: two equations
-can recover two missing values in a row, three can recover three. An equation may
+can recover two missing values in a row, three can recover three. An equation that
+cannot be rearranged — the missing value appears twice, or two missing values
+multiply — is solved by searching for the answer instead. An equation may
 also be written with your own functions — a `def` whose body is arithmetic is
 solved through as if its formula had been written out.
 
@@ -27,29 +32,40 @@ a set of points.
 
 # Technical Description:
 SOLVE fills the NULL participating columns of each row; which columns those are is
-decided per row. With one equation, a row is solved when exactly one participating
-column is NULL: the equation is inverted by a deterministic tree-walk, which is
-why each column may appear in it at most once. With several equations (a system),
-a row is solved when it has as many NULL participating columns as there are
-equations, every equation is linear in them — no product of two terms that both
-hold an unknown, no unknown in a divisor — and the system is non-singular; it is
-solved by Gaussian elimination with partial pivoting. A call to a `def` whose body
-is arithmetic is expanded into that body before the equation is checked or solved.
-Results round to ten fractional digits, as ÷ does. A row that cannot be solved
-passes through unchanged. Output schema = input schema. Streaming; does not push
-down.
+decided per row. A row is solved when it has exactly as many NULL participating
+columns as there are equations, by the cheapest strategy that applies: a single
+equation whose unknown appears once is inverted by a deterministic tree-walk;
+equations linear in the unknowns — no product of two terms that both hold an
+unknown, no unknown in a divisor — are solved by Gaussian elimination with partial
+pivoting; anything else is solved iteratively by Levenberg–Marquardt, a damped
+Newton method. A call to a `def` whose body is arithmetic is expanded into that
+body before the equation is checked or solved. Results round to ten fractional
+digits, as ÷ does. Output schema = input schema. Streaming; does not push down.
+
+The iteration starts every unknown at 1, so where an equation has more than one
+root it finds the one reached from 1 — for `area = side * side`, the positive
+one. It stops when no unknown moves by more than the tolerance in a round (WITHIN,
+default 0.0000000001), and each equation must then hold to within the tolerance
+times the larger of 1 and the size of its sides; MAX n ROUNDS caps the attempts
+(default 100). A row that cannot be posed — the wrong number of blanks, or
+equations that do not determine the blanks (a singular linear system, or only a
+product of blanks fixed) — passes through unchanged. A row that is posed but has no
+solution, or on which the search does not converge within its rounds, raises an
+error naming the row: a query does not return a blank it was asked to fill
+without saying so.
 
 With PER, the rows are grouped by the keys and each group is fitted by least
 squares. The unknowns are the participating columns that are NULL in every row of
 the group; each row whose other participating columns are all present is an
 observation, contributing one residual (left − right) per equation; the unknowns
-minimise the sum of the squared residuals, found from the normal equations. A
-group is fitted when it has at least as many residuals as unknowns, every equation
-is linear in them, and the normal equations are non-singular; the fitted values
-are then written into every row of the group, observation or not. Any other group
-passes through unchanged. With a single row and as many residuals as unknowns the
-fit is the exact solve. PER buffers its input (blocking), and the rows come back in
-input order.
+minimise the sum of the squared residuals — from the normal equations when the
+equations are linear in them, by the same iteration (Gauss–Newton) otherwise. A
+group is fitted when it has at least as many residuals as unknowns and they
+determine the unknowns; the fitted values are then written into every row of the
+group, observation or not. Any other group passes through unchanged, and a search
+that does not converge raises an error naming the group. With a single row and as
+many residuals as unknowns the fit is the exact solve. PER buffers its input
+(blocking), and the rows come back in input order.
 
 # Examples:
 Fill whichever of total/principal/rate is blank, per row:
@@ -63,6 +79,12 @@ Recover a pair of values from their sum and difference:
 
 Fit a line through each series of points:
   SOLVE y = slope * x + intercept PER series (Points)
+
+Find a side from an area — an equation with no rearrangement, solved by search:
+  SOLVE area = side * side (Squares)
+
+Fit a saturating curve per enzyme, with a looser tolerance and a tighter cap:
+  SOLVE rate = vmax * s / (km + s) PER enzyme WITHIN 0.000001 MAX 50 ROUNDS (Assays)
 
 Solve through your own formula:
 ```relix
@@ -208,15 +230,44 @@ observation — its length was blank — but it is in the steel group, so it rec
 steel's coefficient, and the outer, row-by-row SOLVE then has one blank left to
 fill.
 
+When an equation cannot be rearranged, SOLVE searches. A balance left to grow for
+two years at a rate compounded yearly is `principal × (1 + rate) × (1 + rate)`:
+`rate` appears twice, so there is no tree-walk to undo, and the row is solved
+iteratively instead. The other rows, whose blank appears once, are still inverted:
+
+```relix
+Deposits := [
+| account | principal | rate | balance |
+|---------|-----------|------|---------|
+| A-100   | 1000      |      | 1102.5  |
+| A-200   | 2000      | 0.03 |         |
+| A-300   |           | 0.04 | 540.8   |
+];
+
+query { SOLVE balance = principal * (1 + rate) * (1 + rate) (Deposits) };
+```
+
+```
+ account  principal  rate  balance
+ ───────  ─────────  ────  ───────
+ A-100         1000  0.05   1102.5
+ A-200         2000  0.03   2121.8
+ A-300          500  0.04    540.8
+(3 rows)
+```
+
+A-100's rate was found by search, starting from 1 and settling on 5%. A-200 and
+A-300 multiplied and divided as they always did.
+
 # Limitations:
 Only basic arithmetic (+ − × ÷, unary minus) can be solved, written directly or
 through a `def` whose body is such arithmetic; a built-in function cannot be
-solved through. With one equation each participating column may appear at most
-once. A system is solved only where it is linear in the row's blanks and
-non-singular, and only where the row has exactly as many blanks as there are
-equations; any other row is left as-is. A PER fit is likewise made only where it
-is linear in the group's unknowns, and buffers its input. This is the goal-seek
-half of the declarative solver; the optimisation half is OPTIMIZE.
+solved through. A row is solved only where it has exactly as many blanks as there
+are equations and the equations determine them; any other row is left as-is. An
+equation solved by search yields one root — the one reached from 1 — and a row
+with no solution is an error rather than a row left blank. A PER fit buffers its
+input. This is the goal-seek half of the declarative solver; the optimisation half
+is OPTIMIZE.
 
 # Alternatives:
 OPTIMIZE for choosing values subject to constraints (rather than solving

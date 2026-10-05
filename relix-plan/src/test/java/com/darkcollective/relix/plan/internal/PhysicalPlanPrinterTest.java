@@ -793,7 +793,7 @@ final class PhysicalPlanPrinterTest {
                                 new com.darkcollective.relix.ast.AttributeOperand("principal"),
                                 com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
                                 new com.darkcollective.relix.ast.AttributeOperand("rate")))),
-                List.of(),
+                List.of(), java.util.Optional.empty(), java.util.Optional.empty(),
                 sqlScan("SELECT x FROM t"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
                 SOLVE total = principal * rate
@@ -802,7 +802,7 @@ final class PhysicalPlanPrinterTest {
     }
 
     @Test
-    @DisplayName("a solve node over a system shows every equation, and its PER keys")
+    @DisplayName("a solve node over a system shows every equation, its PER keys and its limits")
     void solveSystemLabel() {
         PhysicalNode plan = new PhysicalNode.Solve(
                 SCHEMA,
@@ -813,9 +813,10 @@ final class PhysicalPlanPrinterTest {
                                 new com.darkcollective.relix.ast.AttributeOperand("u"),
                                 new com.darkcollective.relix.ast.AttributeOperand("v"))),
                 List.of("grp", "batch"),
+                java.util.Optional.of(new java.math.BigDecimal("0.001")), java.util.Optional.of(20),
                 sqlScan("SELECT x FROM t"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
-                SOLVE { x = y, u = v } PER grp, batch
+                SOLVE { x = y, u = v } PER grp, batch WITHIN 0.001 MAX 20 ROUNDS
                 └─ PushedScan [jdbc/db] SELECT x FROM t
                 """);
     }

@@ -67,12 +67,13 @@ in the query says which — the operator inverts the arithmetic around whichever
 blank.
 
 The last two rows are the rule stated from the other side. `billing` has nothing missing,
-and `reports` has two things missing, so neither is solved: `SOLVE` acts only where there
-is exactly one hole, and a row it cannot solve passes through untouched rather than
-failing the query. That is what makes it safe to run over a whole import.
+and `reports` has two things missing, so neither is solved: one equation fills exactly one
+hole, and a row it cannot pose passes through untouched rather than failing the query.
+That is what makes it safe to run over a whole import.
 
-`SOLVE` is arithmetic, not search. It rearranges `+ − × ÷` and unary minus, per row, in
-pure Java — **no solver is involved**, so it works whatever else is on the classpath.
+`SOLVE` needs nothing installed. It rearranges `+ − × ÷` and unary minus, per row, in
+pure Java — **no mathematical-programming solver is involved**, so it works whatever else
+is on the classpath.
 
 Several equations solve for several blanks. Each service's CPUs are split between
 reserved capacity at 12 a CPU and burst capacity at 20, and the usage export carries a
@@ -103,8 +104,9 @@ SOLVE { cpus = reserved + burst, charge = 12 * reserved + 20 * burst } (Usage)
 Two equations, two blanks per row, and again the direction is per row: `search` is split
 into its reserved and burst CPUs, `ingest` gets its total and its charge. `reports` has
 three blanks for two equations, so it passes through. A system is solved by elimination
-when it is linear in the row's blanks — no product of two blanks, no blank in a divisor —
-and still nothing but arithmetic is involved.
+when it is linear in the row's blanks — no product of two blanks, no blank in a divisor.
+Anything else is solved by search, still in pure Java: a damped Newton iteration that
+starts every blank at 1.
 
 Grouped with `PER`, the same equations fit rather than solve. Each region bills a fixed
 platform fee plus a per-CPU rate, neither of which the export states, but every line is a
@@ -139,6 +141,37 @@ SOLVE charge = fee + cpus * rate PER region (Bills)
 and each line is one equation in them: three for `eu-west`, two for `us-east`. Where the
 lines disagree the fit is the least-squares one; here they agree, so it is exact. Every
 row of the region gets the same two numbers, and the result has the rows it started with.
+
+An equation searched for rather than rearranged takes two more arguments: the tolerance
+the search stops within, and a cap on its rounds, each empty for the engine's default.
+Capacity that grows by the same fraction each quarter, compounded over two quarters, has
+its growth rate appear twice, so it is found by search:
+
+```java
+import java.math.BigDecimal;
+import java.util.Optional;
+
+relix.table("Growth", List.of("service", "now", "later", "rate"), List.of(
+        Map.of("service", "search", "now", 100, "later", 121)));
+
+Relation growth = relix.relation("Growth").solve(
+        List.of(equation(attr("later"),
+                times(times(attr("now"), plus(num(1), attr("rate"))), plus(num(1), attr("rate"))))),
+        List.of(), Optional.of(new BigDecimal("0.000001")), Optional.of(25));
+
+System.out.println(growth.render());
+growth.toList().forEach(System.out::println);
+```
+
+```
+SOLVE later = now * (1 + rate) * (1 + rate) WITHIN 0.000001 MAX 25 ROUNDS (Growth)
+(service=search, now=100, later=121, rate=0.1)
+```
+
+A row whose equations have no solution — a negative area for a square — is an error
+naming the row rather than a row left blank, and so is a search that runs out of rounds.
+A row whose blanks the equations do not pin down, as when only their product appears,
+passes through unchanged, as an unsolvable row always has.
 
 ## OPTIMIZE: choosing the best subset
 

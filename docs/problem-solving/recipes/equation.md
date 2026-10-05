@@ -17,10 +17,10 @@ the rate*. It is a spreadsheet goal-seek: rearrange one equation to solve for it
 unknown. The tell is that *which* value is unknown may vary from row to row, and the
 relationship stays the same.
 
-`SOLVE` is this and only this. It is **not** `OPTIMIZE` — there is no search, no
-choice, no constraint; it inverts an arithmetic equation per row, or solves a few
-together as a linear system. (It does not even use the mathematical-programming
-solver — it rearranges or eliminates, deterministically, and streams.)
+`SOLVE` is this and only this. It is **not** `OPTIMIZE` — there is no choice and no
+constraint; it inverts an arithmetic equation per row, or solves a few together. (It
+does not even use the mathematical-programming solver — it rearranges, eliminates or
+iterates, deterministically, and streams.)
 
 ## The data
 
@@ -61,9 +61,9 @@ whichever column is NULL — one statement fills a different hole in each.
 
 ## Variations
 
-- **Any invertible arithmetic** — `SOLVE area = width * height`, `SOLVE total =
-  principal + interest`. The equation may use `+ − × ÷` and unary minus, each column
-  appearing at most once per side.
+- **Any arithmetic** — `SOLVE area = width * height`, `SOLVE total =
+  principal + interest`, `SOLVE area = side * side`. The equation may use `+ − × ÷` and
+  unary minus; one that cannot be rearranged is solved by search.
 - **Compute a column when nothing is missing** is not this recipe — that is a plain π
   with arithmetic (`π …, qty * unit_price → line_total`). `SOLVE` earns its place only
   when the unknown varies.

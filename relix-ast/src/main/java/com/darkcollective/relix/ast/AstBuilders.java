@@ -832,6 +832,14 @@ public abstract class AstBuilders {
         return new SolveNode(equations, groupingKeys, input);
     }
 
+    /** {@code SOLVE … WITHIN ε MAX n ROUNDS} — with the iteration's tolerance and cap. */
+    public static SolveNode solve(List<SolveEquation> equations, List<String> groupingKeys,
+                                  Optional<BigDecimal> tolerance, Optional<Integer> maxRounds,
+                                  RelNode input) {
+        return new SolveNode(equations, groupingKeys, tolerance, maxRounds, input,
+                SourceLocation.UNKNOWN);
+    }
+
     /** One {@code SOLVE} equation, {@code left = right}. */
     public static SolveEquation equation(Operand left, Operand right) {
         return new SolveEquation(left, right);

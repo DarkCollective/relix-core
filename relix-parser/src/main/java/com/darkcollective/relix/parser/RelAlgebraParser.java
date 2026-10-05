@@ -1142,7 +1142,7 @@ public final class RelAlgebraParser {
 
     private IterateStop parseIterateStop() {
         if (matchWord("ROUNDS")) {
-            return new IterateStop.Rounds(parseRoundCount(0));
+            return new IterateStop.Rounds(parseRoundCount(0, "ITERATE"));
         }
         if (!matchWord("UNTIL")) {
             throw error(current, "Expected 'ROUNDS n' or 'UNTIL …' after ITERATE (base, step)");
@@ -1174,24 +1174,25 @@ public final class RelAlgebraParser {
     private int parseRoundCap() {
         expect(TokenType.MAX,
                 "Expected 'MAX n ROUNDS' — an ITERATE … UNTIL needs a round cap");
-        int n = parseRoundCount(1);
+        int n = parseRoundCount(1, "ITERATE");
         if (!matchWord("ROUNDS")) {
             throw error(current, "Expected 'ROUNDS' after 'MAX " + n + "'");
         }
         return n;
     }
 
-    private int parseRoundCount(int least) {
+    private int parseRoundCount(int least, String operator) {
         Token tok = expect(TokenType.NUMBER, "Expected a round count");
+        String subject = ("AEIOU".indexOf(operator.charAt(0)) >= 0 ? "An " : "A ") + operator;
         int n;
         try {
             n = Integer.parseInt(tok.lexeme());
         } catch (NumberFormatException e) {
-            throw error(tok, "An ITERATE round count must be a whole number, got '"
+            throw error(tok, subject + " round count must be a whole number, got '"
                     + tok.lexeme() + "'");
         }
         if (n < least) {
-            throw error(tok, "An ITERATE round count must be at least " + least + ", got " + n);
+            throw error(tok, subject + " round count must be at least " + least + ", got " + n);
         }
         return n;
     }
@@ -1601,7 +1602,8 @@ public final class RelAlgebraParser {
     }
 
     /**
-     * Parses a goal-seek operator: {@code SOLVE left = right [PER k, …] (R)}, e.g.
+     * Parses a goal-seek operator:
+     * {@code SOLVE left = right [PER k, …] [WITHIN ε] [MAX n ROUNDS] (R)}, e.g.
      * {@code SOLVE total = principal * rate (Loans)}, or a system of equations in
      * braces, {@code SOLVE &#123; a = b, c = d &#125; (R)}, separated by commas as every
      * list inside an expression is — {@code ;} ends a statement. The sides are
@@ -1624,8 +1626,25 @@ public final class RelAlgebraParser {
         List<String> keys = match(TokenType.PER)
                 ? parseIterateNames("Expected a key column name after 'PER'")
                 : List.of();
+        Optional<java.math.BigDecimal> tolerance = Optional.empty();
+        if (match(TokenType.WITHIN)) {
+            Token tolTok = expect(TokenType.NUMBER, "Expected a tolerance after 'WITHIN'");
+            java.math.BigDecimal tol = new java.math.BigDecimal(tolTok.lexeme());
+            if (tol.signum() <= 0) {
+                throw error(tolTok, "A SOLVE tolerance must be greater than 0, got " + tolTok.lexeme());
+            }
+            tolerance = Optional.of(tol);
+        }
+        Optional<Integer> maxRounds = Optional.empty();
+        if (match(TokenType.MAX)) {
+            int n = parseRoundCount(1, "SOLVE");
+            if (!matchWord("ROUNDS")) {
+                throw error(current, "Expected 'ROUNDS' after 'MAX " + n + "'");
+            }
+            maxRounds = Optional.of(n);
+        }
         RelNode input = parseParenthesizedRelation("Expected '(' after the SOLVE equation");
-        return new SolveNode(equations, keys, input, loc(opTok));
+        return new SolveNode(equations, keys, tolerance, maxRounds, input, loc(opTok));
     }
 
     private SolveEquation parseSolveEquation() {
