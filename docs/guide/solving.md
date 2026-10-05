@@ -106,6 +106,40 @@ three blanks for two equations, so it passes through. A system is solved by elim
 when it is linear in the row's blanks — no product of two blanks, no blank in a divisor —
 and still nothing but arithmetic is involved.
 
+Grouped with `PER`, the same equations fit rather than solve. Each region bills a fixed
+platform fee plus a per-CPU rate, neither of which the export states, but every line is a
+measurement of both:
+
+```java
+relix.table("Bills", List.of("service", "region", "cpus", "charge", "fee", "rate"), List.of(
+        Map.of("service", "search",     "region", "eu-west", "cpus", 4,  "charge", 58),
+        Map.of("service", "ingest",     "region", "eu-west", "cpus", 8,  "charge", 106),
+        Map.of("service", "dashboards", "region", "eu-west", "cpus", 12, "charge", 154),
+        Map.of("service", "billing",    "region", "us-east", "cpus", 6,  "charge", 80),
+        Map.of("service", "reports",    "region", "us-east", "cpus", 3,  "charge", 44)));
+
+Relation tariffs = relix.relation("Bills").solve(
+        List.of(equation(attr("charge"), plus(attr("fee"), times(attr("cpus"), attr("rate"))))),
+        List.of("region"));
+
+System.out.println(tariffs.render());
+tariffs.toList().forEach(System.out::println);
+```
+
+```
+SOLVE charge = fee + cpus * rate PER region (Bills)
+(service=search, region=eu-west, cpus=4, charge=58, fee=10, rate=12)
+(service=ingest, region=eu-west, cpus=8, charge=106, fee=10, rate=12)
+(service=dashboards, region=eu-west, cpus=12, charge=154, fee=10, rate=12)
+(service=billing, region=us-east, cpus=6, charge=80, fee=8, rate=12)
+(service=reports, region=us-east, cpus=3, charge=44, fee=8, rate=12)
+```
+
+`fee` and `rate` are blank in every row of a region, so they are the region's unknowns,
+and each line is one equation in them: three for `eu-west`, two for `us-east`. Where the
+lines disagree the fit is the least-squares one; here they agree, so it is exact. Every
+row of the region gets the same two numbers, and the result has the rows it started with.
+
 ## OPTIMIZE: choosing the best subset
 
 The other half is a real search. Reserved capacity is 16 CPUs per region, and the question

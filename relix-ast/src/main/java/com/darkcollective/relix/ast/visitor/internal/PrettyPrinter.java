@@ -267,7 +267,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(SolveNode node) {
-        return DisplayLabels.solve(node.equations())
+        return DisplayLabels.solve(node.equations(), node.groupingKeys())
                 + " (" + node.input().accept(this) + ")";
     }
 

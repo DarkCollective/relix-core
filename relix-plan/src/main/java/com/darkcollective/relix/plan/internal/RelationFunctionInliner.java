@@ -240,7 +240,7 @@ final class RelationFunctionInliner {
                     new SolveNode(s.equations().stream()
                             .map(e -> new SolveEquation(substituteOperand(e.left(), b),
                                     substituteOperand(e.right(), b)))
-                            .toList(), s.input(), s.location());
+                            .toList(), s.groupingKeys(), s.input(), s.location());
             case OptimizeNode o ->
                     new OptimizeNode(o.sense(), substituteOperand(o.objective(), b),
                             substituteConstraints(o.constraints(), b), o.groupingKeys(),

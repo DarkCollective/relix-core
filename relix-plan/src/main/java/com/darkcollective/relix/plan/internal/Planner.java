@@ -577,7 +577,8 @@ public final class Planner {
             case ReservoirSampleNode s -> new PhysicalNode.ReservoirSample(
                     schemaOf(s), s.count(), s.seed(), plan(s.input()));
             case SolveNode s       -> new PhysicalNode.Solve(schemaOf(s),
-                    SolveEquations.expandAll(s.equations(), functions, symbols), plan(s.input()));
+                    SolveEquations.expandAll(s.equations(), functions, symbols),
+                    s.groupingKeys(), plan(s.input()));
             case OptimizeNode o    -> {
                 requireSolver("OPTIMIZE");
                 yield new PhysicalNode.Optimize(

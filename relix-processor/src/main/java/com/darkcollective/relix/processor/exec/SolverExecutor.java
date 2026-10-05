@@ -62,10 +62,15 @@ final class SolverExecutor {
     /**
      * Goal-seek: for each row, fills the NULL participating columns of the equations —
      * one equation by inverting its arithmetic, several as a linear system.  Streaming
-     * and per-row — a row that cannot be solved passes through unchanged.
+     * and per-row — a row that cannot be solved passes through unchanged.  With
+     * {@code PER} keys the input is buffered and each group is fitted by least squares
+     * instead, the rows coming back in input order.
      */
     Stream<Row> executeSolve(PhysicalNode.Solve node, EvalCtx ctx) {
         List<SolveEquation> equations = node.equations();
+        if (!node.groupingKeys().isEmpty()) {
+            return executeSolveFit(node, ctx);
+        }
         if (equations.size() == 1) {
             EquationSolver solver = new EquationSolver(ctx.operandEval());
             SolveEquation only = equations.getFirst();
@@ -74,6 +79,30 @@ final class SolverExecutor {
         }
         EquationSystemSolver system = new EquationSystemSolver();
         return dispatch.execute(node.input(), ctx).map(row -> system.solve(equations, row));
+    }
+
+    private Stream<Row> executeSolveFit(PhysicalNode.Solve node, EvalCtx ctx) {
+        List<String> keys = node.groupingKeys();
+        List<Row> rows;
+        try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
+            rows = input.toList();
+        }
+        SequencedMap<List<Value>, List<Integer>> groups = new LinkedHashMap<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Row row = rows.get(i);
+            groups.computeIfAbsent(keys.stream().map(row::get).toList(), k -> new ArrayList<>())
+                    .add(i);
+        }
+        EquationSystemSolver solver = new EquationSystemSolver();
+        Row[] out = new Row[rows.size()];
+        for (List<Integer> members : groups.values()) {
+            List<Row> fitted = solver.fit(node.equations(),
+                    members.stream().map(rows::get).toList());
+            for (int k = 0; k < members.size(); k++) {
+                out[members.get(k)] = fitted.get(k);
+            }
+        }
+        return Stream.of(out);
     }
 
     /**

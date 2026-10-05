@@ -192,7 +192,7 @@ public sealed interface PhysicalNode {
             }
             case Solve n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Solve(n.schema(), n.equations(), in);
+                yield in == n.input() ? n : new Solve(n.schema(), n.equations(), n.groupingKeys(), in);
             }
             case Optimize n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -851,13 +851,15 @@ public sealed interface PhysicalNode {
     /**
      * Goal-seek (SOLVE): for each row of {@code input}, fills the NULL columns
      * participating in {@code equations} — one equation by inverting its arithmetic,
-     * several as a system of linear equations.  Rows that cannot be solved pass
-     * through unchanged.  Output schema equals the input schema.
+     * several as a system of linear equations.  With {@code groupingKeys} the input is
+     * buffered and the unknowns are fitted across each group by least squares.  Rows
+     * that cannot be solved pass through unchanged.  Output schema equals the input
+     * schema.
      *
      * <p>The equations are the planned form: every call to a user-defined function
      * has been expanded into the arithmetic of its body.
      */
-    record Solve(Schema schema, List<SolveEquation> equations,
+    record Solve(Schema schema, List<SolveEquation> equations, List<String> groupingKeys,
                  PhysicalNode input) implements PhysicalNode {
         @Override public List<PhysicalNode> children() { return List.of(input); }
     }

@@ -512,7 +512,7 @@ public final class RelNodeOperands {
                             : new SolveEquation(left, right);
                 });
                 yield equations == n.equations() ? n
-                        : new SolveNode(equations, n.input(), n.location());
+                        : new SolveNode(equations, n.groupingKeys(), n.input(), n.location());
             }
             case OptimizeNode n -> {
                 Operand objective = onOperand.apply(n.objective());

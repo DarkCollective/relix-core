@@ -100,7 +100,8 @@ public sealed interface RelNode permits
      *   <li>{@link MaterializationMode#SORTED} — {@link SortNode}</li>
      *   <li>{@link MaterializationMode#BAG} — {@link AggregationNode},
      *       {@link UniversalNode}, {@link UnionAllNode}, {@link DivisionNode},
-     *       {@link FullOuterJoinNode}</li>
+     *       {@link FullOuterJoinNode}, and a {@link SolveNode} that fits {@code PER}
+     *       group</li>
      *   <li>{@link MaterializationMode#SET} — {@link UnionNode},
      *       {@link OuterUnionNode}, {@link IntersectionNode},
      *       {@link DifferenceNode}, {@link SymmetricDifferenceNode}</li>
@@ -116,6 +117,7 @@ public sealed interface RelNode permits
             case AggregationNode   ignored -> MaterializationMode.BAG;
             case UniversalNode     ignored -> MaterializationMode.BAG;
             case OptimizeNode      ignored -> MaterializationMode.BAG;
+            case SolveNode s when !s.groupingKeys().isEmpty() -> MaterializationMode.BAG;
             case TopKNode          ignored -> MaterializationMode.BAG;
             case ReservoirSampleNode ignored -> MaterializationMode.BAG;
             case UnionAllNode      ignored -> MaterializationMode.BAG;
@@ -325,7 +327,7 @@ public sealed interface RelNode permits
             case SolveNode n -> {
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n
-                        : new SolveNode(n.equations(), in, n.location());
+                        : new SolveNode(n.equations(), n.groupingKeys(), in, n.location());
             }
             case OptimizeNode n -> {
                 RelNode in = f.apply(n.input());

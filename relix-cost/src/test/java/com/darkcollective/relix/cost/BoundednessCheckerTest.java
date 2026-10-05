@@ -101,6 +101,20 @@ final class BoundednessCheckerTest {
         }
 
         @Test
+        @DisplayName("SOLVE … PER over an unbounded input is rejected — a group is fitted whole")
+        void solvePerOverUnbounded() {
+            assertThat(check(AstBuilders.solve(
+                    List.of(AstBuilders.equation(attr("y"), attr("x"))), List.of("g"), inf())))
+                    .singleElement().asString().contains("SOLVE … PER");
+        }
+
+        @Test
+        @DisplayName("SOLVE row by row streams an unbounded input — not flagged")
+        void solvePerRowOverUnbounded() {
+            assertThat(check(AstBuilders.solve(attr("y"), attr("x"), inf()))).isEmpty();
+        }
+
+        @Test
         @DisplayName("ROLL over an unbounded face set is rejected — the faces must be buffered")
         void rollOverUnboundedFaces() {
             assertThat(check(AstBuilders.roll(inf())))
