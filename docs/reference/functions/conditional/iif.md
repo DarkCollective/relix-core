@@ -23,6 +23,14 @@ that would fail on those rows, such as converting a value that is not a number.
 lazy in the same way, and these five are the only built-ins that are — every other
 function evaluates all its arguments.
 
+IIf folds into a backend `CASE` on every SQL dialect, so a query over a database
+source pushes it down. It is written `CASE WHEN c THEN a WHEN NOT (c) THEN b END`
+rather than with an `ELSE`: a NULL condition matches neither arm and the `CASE` is
+NULL, which is IIf's answer, where an `ELSE` would take the false branch. The
+condition folds when it is written as one — a comparison, a null test, or a connective
+over them — so `IIf(active = true, …)` folds where `IIf(active, …)` over a boolean
+column is evaluated in-engine. MongoDB, which has no `CASE`, evaluates it in-engine.
+
 # Examples:
 Pass/fail label:
   π name, IIf(score >= 50, "pass", "fail") → result (Results)

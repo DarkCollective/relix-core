@@ -356,6 +356,7 @@ final class PushdownCorpus {
         groups.put("the transcendentals, which answer in floating point", transcendentals());
         groups.put("the transcendentals outside their domain", transcendentalDomains());
         groups.put("the NULL functions — COALESCE and IS NULL", nullFunctions());
+        groups.put("the conditionals — IIf, Switch and Choose, each a CASE", conditionals());
         groups.put("ordering functions — LEAST/GREATEST, folded only where NULL propagates", ordering());
         groups.put("π and δ", projectionAndDistinct());
         groups.put("γ — every aggregate, over a column that holds a NULL", aggregates());
@@ -622,6 +623,33 @@ final class PushdownCorpus {
                 "π oid, Nz(amount, 0) → c (Orders)",
                 "π oid, IsNull(amount) → missing (Orders)",
                 "σ Coalesce(code, region) = 'east' (Orders)");
+    }
+
+    /**
+     * The conditionals, each a {@code CASE}, over conditions that are unknown on some row.
+     *
+     * <p>The unknown row is the point. {@code IIf} answers NULL there, where
+     * {@code CASE … ELSE} would take the else branch, and {@code Switch} moves on to the
+     * next pair; {@code amount} is NULL on one order and the {@code AND} is unknown on
+     * that order and false on another, so a spelling that lost the third truth value
+     * would answer differently on exactly those rows.
+     *
+     * <p>The conditions on names are the other hazard. A condition in a select list
+     * compares as a {@code WHERE} clause does, so a case-insensitive collation must not
+     * match {@code 'Ada'} where the engine does not.
+     */
+    private static List<Case> conditionals() {
+        return cases(
+                "π oid, IIf(amount > 99, 'big', 'small') → size (Orders)",
+                "π oid, IIf(amount > 99 ∧ qty > 1, 1, 0) → v (Orders)",
+                "π oid, IIf(code IS NULL, 'none', code) → c (Orders)",
+                "π oid, IIf(region = 'east', amount, qty) → v (Orders)",
+                "π cid, IIf(name = 'ada', 1, 0) → v (Customers)",
+                "π cid, IIf(name > 'B', 1, 0) → v (Customers)",
+                "σ IIf(amount > 99, 1, 0) = 1 (Orders)",
+                "π oid, Switch(amount ≥ 200, 'large', amount ≥ 100, 'medium', 'small') → band (Orders)",
+                "π oid, Switch(amount ≥ 200, 'large', amount ≥ 100, 'medium') → band (Orders)",
+                "π oid, Choose(qty, 'one', 'two', 'three') → c (Orders)");
     }
 
     /**

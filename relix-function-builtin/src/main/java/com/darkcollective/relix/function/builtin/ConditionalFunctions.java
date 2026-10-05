@@ -52,10 +52,10 @@ import static com.darkcollective.relix.symbol.ScalarType.STRING;
  * <p>{@code Switch} is the multi-branch form (a searched {@code CASE}) and {@code Choose}
  * the positional one (a simple {@code CASE} on a 1-based index) — both functions rather
  * than grammar, because a conditional is scalar work and the two-way {@code IIf} already
- * is a function. Both fold into a backend {@code CASE} (see {@link Spellings}); the
- * two-way {@code IIf} does not, because its NULL condition yields NULL where a
- * {@code CASE … ELSE} would take the else branch — the very thing {@code Switch}'s
- * skip-on-NULL avoids.
+ * is a function. All three fold into a backend {@code CASE} (see {@link Spellings}).
+ * {@code IIf}'s is the one with a twist: its NULL condition yields NULL, where a
+ * {@code CASE … ELSE} would take the else branch, so it tests the negation in a second
+ * {@code WHEN} rather than writing an {@code ELSE}.
  */
 final class ConditionalFunctions {
 
@@ -69,6 +69,7 @@ final class ConditionalFunctions {
                 CONDITIONAL.lazy("IIf", ANY, PURE_DETERMINISTIC,
                         List.of(p("condition", ANY), p("trueValue", ANY), p("falseValue", ANY)),
                         Arity.exactly(3), ConditionalFunctions::iifReturnType,
+                        Spellings.twoWayCase(),
                         ConditionalFunctions::iif),
 
                 // Nz(value) and Nz(value, valueIfNull) differ only in whether the

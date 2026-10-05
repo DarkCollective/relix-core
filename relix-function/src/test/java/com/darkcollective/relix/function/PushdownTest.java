@@ -81,6 +81,14 @@ final class PushdownTest {
         }
 
         @Test
+        @DisplayName("no argument is a condition unless a spelling says so")
+        void noConditionByDefault() {
+            PushdownSpelling upper = (target, args) -> Optional.of("UPPER(" + args.get(0) + ")");
+            assertThat(upper.isCondition(0, 1)).isFalse();
+            assertThat(PushdownSpelling.NONE.isCondition(0, 3)).isFalse();
+        }
+
+        @Test
         @DisplayName("a spelling assembles already-rendered arguments")
         void assemblesRenderedArguments() {
             PushdownSpelling upper = (target, args) -> target.isFamily(PushdownTarget.SQL)

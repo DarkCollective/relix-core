@@ -312,9 +312,12 @@ final class SqlPushdownPlanner implements PushdownRenderer {
                 || p.windowApplied) {
             return Optional.empty();
         }
+        // A select item is a value, rendered plainly; a condition inside one — the test of
+        // an IIf — compares as a WHERE clause would.
+        ColumnRenderer items = ColumnRenderer.withComparing(p.renderer, p.comparing, p.ordering);
         List<String> selectList = new ArrayList<>(node.attributes().size());
         for (ProjectedAttribute attr : node.attributes()) {
-            Optional<String> sql = SqlExpressions.operand(attr.expression(), p.renderer, p.dialect, functions);
+            Optional<String> sql = SqlExpressions.operand(attr.expression(), items, p.dialect, functions);
             if (sql.isEmpty()) {
                 return Optional.empty();
             }
