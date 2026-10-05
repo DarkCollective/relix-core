@@ -228,7 +228,9 @@ public final class PhysicalPlanPrinter {
             case PhysicalNode.ReservoirSample s -> "SAMPLE " + s.count() + " ROWS"
                     + s.seed().map(seed -> " SEED " + seed).orElse("");
             case PhysicalNode.Shuffle s  -> "SHUFFLE" + s.seed().map(seed -> " SEED " + seed).orElse("");
-            case PhysicalNode.Roll s     -> "ROLL" + s.seed().map(seed -> " SEED " + seed).orElse("");
+            case PhysicalNode.Roll s     -> "ROLL"
+                    + s.weight().map(w -> " BY " + w.accept(OPND)).orElse("")
+                    + s.seed().map(seed -> " SEED " + seed).orElse("");
             case PhysicalNode.Cover v    -> (v.exact() ? "COVER EXACT " : "COVER ") + v.strength();
             // Same COVER keyword as the IR label, plus the physical strategy —
             // constructive generation is a planner choice, so :explain names it.
