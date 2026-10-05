@@ -142,6 +142,20 @@ final class SqlExpressionsTest {
         }
 
         @Test
+        @DisplayName("Switch folds to a searched CASE")
+        void switchFolds() {
+            assertThat(render(func("Switch", attr("hot"), str("a"), attr("warm"), str("b"), str("c"))))
+                    .hasValue("CASE WHEN hot THEN 'a' WHEN warm THEN 'b' ELSE 'c' END");
+        }
+
+        @Test
+        @DisplayName("Choose folds to a simple CASE on its 1-based index")
+        void chooseFolds() {
+            assertThat(render(func("Choose", attr("tier"), str("a"), str("b"))))
+                    .hasValue("CASE tier WHEN 1 THEN 'a' WHEN 2 THEN 'b' END");
+        }
+
+        @Test
         @DisplayName("an arithmetic expression containing an untranslatable operand is empty")
         void arithmeticWithUnsupportedOperand() {
             var expr = arith(
