@@ -423,6 +423,24 @@ final class PhysicalPlanJsonTest {
         }
 
         @Test
+        void weightedRollCarriesWeightAndSeed() {
+            var roll = new PhysicalNode.Roll(SCHEMA, Optional.of(7L), Optional.of(attr("w")), leaf());
+            assertThat(PhysicalPlanJson.toJson(roll))
+                    .contains("\"op\":\"Roll\"")
+                    .contains("\"weight\":\"w\"")
+                    .contains("\"seed\":7");
+        }
+
+        @Test
+        void uniformRollCarriesNoWeight() {
+            var roll = new PhysicalNode.Roll(SCHEMA, Optional.empty(), Optional.empty(), leaf());
+            assertThat(PhysicalPlanJson.toJson(roll))
+                    .contains("\"op\":\"Roll\"")
+                    .doesNotContain("\"weight\"")
+                    .doesNotContain("\"seed\"");
+        }
+
+        @Test
         void coverCarriesStrength() {
             var cover = new PhysicalNode.Cover(SCHEMA, 3, false, leaf());
             assertThat(PhysicalPlanJson.toJson(cover))
