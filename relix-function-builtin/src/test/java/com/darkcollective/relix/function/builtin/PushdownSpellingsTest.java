@@ -602,12 +602,52 @@ final class PushdownSpellingsTest {
         }
     }
 
+    @Nested
+    @DisplayName("Conditional — the multi-branch forms fold to CASE")
+    final class Conditional {
+
+        @Test
+        @DisplayName("Switch is a searched CASE in every SQL dialect")
+        void switchSearchedCase() {
+            assertThat(render("Switch", POSTGRES, "a > 1", "'x'", "a > 0", "'y'", "'z'"))
+                    .contains("CASE WHEN a > 1 THEN 'x' WHEN a > 0 THEN 'y' ELSE 'z' END");
+            assertThat(render("Switch", MYSQL, "`a` > 1", "'x'", "`a` > 0", "'y'"))
+                    .contains("CASE WHEN `a` > 1 THEN 'x' WHEN `a` > 0 THEN 'y' END");
+            assertThat(render("Switch", GENERIC, "a > 1", "'x'", "'z'"))
+                    .contains("CASE WHEN a > 1 THEN 'x' ELSE 'z' END");
+        }
+
+        @Test
+        @DisplayName("Choose is a simple CASE on its 1-based index in every SQL dialect")
+        void chooseIndexedCase() {
+            assertThat(render("Choose", POSTGRES, "i", "'a'", "'b'", "'c'"))
+                    .contains("CASE i WHEN 1 THEN 'a' WHEN 2 THEN 'b' WHEN 3 THEN 'c' END");
+            assertThat(render("Choose", GENERIC, "i", "'a'", "'b'"))
+                    .contains("CASE i WHEN 1 THEN 'a' WHEN 2 THEN 'b' END");
+        }
+
+        @Test
+        @DisplayName("neither folds into MongoDB, which has no CASE")
+        void declineMongo() {
+            assertThat(render("Switch", MONGO, "a > 1", "'x'", "'z'")).isEmpty();
+            assertThat(render("Choose", MONGO, "i", "'a'", "'b'")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("too few arguments decline, even on a SQL dialect")
+        void tooFewDecline() {
+            assertThat(render("Switch", POSTGRES, "'only'")).isEmpty();
+            assertThat(render("Choose", POSTGRES, "i")).isEmpty();
+        }
+    }
+
     @Test
     @DisplayName("every other built-in is evaluated in-engine, and declines every target")
     void everythingElseDeclines() {
         List<String> spelled = List.of("year", "month", "day", "hour", "minute", "second",
                 "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "mod", "replace",
-                "coalesce", "nz", "isnull", "len", "left", "right", "mid", "least", "greatest");
+                "coalesce", "nz", "isnull", "len", "left", "right", "mid", "least", "greatest",
+                "switch", "choose");
 
         List<String> unexpected = BuiltinCalls.all().stream()
                 .filter(fn -> !spelled.contains(fn.signature().canonicalName()))
