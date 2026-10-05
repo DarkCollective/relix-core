@@ -141,6 +141,29 @@ final class SolveExecutionTest extends ProcessorTestSupport {
         assertThat(byId(rows, "2")).hasValue("length", "100.5");
     }
 
+    @Test
+    @DisplayName("fits PER group by least squares, keeping input order")
+    void fitsPerGroup() {
+        var rows = collect("""
+                Points := [
+                | id | series | x | y | a | b |
+                |----|--------|---|---|---|---|
+                | 1  | s1     | 1 | 3 |   |   |
+                | 2  | s2     | 0 | 1 |   |   |
+                | 3  | s1     | 2 | 5 |   |   |
+                | 4  | s2     | 1 | 3 |   |   |
+                | 5  | s1     | 3 | 7 |   |   |
+                | 6  | s2     | 2 | 4 |   |   |
+                ];
+                query { SOLVE y = a * x + b PER series (Points) };
+                """);
+
+        assertThat(rows).extracting(r -> r.get("id").asDisplayString())
+                .containsExactly("1", "2", "3", "4", "5", "6");
+        assertThat(byId(rows, "5")).hasValue("a", "2").hasValue("b", "1");
+        assertThat(byId(rows, "6")).hasValue("a", "1.5").hasValue("b", "1.1666666667");
+    }
+
     private static Row byId(List<Row> rows, String id) {
         return rows.stream()
                 .filter(r -> id.equals(r.get("id").asDisplayString()))

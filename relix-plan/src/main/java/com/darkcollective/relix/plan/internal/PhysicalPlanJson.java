@@ -290,6 +290,11 @@ public final class PhysicalPlanJson {
                     w.endObject();
                 }
                 w.endArray();
+                w.name("groupingKeys").beginArray();
+                for (String key : s.groupingKeys()) {
+                    w.value(key);
+                }
+                w.endArray();
             }
 
             case PhysicalNode.Optimize o -> {

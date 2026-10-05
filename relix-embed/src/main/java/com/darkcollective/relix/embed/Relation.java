@@ -1176,6 +1176,19 @@ public final class Relation {
     }
 
     /**
+     * SOLVE … PER — fits the equations' unknowns across each group of rows by least
+     * squares, writing the fitted values into every row of the group.
+     *
+     * @param equations    the equations, at least one
+     * @param groupingKeys the columns a separate fit is made per
+     * @return the fitted relation
+     * @since 1.0
+     */
+    public Relation solve(List<SolveEquation> equations, List<String> groupingKeys) {
+        return derive(AstBuilders.solve(equations, groupingKeys, node));
+    }
+
+    /**
      * OPTIMIZE — the subset of rows optimising an objective under constraints.
      *
      * <p>Note that this is the <em>operator</em>. Staging the logical rewriter is

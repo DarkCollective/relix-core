@@ -823,7 +823,13 @@ public abstract class AstBuilders {
 
     /** {@code SOLVE { … }} — solve a list of equations for the row's unknowns. */
     public static SolveNode solve(List<SolveEquation> equations, RelNode input) {
-        return new SolveNode(equations, input);
+        return new SolveNode(equations, List.of(), input);
+    }
+
+    /** {@code SOLVE … PER} — fit the equations' unknowns across each group of rows. */
+    public static SolveNode solve(List<SolveEquation> equations, List<String> groupingKeys,
+                                  RelNode input) {
+        return new SolveNode(equations, groupingKeys, input);
     }
 
     /** One {@code SOLVE} equation, {@code left = right}. */

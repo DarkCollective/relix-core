@@ -68,6 +68,7 @@ import static com.darkcollective.relix.ast.AstBuilders.sample;
 import static com.darkcollective.relix.ast.AstBuilders.select;
 import static com.darkcollective.relix.ast.AstBuilders.semiJoin;
 import static com.darkcollective.relix.ast.AstBuilders.sessionize;
+import static com.darkcollective.relix.ast.AstBuilders.equation;
 import static com.darkcollective.relix.ast.AstBuilders.solve;
 import static com.darkcollective.relix.ast.AstBuilders.roll;
 import static com.darkcollective.relix.ast.AstBuilders.shuffle;
@@ -227,7 +228,7 @@ public final class RelNodeCorpus {
                 tree("id", "parent_id", List.of(asc("ordinal")), "children", LEFT),
 
                 // ── solver ──────────────────────────────────────────────────────
-                solve(attr("x"), num("42"), LEFT),
+                solve(List.of(equation(attr("x"), num("42"))), List.of("k"), LEFT),
                 optimize(ObjectiveSense.MAXIMIZE, attr("value"),
                         List.of(constraint(attr("weight"), ComparisonOperator.LESS_EQUAL, 10.0)),
                         cols("dept"), Optional.of(allocation(0.0, 1.0, "share")), LEFT),

@@ -103,6 +103,86 @@ public final class EquationSystemSolver {
         return solution.map(x -> withValues(row, positions, x)).orElse(row);
     }
 
+    /**
+     * Fits the equations' unknowns across a group of rows by least squares (the engine
+     * side of {@code SOLVE … PER}), returning every row of the group with the fitted
+     * values written in, or the group unchanged when it cannot be fitted.
+     *
+     * <p>The unknowns are the participating columns that are {@code NULL} in every row
+     * of the group; the observations are the rows in which every other participating
+     * column is present, each contributing one residual {@code left − right} per
+     * equation. The fit minimises the sum of the squared residuals, by the normal
+     * equations: it needs at least as many residuals as unknowns, every equation linear
+     * in the unknowns, and a non-singular system. With as many residuals as unknowns it
+     * is the exact solve.
+     *
+     * @param equations the equations, every function expanded; must not be null
+     * @param group     the rows of one group, all of one schema; must not be null
+     * @return the group's rows, in order, completed or unchanged
+     * @throws com.darkcollective.relix.processor.EvaluationException on a non-numeric
+     *         known value or a division by zero among the known terms
+     */
+    public List<Row> fit(List<SolveEquation> equations, List<Row> group) {
+        if (group.isEmpty()) {
+            return group;
+        }
+        Row first = group.getFirst();
+        Map<String, String> participating = participating(equations);
+        List<String> unknowns = new ArrayList<>();
+        List<Integer> positions = new ArrayList<>();
+        List<Integer> knownPositions = new ArrayList<>();
+        for (Map.Entry<String, String> column : participating.entrySet()) {
+            int index = first.schema().indexOf(column.getValue());
+            if (index < 0) {
+                return group; // not positionally addressable (an open schema)
+            }
+            if (group.stream().allMatch(row -> row.get(index).isNull())) {
+                unknowns.add(column.getKey());
+                positions.add(index);
+            } else {
+                knownPositions.add(index);
+            }
+        }
+        if (unknowns.isEmpty() || !linear(equations, Set.copyOf(unknowns))) {
+            return group;
+        }
+        List<Row> observations = group.stream()
+                .filter(row -> knownPositions.stream().noneMatch(i -> row.get(i).isNull()))
+                .toList();
+        int n = unknowns.size();
+        if (observations.size() * equations.size() < n) {
+            return group;
+        }
+
+        BigDecimal[] origin = new BigDecimal[n];
+        Arrays.fill(origin, BigDecimal.ZERO);
+        BigDecimal[][] normal = new BigDecimal[n][n];
+        BigDecimal[] moment = new BigDecimal[n];
+        for (int i = 0; i < n; i++) {
+            Arrays.fill(normal[i], BigDecimal.ZERO);
+            moment[i] = BigDecimal.ZERO;
+        }
+        for (Row row : observations) {
+            for (SolveEquation equation : equations) {
+                Dual residual = residual(equation, unknowns, origin, row);
+                BigDecimal[] g = residual.gradient();
+                BigDecimal target = residual.value().negate();
+                for (int i = 0; i < n; i++) {
+                    for (int j = 0; j < n; j++) {
+                        normal[i][j] = normal[i][j].add(g[i].multiply(g[j], Dual.CONTEXT), Dual.CONTEXT);
+                    }
+                    moment[i] = moment[i].add(g[i].multiply(target, Dual.CONTEXT), Dual.CONTEXT);
+                }
+            }
+        }
+        Optional<BigDecimal[]> solution = LinearSystems.solve(normal, moment);
+        if (solution.isEmpty()) {
+            return group;
+        }
+        BigDecimal[] x = solution.get();
+        return group.stream().map(row -> withValues(row, positions, x)).toList();
+    }
+
     /** {@code left − right} of one equation, with its gradient, at {@code point}. */
     static Dual residual(SolveEquation equation, List<String> unknowns, BigDecimal[] point,
                          Row row) {

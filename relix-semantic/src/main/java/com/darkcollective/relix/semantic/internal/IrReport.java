@@ -595,7 +595,7 @@ public final class IrReport {
                     + s.weight().map(w -> " BY " + w.accept(OPND)).orElse("")
                     + s.seed().map(seed -> " SEED " + seed).orElse("");
 
-            case SolveNode s -> DisplayLabels.solve(s.equations());
+            case SolveNode s -> DisplayLabels.solve(s.equations(), s.groupingKeys());
 
             case OptimizeNode o -> DisplayLabels.optimize(o.sense(), o.objective(),
                     o.constraints(), o.groupingKeys(), o.allocation());

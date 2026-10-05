@@ -456,7 +456,7 @@ public final class AstLocations {
         public RelNode visit(SolveNode node) {
             return new SolveNode(node.equations().stream()
                     .map(e -> AstBuilders.equation(stripLocations(e.left()), stripLocations(e.right())))
-                    .toList(), node.input().accept(this));
+                    .toList(), node.groupingKeys(), node.input().accept(this));
         }
 
         @Override

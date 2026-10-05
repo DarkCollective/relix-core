@@ -368,10 +368,12 @@ final class PhysicalPlanJsonTest {
                                     attr("principal"),
                                     com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
                                     attr("rate")))),
+                    List.of("region"),
                     leaf());
             assertThat(PhysicalPlanJson.toJson(solve))
                     .contains("\"op\":\"Solve\"")
-                    .contains("\"equations\":[{\"left\":\"total\",\"right\":\"principal * rate\"}]");
+                    .contains("\"equations\":[{\"left\":\"total\",\"right\":\"principal * rate\"}]")
+                    .contains("\"groupingKeys\":[\"region\"]");
         }
 
         @Test

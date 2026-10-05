@@ -667,6 +667,12 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         if (inputOpt.isEmpty()) return null;
         Schema input = inputOpt.get();
 
+        for (String key : node.groupingKeys()) {
+            if (input.column(AttributeNames.stripQualifier(key)).isEmpty()) {
+                columnNotFound(node.location(), "Solve SOLVE: PER key", key, input);
+            }
+        }
+
         // A system may name a column in several equations — that is what makes it one;
         // a single equation is inverted by a tree-walk, which needs each column once.
         boolean single = node.equations().size() == 1;
