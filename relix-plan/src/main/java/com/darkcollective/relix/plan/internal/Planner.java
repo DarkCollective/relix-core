@@ -578,7 +578,7 @@ public final class Planner {
                     schemaOf(s), s.count(), s.seed(), plan(s.input()));
             case SolveNode s       -> new PhysicalNode.Solve(schemaOf(s),
                     SolveEquations.expandAll(s.equations(), functions, symbols),
-                    s.groupingKeys(), plan(s.input()));
+                    s.groupingKeys(), s.tolerance(), s.maxRounds(), plan(s.input()));
             case OptimizeNode o    -> {
                 requireSolver("OPTIMIZE");
                 yield new PhysicalNode.Optimize(

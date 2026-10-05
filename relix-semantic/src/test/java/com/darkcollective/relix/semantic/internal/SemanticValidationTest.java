@@ -2003,13 +2003,11 @@ final class SemanticValidationTest {
         }
 
         @Test
-        @DisplayName("a column used twice is rejected (non-deterministic inversion)")
+        @DisplayName("a column used twice is accepted (solved iteratively when it is the unknown)")
         void duplicateColumn() {
             RelNode tree = solve(attr("amount"),
                     bin(attr("order_id"), ArithmeticOperator.PLUS, attr("order_id")));
-            List<SemanticError> errors = inferAndValidate(tree);
-            assertThat(errors).hasSize(1);
-            assertThat(errors.get(0).message()).containsIgnoringCase("more than once").contains("order_id");
+            assertThat(inferAndValidate(tree)).isEmpty();
         }
 
         @Test

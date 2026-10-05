@@ -52,28 +52,25 @@ final class SolveEquationsTest {
         return symbols;
     }
 
-    private static SolveEquations.Expansion expand(SolveEquation e, InMemorySymbolTable symbols) {
+    private static SolveEquation expand(SolveEquation e, InMemorySymbolTable symbols) {
         return SolveEquations.expand(e, FUNCTIONS, symbols);
     }
 
     @Test
-    @DisplayName("expands a call on either side of an operator, and names the def")
+    @DisplayName("expands a call on either side of an operator")
     void expandsEitherSide() {
         var left = expand(equation(attr("y"), plus(func("double", attr("a")), num("1"))), table());
-        assertThat(left.equation().right()).isEqualTo(plus(times(attr("a"), num("2")), num("1")));
-        assertThat(left.defs()).containsExactly("double");
+        assertThat(left.right()).isEqualTo(plus(times(attr("a"), num("2")), num("1")));
 
         var right = expand(equation(attr("y"), plus(num("1"), func("double", attr("a")))), table());
-        assertThat(right.equation().right()).isEqualTo(plus(num("1"), times(attr("a"), num("2"))));
+        assertThat(right.right()).isEqualTo(plus(num("1"), times(attr("a"), num("2"))));
     }
 
     @Test
     @DisplayName("returns an equation with no call exactly as written")
     void leavesPlainArithmeticAlone() {
         SolveEquation plain = equation(attr("y"), plus(attr("a"), attr("b")));
-        var expansion = expand(plain, table());
-        assertThat(expansion.equation().right()).isSameAs(plain.right());
-        assertThat(expansion.defs()).isEmpty();
+        assertThat(expand(plain, table()).right()).isSameAs(plain.right());
     }
 
     @Test
@@ -82,9 +79,9 @@ final class SolveEquationsTest {
         ScalarFunctionSymbol loop = ScalarFunctionSymbol.builder("loop")
                 .parameter("x", ScalarType.NUMBER).returnType(ScalarType.NUMBER)
                 .body(plus(func("loop", attr("x")), num("1"))).build();
-        var expansion = expand(equation(attr("y"), func("loop", attr("a"))), table(loop));
+        var expanded = expand(equation(attr("y"), func("loop", attr("a"))), table(loop));
         // Expanded once; the inner call to itself is left for validation to refuse.
-        assertThat(expansion.equation().right()).isEqualTo(plus(func("loop", attr("a")), num("1")));
+        assertThat(expanded.right()).isEqualTo(plus(func("loop", attr("a")), num("1")));
     }
 
     @Test
@@ -93,7 +90,7 @@ final class SolveEquationsTest {
         ScalarFunctionSymbol opaque = ScalarFunctionSymbol.builder("opaque")
                 .parameter("x", ScalarType.NUMBER).returnType(ScalarType.NUMBER).build();
         Operand call = func("opaque", attr("a"));
-        assertThat(expand(equation(attr("y"), call), table(opaque)).equation().right())
+        assertThat(expand(equation(attr("y"), call), table(opaque)).right())
                 .isSameAs(call);
     }
 
@@ -109,8 +106,8 @@ final class SolveEquationsTest {
         InMemorySymbolTable symbols = table(leftFree, rightFree);
         Operand l = func("leftFree", attr("a"));
         Operand r = func("rightFree", attr("a"));
-        assertThat(expand(equation(attr("y"), l), symbols).equation().right()).isSameAs(l);
-        assertThat(expand(equation(attr("y"), r), symbols).equation().right()).isSameAs(r);
+        assertThat(expand(equation(attr("y"), l), symbols).right()).isSameAs(l);
+        assertThat(expand(equation(attr("y"), r), symbols).right()).isSameAs(r);
     }
 
     @Test

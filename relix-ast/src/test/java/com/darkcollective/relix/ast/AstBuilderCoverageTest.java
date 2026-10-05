@@ -203,6 +203,9 @@ final class AstBuilderCoverageTest {
             .of(SortDirection.class, i -> SortDirection.values()[i % SortDirection.values().length])
             .of(TieBreak.class, i -> TieBreak.values()[i % TieBreak.values().length])
             .ofListElement(Long.class, i -> (long) (i + 1))
+            // Optional<E> takes its element from here too: SOLVE's WITHIN and MAX … ROUNDS.
+            .ofListElement(java.math.BigDecimal.class, i -> java.math.BigDecimal.valueOf(i + 1))
+            .ofListElement(Integer.class, i -> i + 1)
             .ofListElement(String.class, i -> "c" + i)
             .ofListElement(Operand.class, i -> AstBuilders.attr("a" + i))
             .ofListElement(Predicate.class, i -> AstBuilders.nullPred(AstBuilders.attr("p" + i), true))

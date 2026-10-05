@@ -327,7 +327,8 @@ public sealed interface RelNode permits
             case SolveNode n -> {
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n
-                        : new SolveNode(n.equations(), n.groupingKeys(), in, n.location());
+                        : new SolveNode(n.equations(), n.groupingKeys(), n.tolerance(),
+                                n.maxRounds(), in, n.location());
             }
             case OptimizeNode n -> {
                 RelNode in = f.apply(n.input());

@@ -156,41 +156,118 @@ final class EquationSystemSolverTest extends ProcessorTestSupport {
         }
 
         @Test
-        @DisplayName("when two unknowns multiply")
-        void productOfUnknowns() {
-            List<SolveEquation> eqs = List.of(
-                    equation(attr("total"), times(attr("a"), attr("b"))),
-                    equation(attr("diff"), minus(attr("a"), attr("b"))));
-            Row in = row4("12", "1", null, null);
-            assertThat(SOLVER.solve(eqs, in)).isSameAs(in);
-        }
-
-        @Test
-        @DisplayName("when the product of unknowns is on the left")
-        void productOfUnknownsOnTheLeft() {
-            List<SolveEquation> eqs = List.of(
-                    equation(times(attr("a"), attr("b")), attr("total")),
-                    equation(attr("diff"), minus(attr("a"), attr("b"))));
-            Row in = row4("12", "1", null, null);
-            assertThat(SOLVER.solve(eqs, in)).isSameAs(in);
-        }
-
-        @Test
-        @DisplayName("when an unknown is a divisor")
-        void unknownDivisor() {
-            List<SolveEquation> eqs = List.of(
-                    equation(attr("total"), over(attr("a"), attr("b"))),
-                    equation(attr("diff"), minus(attr("a"), attr("b"))));
-            Row in = row4("3", "4", null, null);
-            assertThat(SOLVER.solve(eqs, in)).isSameAs(in);
-        }
-
-        @Test
         @DisplayName("when an unknown is not positionally addressable")
         void openSchema() {
             Row in = row(schema(col("total", ScalarType.NUMBER), col("diff", ScalarType.NUMBER)),
                     num("10"), num("2"));
             assertThat(SOLVER.solve(SUM_AND_DIFFERENCE, in)).isSameAs(in);
+        }
+    }
+
+    @Nested
+    @DisplayName("a row that is neither invertible nor linear is solved iteratively")
+    final class Iterative {
+
+        @Test
+        @DisplayName("when two unknowns multiply")
+        void productOfUnknowns() {
+            List<SolveEquation> eqs = List.of(
+                    equation(attr("total"), times(attr("a"), attr("b"))),
+                    equation(attr("diff"), minus(attr("a"), attr("b"))));
+            assertThat(SOLVER.solve(eqs, row4("12", "1", null, null)))
+                    .hasValue("a", "4").hasValue("b", "3");
+        }
+
+        @Test
+        @DisplayName("when the product is on the left")
+        void productOnTheLeft() {
+            List<SolveEquation> eqs = List.of(
+                    equation(times(attr("a"), attr("b")), attr("total")),
+                    equation(attr("diff"), minus(attr("a"), attr("b"))));
+            assertThat(SOLVER.solve(eqs, row4("12", "1", null, null)))
+                    .hasValue("a", "4").hasValue("b", "3");
+        }
+
+        @Test
+        @DisplayName("from a start at which the equations are degenerate")
+        void degenerateStart() {
+            // At a = b = 1 both gradients are (1, −1): the undamped step does not exist.
+            List<SolveEquation> eqs = List.of(
+                    equation(attr("total"), over(attr("a"), attr("b"))),
+                    equation(attr("diff"), minus(attr("a"), attr("b"))));
+            assertThat(SOLVER.solve(eqs, row4("3", "4", null, null)))
+                    .hasValue("a", "6").hasValue("b", "2");
+        }
+
+        @Test
+        @DisplayName("when one equation names its unknown twice")
+        void repeatedUnknown() {
+            Schema s = schema(col("area", ScalarType.NUMBER), col("side", ScalarType.NUMBER));
+            List<SolveEquation> eq = List.of(equation(attr("area"), times(attr("side"), attr("side"))));
+            assertThat(SOLVER.solve(eq, row(s, num("2"), nullVal()))).hasValue("side", "1.4142135624");
+        }
+
+        @Test
+        @DisplayName("refusing a step that lands on a pole, and going on")
+        void stepOntoAPole() {
+            // y = x / (x − 2) from x = 1: with y = −3.0025 the first damped step is
+            // exactly 1, onto x = 2. It is refused, and the search still converges.
+            Schema s = schema(col("y", ScalarType.NUMBER), col("x", ScalarType.NUMBER));
+            List<SolveEquation> eq = List.of(equation(attr("y"),
+                    over(attr("x"), minus(attr("x"), lit("2")))));
+            Row out = SOLVER.solve(eq, row(s, num("-3.0025"), nullVal()));
+            assertThat(out).hasValue("x", "1.5003123048");
+        }
+    }
+
+    @Nested
+    @DisplayName("an iteration that finds no answer")
+    final class IterativeFailures {
+
+        private final Schema s = schema(col("area", ScalarType.NUMBER), col("side", ScalarType.NUMBER));
+        private final List<SolveEquation> square =
+                List.of(equation(attr("area"), times(attr("side"), attr("side"))));
+
+        @Test
+        @DisplayName("is an error when the equation has no solution")
+        void noSolution() {
+            assertThatThrownBy(() -> SOLVER.solve(square, row(s, num("-1"), nullVal())))
+                    .isInstanceOf(EvaluationException.class)
+                    .hasMessageContaining("no solution")
+                    .hasMessageContaining("area=-1");
+        }
+
+        @Test
+        @DisplayName("is an error when the round cap is reached")
+        void roundCap() {
+            EquationSystemSolver capped = new EquationSystemSolver(new OperandEvaluator(),
+                    EquationSystemSolver.DEFAULT_TOLERANCE, 1);
+            assertThatThrownBy(() -> capped.solve(square, row(s, num("1000000"), nullVal())))
+                    .isInstanceOf(EvaluationException.class)
+                    .hasMessageContaining("within 1 rounds");
+        }
+
+        @Test
+        @DisplayName("is an error when an equation divides by zero at the start")
+        void poleAtTheStart() {
+            Schema yx = schema(col("y", ScalarType.NUMBER), col("x", ScalarType.NUMBER));
+            List<SolveEquation> eq = List.of(equation(attr("y"),
+                    over(attr("x"), minus(attr("x"), lit("1")))));
+            assertThatThrownBy(() -> SOLVER.solve(eq, row(yx, num("2"), nullVal())))
+                    .isInstanceOf(EvaluationException.class)
+                    .hasMessageContaining("division by zero")
+                    .hasMessageContaining("the row");
+        }
+
+        @Test
+        @DisplayName("leaves the row unchanged when the equations do not determine the unknowns")
+        void undetermined() {
+            // The second equation is the first, doubled: only the product is fixed.
+            List<SolveEquation> eqs = List.of(
+                    equation(attr("total"), times(attr("a"), attr("b"))),
+                    equation(attr("diff"), times(lit("2"), times(attr("a"), attr("b")))));
+            Row in = row4("6", "12", null, null);
+            assertThat(SOLVER.solve(eqs, in)).isSameAs(in);
         }
     }
 

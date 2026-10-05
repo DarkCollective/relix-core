@@ -164,6 +164,56 @@ final class SolveExecutionTest extends ProcessorTestSupport {
         assertThat(byId(rows, "6")).hasValue("a", "1.5").hasValue("b", "1.1666666667");
     }
 
+    @Test
+    @DisplayName("solves a nonlinear equation iteratively, row by row")
+    void solvesIteratively() {
+        var rows = collect("""
+                Squares := [
+                | id | area | side |
+                |----|------|------|
+                | 1  | 2    |      |
+                | 2  |      | 3    |
+                ];
+                query { SOLVE area = side * side (Squares) };
+                """);
+
+        assertThat(byId(rows, "1")).hasValue("side", "1.4142135624");
+        assertThat(byId(rows, "2")).hasValue("area", "9");
+    }
+
+    @Test
+    @DisplayName("honours MAX … ROUNDS, raising when the cap is reached")
+    void honoursTheRoundCap() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> collect("""
+                        Squares := [
+                        | area | side |
+                        |------|------|
+                        | 1000000 |   |
+                        ];
+                        query { SOLVE area = side * side MAX 1 ROUNDS (Squares) };
+                        """))
+                .hasMessageContaining("no solution within 1 rounds");
+    }
+
+    @Test
+    @DisplayName("honours WITHIN, stopping at a coarser tolerance")
+    void honoursTheTolerance() {
+        var rows = collect("""
+                Squares := [
+                | area | side |
+                |------|------|
+                | 2    |      |
+                ];
+                query { SOLVE area = side * side WITHIN 0.1 (Squares) };
+                """);
+        // Stopped as soon as a step fell under 0.1: close to √2, but not to ten digits.
+        String side = rows.getFirst().get("side").asDisplayString();
+        org.assertj.core.api.Assertions.assertThat(side).isNotEqualTo("1.4142135624");
+        org.assertj.core.api.Assertions.assertThat(new java.math.BigDecimal(side)
+                        .subtract(new java.math.BigDecimal("1.4142135624")).abs())
+                .isLessThan(new java.math.BigDecimal("0.1"));
+    }
+
     private static Row byId(List<Row> rows, String id) {
         return rows.stream()
                 .filter(r -> id.equals(r.get("id").asDisplayString()))

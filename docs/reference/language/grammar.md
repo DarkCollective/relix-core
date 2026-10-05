@@ -422,9 +422,11 @@ roll              ::= "ROLL" ( "BY" operand )? ( "SEED" INTEGER )? input
 
 /* SOLVE total = price * qty (R).  Several equations solve for as many blanks:
    SOLVE { total = a + b, diff = a - b } (R).  PER fits across each group:
-   SOLVE y = slope * x + intercept PER series (R) */
+   SOLVE y = slope * x + intercept PER series (R).  WITHIN and MAX … ROUNDS govern
+   an equation solved by search: SOLVE area = side * side WITHIN 0.001 (R) */
 solve             ::= "SOLVE" ( equation | "{" equation ( "," equation )* "}" )
-                      per_identifiers? input
+                      per_identifiers? ( "WITHIN" NUMBER )? ( "MAX" INTEGER "ROUNDS" )?
+                      input
 equation          ::= operand "=" operand
 
 /* OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(weight) <= 50 PER owner (Items)

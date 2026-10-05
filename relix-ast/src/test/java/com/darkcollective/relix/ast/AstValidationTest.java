@@ -529,4 +529,37 @@ final class AstValidationTest extends AstTestSupport {
                     .isThrownBy(() -> new StructConstruction.Field("qty", null));
         }
     }
+
+    @Nested
+    @DisplayName("SOLVE")
+    final class Solve {
+
+        private final List<SolveEquation> one =
+                List.of(AstBuilders.equation(AstBuilders.attr("x"), AstBuilders.attr("y")));
+        private final RelNode r = AstBuilders.rel("R");
+
+        @Test
+        @DisplayName("needs at least one equation")
+        void needsAnEquation() {
+            assertThatIllegalArgumentException().isThrownBy(() -> AstBuilders.solve(List.of(), r));
+        }
+
+        @Test
+        @DisplayName("takes a positive tolerance and no other")
+        void positiveTolerance() {
+            assertThat(AstBuilders.solve(one, List.of(), Optional.of(new java.math.BigDecimal("0.5")),
+                    Optional.empty(), r).tolerance()).contains(new java.math.BigDecimal("0.5"));
+            assertThatIllegalArgumentException().isThrownBy(() -> AstBuilders.solve(one, List.of(),
+                    Optional.of(java.math.BigDecimal.ZERO), Optional.empty(), r));
+        }
+
+        @Test
+        @DisplayName("takes a round cap of at least 1 and no other")
+        void roundCapOfAtLeastOne() {
+            assertThat(AstBuilders.solve(one, List.of(), Optional.empty(), Optional.of(1), r)
+                    .maxRounds()).contains(1);
+            assertThatIllegalArgumentException().isThrownBy(() -> AstBuilders.solve(one, List.of(),
+                    Optional.empty(), Optional.of(0), r));
+        }
+    }
 }

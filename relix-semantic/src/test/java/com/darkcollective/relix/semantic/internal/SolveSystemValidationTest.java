@@ -118,15 +118,13 @@ final class SolveSystemValidationTest {
         }
 
         @Test
-        @DisplayName("that uses a parameter twice is named when its argument repeats")
-        void namesTheDefBehindARepeat() {
+        @DisplayName("that uses a parameter twice is accepted, its argument then repeating")
+        void acceptsARepeatThroughADef() {
             String src = RODS + """
                     def square(x: NUMBER) : NUMBER := { x * x };
                     query { SOLVE length = square(k) (Rods) };
                     """;
-            assertThat(analyze(src))
-                    .hasErrorContaining("'k' appears more than once")
-                    .hasErrorContaining("after expanding square");
+            assertThat(analyze(src)).hasNoErrors();
         }
 
         @Test
