@@ -2224,25 +2224,54 @@ public final class RelAlgebraParser {
         }
     }
 
+    /**
+     * True when the parenthesis at {@code current} opens a predicate rather than an
+     * arithmetic group: a comparison, logical, membership or LIKE operator appears
+     * inside it before it closes.
+     *
+     * <p>An operator inside a function call's own argument list does not count. The
+     * call parses its arguments itself, and an argument may be a condition, so in
+     * {@code 4 * (a + Iif(b = 1, 1, 0))} the {@code =} belongs to {@code Iif} and the
+     * group around it is arithmetic. A call's parenthesis is the one written directly
+     * against a name, which is the rule {@link #parseOperandFromNameToken} applies.
+     * An operator inside a plain nested group still counts, so {@code ((a > b))} is
+     * a predicate.
+     */
     private boolean isParenthesizedPredicate() {
         int depth = 0;
+        int callDepth = 0;   // how many of the open parentheses belong to a call
+        Deque<Boolean> opened = new ArrayDeque<>();
 
         for (int offset = 0; ; offset++) {
             Token token = peek(offset);
 
             if (token.type() == TokenType.LPAREN) {
+                boolean call = offset > 0 && opensCall(peek(offset - 1), token);
+                opened.push(call);
+                if (call) callDepth++;
                 depth++;
             } else if (token.type() == TokenType.RPAREN) {
+                if (opened.pop()) callDepth--;
                 depth--;
                 if (depth == 0) {
                     return false;
                 }
-            } else if (depth > 0 && (isComparison(token.type()) || isLogicalOperator(token.type()) || token.type() == TokenType.ELEMENT_OF || token.type() == TokenType.NOT_ELEMENT_OF || token.type() == TokenType.LIKE)) {
+            } else if (depth > 0 && callDepth == 0 && (isComparison(token.type()) || isLogicalOperator(token.type()) || token.type() == TokenType.ELEMENT_OF || token.type() == TokenType.NOT_ELEMENT_OF || token.type() == TokenType.LIKE)) {
                 return true;
             } else if (token.type() == TokenType.EOF) {
                 return false;
             }
         }
+    }
+
+    /**
+     * True when {@code paren} is written directly against {@code before}, a name: a
+     * call. An operator keyword is a name too, but one inside the group has already
+     * decided the lookahead before its parenthesis is reached.
+     */
+    private static boolean opensCall(Token before, Token paren) {
+        return isNameToken(before)
+                && before.column() + before.lexeme().length() == paren.column();
     }
 
     // =========================================================================
