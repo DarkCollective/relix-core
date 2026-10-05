@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import static com.darkcollective.relix.ast.AstBuilders.attr;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("PhysicalPlanPrinter — physical plan → ASCII tree")
@@ -612,6 +613,27 @@ final class PhysicalPlanPrinterTest {
                 SAMPLE 100 ROWS SEED 7
                 └─ PushedScan [jdbc/db] SELECT x FROM t
                 """);
+    }
+
+    @Test
+    @DisplayName("a roll shows its weight and its seed, so a weighted roll does not read as uniform")
+    void rollLabels() {
+        PhysicalNode uniform = new PhysicalNode.Roll(
+                SCHEMA, Optional.of(7L), Optional.empty(), sqlScan("SELECT x FROM t"));
+        assertThat(PhysicalPlanPrinter.explain(uniform)).startsWith("ROLL SEED 7\n");
+
+        PhysicalNode weighted = new PhysicalNode.Roll(
+                SCHEMA, Optional.of(7L), Optional.of(attr("w")),
+                sqlScan("SELECT x FROM t"));
+        assertThat(PhysicalPlanPrinter.explain(weighted)).isEqualTo("""
+                ROLL BY w SEED 7
+                └─ PushedScan [jdbc/db] SELECT x FROM t
+                """);
+
+        PhysicalNode unseeded = new PhysicalNode.Roll(
+                SCHEMA, Optional.empty(), Optional.of(attr("w")),
+                sqlScan("SELECT x FROM t"));
+        assertThat(PhysicalPlanPrinter.explain(unseeded)).startsWith("ROLL BY w\n");
     }
 
     @Test
