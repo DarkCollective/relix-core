@@ -39,36 +39,79 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Fills a row's unknown columns by solving a system of {@code SOLVE} equations (the
- * engine side of {@code SOLVE &#123; … &#125;}).
+ * Fills a row's unknown columns by solving {@code SOLVE} equations, and fits a group's
+ * (the engine side of {@code SOLVE} and {@code SOLVE … PER}).
  *
- * <p>The unknowns are the participating columns that are {@code NULL} in the row. The
- * row is solved when there are exactly as many unknowns as equations, every equation
- * is linear in them — no product of two terms that both hold an unknown, no unknown in
- * a divisor — and the system is non-singular; it is then set up by evaluating each
- * equation's {@code left − right} with its gradient ({@link Dual}) and solved by
- * Gaussian elimination ({@link LinearSystems}). Any other row is returned unchanged.
+ * <p>The unknowns of a row are the participating columns that are {@code NULL} in it.
+ * A row is solved when there are exactly as many unknowns as equations, by the
+ * cheapest strategy that applies:
+ * <ol>
+ *   <li>a single equation whose unknown appears once is inverted by rearranging it
+ *       ({@link EquationSolver});</li>
+ *   <li>equations linear in the unknowns — no product of two terms that both hold an
+ *       unknown, no unknown in a divisor — are set up by evaluating each
+ *       {@code left − right} with its gradient ({@link Dual}) and solved by elimination
+ *       ({@link LinearSystems}); a singular system leaves the row unchanged;</li>
+ *   <li>anything else is solved iteratively ({@link Newton}), which leaves the row
+ *       unchanged when the equations do not determine the unknowns and raises when they
+ *       have no solution or the search does not converge.</li>
+ * </ol>
+ * Any other row is returned unchanged.
  *
  * <p>Results are rounded to ten fractional digits, {@link RoundingMode#HALF_UP},
  * trailing zeros stripped — the precision of {@code ÷}.
  *
  * <p>The equations are expected in their planned form, with every user-defined
- * function expanded. Instances are stateless and thread-safe.
+ * function expanded. Instances are immutable and thread-safe.
  */
 public final class EquationSystemSolver {
 
     /** Fractional digits a solved value is reported to. */
     static final int SCALE = 10;
 
+    /** The convergence tolerance when {@code WITHIN} is not given: 10⁻¹⁰. */
+    public static final BigDecimal DEFAULT_TOLERANCE = new BigDecimal("1E-10");
+
+    /** The round cap when {@code MAX … ROUNDS} is not given. */
+    public static final int DEFAULT_MAX_ROUNDS = 100;
+
+    private final EquationSolver inverter;
+    private final BigDecimal tolerance;
+    private final int maxRounds;
+
+    /**
+     * A solver with the default tolerance and round cap, inverting single equations
+     * with a default {@link OperandEvaluator}.
+     */
+    public EquationSystemSolver() {
+        this(new OperandEvaluator(), DEFAULT_TOLERANCE, DEFAULT_MAX_ROUNDS);
+    }
+
+    /**
+     * A solver with the given iteration limits.
+     *
+     * @param evaluator the evaluator a single inverted equation's known side is read
+     *                  with; must not be null
+     * @param tolerance the largest step an iteration may still take and be converged;
+     *                  positive
+     * @param maxRounds the iteration's round cap; at least 1
+     */
+    public EquationSystemSolver(OperandEvaluator evaluator, BigDecimal tolerance, int maxRounds) {
+        this.inverter = new EquationSolver(evaluator);
+        this.tolerance = tolerance;
+        this.maxRounds = maxRounds;
+    }
+
     /**
      * Returns {@code row} with its unknowns filled, or unchanged when it cannot be
-     * solved.
+     * posed.
      *
      * @param equations the equations, every function expanded; must not be null
      * @param row       the row to complete; must not be null
      * @return the completed row, or {@code row} itself
      * @throws com.darkcollective.relix.processor.EvaluationException on a non-numeric
-     *         known value or a division by zero among the known terms
+     *         known value, a division by zero among the known terms, or an iteration
+     *         that does not converge
      */
     public Row solve(List<SolveEquation> equations, Row row) {
         Map<String, String> participating = participating(equations);
@@ -84,45 +127,58 @@ public final class EquationSystemSolver {
                 positions.add(index);
             }
         }
-        if (unknowns.isEmpty() || unknowns.size() != equations.size()
-                || !linear(equations, Set.copyOf(unknowns))) {
+        if (unknowns.isEmpty() || unknowns.size() != equations.size()) {
             return row;
+        }
+        if (equations.size() == 1 && occurrences(equations.getFirst(), unknowns.getFirst()) == 1) {
+            SolveEquation only = equations.getFirst();
+            return inverter.solve(only.left(), only.right(), row);
         }
 
         int n = unknowns.size();
-        BigDecimal[] origin = new BigDecimal[n];
-        Arrays.fill(origin, BigDecimal.ZERO);
-        BigDecimal[][] a = new BigDecimal[n][];
-        BigDecimal[] b = new BigDecimal[n];
-        for (int i = 0; i < n; i++) {
-            Dual residual = residual(equations.get(i), unknowns, origin, row);
-            a[i] = residual.gradient();
-            b[i] = residual.value().negate();
+        if (linear(equations, Set.copyOf(unknowns))) {
+            BigDecimal[] origin = new BigDecimal[n];
+            Arrays.fill(origin, BigDecimal.ZERO);
+            BigDecimal[][] a = new BigDecimal[n][];
+            BigDecimal[] b = new BigDecimal[n];
+            for (int i = 0; i < n; i++) {
+                Dual residual = residual(equations.get(i), unknowns, origin, row);
+                a[i] = residual.gradient();
+                b[i] = residual.value().negate();
+            }
+            Optional<BigDecimal[]> solution = LinearSystems.solve(a, b);
+            return solution.map(x -> withValues(row, positions, x)).orElse(row);
         }
-        Optional<BigDecimal[]> solution = LinearSystems.solve(a, b);
-        return solution.map(x -> withValues(row, positions, x)).orElse(row);
+        return Newton.solve(equations, unknowns, List.of(row), tolerance, maxRounds,
+                        () -> "the row " + describe(row, participating))
+                .map(x -> withValues(row, positions, x))
+                .orElse(row);
     }
 
     /**
-     * Fits the equations' unknowns across a group of rows by least squares (the engine
-     * side of {@code SOLVE … PER}), returning every row of the group with the fitted
-     * values written in, or the group unchanged when it cannot be fitted.
+     * Fits the equations' unknowns across a group of rows (the engine side of
+     * {@code SOLVE … PER}), returning every row of the group with the fitted values
+     * written in, or the group unchanged when it cannot be posed.
      *
      * <p>The unknowns are the participating columns that are {@code NULL} in every row
      * of the group; the observations are the rows in which every other participating
      * column is present, each contributing one residual {@code left − right} per
-     * equation. The fit minimises the sum of the squared residuals, by the normal
-     * equations: it needs at least as many residuals as unknowns, every equation linear
-     * in the unknowns, and a non-singular system. With as many residuals as unknowns it
-     * is the exact solve.
+     * equation. The fit minimises the sum of the squared residuals and needs at least as
+     * many residuals as unknowns. Equations linear in the unknowns are fitted directly,
+     * by the normal equations; anything else iteratively ({@link Newton}), which raises
+     * when it does not converge. A fit that does not determine the unknowns — a singular
+     * system — leaves the group unchanged. With as many residuals as unknowns the fit is
+     * the exact solve.
      *
      * @param equations the equations, every function expanded; must not be null
      * @param group     the rows of one group, all of one schema; must not be null
+     * @param subject   names the group in a diagnostic, e.g. {@code material=steel}
      * @return the group's rows, in order, completed or unchanged
      * @throws com.darkcollective.relix.processor.EvaluationException on a non-numeric
-     *         known value or a division by zero among the known terms
+     *         known value, a division by zero among the known terms, or an iteration
+     *         that does not converge
      */
-    public List<Row> fit(List<SolveEquation> equations, List<Row> group) {
+    public List<Row> fit(List<SolveEquation> equations, List<Row> group, String subject) {
         if (group.isEmpty()) {
             return group;
         }
@@ -143,7 +199,7 @@ public final class EquationSystemSolver {
                 knownPositions.add(index);
             }
         }
-        if (unknowns.isEmpty() || !linear(equations, Set.copyOf(unknowns))) {
+        if (unknowns.isEmpty()) {
             return group;
         }
         List<Row> observations = group.stream()
@@ -154,6 +210,22 @@ public final class EquationSystemSolver {
             return group;
         }
 
+        Optional<BigDecimal[]> solution = linear(equations, Set.copyOf(unknowns))
+                ? leastSquares(equations, unknowns, observations)
+                : Newton.solve(equations, unknowns, observations, tolerance, maxRounds,
+                        () -> "the group " + subject);
+        if (solution.isEmpty()) {
+            return group;
+        }
+        BigDecimal[] fitted = solution.get();
+        return group.stream().map(row -> withValues(row, positions, fitted)).toList();
+    }
+
+    /** The least-squares solution of a linear fit, by its normal equations. */
+    private static Optional<BigDecimal[]> leastSquares(List<SolveEquation> equations,
+                                                       List<String> unknowns,
+                                                       List<Row> observations) {
+        int n = unknowns.size();
         BigDecimal[] origin = new BigDecimal[n];
         Arrays.fill(origin, BigDecimal.ZERO);
         BigDecimal[][] normal = new BigDecimal[n][n];
@@ -175,12 +247,33 @@ public final class EquationSystemSolver {
                 }
             }
         }
-        Optional<BigDecimal[]> solution = LinearSystems.solve(normal, moment);
-        if (solution.isEmpty()) {
-            return group;
+        return LinearSystems.solve(normal, moment);
+    }
+
+    /** How many times {@code column} (lower-cased) is named in the equation. */
+    private static int occurrences(SolveEquation equation, String column) {
+        return occurrences(equation.left(), column) + occurrences(equation.right(), column);
+    }
+
+    private static int occurrences(Operand expr, String column) {
+        return switch (expr) {
+            case AttributeOperand a ->
+                    a.unqualifiedName().toLowerCase(Locale.ROOT).equals(column) ? 1 : 0;
+            case UnaryOperand u -> occurrences(u.operand(), column);
+            case BinaryArithmeticExpression b ->
+                    occurrences(b.left(), column) + occurrences(b.right(), column);
+            default -> 0;
+        };
+    }
+
+    /** The participating columns of {@code row} as {@code (name=value, …)}. */
+    private static String describe(Row row, Map<String, String> participating) {
+        StringBuilder sb = new StringBuilder("(");
+        for (String name : participating.values()) {
+            if (sb.length() > 1) sb.append(", ");
+            sb.append(name).append('=').append(row.get(name).asDisplayString());
         }
-        BigDecimal[] x = solution.get();
-        return group.stream().map(row -> withValues(row, positions, x)).toList();
+        return sb.append(')').toString();
     }
 
     /** {@code left − right} of one equation, with its gradient, at {@code point}. */

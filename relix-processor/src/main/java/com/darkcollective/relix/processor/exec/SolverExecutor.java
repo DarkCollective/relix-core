@@ -16,14 +16,12 @@
 package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.ast.AllocationSpec;
-import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.eval.AllocationRow;
-import com.darkcollective.relix.processor.eval.EquationSolver;
 import com.darkcollective.relix.processor.eval.EquationSystemSolver;
 import com.darkcollective.relix.processor.eval.SubsetOptimizer;
 import com.darkcollective.relix.value.NumberValue;
@@ -61,27 +59,19 @@ final class SolverExecutor {
 
     /**
      * Goal-seek: for each row, fills the NULL participating columns of the equations —
-     * one equation by inverting its arithmetic, several as a linear system.  Streaming
-     * and per-row — a row that cannot be solved passes through unchanged.  With
-     * {@code PER} keys the input is buffered and each group is fitted by least squares
-     * instead, the rows coming back in input order.
+     * by inversion, elimination or Newton's method, whichever is the cheapest that
+     * applies.  Streaming and per-row — a row that cannot be posed passes through
+     * unchanged.  With {@code PER} keys the input is buffered and each group is fitted
+     * by least squares instead, the rows coming back in input order.
      */
     Stream<Row> executeSolve(PhysicalNode.Solve node, EvalCtx ctx) {
-        List<SolveEquation> equations = node.equations();
-        if (!node.groupingKeys().isEmpty()) {
-            return executeSolveFit(node, ctx);
-        }
-        if (equations.size() == 1) {
-            EquationSolver solver = new EquationSolver(ctx.operandEval());
-            SolveEquation only = equations.getFirst();
+        EquationSystemSolver solver = new EquationSystemSolver(ctx.operandEval(),
+                node.tolerance().orElse(EquationSystemSolver.DEFAULT_TOLERANCE),
+                node.maxRounds().orElse(EquationSystemSolver.DEFAULT_MAX_ROUNDS));
+        if (node.groupingKeys().isEmpty()) {
             return dispatch.execute(node.input(), ctx)
-                    .map(row -> solver.solve(only.left(), only.right(), row));
+                    .map(row -> solver.solve(node.equations(), row));
         }
-        EquationSystemSolver system = new EquationSystemSolver();
-        return dispatch.execute(node.input(), ctx).map(row -> system.solve(equations, row));
-    }
-
-    private Stream<Row> executeSolveFit(PhysicalNode.Solve node, EvalCtx ctx) {
         List<String> keys = node.groupingKeys();
         List<Row> rows;
         try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
@@ -93,11 +83,11 @@ final class SolverExecutor {
             groups.computeIfAbsent(keys.stream().map(row::get).toList(), k -> new ArrayList<>())
                     .add(i);
         }
-        EquationSystemSolver solver = new EquationSystemSolver();
         Row[] out = new Row[rows.size()];
-        for (List<Integer> members : groups.values()) {
+        for (var group : groups.entrySet()) {
+            List<Integer> members = group.getValue();
             List<Row> fitted = solver.fit(node.equations(),
-                    members.stream().map(rows::get).toList());
+                    members.stream().map(rows::get).toList(), describeGroup(keys, group.getKey()));
             for (int k = 0; k < members.size(); k++) {
                 out[members.get(k)] = fitted.get(k);
             }

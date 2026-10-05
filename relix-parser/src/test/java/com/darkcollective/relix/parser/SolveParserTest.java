@@ -18,6 +18,7 @@ package com.darkcollective.relix.parser;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 import com.darkcollective.relix.ast.*;
 import com.darkcollective.relix.ast.internal.*;
 
@@ -117,6 +118,51 @@ final class SolveParserTest extends ParserTestSupport {
         assertParsesTo("SOLVE { x = y, u = v } PER g (R)", fitted);
         assertPrettyPrints(fitted, "SOLVE { x = y, u = v } PER g (R)");
         assertParsesTo(fitted.prettyPrint(), fitted);
+    }
+
+    @Test
+    void parsesTheIterationLimits() {
+        RelNode limited = solve(List.of(equation(attr("area"),
+                        arith(attr("side"), ArithmeticOperator.MULTIPLY, attr("side")))),
+                List.of("shape"), Optional.of(new java.math.BigDecimal("0.000001")), Optional.of(50),
+                rel("Squares"));
+        assertParsesTo("SOLVE area = side * side PER shape WITHIN 0.000001 MAX 50 ROUNDS (Squares)",
+                limited);
+        assertPrettyPrints(limited,
+                "SOLVE area = side * side PER shape WITHIN 0.000001 MAX 50 ROUNDS (Squares)");
+        assertParsesTo(limited.prettyPrint(), limited);
+    }
+
+    @Test
+    void parsesEitherLimitAlone() {
+        RelNode within = solve(List.of(equation(attr("x"), attr("y"))), List.of(),
+                Optional.of(new java.math.BigDecimal("0.01")), Optional.empty(), rel("R"));
+        assertParsesTo("SOLVE x = y WITHIN 0.01 (R)", within);
+        RelNode capped = solve(List.of(equation(attr("x"), attr("y"))), List.of(),
+                Optional.empty(), Optional.of(7), rel("R"));
+        assertParsesTo("SOLVE x = y MAX 7 ROUNDS (R)", capped);
+    }
+
+    @Test
+    void failsOnAZeroTolerance() {
+        assertParseError("SOLVE x = y WITHIN 0 (R)").hasMessageContaining("greater than 0");
+    }
+
+    @Test
+    void failsOnAZeroRoundCap() {
+        assertParseError("SOLVE x = y MAX 0 ROUNDS (R)")
+                .hasMessageContaining("A SOLVE round count must be at least 1");
+    }
+
+    @Test
+    void failsOnAFractionalRoundCap() {
+        assertParseError("SOLVE x = y MAX 2.5 ROUNDS (R)")
+                .hasMessageContaining("A SOLVE round count must be a whole number");
+    }
+
+    @Test
+    void failsOnACapWithoutRounds() {
+        assertParseError("SOLVE x = y MAX 5 (R)").hasMessageContaining("'ROUNDS'");
     }
 
     @Test

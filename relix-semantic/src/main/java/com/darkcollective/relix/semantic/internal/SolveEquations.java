@@ -27,10 +27,8 @@ import com.darkcollective.relix.symbol.function.ScalarFunctionSymbol;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -60,33 +58,17 @@ public final class SolveEquations {
     }
 
     /**
-     * An equation with its functions expanded, and the {@code def}s expansion went
-     * through — named in a diagnostic about the expanded form, which the user did not
-     * write.
-     *
-     * @param equation the expanded equation; never null
-     * @param defs     the names of the expanded functions, in first-use order; never null
-     */
-    public record Expansion(SolveEquation equation, List<String> defs) {
-        public Expansion {
-            defs = List.copyOf(defs);
-        }
-    }
-
-    /**
      * Expands every user-defined scalar function call in {@code equation}.
      *
      * @param equation  the equation as written; must not be null
      * @param functions the installed function libraries; must not be null
      * @param symbols   the symbol table holding the script's {@code def}s; must not be null
-     * @return the expanded equation and the functions it expanded
+     * @return the expanded equation
      */
-    public static Expansion expand(SolveEquation equation, FunctionCatalog functions,
-                                   SymbolTable symbols) {
+    public static SolveEquation expand(SolveEquation equation, FunctionCatalog functions,
+                                       SymbolTable symbols) {
         Expander expander = new Expander(functions, symbols);
-        SolveEquation expanded = new SolveEquation(
-                expander.expand(equation.left()), expander.expand(equation.right()));
-        return new Expansion(expanded, new ArrayList<>(expander.used));
+        return new SolveEquation(expander.expand(equation.left()), expander.expand(equation.right()));
     }
 
     /**
@@ -100,7 +82,7 @@ public final class SolveEquations {
     public static List<SolveEquation> expandAll(List<SolveEquation> equations,
                                                 FunctionCatalog functions, SymbolTable symbols) {
         return equations.stream()
-                .map(e -> expand(e, functions, symbols).equation())
+                .map(e -> expand(e, functions, symbols))
                 .toList();
     }
 
@@ -108,7 +90,6 @@ public final class SolveEquations {
         private final FunctionCatalog functions;
         private final SymbolTable symbols;
         private final Deque<String> active = new ArrayDeque<>();
-        private final Set<String> used = new LinkedHashSet<>();
 
         Expander(FunctionCatalog functions, SymbolTable symbols) {
             this.functions = functions;
@@ -147,7 +128,6 @@ public final class SolveEquations {
             if (!namesOnly(body, bindings.keySet())) {
                 return call;
             }
-            used.add(fn.declaredName());
             active.push(key);
             try {
                 return expand(substitute(body, bindings));

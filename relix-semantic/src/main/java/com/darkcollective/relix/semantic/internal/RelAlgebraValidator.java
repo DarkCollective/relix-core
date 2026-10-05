@@ -673,14 +673,11 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             }
         }
 
-        // A system may name a column in several equations — that is what makes it one;
-        // a single equation is inverted by a tree-walk, which needs each column once.
-        boolean single = node.equations().size() == 1;
+        // A column may appear any number of times: an equation the engine cannot
+        // rearrange is solved iteratively instead, so repetition is not an error.
         Set<String> typeChecked = new HashSet<>();
         for (SolveEquation written : node.equations()) {
-            SolveEquations.Expansion expansion =
-                    SolveEquations.expand(written, functions, symbolTable);
-            SolveEquation equation = expansion.equation();
+            SolveEquation equation = SolveEquations.expand(written, functions, symbolTable);
 
             List<String> columns = new ArrayList<>();
             boolean invertible = collectSolveColumns(equation.left(), columns, node.location())
@@ -693,38 +690,24 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 continue;
             }
 
-            Set<String> seen = new HashSet<>();
             for (String col : columns) {
                 String colName = AttributeNames.stripQualifier(col);
-                String key = colName.toLowerCase(Locale.ROOT);
-
-                if (typeChecked.add(key)) {
-                    Optional<ColumnDefinition> def = input.column(colName);
-                    if (def.isEmpty()) {
-                        columnNotFound(node.location(), "Solve SOLVE: column", col, input);
-                    } else {
-                        Type t = def.get().type();
-                        if (t != ScalarType.NUMBER && t != ScalarType.ANY) {
-                            error(node.location(), "Solve SOLVE: column '" + col
-                                    + "' must be NUMBER (or ANY) to be solved, got " + t);
-                        }
-                    }
+                if (!typeChecked.add(colName.toLowerCase(Locale.ROOT))) {
+                    continue;
                 }
-                if (single && !seen.add(key)) {
-                    error(node.location(), "Solve SOLVE: column '" + colName
-                            + "' appears more than once in the equation"
-                            + expandedThrough(expansion.defs())
-                            + "; each column may appear at most once so the inversion is "
-                            + "deterministic");
+                Optional<ColumnDefinition> def = input.column(colName);
+                if (def.isEmpty()) {
+                    columnNotFound(node.location(), "Solve SOLVE: column", col, input);
+                } else {
+                    Type t = def.get().type();
+                    if (t != ScalarType.NUMBER && t != ScalarType.ANY) {
+                        error(node.location(), "Solve SOLVE: column '" + col
+                                + "' must be NUMBER (or ANY) to be solved, got " + t);
+                    }
                 }
             }
         }
         return null;
-    }
-
-    /** The clause naming the {@code def}s an expanded equation came through, if any. */
-    private static String expandedThrough(List<String> defs) {
-        return defs.isEmpty() ? "" : " (after expanding " + String.join(", ", defs) + ")";
     }
 
     /**

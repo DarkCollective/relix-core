@@ -295,6 +295,12 @@ public final class PhysicalPlanJson {
                     w.value(key);
                 }
                 w.endArray();
+                if (s.tolerance().isPresent()) {
+                    w.name("tolerance").value(s.tolerance().get().toPlainString());
+                }
+                if (s.maxRounds().isPresent()) {
+                    w.name("maxRounds").value(s.maxRounds().get());
+                }
             }
 
             case PhysicalNode.Optimize o -> {

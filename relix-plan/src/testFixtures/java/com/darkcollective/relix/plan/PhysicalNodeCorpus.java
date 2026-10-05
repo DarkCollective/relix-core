@@ -204,7 +204,8 @@ public final class PhysicalNodeCorpus {
                 new PhysicalNode.ReservoirSample(SCHEMA, 100L, Optional.of(7L), LEFT),
 
                 // ── solver ──────────────────────────────────────────────────────
-                new PhysicalNode.Solve(SCHEMA, List.of(AstBuilders.equation(X, ONE)), List.of(), LEFT),
+                new PhysicalNode.Solve(SCHEMA, List.of(AstBuilders.equation(X, ONE)), List.of("k"),
+                        Optional.of(new java.math.BigDecimal("0.001")), Optional.of(10), LEFT),
                 new PhysicalNode.Optimize(SCHEMA, ObjectiveSense.MAXIMIZE, X,
                         List.of(constraint(X, ComparisonOperator.LESS_EQUAL, 10d)),
                         List.of("x"), Optional.of(allocation(0d, 1d, "share")), LEFT),

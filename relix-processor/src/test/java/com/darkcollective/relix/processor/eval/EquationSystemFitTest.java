@@ -50,6 +50,10 @@ final class EquationSystemFitTest extends ProcessorTestSupport {
             arith(arith(attr("a"), ArithmeticOperator.MULTIPLY, attr("x")),
                     ArithmeticOperator.PLUS, attr("b"))));
 
+    private static List<Row> fit(List<SolveEquation> equations, List<Row> group) {
+        return SOLVER.fit(equations, group, "series=s1");
+    }
+
     private static Value cell(String v) {
         return v == null ? nullVal() : num(v);
     }
@@ -65,21 +69,21 @@ final class EquationSystemFitTest extends ProcessorTestSupport {
         @Test
         @DisplayName("recovers an exact line and writes it into every row")
         void exactLine() {
-            List<Row> out = SOLVER.fit(LINE, List.of(point("1", "3"), point("2", "5"), point("3", "7")));
+            List<Row> out = fit(LINE, List.of(point("1", "3"), point("2", "5"), point("3", "7")));
             assertThat(out).allSatisfy(r -> assertThat(r).hasValue("a", "2").hasValue("b", "1"));
         }
 
         @Test
         @DisplayName("minimises the squared residuals when the points do not fit exactly")
         void leastSquares() {
-            List<Row> out = SOLVER.fit(LINE, List.of(point("0", "1"), point("1", "3"), point("2", "4")));
+            List<Row> out = fit(LINE, List.of(point("0", "1"), point("1", "3"), point("2", "4")));
             assertThat(out.getFirst()).hasValue("a", "1.5").hasValue("b", "1.1666666667");
         }
 
         @Test
         @DisplayName("fills a row that is not an observation too, leaving its own blank")
         void fillsNonObservations() {
-            List<Row> out = SOLVER.fit(LINE,
+            List<Row> out = fit(LINE,
                     List.of(point("1", "3"), point("2", "5"), point("4", null)));
             assertThat(out.get(2)).hasValue("a", "2").hasValue("b", "1");
             assertThat(out.get(2).get("y").isNull()).isTrue();
@@ -92,8 +96,45 @@ final class EquationSystemFitTest extends ProcessorTestSupport {
                     col("principal", ScalarType.NUMBER));
             List<SolveEquation> eq = List.of(equation(attr("total"),
                     arith(attr("principal"), ArithmeticOperator.MULTIPLY, attr("rate"))));
-            List<Row> out = SOLVER.fit(eq, List.of(row(s, num("50"), num("4"), nullVal())));
+            List<Row> out = fit(eq, List.of(row(s, num("50"), num("4"), nullVal())));
             assertThat(out.getFirst()).hasValue("principal", "12.5");
+        }
+    }
+
+    @Nested
+    @DisplayName("a group whose equations are not linear in the unknowns")
+    final class Iterative {
+
+        private final Schema mm = schema(
+                col("s", ScalarType.NUMBER), col("rate", ScalarType.NUMBER),
+                col("vmax", ScalarType.NUMBER), col("km", ScalarType.NUMBER));
+
+        /** rate = vmax * s / (km + s). */
+        private final List<SolveEquation> michaelisMenten = List.of(equation(attr("rate"),
+                arith(arith(attr("vmax"), ArithmeticOperator.MULTIPLY, attr("s")),
+                        ArithmeticOperator.DIVIDE,
+                        arith(attr("km"), ArithmeticOperator.PLUS, attr("s")))));
+
+        private Row assay(String s, String rate) {
+            return row(mm, num(s), num(rate), nullVal(), nullVal());
+        }
+
+        @Test
+        @DisplayName("is fitted by Gauss–Newton")
+        void fitsACurve() {
+            List<Row> out = fit(michaelisMenten,
+                    List.of(assay("2", "5"), assay("6", "7.5"), assay("8", "8"), assay("18", "9")));
+            assertThat(out).allSatisfy(r -> assertThat(r).hasValue("vmax", "10").hasValue("km", "2"));
+        }
+
+        @Test
+        @DisplayName("names the group when the search does not converge")
+        void namesTheGroup() {
+            EquationSystemSolver capped = new EquationSystemSolver(new OperandEvaluator(),
+                    EquationSystemSolver.DEFAULT_TOLERANCE, 1);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> capped.fit(michaelisMenten,
+                            List.of(assay("2", "5"), assay("6", "7.5"), assay("8", "8")), "enzyme=e1"))
+                    .hasMessageContaining("the group enzyme=e1");
         }
     }
 
@@ -104,7 +145,7 @@ final class EquationSystemFitTest extends ProcessorTestSupport {
         @Test
         @DisplayName("when it is empty")
         void empty() {
-            assertThat(SOLVER.fit(LINE, List.of())).isEmpty();
+            assertThat(fit(LINE, List.of())).isEmpty();
         }
 
         @Test
@@ -112,14 +153,14 @@ final class EquationSystemFitTest extends ProcessorTestSupport {
         void noUnknown() {
             Row r = row(S, num("1"), num("3"), num("2"), nullVal());
             List<Row> group = List.of(r, row(S, num("2"), num("5"), nullVal(), num("1")));
-            assertThat(SOLVER.fit(LINE, group)).isSameAs(group);
+            assertThat(fit(LINE, group)).isSameAs(group);
         }
 
         @Test
         @DisplayName("when there are fewer residuals than unknowns")
         void tooFewObservations() {
             List<Row> group = List.of(point("1", "3"));
-            assertThat(SOLVER.fit(LINE, group)).isSameAs(group);
+            assertThat(fit(LINE, group)).isSameAs(group);
         }
 
         @Test
@@ -127,7 +168,7 @@ final class EquationSystemFitTest extends ProcessorTestSupport {
         void singular() {
             // Every point at the same x: the slope is not determined.
             List<Row> group = List.of(point("2", "3"), point("2", "5"));
-            assertThat(SOLVER.fit(LINE, group)).isSameAs(group);
+            assertThat(fit(LINE, group)).isSameAs(group);
         }
 
         @Test
@@ -137,14 +178,14 @@ final class EquationSystemFitTest extends ProcessorTestSupport {
             List<SolveEquation> curve = List.of(equation(attr("y"),
                     arith(ax, ArithmeticOperator.MULTIPLY, attr("b"))));
             List<Row> group = List.of(point("1", "3"), point("2", "5"));
-            assertThat(SOLVER.fit(curve, group)).isSameAs(group);
+            assertThat(fit(curve, group)).isSameAs(group);
         }
 
         @Test
         @DisplayName("when a column is not positionally addressable")
         void openSchema() {
             List<Row> group = List.of(row(schema(col("x", ScalarType.NUMBER)), num("1")));
-            assertThat(SOLVER.fit(LINE, group)).isSameAs(group);
+            assertThat(fit(LINE, group)).isSameAs(group);
         }
     }
 }
