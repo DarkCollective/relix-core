@@ -30,6 +30,7 @@ import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.ProjectedAttribute;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.TieBreak;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -1160,6 +1161,18 @@ public final class Relation {
      */
     public Relation solve(Operand left, Operand right) {
         return derive(AstBuilders.solve(left, right, node));
+    }
+
+    /**
+     * SOLVE over a system of equations — fills each row's unknowns when it has as many
+     * as there are equations and the system is linear in them.
+     *
+     * @param equations the equations, at least one
+     * @return the solved relation
+     * @since 1.0
+     */
+    public Relation solve(List<SolveEquation> equations) {
+        return derive(AstBuilders.solve(equations, node));
     }
 
     /**

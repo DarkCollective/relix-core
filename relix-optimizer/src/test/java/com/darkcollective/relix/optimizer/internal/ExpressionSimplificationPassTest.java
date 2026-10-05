@@ -392,8 +392,8 @@ final class ExpressionSimplificationPassTest {
         @Test @DisplayName("SOLVE — both sides of the equation")
         void solveOperands() {
             var result = (SolveNode) folded(solve(foldable(), foldable(), base), 2);
-            assertThat(result.left()).isInstanceOf(AttributeOperand.class);
-            assertThat(result.right()).isInstanceOf(AttributeOperand.class);
+            assertThat(result.equations().getFirst().left()).isInstanceOf(AttributeOperand.class);
+            assertThat(result.equations().getFirst().right()).isInstanceOf(AttributeOperand.class);
         }
 
         @Test @DisplayName("OPTIMIZE — its objective and every constraint expression")

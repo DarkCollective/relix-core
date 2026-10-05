@@ -787,14 +787,33 @@ final class PhysicalPlanPrinterTest {
     void solveLabel() {
         PhysicalNode plan = new PhysicalNode.Solve(
                 SCHEMA,
-                new com.darkcollective.relix.ast.AttributeOperand("total"),
-                new com.darkcollective.relix.ast.BinaryArithmeticExpression(
-                        new com.darkcollective.relix.ast.AttributeOperand("principal"),
-                        com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
-                        new com.darkcollective.relix.ast.AttributeOperand("rate")),
+                List.of(new com.darkcollective.relix.ast.SolveEquation(
+                        new com.darkcollective.relix.ast.AttributeOperand("total"),
+                        new com.darkcollective.relix.ast.BinaryArithmeticExpression(
+                                new com.darkcollective.relix.ast.AttributeOperand("principal"),
+                                com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
+                                new com.darkcollective.relix.ast.AttributeOperand("rate")))),
                 sqlScan("SELECT x FROM t"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
                 SOLVE total = principal * rate
+                └─ PushedScan [jdbc/db] SELECT x FROM t
+                """);
+    }
+
+    @Test
+    @DisplayName("a solve node over a system shows every equation")
+    void solveSystemLabel() {
+        PhysicalNode plan = new PhysicalNode.Solve(
+                SCHEMA,
+                List.of(new com.darkcollective.relix.ast.SolveEquation(
+                                new com.darkcollective.relix.ast.AttributeOperand("x"),
+                                new com.darkcollective.relix.ast.AttributeOperand("y")),
+                        new com.darkcollective.relix.ast.SolveEquation(
+                                new com.darkcollective.relix.ast.AttributeOperand("u"),
+                                new com.darkcollective.relix.ast.AttributeOperand("v"))),
+                sqlScan("SELECT x FROM t"));
+        assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
+                SOLVE { x = y, u = v }
                 └─ PushedScan [jdbc/db] SELECT x FROM t
                 """);
     }

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ConditionalJoinNode;
 import com.darkcollective.relix.ast.AggregateFunction;
@@ -236,8 +237,10 @@ final class RelationFunctionInliner {
                     new UniversalNode(u.groupingAttributes(), substitute(u.predicate(), b),
                             u.input(), u.location());
             case SolveNode s ->
-                    new SolveNode(substituteOperand(s.left(), b), substituteOperand(s.right(), b),
-                            s.input(), s.location());
+                    new SolveNode(s.equations().stream()
+                            .map(e -> new SolveEquation(substituteOperand(e.left(), b),
+                                    substituteOperand(e.right(), b)))
+                            .toList(), s.input(), s.location());
             case OptimizeNode o ->
                     new OptimizeNode(o.sense(), substituteOperand(o.objective(), b),
                             substituteConstraints(o.constraints(), b), o.groupingKeys(),

@@ -19,6 +19,7 @@ import com.darkcollective.relix.plan.HttpScanPushdown;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
 import com.darkcollective.relix.plan.TraceAlgorithm;
+import com.darkcollective.relix.semantic.internal.SolveEquations;
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.internal.AstEquivalence;
 import com.darkcollective.relix.ast.GroupingKey;
@@ -575,8 +576,8 @@ public final class Planner {
             case SampleNode s      -> planSample(s);
             case ReservoirSampleNode s -> new PhysicalNode.ReservoirSample(
                     schemaOf(s), s.count(), s.seed(), plan(s.input()));
-            case SolveNode s       -> new PhysicalNode.Solve(
-                    schemaOf(s), s.left(), s.right(), plan(s.input()));
+            case SolveNode s       -> new PhysicalNode.Solve(schemaOf(s),
+                    SolveEquations.expandAll(s.equations(), functions, symbols), plan(s.input()));
             case OptimizeNode o    -> {
                 requireSolver("OPTIMIZE");
                 yield new PhysicalNode.Optimize(

@@ -362,16 +362,16 @@ final class PhysicalPlanJsonTest {
         void solveCarriesTheEquation() {
             var solve = new PhysicalNode.Solve(
                     SCHEMA,
-                    attr("total"),
-                    new com.darkcollective.relix.ast.BinaryArithmeticExpression(
-                            attr("principal"),
-                            com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
-                            attr("rate")),
+                    List.of(new com.darkcollective.relix.ast.SolveEquation(
+                            attr("total"),
+                            new com.darkcollective.relix.ast.BinaryArithmeticExpression(
+                                    attr("principal"),
+                                    com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
+                                    attr("rate")))),
                     leaf());
             assertThat(PhysicalPlanJson.toJson(solve))
                     .contains("\"op\":\"Solve\"")
-                    .contains("\"left\":\"total\"")
-                    .contains("\"right\":\"principal * rate\"");
+                    .contains("\"equations\":[{\"left\":\"total\",\"right\":\"principal * rate\"}]");
         }
 
         @Test

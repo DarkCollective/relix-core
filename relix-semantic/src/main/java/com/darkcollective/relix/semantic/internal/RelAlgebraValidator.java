@@ -84,6 +84,7 @@ import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.SessionizeNode;
 import com.darkcollective.relix.ast.SetLiteralOperand;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveNode;
 import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.ShuffleNode;
@@ -666,39 +667,58 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         if (inputOpt.isEmpty()) return null;
         Schema input = inputOpt.get();
 
-        List<String> columns = new ArrayList<>();
-        boolean invertible = collectSolveColumns(node.left(), columns, node.location())
-                & collectSolveColumns(node.right(), columns, node.location());
-        if (!invertible) return null; // non-invertible construct already reported
+        // A system may name a column in several equations — that is what makes it one;
+        // a single equation is inverted by a tree-walk, which needs each column once.
+        boolean single = node.equations().size() == 1;
+        Set<String> typeChecked = new HashSet<>();
+        for (SolveEquation written : node.equations()) {
+            SolveEquations.Expansion expansion =
+                    SolveEquations.expand(written, functions, symbolTable);
+            SolveEquation equation = expansion.equation();
 
-        if (columns.isEmpty()) {
-            error(node.location(),
-                    "Solve SOLVE: the equation must reference at least one column");
-            return null;
-        }
+            List<String> columns = new ArrayList<>();
+            boolean invertible = collectSolveColumns(equation.left(), columns, node.location())
+                    & collectSolveColumns(equation.right(), columns, node.location());
+            if (!invertible) continue; // non-invertible construct already reported
 
-        Set<String> seen = new HashSet<>();
-        for (String col : columns) {
-            String colName = AttributeNames.stripQualifier(col);
-            String key = colName.toLowerCase(Locale.ROOT);
-
-            Optional<ColumnDefinition> def = input.column(colName);
-            if (def.isEmpty()) {
-                columnNotFound(node.location(), "Solve SOLVE: column", col, input);
-            } else {
-                Type t = def.get().type();
-                if (t != ScalarType.NUMBER && t != ScalarType.ANY) {
-                    error(node.location(), "Solve SOLVE: column '" + col
-                            + "' must be NUMBER (or ANY) to be solved, got " + t);
-                }
+            if (columns.isEmpty()) {
+                error(node.location(),
+                        "Solve SOLVE: the equation must reference at least one column");
+                continue;
             }
-            if (!seen.add(key)) {
-                error(node.location(), "Solve SOLVE: column '" + colName
-                        + "' appears more than once in the equation; each column may "
-                        + "appear at most once so the inversion is deterministic");
+
+            Set<String> seen = new HashSet<>();
+            for (String col : columns) {
+                String colName = AttributeNames.stripQualifier(col);
+                String key = colName.toLowerCase(Locale.ROOT);
+
+                if (typeChecked.add(key)) {
+                    Optional<ColumnDefinition> def = input.column(colName);
+                    if (def.isEmpty()) {
+                        columnNotFound(node.location(), "Solve SOLVE: column", col, input);
+                    } else {
+                        Type t = def.get().type();
+                        if (t != ScalarType.NUMBER && t != ScalarType.ANY) {
+                            error(node.location(), "Solve SOLVE: column '" + col
+                                    + "' must be NUMBER (or ANY) to be solved, got " + t);
+                        }
+                    }
+                }
+                if (single && !seen.add(key)) {
+                    error(node.location(), "Solve SOLVE: column '" + colName
+                            + "' appears more than once in the equation"
+                            + expandedThrough(expansion.defs())
+                            + "; each column may appear at most once so the inversion is "
+                            + "deterministic");
+                }
             }
         }
         return null;
+    }
+
+    /** The clause naming the {@code def}s an expanded equation came through, if any. */
+    private static String expandedThrough(List<String> defs) {
+        return defs.isEmpty() ? "" : " (after expanding " + String.join(", ", defs) + ")";
     }
 
     /**
@@ -721,8 +741,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             case UnaryOperand unary -> collectSolveColumns(unary.operand(), out, loc);
             default -> {
                 error(loc, "Solve SOLVE: the equation may contain only column references, "
-                        + "numeric literals, and the arithmetic operators + − × ÷; "
-                        + "functions, strings, and other constructs cannot be inverted");
+                        + "numeric literals, the arithmetic operators + − × ÷, and defs "
+                        + "whose bodies are such arithmetic; built-in functions, strings, "
+                        + "and other constructs cannot be inverted");
                 yield false;
             }
         };
