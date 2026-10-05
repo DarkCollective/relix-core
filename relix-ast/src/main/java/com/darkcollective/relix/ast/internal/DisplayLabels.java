@@ -22,6 +22,7 @@ import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.OptimizeConstraint;
 import com.darkcollective.relix.ast.ProduceBound;
 import com.darkcollective.relix.ast.RelNode;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -214,5 +215,27 @@ public final class DisplayLabels {
                 .orElse("");
         return "OPTIMIZE " + mode + (sense == ObjectiveSense.MAXIMIZE ? "max" : "min")
                 + " SUM(" + objective.accept(OPND) + ") s.t. " + rendered + keys;
+    }
+
+    /**
+     * Renders a {@code SOLVE} operator's equations — {@code SOLVE l = r} for one, and the
+     * braced list {@code SOLVE &#123; l1 = r1, l2 = r2 &#125;} for several. The rendering is
+     * also the operator's source spelling, so it parses back to the same node.
+     *
+     * @param equations the equations, never empty; must not be null
+     * @return the rendered label
+     */
+    public static String solve(List<SolveEquation> equations) {
+        Objects.requireNonNull(equations, "equations");
+        if (equations.size() == 1) {
+            return "SOLVE " + equation(equations.getFirst());
+        }
+        return equations.stream()
+                .map(DisplayLabels::equation)
+                .collect(Collectors.joining(", ", "SOLVE { ", " }"));
+    }
+
+    private static String equation(SolveEquation equation) {
+        return equation.left().accept(OPND) + " = " + equation.right().accept(OPND);
     }
 }

@@ -18,9 +18,9 @@ unknown. The tell is that *which* value is unknown may vary from row to row, and
 relationship stays the same.
 
 `SOLVE` is this and only this. It is **not** `OPTIMIZE` — there is no search, no
-choice, no constraint; it inverts one arithmetic equation per row. (It does not even
-use the mathematical-programming solver — it is a deterministic tree-walk, and
-streams.)
+choice, no constraint; it inverts an arithmetic equation per row, or solves a few
+together as a linear system. (It does not even use the mathematical-programming
+solver — it rearranges or eliminates, deterministically, and streams.)
 
 ## The data
 
@@ -70,10 +70,10 @@ whichever column is NULL — one statement fills a different hole in each.
 
 ## Pitfalls
 
-- **Exactly one blank, or nothing happens.** A row with **no** NULL among the
-  participating columns, or with **two or more**, passes through unchanged — `SOLVE`
-  acts only when there is precisely one hole. It does not *check* a fully-populated
-  row, and it cannot solve for two unknowns.
+- **One blank per equation, or nothing happens.** With one equation, a row with **no**
+  NULL among the participating columns, or with **two or more**, passes through
+  unchanged — one equation fills precisely one hole. It does not *check* a
+  fully-populated row; two unknowns need two equations, `SOLVE { …, … }`.
 
   ```relix
   Check := [

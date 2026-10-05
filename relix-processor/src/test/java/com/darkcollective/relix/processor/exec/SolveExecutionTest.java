@@ -101,4 +101,49 @@ final class SolveExecutionTest extends ProcessorTestSupport {
         // k=1: total present ⇒ unchanged (left as 99).
         assertThat(withTotal(rows, "99")).isNotNull();
     }
+
+    @Test
+    @DisplayName("solves a system of equations per row, passing the unsolvable through")
+    void solvesASystem() {
+        var rows = collect("""
+                Pairs := [
+                | id | total | diff | a | b |
+                |----|-------|------|---|---|
+                | 1  | 10    | 2    |   |   |
+                | 2  |       |      | 7 | 3 |
+                | 3  | 10    |      |   |   |
+                ];
+                query { SOLVE { total = a + b, diff = a - b } (Pairs) };
+                """);
+
+        assertThat(rows).hasSize(3);
+        assertThat(byId(rows, "1")).hasValue("a", "6").hasValue("b", "4");
+        assertThat(byId(rows, "2")).hasValue("total", "10").hasValue("diff", "4");
+        // Three unknowns, two equations: left as it came in.
+        assertThat(byId(rows, "3").get("a").isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("solves through a def, the call expanded into its body")
+    void solvesThroughADef() {
+        var rows = collect("""
+                Rods := [
+                | id | length | L0  | k      | temp |
+                |----|--------|-----|--------|------|
+                | 1  | 100.1  | 100 |        | 30   |
+                | 2  |        | 100 | 0.0001 | 70   |
+                ];
+                def predicted(L0: NUMBER, k: NUMBER, T: NUMBER) : NUMBER := { L0 * (1 + k * (T - 20)) };
+                query { SOLVE length = predicted(L0, k, temp) (Rods) };
+                """);
+
+        assertThat(byId(rows, "1")).hasValue("k", "0.0001");
+        assertThat(byId(rows, "2")).hasValue("length", "100.5");
+    }
+
+    private static Row byId(List<Row> rows, String id) {
+        return rows.stream()
+                .filter(r -> id.equals(r.get("id").asDisplayString()))
+                .findFirst().orElseThrow();
+    }
 }

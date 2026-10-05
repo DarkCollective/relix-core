@@ -212,6 +212,7 @@ final class AstBuilderCoverageTest {
             .ofListElement(GroupingKey.class, i -> AstBuilders.key("g" + i))
             .ofListElement(AggregateFunction.class, i -> AstBuilders.agg(AggregateOperator.SUM, "m" + i))
             .ofListElement(OptimizeConstraint.class, i -> AstBuilders.constraint(AstBuilders.attr("a" + i), ComparisonOperator.LESS_EQUAL, 100d))
+            .ofListElement(SolveEquation.class, i -> AstBuilders.equation(AstBuilders.attr("l" + i), AstBuilders.attr("r" + i)))
             .ofListElement(RenameNode.RenamePair.class, i -> AstBuilders.renamePair("f" + i, "t" + i))
             .ofListElement(StructConstruction.Field.class, i -> new StructConstruction.Field("f" + i, AstBuilders.attr("v" + i)))
             .override("date", 0, "2026-01-01")

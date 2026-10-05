@@ -1602,19 +1602,33 @@ public final class RelAlgebraParser {
 
     /**
      * Parses a goal-seek operator: {@code SOLVE left = right (R)}, e.g.
-     * {@code SOLVE total = principal * rate (Loans)}.  Both sides are arithmetic
-     * operands; the equation is validated (invertible vocabulary, single
-     * occurrence per column) during semantic analysis.  The current token is the
-     * SOLVE keyword.
+     * {@code SOLVE total = principal * rate (Loans)}, or a system of equations in
+     * braces, {@code SOLVE &#123; a = b, c = d &#125; (R)}, separated by commas as every
+     * list inside an expression is — {@code ;} ends a statement. The sides are
+     * arithmetic operands; the equations are validated during semantic analysis. A
+     * {@code &#123;} cannot open a struct literal here, a struct never being a number.
+     * The current token is the SOLVE keyword.
      */
     private SolveNode parseSolve() {
         Token opTok = current;
         expect(TokenType.SOLVE, "Expected 'SOLVE'");
+        List<SolveEquation> equations = new ArrayList<>();
+        if (match(TokenType.LBRACE)) {
+            do {
+                equations.add(parseSolveEquation());
+            } while (match(TokenType.COMMA));
+            expect(TokenType.RBRACE, "Expected ',' or '}' after a SOLVE equation");
+        } else {
+            equations.add(parseSolveEquation());
+        }
+        RelNode input = parseParenthesizedRelation("Expected '(' after the SOLVE equation");
+        return new SolveNode(equations, input, loc(opTok));
+    }
+
+    private SolveEquation parseSolveEquation() {
         Operand left = parseOperand();
         expect(TokenType.EQUAL, "Expected '=' between the two sides of the SOLVE equation");
-        Operand right = parseOperand();
-        RelNode input = parseParenthesizedRelation("Expected '(' after the SOLVE equation");
-        return new SolveNode(left, right, input, loc(opTok));
+        return new SolveEquation(left, parseOperand());
     }
 
     /**

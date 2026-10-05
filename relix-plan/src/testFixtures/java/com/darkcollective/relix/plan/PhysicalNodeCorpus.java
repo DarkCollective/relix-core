@@ -19,6 +19,7 @@ import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.AggregateOperator;
 import com.darkcollective.relix.ast.AllenRelation;
 import com.darkcollective.relix.ast.ComparisonOperator;
+import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ConsolidationFunction;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.ObjectiveSense;
@@ -203,7 +204,7 @@ public final class PhysicalNodeCorpus {
                 new PhysicalNode.ReservoirSample(SCHEMA, 100L, Optional.of(7L), LEFT),
 
                 // ── solver ──────────────────────────────────────────────────────
-                new PhysicalNode.Solve(SCHEMA, X, ONE, LEFT),
+                new PhysicalNode.Solve(SCHEMA, List.of(AstBuilders.equation(X, ONE)), LEFT),
                 new PhysicalNode.Optimize(SCHEMA, ObjectiveSense.MAXIMIZE, X,
                         List.of(constraint(X, ComparisonOperator.LESS_EQUAL, 10d)),
                         List.of("x"), Optional.of(allocation(0d, 1d, "share")), LEFT),

@@ -208,8 +208,7 @@ public final class PhysicalPlanPrinter {
             case PhysicalNode.Universal u -> "Universal"
                     + (u.groupingAttributes().isEmpty()
                             ? "" : " " + String.join(", ", u.groupingAttributes()));
-            case PhysicalNode.Solve s    -> "SOLVE " + s.left().accept(OPND)
-                    + " = " + s.right().accept(OPND);
+            case PhysicalNode.Solve s    -> DisplayLabels.solve(s.equations());
             case PhysicalNode.Optimize o -> DisplayLabels.optimize(o.sense(), o.objective(),
                     o.constraints(), o.groupingKeys(), o.allocation());
             case PhysicalNode.TopK t      -> "TOP " + t.count()

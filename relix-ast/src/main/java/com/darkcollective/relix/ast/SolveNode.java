@@ -17,52 +17,61 @@ package com.darkcollective.relix.ast;
 
 import com.darkcollective.relix.ast.visitor.RelNodeVisitor;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
- * Goal-seek (SOLVE) — a per-row operator that fills a single unknown column by
- * inverting a declared arithmetic equation {@code left = right}.
+ * Goal-seek (SOLVE) — a per-row operator that fills the unknown columns of a row by
+ * solving one or more declared arithmetic equations {@code left = right}.
  *
  * <p>For each input row, the <em>participating columns</em> are the distinct
- * attribute references appearing anywhere in {@code left} or {@code right}.
- * Whichever <em>single</em> participating column is {@code NULL} in that row is
- * the unknown: {@code solve} rearranges the equation to compute it and emits the
- * completed row.  The direction is therefore per-row — the same equation fills
- * {@code principal} in one row and {@code rate} in another, depending on which is
- * blank.
+ * attribute references appearing anywhere in the equations. Those that are
+ * {@code NULL} in that row are its unknowns, so the direction is per row — the same
+ * equation fills {@code principal} in one row and {@code rate} in another, depending
+ * on which is blank.
  *
- * <p>Rows that do not have exactly one {@code NULL} participating column pass
- * through unchanged: a fully-populated row is already complete (no recompute or
- * validation), and a row with two or more blanks is underdetermined (its
- * {@code NULL}s are left intact).
+ * <p>A single equation is solved when exactly one participating column is
+ * {@code NULL}, by rearranging the formula. A list of equations is a system: a row is
+ * solved when it has as many unknowns as there are equations, every equation is
+ * linear in those unknowns, and the system is non-singular. Any other row passes
+ * through unchanged — a fully-populated row is already complete, and one that cannot
+ * be solved keeps its {@code NULL}s.
  *
- * <p>The output schema equals the input schema — {@code solve} fills holes, it
- * never adds or removes columns.  Both sides are restricted to invertible
- * arithmetic (column references, numeric literals, {@code + − × ÷} and unary
- * minus), and each participating column may appear at most once across the whole
- * equation, so the inversion is deterministic regardless of which column is the
- * runtime unknown.  This operator runs in-engine and never pushes down.
+ * <p>The output schema equals the input schema — {@code solve} fills holes, it never
+ * adds or removes columns. The sides are restricted to arithmetic (column references,
+ * numeric literals, {@code + − × ÷}, unary minus, and calls to user-defined scalar
+ * functions whose bodies are such arithmetic). With a single equation each
+ * participating column may appear at most once, so the inversion is deterministic
+ * regardless of which column is the runtime unknown. This operator runs in-engine
+ * and never pushes down.
  *
  * <p>Example: {@code SOLVE total = principal * rate (Loans)} fills whichever of
  * {@code total}, {@code principal}, or {@code rate} is blank in each loan row.
  *
- * @param left     the left-hand side of the equation; must not be null
- * @param right    the right-hand side of the equation; must not be null
- * @param input    the relation whose rows are completed; must not be null
- * @param location the source location of this node; never null
+ * @param equations the equations, in source order; never empty
+ * @param input     the relation whose rows are completed; must not be null
+ * @param location  the source location of this node; never null
  */
-public record SolveNode(Operand left, Operand right, RelNode input, SourceLocation location)
+public record SolveNode(List<SolveEquation> equations, RelNode input, SourceLocation location)
         implements RelNode {
     public SolveNode {
-        Objects.requireNonNull(left, "left");
-        Objects.requireNonNull(right, "right");
+        Objects.requireNonNull(equations, "equations");
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(location, "location");
+        equations = List.copyOf(equations);
+        if (equations.isEmpty()) {
+            throw new IllegalArgumentException("SOLVE needs at least one equation");
+        }
     }
 
     /** Convenience constructor for tests; uses {@link SourceLocation#UNKNOWN}. */
+    public SolveNode(List<SolveEquation> equations, RelNode input) {
+        this(equations, input, SourceLocation.UNKNOWN);
+    }
+
+    /** Convenience constructor for a single equation; uses {@link SourceLocation#UNKNOWN}. */
     public SolveNode(Operand left, Operand right, RelNode input) {
-        this(left, right, input, SourceLocation.UNKNOWN);
+        this(List.of(new SolveEquation(left, right)), input, SourceLocation.UNKNOWN);
     }
 
     @Override
