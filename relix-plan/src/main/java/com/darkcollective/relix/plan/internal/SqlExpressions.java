@@ -23,6 +23,7 @@ import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.ComparisonPredicate;
+import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.ElementOfPredicate;
@@ -39,6 +40,7 @@ import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.TimeOperand;
 import com.darkcollective.relix.ast.TimestampOperand;
 import com.darkcollective.relix.ast.UnaryOperand;
+import com.darkcollective.relix.function.PushdownSpelling;
 import com.darkcollective.relix.function.ScalarFunction;
 
 import java.util.ArrayList;
@@ -72,8 +74,62 @@ public final class SqlExpressions {
     interface ColumnRenderer {
         Optional<String> render(String attribute);
 
+        /**
+         * The renderers a condition inside one of this renderer's operands compares
+         * through, or empty when this renderer was built without knowing them.
+         *
+         * <p>A condition is a predicate, and a predicate's string comparisons go through
+         * the comparison renderers (see {@link #predicate(Predicate, ColumnRenderer,
+         * ColumnRenderer, Dialect, PushdownFunctions)}) so that a collation which is not
+         * exact cannot change the answer. A select list renders through the plain
+         * renderer, which does no such wrapping, so a condition written in one — the test
+         * of an {@code IIf} — needs to be told what to compare through. Empty declines
+         * the call rather than comparing under the column's collation.
+         *
+         * @return the comparison renderers, when known
+         */
+        default Optional<Comparing> comparing() {
+            return Optional.empty();
+        }
+
         /** A renderer that simply drops any qualifier prefix (single-table pushdown). */
         ColumnRenderer STRIP_QUALIFIER = attribute -> Optional.of(column(attribute));
+
+        /**
+         * {@code self}, knowing what a condition inside one of its operands compares
+         * through.
+         *
+         * @param self     how a reference renders
+         * @param equality how a reference renders where a condition tests equality
+         * @param ordering how a reference renders where a condition orders two values
+         * @return the renderer
+         */
+        static ColumnRenderer withComparing(ColumnRenderer self, ColumnRenderer equality,
+                                        ColumnRenderer ordering) {
+            Comparing comparing = new Comparing(equality, ordering);
+            return new ColumnRenderer() {
+                @Override
+                public Optional<String> render(String attribute) {
+                    return self.render(attribute);
+                }
+
+                @Override
+                public Optional<Comparing> comparing() {
+                    return Optional.of(comparing);
+                }
+            };
+        }
+    }
+
+    /**
+     * The two positions a predicate compares a string in — see
+     * {@link #predicate(Predicate, ColumnRenderer, ColumnRenderer, Dialect, PushdownFunctions)}.
+     *
+     * @param equality how a reference renders where the backend is asked whether two
+     *                 values are equal
+     * @param ordering how a reference renders where it is asked which is larger
+     */
+    record Comparing(ColumnRenderer equality, ColumnRenderer ordering) {
     }
 
     /** Translates a predicate to a SQL boolean expression for the generic dialect. */
@@ -111,17 +167,21 @@ public final class SqlExpressions {
     static Optional<String> predicate(Predicate predicate, ColumnRenderer cols,
                                       ColumnRenderer ordering, Dialect dialect,
                                       PushdownFunctions functions) {
+        // An operand of this predicate may hold a condition of its own — an IIf in a
+        // comparison — which compares exactly as this predicate does.
+        ColumnRenderer equal = ColumnRenderer.withComparing(cols, cols, ordering);
+        ColumnRenderer order = ColumnRenderer.withComparing(ordering, cols, ordering);
         return switch (predicate) {
             case ComparisonPredicate c -> binary(c.left(), sqlOp(c.operator()), c.right(),
-                    ordersValues(c.operator()) ? ordering : cols, dialect, functions);
+                    ordersValues(c.operator()) ? order : equal, dialect, functions);
             case AndPredicate a -> combine(a.left(), "AND", a.right(), cols, ordering, dialect, functions);
             case OrPredicate o -> combine(o.left(), "OR", o.right(), cols, ordering, dialect, functions);
             case NotPredicate n -> predicate(n.predicate(), cols, ordering, dialect, functions)
                     .map(p -> "(NOT " + p + ")");
-            case NullPredicate n -> operand(n.operand(), cols, dialect, functions)
+            case NullPredicate n -> operand(n.operand(), equal, dialect, functions)
                     .map(o -> o + (n.isNull() ? " IS NULL" : " IS NOT NULL"));
-            case ElementOfPredicate e -> elementOf(e, cols, dialect, functions);
-            case PatternPredicate p -> patternLike(p, cols, dialect, functions);
+            case ElementOfPredicate e -> elementOf(e, equal, dialect, functions);
+            case PatternPredicate p -> patternLike(p, equal, dialect, functions);
         };
     }
 
@@ -321,15 +381,41 @@ public final class SqlExpressions {
         if (function.isEmpty() || !PushdownFolding.mayFold(function.get())) {
             return Optional.empty();
         }
-        List<String> rendered = new ArrayList<>(f.arguments().size());
-        for (Operand argument : f.arguments()) {
-            Optional<String> sql = operand(argument, cols, dialect, functions);
+        PushdownSpelling spelling = function.get().pushdown();
+        int arity = f.arguments().size();
+        List<String> rendered = new ArrayList<>(arity);
+        for (int position = 0; position < arity; position++) {
+            Operand argument = f.arguments().get(position);
+            Optional<String> sql = spelling.isCondition(position, arity)
+                    ? condition(argument, cols, dialect, functions)
+                    : operand(argument, cols, dialect, functions);
             if (sql.isEmpty()) {
                 return Optional.empty();
             }
             rendered.add(sql.get());
         }
-        return function.get().pushdown().render(dialect.pushdownTarget(), rendered);
+        return spelling.render(dialect.pushdownTarget(), rendered);
+    }
+
+    /**
+     * An argument a spelling writes as a condition, rendered as a predicate.
+     *
+     * <p>Only a {@link ConditionOperand} is one. Anything else in that position — a
+     * column, a call — is a value whose type this renderer cannot see, and a value the
+     * engine would reject as a condition might be one a backend accepts, which would make
+     * the folded query answer where the unfolded one raises. A boolean column is
+     * therefore written as a comparison, {@code hot = true}, to fold.
+     *
+     * <p>The predicate compares through the renderers {@code cols} knows (see
+     * {@link ColumnRenderer#comparing()}), and declines when it knows none.
+     */
+    private static Optional<String> condition(Operand argument, ColumnRenderer cols, Dialect dialect,
+                                              PushdownFunctions functions) {
+        if (!(argument instanceof ConditionOperand c)) {
+            return Optional.empty();
+        }
+        return cols.comparing().flatMap(comparing ->
+                predicate(c.predicate(), comparing.equality(), comparing.ordering(), dialect, functions));
     }
 
 }

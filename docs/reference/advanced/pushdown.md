@@ -187,7 +187,7 @@ division would have raised where the multiplication has an answer.
 ## SQL: which functions fold
 
 This is the sharp edge, and it is worth knowing before you write a filter over a
-large table. Of the built-in scalar functions, **twenty-one** have a SQL spelling:
+large table. Of the built-in scalar functions, **twenty-seven** have a SQL spelling:
 
 | Function | SQL |
 |---|---|
@@ -195,6 +195,11 @@ large table. Of the built-in scalar functions, **twenty-one** have a SQL spellin
 | `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL, DuckDB and Db2, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect, SQLite and SQL Server decline it |
 | `Abs`, `Int`, `Ceil`, `Sgn`, `Round` | `ABS`, `FLOOR`, `CEILING`, `SIGN`, `ROUND` (`ROUND(e, 0)` on SQL Server); SQLite, which rounds in floating point, declines `Int`, `Ceil` and `Round` |
 | `Fix` | `TRUNCATE(e, 0)` on MySQL, `TRUNC(e)` on PostgreSQL, DuckDB and Db2, `ROUND(e, 0, 1)` on SQL Server; the generic dialect and SQLite decline it |
+| `Mod` | `MOD(x, y)`; MySQL, SQLite and SQL Server decline it |
+| `LEAST`, `GREATEST` | `LEAST(…)`, `GREATEST(…)` on **MySQL and Db2**, the two that propagate a NULL argument as relix does; nowhere else |
+| `IIf` | `CASE WHEN c THEN a WHEN NOT (c) THEN b END` |
+| `Switch` | `CASE WHEN c1 THEN v1 … [ELSE default] END` |
+| `Choose` | `CASE i WHEN 1 THEN v1 WHEN 2 THEN v2 … END` |
 | `Coalesce`, `Nz` (two-argument form) | `COALESCE(…)` |
 | `IsNull` | `(e IS NULL)`; `(CASE WHEN e IS NULL THEN 1 ELSE 0 END)` on SQL Server |
 | `Replace` | `REPLACE(s, find, replacement)`, the string under a binary collation on SQL Server |
@@ -258,10 +263,19 @@ The cost is worth pricing. A `σ` over `NOW()` cannot fold, so it reads its inpu
 and filters here. Where that matters, compute the instant in the host program and
 compare against a `TIMESTAMP` literal, which folds and means exactly what it says.
 
-Every other built-in — the whole string family (`UCase`, `Trim`, `Left`,
-`Replace`, `Len`, …), the whole math family (`Abs`, `Round`, `Power`, …), the
-conversions (`CStr`, `CInt`, `CDbl`), the conditionals (`IIf`, `Nz`,
-`Coalesce`), and the type checks — is evaluated by the engine. So
+The three conditionals each become a `CASE`, and two details decide whether a call
+folds. A condition has to be written *as* one — a comparison, a null test, or `∧`,
+`∨` and `¬` over them — because the planner cannot see whether a bare column holds
+booleans: `IIf(hot, 1, 0)` is evaluated here, and `IIf(hot = true, 1, 0)` folds. And a
+condition compares strings exactly as a `WHERE` clause does, so under a
+case-insensitive collation `π cid, IIf(name = 'ada', 1, 0) → v (Customers)` still
+matches only `ada`. `IIf` tests the negation in a second `WHEN` rather than writing an
+`ELSE`, because a NULL condition answers NULL where an `ELSE` would take the false
+branch. Inside an aggregate's or a window's argument, a conditional is evaluated here.
+
+Every other built-in is evaluated by the engine — most of the string family
+(`UCase`, `Trim`, `InStr`, …), the transcendentals, the conversions (`CStr`, `CInt`,
+`CDbl`) and `IsNumeric` among them. So
 `σ UCase(name) = 'ADA' (Customers)` reads the whole table and filters it here,
 while `σ name = 'Ada' (Customers)` filters in the database. When a filter over a
 large table has to be case-insensitive, consider a source-side column or a

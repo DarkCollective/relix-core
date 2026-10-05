@@ -374,6 +374,14 @@ final class MongoExpressionsTest {
         }
 
         @Test
+        @DisplayName("a call with a condition argument is not pushable, whatever is in that position")
+        void conditionArgumentDeclines() {
+            assertThat(expr(func("IIf", condition(gt(attr("t"), num("30"))), str("hot"), str("cold"))))
+                    .isEmpty();
+            assertThat(expr(func("IIf", attr("hot"), str("a"), str("b")))).isEmpty();
+        }
+
+        @Test
         @DisplayName("a name no library offers is not pushable")
         void unknownFunction() {
             assertThat(expr(func("NoSuchFunction",attr("name"))))

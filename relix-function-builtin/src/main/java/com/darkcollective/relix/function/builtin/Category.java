@@ -209,26 +209,17 @@ final class Category {
      * A special form: its arguments arrive unevaluated, and one it does not ask for is
      * never evaluated.
      *
-     * @param returnTypes the result type for a call's argument types — the reason these
-     *                    three need more than a declared return type, since what they
-     *                    return is one of the arguments
-     */
-    ScalarFunction lazy(String name, ScalarType returns, Set<FunctionProperty> properties,
-                        List<ParameterDefinition> parameters, Arity arity,
-                        Function<List<ScalarType>, ScalarType> returnTypes, Deferred body) {
-        return lazy(name, returns, properties, parameters, arity, returnTypes,
-                PushdownSpelling.NONE, body);
-    }
-
-    /**
-     * A special form a backend can also evaluate itself.
-     *
      * <p>Laziness is a property of <em>this</em> evaluator, not of the call: a backend
      * asked to evaluate a `CASE` skips the branch it does not take for its own reasons,
      * and the arguments the spelling is handed are rendered rather than evaluated. So
      * there is nothing here for a spelling to be careful about that a strict function's
      * is not — except that an argument with a side effect would be a different question,
      * and relix has none.
+     *
+     * @param returnTypes the result type for a call's argument types — the reason these
+     *                    need more than a declared return type, since what they return
+     *                    is one of the arguments
+     * @param pushdown    how a backend writes the call, or {@link PushdownSpelling#NONE}
      */
     ScalarFunction lazy(String name, ScalarType returns, Set<FunctionProperty> properties,
                         List<ParameterDefinition> parameters, Arity arity,
