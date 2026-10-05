@@ -421,8 +421,10 @@ shuffle           ::= "SHUFFLE" ( "SEED" INTEGER )? input
 roll              ::= "ROLL" ( "BY" operand )? ( "SEED" INTEGER )? input
 
 /* SOLVE total = price * qty (R).  Several equations solve for as many blanks:
-   SOLVE { total = a + b, diff = a - b } (R) */
-solve             ::= "SOLVE" ( equation | "{" equation ( "," equation )* "}" ) input
+   SOLVE { total = a + b, diff = a - b } (R).  PER fits across each group:
+   SOLVE y = slope * x + intercept PER series (R) */
+solve             ::= "SOLVE" ( equation | "{" equation ( "," equation )* "}" )
+                      per_identifiers? input
 equation          ::= operand "=" operand
 
 /* OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(weight) <= 50 PER owner (Items)

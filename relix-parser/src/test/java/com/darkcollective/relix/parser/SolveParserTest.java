@@ -103,6 +103,28 @@ final class SolveParserTest extends ParserTestSupport {
     }
 
     @Test
+    void parsesPerKeysAfterOneEquation() {
+        assertParsesTo("SOLVE y = a * x PER series, run (Points)",
+                solve(List.of(equation(attr("y"),
+                                arith(attr("a"), ArithmeticOperator.MULTIPLY, attr("x")))),
+                        List.of("series", "run"), rel("Points")));
+    }
+
+    @Test
+    void parsesPerKeysAfterASystem() {
+        RelNode fitted = solve(List.of(equation(attr("x"), attr("y")), equation(attr("u"), attr("v"))),
+                List.of("g"), rel("R"));
+        assertParsesTo("SOLVE { x = y, u = v } PER g (R)", fitted);
+        assertPrettyPrints(fitted, "SOLVE { x = y, u = v } PER g (R)");
+        assertParsesTo(fitted.prettyPrint(), fitted);
+    }
+
+    @Test
+    void failsOnPerWithoutAKey() {
+        assertParseError("SOLVE x = y PER (R)").hasMessageContaining("PER");
+    }
+
+    @Test
     void failsOnAnUnclosedSystem() {
         assertParseError("SOLVE { x = y (R)").hasMessageContaining("'}'");
     }

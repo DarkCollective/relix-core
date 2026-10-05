@@ -36,6 +36,7 @@ import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.ReservoirSampleNode;
 import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.ShuffleNode;
+import com.darkcollective.relix.ast.SolveNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
 import com.darkcollective.relix.ast.TopKNode;
@@ -171,6 +172,7 @@ public final class BoundednessChecker {
             case AggregationNode ignored         -> "γ (GROUP)";
             case UniversalNode ignored           -> "∀ (FORALL)";
             case OptimizeNode ignored            -> "OPTIMIZE";
+            case SolveNode ignored               -> "SOLVE … PER";
             case TopKNode ignored                -> "TOP";
             case ReservoirSampleNode ignored     -> "SAMPLE … ROWS";
             case CoverNode ignored               -> "COVER";

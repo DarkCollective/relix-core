@@ -219,20 +219,24 @@ public final class DisplayLabels {
 
     /**
      * Renders a {@code SOLVE} operator's equations — {@code SOLVE l = r} for one, and the
-     * braced list {@code SOLVE &#123; l1 = r1, l2 = r2 &#125;} for several. The rendering is
-     * also the operator's source spelling, so it parses back to the same node.
+     * braced list {@code SOLVE &#123; l1 = r1, l2 = r2 &#125;} for several — followed by
+     * {@code PER k, …} when it fits per group. The rendering is also the operator's
+     * source spelling, so it parses back to the same node.
      *
-     * @param equations the equations, never empty; must not be null
+     * @param equations    the equations, never empty; must not be null
+     * @param groupingKeys the {@code PER} columns, possibly empty; must not be null
      * @return the rendered label
      */
-    public static String solve(List<SolveEquation> equations) {
+    public static String solve(List<SolveEquation> equations, List<String> groupingKeys) {
         Objects.requireNonNull(equations, "equations");
-        if (equations.size() == 1) {
-            return "SOLVE " + equation(equations.getFirst());
-        }
-        return equations.stream()
-                .map(DisplayLabels::equation)
-                .collect(Collectors.joining(", ", "SOLVE { ", " }"));
+        Objects.requireNonNull(groupingKeys, "groupingKeys");
+        String rendered = equations.size() == 1
+                ? "SOLVE " + equation(equations.getFirst())
+                : equations.stream()
+                        .map(DisplayLabels::equation)
+                        .collect(Collectors.joining(", ", "SOLVE { ", " }"));
+        return groupingKeys.isEmpty() ? rendered
+                : rendered + " PER " + String.join(", ", groupingKeys);
     }
 
     private static String equation(SolveEquation equation) {

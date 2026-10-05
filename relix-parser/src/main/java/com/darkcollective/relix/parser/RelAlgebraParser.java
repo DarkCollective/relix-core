@@ -1601,7 +1601,7 @@ public final class RelAlgebraParser {
     }
 
     /**
-     * Parses a goal-seek operator: {@code SOLVE left = right (R)}, e.g.
+     * Parses a goal-seek operator: {@code SOLVE left = right [PER k, …] (R)}, e.g.
      * {@code SOLVE total = principal * rate (Loans)}, or a system of equations in
      * braces, {@code SOLVE &#123; a = b, c = d &#125; (R)}, separated by commas as every
      * list inside an expression is — {@code ;} ends a statement. The sides are
@@ -1621,8 +1621,11 @@ public final class RelAlgebraParser {
         } else {
             equations.add(parseSolveEquation());
         }
+        List<String> keys = match(TokenType.PER)
+                ? parseIterateNames("Expected a key column name after 'PER'")
+                : List.of();
         RelNode input = parseParenthesizedRelation("Expected '(' after the SOLVE equation");
-        return new SolveNode(equations, input, loc(opTok));
+        return new SolveNode(equations, keys, input, loc(opTok));
     }
 
     private SolveEquation parseSolveEquation() {

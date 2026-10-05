@@ -793,6 +793,7 @@ final class PhysicalPlanPrinterTest {
                                 new com.darkcollective.relix.ast.AttributeOperand("principal"),
                                 com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
                                 new com.darkcollective.relix.ast.AttributeOperand("rate")))),
+                List.of(),
                 sqlScan("SELECT x FROM t"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
                 SOLVE total = principal * rate
@@ -801,7 +802,7 @@ final class PhysicalPlanPrinterTest {
     }
 
     @Test
-    @DisplayName("a solve node over a system shows every equation")
+    @DisplayName("a solve node over a system shows every equation, and its PER keys")
     void solveSystemLabel() {
         PhysicalNode plan = new PhysicalNode.Solve(
                 SCHEMA,
@@ -811,9 +812,10 @@ final class PhysicalPlanPrinterTest {
                         new com.darkcollective.relix.ast.SolveEquation(
                                 new com.darkcollective.relix.ast.AttributeOperand("u"),
                                 new com.darkcollective.relix.ast.AttributeOperand("v"))),
+                List.of("grp", "batch"),
                 sqlScan("SELECT x FROM t"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
-                SOLVE { x = y, u = v }
+                SOLVE { x = y, u = v } PER grp, batch
                 └─ PushedScan [jdbc/db] SELECT x FROM t
                 """);
     }

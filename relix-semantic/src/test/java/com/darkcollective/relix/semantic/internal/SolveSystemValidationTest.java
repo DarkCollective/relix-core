@@ -149,4 +149,23 @@ final class SolveSystemValidationTest {
             assertThat(analyze(src)).hasErrorContaining("cannot be inverted");
         }
     }
+
+    @Nested
+    @DisplayName("PER")
+    final class Per {
+
+        @Test
+        @DisplayName("accepts keys the input has")
+        void acceptsKnownKeys() {
+            assertThat(analyze(PAIRS + "query { SOLVE total = a + b PER diff (Pairs) };"))
+                    .hasNoErrors();
+        }
+
+        @Test
+        @DisplayName("reports a key the input does not have")
+        void reportsAnUnknownKey() {
+            assertThat(analyze(PAIRS + "query { SOLVE total = a + b PER batch (Pairs) };"))
+                    .hasErrorContaining("PER key").hasErrorContaining("batch");
+        }
+    }
 }
