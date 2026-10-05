@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.function.builtin;
 
+import com.darkcollective.relix.function.PushdownSpelling;
 import com.darkcollective.relix.function.PushdownTarget;
 import com.darkcollective.relix.function.ScalarFunction;
 import org.junit.jupiter.api.DisplayName;
@@ -603,8 +604,55 @@ final class PushdownSpellingsTest {
     }
 
     @Nested
-    @DisplayName("Conditional — the multi-branch forms fold to CASE")
+    @DisplayName("Conditional — IIf, Switch and Choose fold to CASE")
     final class Conditional {
+
+        @Test
+        @DisplayName("IIf tests its condition and the negation, with no ELSE, in every SQL dialect")
+        void iifTwoWayCase() {
+            for (PushdownTarget target : List.of(GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE, SQLSERVER, DB2)) {
+                assertThat(render("IIf", target, "(a > 1)", "'x'", "'y'"))
+                        .as("IIf on %s", target)
+                        .contains("CASE WHEN (a > 1) THEN 'x' WHEN NOT ((a > 1)) THEN 'y' END");
+            }
+        }
+
+        @Test
+        @DisplayName("IIf's condition is its first argument, and its branches are values")
+        void iifCondition() {
+            PushdownSpelling iif = BuiltinCalls.function("IIf").pushdown();
+            assertThat(iif.isCondition(0, 3)).isTrue();
+            assertThat(iif.isCondition(1, 3)).isFalse();
+            assertThat(iif.isCondition(2, 3)).isFalse();
+        }
+
+        @Test
+        @DisplayName("Switch's conditions are the even positions, and a trailing default is a value")
+        void switchConditions() {
+            PushdownSpelling sw = BuiltinCalls.function("Switch").pushdown();
+            // Switch(c1, v1, c2, v2)
+            assertThat(List.of(0, 1, 2, 3).stream().map(i -> sw.isCondition(i, 4)))
+                    .containsExactly(true, false, true, false);
+            // Switch(c1, v1, c2, v2, default)
+            assertThat(List.of(0, 1, 2, 3, 4).stream().map(i -> sw.isCondition(i, 5)))
+                    .containsExactly(true, false, true, false, false);
+        }
+
+        @Test
+        @DisplayName("Choose has no condition — its selector is a value it compares")
+        void chooseHasNoCondition() {
+            PushdownSpelling choose = BuiltinCalls.function("Choose").pushdown();
+            assertThat(List.of(0, 1, 2).stream().map(i -> choose.isCondition(i, 3)))
+                    .containsOnly(false);
+        }
+
+        @Test
+        @DisplayName("IIf declines MongoDB, and any argument count but three")
+        void iifDeclines() {
+            assertThat(render("IIf", MONGO, "c", "'x'", "'y'")).isEmpty();
+            assertThat(render("IIf", POSTGRES, "c", "'x'")).isEmpty();
+            assertThat(render("IIf", POSTGRES, "c", "'x'", "'y'", "'z'")).isEmpty();
+        }
 
         @Test
         @DisplayName("Switch is a searched CASE in every SQL dialect")
@@ -647,7 +695,7 @@ final class PushdownSpellingsTest {
         List<String> spelled = List.of("year", "month", "day", "hour", "minute", "second",
                 "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "mod", "replace",
                 "coalesce", "nz", "isnull", "len", "left", "right", "mid", "least", "greatest",
-                "switch", "choose");
+                "iif", "switch", "choose");
 
         List<String> unexpected = BuiltinCalls.all().stream()
                 .filter(fn -> !spelled.contains(fn.signature().canonicalName()))

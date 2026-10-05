@@ -34,6 +34,7 @@ import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.TimestampOperand;
 import com.darkcollective.relix.ast.UnaryOperand;
+import com.darkcollective.relix.function.PushdownSpelling;
 import com.darkcollective.relix.function.PushdownTarget;
 import com.darkcollective.relix.function.ScalarFunction;
 import com.darkcollective.relix.json.JsonStrings;
@@ -247,15 +248,23 @@ final class MongoExpressions {
         if (function.isEmpty() || !PushdownFolding.mayFold(function.get())) {
             return Optional.empty();
         }
-        List<String> rendered = new ArrayList<>(f.arguments().size());
-        for (Operand argument : f.arguments()) {
-            Optional<String> json = expression(argument, functions);
+        PushdownSpelling spelling = function.get().pushdown();
+        int arity = f.arguments().size();
+        List<String> rendered = new ArrayList<>(arity);
+        for (int position = 0; position < arity; position++) {
+            // A condition argument would have to be written as an aggregation-expression
+            // predicate, which this renderer does not produce, so a call with one stays
+            // in the engine rather than handing a spelling a value it asked not to get.
+            if (spelling.isCondition(position, arity)) {
+                return Optional.empty();
+            }
+            Optional<String> json = expression(f.arguments().get(position), functions);
             if (json.isEmpty()) {
                 return Optional.empty();
             }
             rendered.add(json.get());
         }
-        return function.get().pushdown().render(PushdownTarget.mongo(), rendered);
+        return spelling.render(PushdownTarget.mongo(), rendered);
     }
 
 }

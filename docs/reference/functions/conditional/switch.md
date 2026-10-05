@@ -31,9 +31,10 @@ these five are the only built-ins that are.
 Switch folds into a backend **searched `CASE`** — `CASE WHEN c1 THEN v1 … [ELSE
 default] END` — on every SQL dialect, so a query over a database source pushes it down.
 The two match exactly, skip-on-NULL included: a `CASE` arm whose condition is unknown
-(NULL) is not taken, just as Switch tries the next pair. (The two-way `IIf` is *not*
-pushed down, because its NULL condition yields NULL where a `CASE … ELSE` would take the
-else branch.) MongoDB, which has no `CASE`, evaluates it in-engine.
+(NULL) is not taken, just as Switch tries the next pair. A condition folds when it is
+written as one — a comparison, a null test, or a connective over them — so
+`Switch(hot = true, …)` folds where `Switch(hot, …)` over a boolean column is evaluated
+in-engine. MongoDB, which has no `CASE`, evaluates it in-engine.
 
 # Examples:
 Size band from two thresholds, with a default:
