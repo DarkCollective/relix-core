@@ -32,6 +32,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,6 +41,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A {@link CatalogProvider} that introspects table schemas from a live database
@@ -52,10 +54,15 @@ import java.util.TreeMap;
  * unknown table) yields {@link Optional#empty()} rather than throwing, so analysis
  * degrades to a clear "schema unavailable" diagnostic.
  *
- * <p>Statistics ({@link #tableStatistics}) supply a {@code COUNT(*)} row count, the
- * primary-key columns, and per-column distinct/null counts (gathered in one
- * aggregate query), all read on demand.  Each lookup opens a fresh connection and
- * performs no caching; connection reuse arrives in a later phase.
+ * <p>Statistics ({@link #tableStatistics}) are, by default, the database's own
+ * <em>estimates</em> — the row count and per-column figures its statistics collector
+ * keeps for its own planner ({@link StatisticsEstimates}) — with the primary key from
+ * metadata. Reading them never touches the table, so analysing a script that names a
+ * table of ten billion rows costs what naming one of ten does. A provider built
+ * {@linkplain #JdbcCatalogProvider(ConnectionProvider, Duration) for exact statistics}
+ * counts instead ({@code COUNT(*)}, and one {@code COUNT}/{@code COUNT(DISTINCT)} pair
+ * per column), each statement bounded by a timeout. Either way a table's statistics are
+ * gathered once per provider, which a session holds for its life.
  *
  * <p>Connections come from a {@link ConnectionProvider}, so a connection whose
  * coordinates are not a URL can still be introspected.  One analyzer holds one
@@ -67,6 +74,9 @@ import java.util.TreeMap;
 public final class JdbcCatalogProvider implements CatalogProvider {
 
     private final ConnectionProvider connections;
+    /** The bound on each counting statement; null for estimates, which count nothing. */
+    private final Duration exactTimeout;
+    private final Map<List<Object>, Optional<RelationStatistics>> statistics = new ConcurrentHashMap<>();
 
     /** Creates a provider opening connections from {@link ConnectionProvider#FROM_URL}. */
     public JdbcCatalogProvider() {
@@ -80,6 +90,26 @@ public final class JdbcCatalogProvider implements CatalogProvider {
      */
     public JdbcCatalogProvider(ConnectionProvider connections) {
         this.connections = Objects.requireNonNull(connections, "connections");
+        this.exactTimeout = null;
+    }
+
+    /**
+     * Creates a provider that counts a table's rows and columns rather than reading the
+     * database's estimates.
+     *
+     * <p>Counting reads the whole table, once per column for the distinct counts, so each
+     * statement is given {@code timeout}; one that runs out leaves the figure unknown.
+     *
+     * @param connections the source of introspection connections; must not be null
+     * @param timeout     the bound on each counting statement; must be positive
+     */
+    public JdbcCatalogProvider(ConnectionProvider connections, Duration timeout) {
+        this.connections = Objects.requireNonNull(connections, "connections");
+        Objects.requireNonNull(timeout, "timeout");
+        if (timeout.isNegative() || timeout.isZero()) {
+            throw new IllegalArgumentException("timeout must be positive, was: " + timeout);
+        }
+        this.exactTimeout = timeout;
     }
 
     @Override
@@ -99,22 +129,47 @@ public final class JdbcCatalogProvider implements CatalogProvider {
     @Override
     public Optional<RelationStatistics> tableStatistics(
             ConnectionDeclaration connection, String table) {
+        // Keyed by what reaches the table rather than by the declaration record, whose
+        // source location would make the same table declared twice two entries.
+        List<Object> key = List.of(connection.name().toLowerCase(java.util.Locale.ROOT),
+                connection.properties(), table);
+        Optional<RelationStatistics> known = statistics.get(key);
+        if (known == null) {
+            known = gather(connection, table);
+            statistics.putIfAbsent(key, known);
+        }
+        return known;
+    }
+
+    private Optional<RelationStatistics> gather(ConnectionDeclaration connection, String table) {
         try (Connection conn = connections.connectionFor(connection)) {
             DatabaseMetaData meta = conn.getMetaData();
             String resolved = resolveTableName(meta, table);
             if (resolved == null) {
                 return Optional.empty();
             }
+            List<List<String>> keys = primaryKey(meta, resolved);
+            if (exactTimeout == null) {
+                OptionalLong rows = StatisticsEstimates.rows(conn, resolved);
+                Map<String, ColumnStatistics> columnStats = StatisticsEstimates.columns(conn, resolved, rows);
+                // Column figures alone are not a reason to report statistics: every
+                // database that keeps them keeps a row count too, which they are read
+                // against.
+                return rows.isEmpty() && keys.isEmpty()
+                        ? Optional.empty()
+                        : Optional.of(new RelationStatistics(rows, columnStats, keys));
+            }
             // The name as the catalog stores it, written as a pushed query writes it, so a
             // table whose name is not a plain identifier is counted rather than skipped.
             Dialect dialect = Dialect.of(connection);
-            OptionalLong rows = rowCount(conn, dialect, resolved);
+            int seconds = (int) Math.max(1, Math.min(Integer.MAX_VALUE, exactTimeout.toSeconds()));
+            OptionalLong rows = rowCount(conn, dialect, resolved, seconds);
             if (rows.isEmpty()) {
                 return Optional.empty();
             }
             Map<String, ColumnStatistics> columnStats = columnStatistics(
-                    conn, dialect, resolved, readColumns(meta, resolved), rows.getAsLong());
-            return Optional.of(new RelationStatistics(rows, columnStats, primaryKey(meta, resolved)));
+                    conn, dialect, resolved, readColumns(meta, resolved), rows.getAsLong(), seconds);
+            return Optional.of(new RelationStatistics(rows, columnStats, keys));
         } catch (SQLException e) {
             return Optional.empty();
         }
@@ -128,7 +183,7 @@ public final class JdbcCatalogProvider implements CatalogProvider {
      */
     private static Map<String, ColumnStatistics> columnStatistics(
             Connection conn, Dialect dialect, String table, List<ColumnDefinition> columns,
-            long rowCount) {
+            long rowCount, int timeoutSeconds) {
         if (columns.isEmpty()) {
             return Map.of();
         }
@@ -142,7 +197,7 @@ public final class JdbcCatalogProvider implements CatalogProvider {
         }
         sql.append(" FROM ").append(dialect.table(table));
 
-        try (Statement stmt = conn.createStatement();
+        try (Statement stmt = timed(conn, timeoutSeconds);
              ResultSet rs = stmt.executeQuery(sql.toString())) {
             if (!rs.next()) {
                 return Map.of();
@@ -191,9 +246,16 @@ public final class JdbcCatalogProvider implements CatalogProvider {
         return columns;
     }
 
-    /** Runs {@code SELECT COUNT(*)} on a resolved table name; empty on failure. */
-    private static OptionalLong rowCount(Connection conn, Dialect dialect, String table) {
-        try (Statement st = conn.createStatement();
+    /** A statement the database abandons after {@code seconds}. */
+    private static Statement timed(Connection conn, int seconds) throws SQLException {
+        Statement stmt = conn.createStatement();
+        stmt.setQueryTimeout(seconds);
+        return stmt;
+    }
+
+    /** Runs {@code SELECT COUNT(*)} on a resolved table name; empty on failure or timeout. */
+    private static OptionalLong rowCount(Connection conn, Dialect dialect, String table, int timeoutSeconds) {
+        try (Statement st = timed(conn, timeoutSeconds);
              ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM " + dialect.table(table))) {
             return rs.next() ? OptionalLong.of(rs.getLong(1)) : OptionalLong.empty();
         } catch (SQLException e) {
