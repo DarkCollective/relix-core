@@ -24,6 +24,7 @@ import com.darkcollective.relix.lang.ast.source.GeneratorSourceConfig;
 import com.darkcollective.relix.lang.ast.source.HttpSourceConfig;
 import com.darkcollective.relix.lang.ast.source.JsonFileSourceConfig;
 import com.darkcollective.relix.lang.ast.SourceDeclaration;
+import com.darkcollective.relix.processor.internal.QueryCancellation;
 import com.darkcollective.relix.processor.internal.DataSourceConnector;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
@@ -120,6 +121,8 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
      * @param connectors           the caller's own connectors, in priority order; must not be null
      * @param files                the session's file resolver, which hands a file-backed
      *                             connector a local path; must not be null
+     * @param cancellation         the execution this connector serves, whose cancellation
+     *                             stops the statements it runs; must not be null
      */
     CompositeDataSourceConnector(SemanticModel model, Path baseDir, boolean fromDeclaringFile,
                                  DriverProvisioner driverProvisioner,
@@ -127,10 +130,12 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
                                  GeneratorRegistry generators,
                                  ConnectionPool pool,
                                  List<RelixConnector> connectors,
-                                 FileResolver files) {
+                                 FileResolver files,
+                                 QueryCancellation cancellation) {
         this(model, baseDir, fromDeclaringFile, connectorProvisioner, generators,
                 new JdbcDataSourceConnector(model, Objects.requireNonNull(pool, "pool"),
-                        Objects.requireNonNull(driverProvisioner, "driverProvisioner")),
+                        Objects.requireNonNull(driverProvisioner, "driverProvisioner"),
+                        Objects.requireNonNull(cancellation, "cancellation")),
                 connectors, files);
     }
 

@@ -398,26 +398,43 @@ Set it when you know what your recursion should cost.
 
 ### Stopping a query
 
-Interrupt the thread running it. The engine checks between rows, and between each row a
-blocking operator pulls while filling its buffer, so a cancellation lands promptly rather
-than at the end of a drain:
+From another thread, ask the session. `cancel()` stops every query the session is running
+now — a stream being read, a `toList()` or `run()` in progress, a `stream()` still starting
+— and each one fails with a `QueryExecutionException` saying it was cancelled:
 
 ```java
-Thread worker = new Thread(() -> relix.relation("τ amount (Orders)").toList());
+import com.darkcollective.relix.embed.QueryExecutionException;
+
+Thread worker = new Thread(() -> {
+    try {
+        relix.relation("τ amount (Orders)").toList();
+    } catch (QueryExecutionException cancelled) {
+        // "query cancelled"
+    }
+});
 worker.start();
-worker.interrupt();
+relix.cancel();
 ```
 
-That is the mechanism the platform already routes everything through — `Future.cancel(true)`,
-`ExecutorService.shutdownNow`, and a pool being torn down all raise the same flag — so
-there is nothing new to hold. The query stops with an `QueryExecutionException` and the flag is
-left raised, so a thread you hand back to a pool still knows it was interrupted.
+A statement a database is executing for the query is cancelled too, through JDBC's
+`Statement.cancel()`, so a long query pushed down to a database stops there rather than
+running on after you have given up on it. Only queries already running are affected: the
+session stays open, and the next query runs normally. A database that cannot cancel a
+statement finishes it, and the query still stops when the statement returns.
 
-One limit is worth stating plainly: a thread blocked inside a JDBC driver is not
-interruptible. Where the query has been pushed down, the engine is waiting on the database
-and notices only when it answers. Closing the stream early is the other lever, and it works
-for the same reason — the engine is pull-based end to end, so nothing runs that nobody
-asked for.
+Interrupting the thread running a query works too. The engine checks between rows, and
+between each row a blocking operator pulls while filling its buffer, so a cancellation
+lands promptly rather than at the end of a drain. That is the mechanism the platform
+already routes everything through — `Future.cancel(true)`, `ExecutorService.shutdownNow`,
+and a pool being torn down all raise the same flag — and the flag is left raised, so a
+thread you hand back to a pool still knows it was interrupted. What an interrupt cannot
+reach is a thread blocked inside a JDBC driver, which does not answer to it; `cancel()`
+is the way to stop that.
+
+Closing a stream early is the third lever, and it works for the same reason as the
+others: the engine is pull-based end to end, so nothing runs that nobody asked for. A
+database result closed before its last row has its statement cancelled as it is closed,
+so the database stops producing rows nobody will read.
 
 ### What a run actually buffered
 

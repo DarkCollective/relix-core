@@ -57,6 +57,7 @@ import com.darkcollective.relix.optimizer.internal.QueryOptimizer;
 import com.darkcollective.relix.plan.PlannedQuery;
 import com.darkcollective.relix.plan.internal.PhysicalPlanJson;
 import com.darkcollective.relix.plan.internal.PhysicalPlanPrinter;
+import com.darkcollective.relix.processor.internal.QueryCancellation;
 import com.darkcollective.relix.processor.internal.DataSourceConnector;
 import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
@@ -1752,13 +1753,17 @@ public final class Relation {
         // weighted semirings read the column, both through the same call.
         BaseAnnotator<K> annotator = BaseAnnotator.forSemiring(semiring, weightColumn);
         SemanticModel run = executionModel();
-        try (DataSourceConnector connector = session.openConnector(run)) {
+        QueryCancellation cancellation = session.beginQuery();
+        try (DataSourceConnector connector = session.openConnector(run, cancellation)) {
             return new ProvenanceEvaluator()
-                    .evaluate(node, semiring, context(run, connector, QueryEventListener.NONE), annotator);
+                    .evaluate(node, semiring,
+                            context(run, connector, QueryEventListener.NONE, cancellation), annotator);
         } catch (RuntimeException e) {
             // Reads every row before it can annotate one, so there is no lazy window here:
             // the single catch covers the whole of it.
             throw asFailure(e);
+        } finally {
+            session.endQuery(cancellation);
         }
     }
 
@@ -1773,20 +1778,27 @@ public final class Relation {
         session.requireOpen();
         requireResolvable();
         SemanticModel run = executionModel();
-        DataSourceConnector connector = session.openConnector(run);
+        // Tracked from before planning, because a blocking operator and a statement pushed
+        // to a database both run while this method is still building the stream: a
+        // cancellation has to be able to reach the query before the caller holds anything
+        // they could close.
+        QueryCancellation cancellation = session.beginQuery();
+        DataSourceConnector connector = session.openConnector(run, cancellation);
         try {
             // Registered with the session, so a stream the caller walks away from is still
             // closed when the session is — the connection it borrowed is otherwise beyond
             // the pool's reach, which closes what is idle and not what is out on loan.
             Stream<Tuple> rows = guarded(new RelNodeExecutor()
                     .withObservedCardinalities(session.observedExpressions())
-                    .execute(node, context(run, connector, observing(listener)))
+                    .execute(node, context(run, connector, observing(listener), cancellation))
                     .map(Tuple::of)
-                    .onClose(connector::close));
+                    .onClose(connector::close)
+                    .onClose(() -> session.endQuery(cancellation)));
             OptionalInt cap = session.maxOutputRows();
             return session.track(cap.isPresent() ? capped(rows, cap.getAsInt(), listener) : rows);
         } catch (RuntimeException e) {
             connector.close();
+            session.endQuery(cancellation);
             throw asFailure(e);
         }
     }
@@ -2004,7 +2016,7 @@ public final class Relation {
 
     /** The context an execution runs in: its resolved model, the session's bindings. */
     private ExecutionContext context(SemanticModel run, DataSourceConnector connector,
-                                     QueryEventListener listener) {
+                                     QueryEventListener listener, QueryCancellation cancellation) {
         return ExecutionContext.of(run, connector)
                 .withClock(session.clock())
                 // The session's cap, not the context's default of unlimited. Every guard
@@ -2022,6 +2034,7 @@ public final class Relation {
                 // yields a row, a selection over an endless generator, runs for ever.
                 .withMaxProcessedRows(session.maxProcessedRows())
                 .withTimeout(session.timeout())
+                .withCancellation(cancellation)
                 .withListener(listener);
     }
 

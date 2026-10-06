@@ -81,7 +81,7 @@ public final class PhysicalExecutor {
             // Guarded at the root, so every row the consumer pulls passes the check;
             // MaterializationBudget carries the same check into the operators that
             // drain an input without yielding, which the root cannot reach.
-            return Cancellation.interruptible(execute(node, eval))
+            return Cancellation.interruptible(execute(node, eval), ctx.cancellation())
                     .onClose(eval.spools()::close);
         } catch (RuntimeException failed) {
             // A blocking operator runs *here*, during this call, rather than on the first
