@@ -177,7 +177,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
                 return Stream.empty();
             }
             List<String> headers = parseCsvLine(lines.get(0));
-            colMapping = buildHeaderMapping(headers, schema, path);
+            colMapping = buildHeaderMapping(headers, schema, "CSV file '" + path + "'");
             startRow   = 1;
         } else {
             colMapping = positionalMapping(schema.width());
@@ -188,7 +188,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
             String line = lines.get(i);
             if (line.isBlank()) continue;   // skip blank / comment-style lines
             List<String> cells = parseCsvLine(line);
-            rows.add(buildRow(cells, colMapping, schema, path, i + 1));
+            rows.add(buildRow(cells, colMapping, schema, "CSV '" + path + "'", i + 1));
         }
         return rows.stream();
     }
@@ -202,7 +202,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
      *
      * @throws EvaluationException if a schema column has no matching header
      */
-    private static int[] buildHeaderMapping(List<String> headers, Schema schema, Path path) {
+    static int[] buildHeaderMapping(List<String> headers, Schema schema, String where) {
         List<ColumnDefinition> cols = schema.columns();
         int[] mapping = new int[cols.size()];
         for (int i = 0; i < cols.size(); i++) {
@@ -216,7 +216,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
             }
             if (idx < 0) {
                 throw new EvaluationException(
-                        "CSV file '" + path + "' has no column '"
+                        where + " has no column '"
                         + cols.get(i).name() + "' (headers: " + headers + ")");
             }
             mapping[i] = idx;
@@ -225,7 +225,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
     }
 
     /** Returns a trivial 0, 1, 2, … positional mapping. */
-    private static int[] positionalMapping(int ncols) {
+    static int[] positionalMapping(int ncols) {
         int[] mapping = new int[ncols];
         for (int i = 0; i < ncols; i++) mapping[i] = i;
         return mapping;
@@ -247,15 +247,15 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
      * the file carries — positionally that reads a prefix, and by header it picks the ones
      * it named — so a row having more than it needs is not a defect in the row.
      */
-    private static Row buildRow(List<String> cells, int[] colMapping,
-                                Schema schema, Path path, int lineNumber) {
+    static Row buildRow(List<String> cells, int[] colMapping,
+                        Schema schema, String where, int lineNumber) {
         List<ColumnDefinition> cols   = schema.columns();
         List<Value>            values = new ArrayList<>(cols.size());
         for (int i = 0; i < cols.size(); i++) {
             int csvIdx = colMapping[i];
             if (csvIdx >= cells.size()) {
                 throw new EvaluationException(
-                        "CSV '" + path + "' line " + lineNumber
+                        where + " line " + lineNumber
                         + ": no field " + (csvIdx + 1) + " for column '" + cols.get(i).name()
                         + "' — the row has " + cells.size() + " field(s). An empty field is a"
                         + " NULL; a row that ends early is a short row");
@@ -263,7 +263,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
             String cell = cells.get(csvIdx);
             // CSV sources are scalar; a nested-typed column reads as raw text (ANY).
             ScalarType type = cols.get(i).type() instanceof ScalarType s ? s : ScalarType.ANY;
-            values.add(coerce(cell, type, cols.get(i).name(), path, lineNumber));
+            values.add(coerce(cell, type, cols.get(i).name(), where, lineNumber));
         }
         return ArrayRow.of(schema, values);
     }
@@ -272,8 +272,8 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
      * Coerces a raw CSV cell string to a typed {@link Value}.
      * An empty cell always yields {@link NullValue#INSTANCE}.
      */
-    private static Value coerce(String cell, ScalarType type,
-                                 String colName, Path path, int lineNumber) {
+    static Value coerce(String cell, ScalarType type,
+                        String colName, String where, int lineNumber) {
         if (cell.isEmpty()) return NullValue.INSTANCE;
         return switch (type) {
             case NUMBER -> {
@@ -281,7 +281,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
                     yield new NumberValue(new BigDecimal(cell.strip()));
                 } catch (NumberFormatException e) {
                     throw new EvaluationException(
-                            "CSV '" + path + "' line " + lineNumber
+                            where + " line " + lineNumber
                             + ": cannot parse '" + cell
                             + "' as NUMBER for column '" + colName + "'");
                 }
@@ -299,20 +299,20 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
                 if (lower.equals("true")  || lower.equals("1")) yield BooleanValue.of(true);
                 if (lower.equals("false") || lower.equals("0")) yield BooleanValue.of(false);
                 throw new EvaluationException(
-                        "CSV '" + path + "' line " + lineNumber
+                        where + " line " + lineNumber
                         + ": cannot parse '" + cell
                         + "' as BOOLEAN for column '" + colName + "'");
             }
             // Temporal-typed cells parse against ISO-8601 (empty → NULL above,
             // malformed → error, mirroring the NUMBER path).  ADR-0013 slice 5.
             case DATE, TIME, TIMESTAMP, DURATION ->
-                    coerceTemporal(cell.strip(), type, colName, path, lineNumber);
+                    coerceTemporal(cell.strip(), type, colName, where, lineNumber);
         };
     }
 
     /** Parses a temporal CSV cell against ISO-8601, wrapping in the matching {@link Value}. */
     private static Value coerceTemporal(String cell, ScalarType type,
-                                        String colName, Path path, int lineNumber) {
+                                        String colName, String where, int lineNumber) {
         try {
             return switch (type) {
                 case DATE      -> new DateValue(TemporalLiterals.parseDate(cell));
@@ -323,7 +323,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
             };
         } catch (DateTimeException e) {
             throw new EvaluationException(
-                    "CSV '" + path + "' line " + lineNumber
+                    where + " line " + lineNumber
                     + ": cannot parse '" + cell + "' as " + type.name()
                     + " for column '" + colName + "'");
         }
