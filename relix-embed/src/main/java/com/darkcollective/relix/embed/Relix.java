@@ -437,36 +437,6 @@ public final class Relix implements AutoCloseable {
     }
 
     /**
-     * Every page of the language reference: operators, joins, set operations,
-     * aggregates, predicates, literals, statements, and the guide pages.
-     *
-     * <p>Each entry says what the page is about and the words it can be looked up by; the
-     * markdown is {@link #referencePage(String)} of its path. The reference ships in this
-     * artifact, so a tool reads it with nothing else installed. A function's page is not
-     * here: it belongs to the library that offers the function, and
-     * {@code FunctionCatalog.documentation} serves it.
-     *
-     * @return the pages, in the reference's own order; never null
-     * @since 1.0
-     */
-    public static List<ReferencePage> referencePages() {
-        return ReferenceIndex.ALL;
-    }
-
-    /**
-     * The markdown of one reference page.
-     *
-     * @param path the page's path, as {@link ReferencePage#path()} gives it, such as
-     *             {@code operators/select.md}; must not be null
-     * @return the page, or empty if the reference has none at that path
-     * @since 1.0
-     */
-    public static Optional<String> referencePage(String path) {
-        Objects.requireNonNull(path, "path");
-        return ReferenceIndex.read(path);
-    }
-
-    /**
      * A session with no bindings.
      *
      * @return a session with default settings

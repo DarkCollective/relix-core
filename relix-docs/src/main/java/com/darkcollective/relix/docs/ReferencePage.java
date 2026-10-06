@@ -13,15 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.darkcollective.relix.embed;
+package com.darkcollective.relix.docs;
 
 import java.util.List;
 import java.util.Objects;
 
 /**
- * One page of the language reference, as {@link Relix#referencePages()} lists it.
+ * One page of the language reference, as {@link RelixDocs#referencePages()} lists it.
  *
- * <p>The markdown itself is {@link Relix#referencePage(String)} of {@link #path()}. The
+ * <p>The markdown itself is {@link RelixDocs#referencePage(String)} of {@link #path()}. The
  * other components are what a tool needs to find and list a page without reading it:
  * the words a user might look it up by, and a one-line summary.
  *

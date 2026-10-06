@@ -203,18 +203,21 @@ and skips any candidate that matches one.
 
 ## The language reference
 
-The language reference ships in the artifact, so a tool can show a user the page for what
-they typed with nothing else installed. `Relix.referencePages()` lists every page with the
-words it is found by, and `Relix.referencePage(path)` returns its markdown:
+The language reference is published as an artifact of its own,
+`com.darkcollective.relix:relix-docs`, so a tool can show a user the page for what they
+typed while an application that shows no documentation does not download it.
+`RelixDocs.referencePages()` lists every page with the words it is found by, and
+`RelixDocs.referencePage(path)` returns its markdown:
 
 ```java
-import com.darkcollective.relix.embed.ReferencePage;
+import com.darkcollective.relix.docs.ReferencePage;
+import com.darkcollective.relix.docs.RelixDocs;
 
-ReferencePage selection = Relix.referencePages().stream()
+ReferencePage selection = RelixDocs.referencePages().stream()
         .filter(page -> page.keys().contains("σ"))
         .findFirst().orElseThrow();
 System.out.println(selection.title() + " (" + selection.symbol() + "): " + selection.summary());
-System.out.println(Relix.referencePage(selection.path()).orElseThrow().lines().findFirst().orElseThrow());
+System.out.println(RelixDocs.referencePage(selection.path()).orElseThrow().lines().findFirst().orElseThrow());
 ```
 
 ```

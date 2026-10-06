@@ -1,7 +1,11 @@
-// relix-dist — the one published artifact.
+// relix-dist — the published artifacts.
 //
 // A client writes `com.darkcollective.relix:relix` and gets the engine, the grammar,
-// the runtime and the shipped providers. The modules this is assembled from are not
+// the runtime and the shipped providers. Two optional artifacts sit beside it, each
+// added by name: `relix-docs`, the language reference (which the engine never reads),
+// and `relix-solver-ojalgo`, the solver only OPTIMIZE and COVER EXACT need. `relix-all`
+// is a POM naming all three. No class is in more than one jar (`checkArtifacts`).
+// The modules this is assembled from are not
 // published: their boundaries are claims *this* build enforces, and publishing them
 // would turn nineteen internals into coordinates a client can name, pin, and be broken
 // by — a far larger promise than we would defend.
@@ -16,11 +20,22 @@ description = 'Relix — a relational algebra engine for the JVM.'
 
 def bundled = rootProject.ext.bundledModules.collect { project(it) }
 
+// The two optional artifacts are assembled here too, so that one staging directory, one
+// set of POM checks and one consumer test cover everything that is published.
+evaluationDependsOn(':relix-docs')
+evaluationDependsOn(':relix-solver-ojalgo')
+def docsProject = project(':relix-docs')
+def solverProject = project(':relix-solver-ojalgo')
+
+// The solver's one third-party dependency. Not merged, deliberately: shading a library
+// hides it from a client's dependency report and from their vulnerability scanning. It
+// is a normal transitive dependency of relix-solver-ojalgo, and of nothing else.
+def ojalgoVersion = '56.2.1'
+configurations {
+    ojalgo
+}
 dependencies {
-    // Not merged, deliberately: shading a third-party library hides it from a client's
-    // dependency report and from their vulnerability scanning. It stays a normal
-    // transitive dependency.
-    api 'org.ojalgo:ojalgo:56.2.1'
+    ojalgo "org.ojalgo:ojalgo:${ojalgoVersion}"
 }
 
 // The merged service declarations. Concatenated rather than copied, because
@@ -80,7 +95,6 @@ def compileModuleInfo = tasks.register('compileModuleInfo', JavaCompile) {
     javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }
     doFirst {
         options.compilerArgs += [
-                '--module-path', configurations.compileClasspath.asPath,
                 '--patch-module', "com.darkcollective.relix=${mergedClasses.get().asFile}",
                 '--module-version', project.version.toString(),
         ]
@@ -157,58 +171,189 @@ def javadocJar = tasks.register('relixJavadocJar', Jar) {
     from rootProject.tasks.named('javadocAll')
 }
 
+// ---------------------------------------------------------------------------
+// relix-docs — the language reference and the API that reads it.
+//
+// A real module of its own, with nothing to merge: its jar is its classes, its resources
+// (the pages) and its descriptor, plus the licence files every published jar carries.
+// ---------------------------------------------------------------------------
+def docsJar = tasks.register('docsJar', Jar) {
+    archiveBaseName = 'relix-docs'
+    from docsProject.sourceSets.main.output
+    from(rootProject.file('LICENSE.txt')) { into 'META-INF' }
+    from(rootProject.file('NOTICE')) { into 'META-INF' }
+    manifest {
+        attributes('Implementation-Title': 'relix-docs', 'Implementation-Version': project.version)
+    }
+}
+
+def docsSourcesJar = tasks.register('docsSourcesJar', Jar) {
+    archiveBaseName = 'relix-docs'
+    archiveClassifier = 'sources'
+    from docsProject.sourceSets.main.allJava
+}
+
+def docsJavadocJar = tasks.register('docsJavadocJar', Jar) {
+    archiveBaseName = 'relix-docs'
+    archiveClassifier = 'javadoc'
+    from docsProject.tasks.named('javadoc')
+}
+
+// ---------------------------------------------------------------------------
+// relix-solver-ojalgo — the solver, as a provider a client adds.
+//
+// Its classes are relix-solver-ojalgo's, but not its descriptor: inside this build it
+// requires the solver SPI's own module, which outside it is part of
+// com.darkcollective.relix. So, as for the engine, the published descriptor is compiled
+// here against the published engine jar, patched into the module being declared.
+// ---------------------------------------------------------------------------
+def solverClasses = layout.buildDirectory.dir('solver/classes')
+
+def mergeSolverClasses = tasks.register('mergeSolverClasses', Sync) {
+    description = 'Gathers the solver provider\'s classes, without its in-build descriptor.'
+    into solverClasses
+    from(solverProject.sourceSets.main.output) {
+        exclude 'module-info.class'
+    }
+}
+
+def compileSolverModuleInfo = tasks.register('compileSolverModuleInfo', JavaCompile) {
+    dependsOn mergeSolverClasses, tasks.named('jar')
+    source = files('src/solver/java/module-info.java')
+    classpath = files()
+    destinationDirectory = layout.buildDirectory.dir('solver/descriptor')
+    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }
+    def engineJar = tasks.named('jar').flatMap { it.archiveFile }
+    inputs.file(engineJar)
+    inputs.files(configurations.ojalgo)
+    doFirst {
+        options.compilerArgs += [
+                '--module-path', files(engineJar, configurations.ojalgo).asPath,
+                '--patch-module', "com.darkcollective.relix.solver.ojalgo=${solverClasses.get().asFile}",
+                '--module-version', project.version.toString(),
+        ]
+    }
+}
+
+def solverJar = tasks.register('solverJar', Jar) {
+    archiveBaseName = 'relix-solver-ojalgo'
+    dependsOn compileSolverModuleInfo
+    from solverClasses
+    from compileSolverModuleInfo.map { it.destinationDirectory }
+    from(rootProject.file('LICENSE.txt')) { into 'META-INF' }
+    from(rootProject.file('NOTICE')) { into 'META-INF' }
+    manifest {
+        attributes('Implementation-Title': 'relix-solver-ojalgo', 'Implementation-Version': project.version)
+    }
+}
+
+def solverSourcesJar = tasks.register('solverSourcesJar', Jar) {
+    archiveBaseName = 'relix-solver-ojalgo'
+    archiveClassifier = 'sources'
+    from(solverProject.sourceSets.main.allJava) {
+        exclude 'module-info.java'
+    }
+    from 'src/solver/java'
+}
+
+def solverJavadocJar = tasks.register('solverJavadocJar', Jar) {
+    archiveBaseName = 'relix-solver-ojalgo'
+    archiveClassifier = 'javadoc'
+    from solverProject.tasks.named('javadoc')
+}
+
+// Maven Central will not accept a POM missing any of name, description, url, licenses,
+// scm or developers, and it says so at upload time — the one moment when the version
+// number is already tagged and the mistake is expensive. `validatePom` below asks the
+// same questions during `check`.
+//
+// `url` is the project's home page and `scm` is where its source lives — two different
+// questions, so they name two different places. The home page is the website a reader
+// who has only the coordinate should land on; the source is the public repository,
+// relix-core, which is what the artifacts actually are and what releases them.
+//
+// Dependencies are written by hand: these publications are assembled artifacts rather
+// than components, so Gradle knows of none. Each entry is [artifactId, version, scope].
+def describe = { MavenPom pom, String artifactName, String text, List<List<String>> dependencies ->
+    pom.name = artifactName
+    pom.description = text
+    pom.url = 'https://relix.darkcollective.com'
+    pom.licenses {
+        license {
+            name = 'The Apache License, Version 2.0'
+            url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+        }
+    }
+    pom.developers {
+        developer {
+            name = 'David Tooke'
+            organization = 'DarkCollective'
+            organizationUrl = 'https://github.com/DarkCollective'
+        }
+    }
+    pom.scm {
+        connection = 'scm:git:https://github.com/DarkCollective/relix-core.git'
+        developerConnection = 'scm:git:ssh://git@github.com/DarkCollective/relix-core.git'
+        url = 'https://github.com/DarkCollective/relix-core'
+    }
+    if (dependencies) {
+        pom.withXml {
+            def deps = asNode().appendNode('dependencies')
+            dependencies.each { coordinate ->
+                def (group, artifact, version, scope) = coordinate
+                def dep = deps.appendNode('dependency')
+                dep.appendNode('groupId', group)
+                dep.appendNode('artifactId', artifact)
+                dep.appendNode('version', version)
+                dep.appendNode('scope', scope)
+            }
+        }
+    }
+}
+
+def relixGroup = 'com.darkcollective.relix'
+def sameVersion = { String artifact, String scope -> [relixGroup, artifact, project.version.toString(), scope] }
+
 publishing {
     publications {
+        // The engine. It depends on nothing: the solver and its library left with
+        // relix-solver-ojalgo, and the pages with relix-docs.
         relix(MavenPublication) {
             artifactId = 'relix'
             artifact tasks.named('jar')
             artifact sourcesJar
             artifact javadocJar
             artifact manualsZip
-            // Maven Central will not accept a POM missing any of name, description, url,
-            // licenses, scm or developers, and it says so at upload time — the one moment
-            // when the version number is already tagged and the mistake is expensive.
-            // `validatePom` below asks the same questions during `check`.
-            //
-            // `url` is the project's home page and `scm` is where its source lives —
-            // two different questions, so they name two different places. The home page
-            // is the website a reader who has only the coordinate should land on; the
-            // source is the **public** repository, relix-core, which is what the
-            // artifact actually is and what releases it. Both must stay off the monorepo
-            // these modules are assembled in, which is private: pointing either there
-            // publishes a 404 to everyone who is not us.
-            pom {
-                name = 'relix'
-                description = project.description
-                url = 'https://relix.darkcollective.com'
-                licenses {
-                    license {
-                        name = 'The Apache License, Version 2.0'
-                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
-                    }
-                }
-                developers {
-                    developer {
-                        name = 'David Tooke'
-                        organization = 'DarkCollective'
-                        organizationUrl = 'https://github.com/DarkCollective'
-                    }
-                }
-                scm {
-                    connection = 'scm:git:https://github.com/DarkCollective/relix-core.git'
-                    developerConnection = 'scm:git:ssh://git@github.com/DarkCollective/relix-core.git'
-                    url = 'https://github.com/DarkCollective/relix-core'
-                }
-                withXml {
-                    // The one dependency that is not merged.
-                    def deps = asNode().appendNode('dependencies')
-                    def dep = deps.appendNode('dependency')
-                    dep.appendNode('groupId', 'org.ojalgo')
-                    dep.appendNode('artifactId', 'ojalgo')
-                    dep.appendNode('version', '56.2.1')
-                    dep.appendNode('scope', 'runtime')
-                }
-            }
+            describe(pom, 'relix', project.description, [])
+        }
+        docs(MavenPublication) {
+            artifactId = 'relix-docs'
+            artifact docsJar
+            artifact docsSourcesJar
+            artifact docsJavadocJar
+            describe(pom, 'relix-docs',
+                    'The Relix language reference, and the API a tool reads it with.', [])
+        }
+        solver(MavenPublication) {
+            artifactId = 'relix-solver-ojalgo'
+            artifact solverJar
+            artifact solverSourcesJar
+            artifact solverJavadocJar
+            describe(pom, 'relix-solver-ojalgo',
+                    'The ojalgo-backed solver for Relix OPTIMIZE and COVER EXACT.',
+                    [sameVersion('relix', 'compile'),
+                     ['org.ojalgo', 'ojalgo', ojalgoVersion, 'runtime']])
+        }
+        // No jar at all: a POM whose dependencies are the other three, for a client who
+        // wants everything under one coordinate.
+        bundle(MavenPublication) {
+            artifactId = 'relix-all'
+            pom.packaging = 'pom'
+            describe(pom, 'relix-all',
+                    'Relix with everything: the engine, the language reference and the solver.',
+                    [sameVersion('relix', 'compile'),
+                     sameVersion('relix-docs', 'compile'),
+                     sameVersion('relix-solver-ojalgo', 'runtime')])
         }
     }
 
@@ -255,98 +400,198 @@ publishing {
 // the POM Gradle actually generates rather than the DSL above, which is the only
 // version that can be wrong in a way inspection would miss.
 // ---------------------------------------------------------------------------
+def publicationNames = ['relix', 'docs', 'solver', 'bundle']
+
 def validatePom = tasks.register('validatePom') {
     group = 'verification'
-    description = 'Checks the generated POM carries everything Maven Central requires.'
+    description = 'Checks every generated POM carries everything Maven Central requires.'
 
-    def pomTask = tasks.named('generatePomFileForRelixPublication')
-    dependsOn pomTask
-    def pomFile = pomTask.map { it.destination }
-    inputs.file(pomFile)
+    def pomTasks = publicationNames.collect { name ->
+        tasks.named("generatePomFileFor${name.capitalize()}Publication")
+    }
+    dependsOn pomTasks
+    def pomFiles = pomTasks.collect { t -> t.map { it.destination } }
+    pomFiles.each { inputs.file(it) }
 
     doLast {
-        def pom = new XmlSlurper().parse(pomFile.get())
-        // Each entry is a required element and the evidence that it is filled in — a
-        // present-but-empty `<developers/>` satisfies Central's schema and not its
-        // validator, so the check is for content rather than for the tag.
-        def required = [
-                'name'        : pom.name.text(),
-                'description' : pom.description.text(),
-                'url'         : pom.url.text(),
-                'licenses'    : pom.licenses.license.name.text(),
-                'developers'  : pom.developers.developer.collect {
-                    it.name.text() + it.organization.text() + it.email.text()
-                }.join(),
-                'scm/url'     : pom.scm.url.text(),
-                'scm/conn'    : pom.scm.connection.text(),
-        ]
-        def missing = required.findAll { !it.value?.trim() }.keySet()
-        if (missing) {
-            throw new GradleException("the published POM would be rejected by Maven "
-                    + "Central: nothing in ${missing.join(', ')} (${pomFile.get()})")
-        }
-        // A SNAPSHOT is publishable to a snapshot repository and to nowhere else, so
-        // this is a warning rather than a failure: every ordinary `./gradlew build`
-        // runs at the default version and must not be told it is doing something wrong.
-        if (pom.version.text().endsWith('SNAPSHOT')) {
-            logger.info('validatePom: {} is a snapshot; a Central release needs '
-                    + '-PrelixVersion=<release version>', pom.version.text())
+        pomFiles.each { pomFileProvider ->
+            def pomFile = pomFileProvider.get()
+            def pom = new XmlSlurper().parse(pomFile)
+            // Each entry is a required element and the evidence that it is filled in — a
+            // present-but-empty `<developers/>` satisfies Central's schema and not its
+            // validator, so the check is for content rather than for the tag.
+            def required = [
+                    'name'        : pom.name.text(),
+                    'description' : pom.description.text(),
+                    'url'         : pom.url.text(),
+                    'licenses'    : pom.licenses.license.name.text(),
+                    'developers'  : pom.developers.developer.collect {
+                        it.name.text() + it.organization.text() + it.email.text()
+                    }.join(),
+                    'scm/url'     : pom.scm.url.text(),
+                    'scm/conn'    : pom.scm.connection.text(),
+            ]
+            def missing = required.findAll { !it.value?.trim() }.keySet()
+            if (missing) {
+                throw new GradleException("the published POM would be rejected by Maven "
+                        + "Central: nothing in ${missing.join(', ')} (${pomFile})")
+            }
+            // The point of the split: an embedder who takes `relix` alone downloads the
+            // engine and nothing else. A dependency creeping back into its POM — the
+            // solver's library above all — would undo that without failing anything.
+            if (pom.artifactId.text() == 'relix' && pom.dependencies.dependency.size() > 0) {
+                throw new GradleException("the relix POM must declare no dependencies, and it "
+                        + "names ${pom.dependencies.dependency.collect { it.artifactId.text() }}: "
+                        + "an optional provider belongs in its own artifact (${pomFile})")
+            }
+            // A SNAPSHOT is publishable to a snapshot repository and to nowhere else, so
+            // this is a note rather than a failure: every ordinary `./gradlew build` runs
+            // at the default version and must not be told it is doing something wrong.
+            if (pom.version.text().endsWith('SNAPSHOT')) {
+                logger.info('validatePom: {} is a snapshot; a Central release needs '
+                        + '-PrelixVersion=<release version>', pom.version.text())
+            }
         }
     }
 }
 
-tasks.named('check') { dependsOn validatePom }
+// ---------------------------------------------------------------------------
+// No class in two jars.
+//
+// The published jars are separate modules, and a client may put any combination of them
+// on a module path. Two modules holding one package do not start ("reads package … from
+// both"), and on a class path two copies of one class are whichever loads first. So the
+// check is on packages, which is the stronger claim, and it reads the jars themselves
+// rather than the build that produced them. It also holds the engine jar to carrying no
+// language reference page, those having left it for relix-docs.
+// ---------------------------------------------------------------------------
+def checkArtifacts = tasks.register('checkArtifacts') {
+    group = 'verification'
+    description = 'Checks no package is in two published jars, and the engine jar holds no reference pages.'
+    def jars = [tasks.named('jar'), docsJar, solverJar].collect { t -> t.flatMap { it.archiveFile } }
+    jars.each { inputs.file(it) }
+    doLast {
+        def owners = [:].withDefault { [] as Set }
+        jars.each { jarProvider ->
+            def jarFile = jarProvider.get().asFile
+            new java.util.zip.ZipFile(jarFile).withCloseable { zip ->
+                zip.entries().each { entry ->
+                    def name = entry.name
+                    if (name.endsWith('.class') && name != 'module-info.class') {
+                        owners[name.substring(0, name.lastIndexOf('/'))] << jarFile.name
+                    }
+                }
+            }
+        }
+        def shared = owners.findAll { it.value.size() > 1 }
+        if (shared) {
+            throw new GradleException('a package is in more than one published jar: '
+                    + shared.collect { "${it.key.replace('/', '.')} in ${it.value.sort()}" }.join('; '))
+        }
+        def engine = jars[0].get().asFile
+        new java.util.zip.ZipFile(engine).withCloseable { zip ->
+            // The built-in function pages stay: a function library documents its own
+            // functions, and the engine serves them through the function catalogue.
+            def pages = zip.entries().findAll {
+                it.name.endsWith('.md') && !it.name.startsWith('docs/reference/functions/')
+            }.collect { it.name }
+            if (pages) {
+                throw new GradleException("the engine jar carries ${pages.size()} reference "
+                        + "page(s), which belong in relix-docs: ${pages.take(5)}")
+            }
+        }
+    }
+}
+
+tasks.named('check') { dependsOn validatePom, checkArtifacts }
 
 // ---------------------------------------------------------------------------
-// The consumer smoke test — the published artifact, used the way a stranger would.
+// The consumer smoke test — the published artifacts, used the way a stranger would.
 //
 // Every other test here resolves *projects*. That is what hides a packaging mistake: a
 // class left out of the merge, a service file overwritten, a package missing from the
-// module descriptor — each compiles and passes everything, then fails for the first
-// person to depend on the release.
+// module descriptor, a dependency missing from a POM — each compiles and passes
+// everything, then fails for the first person to depend on the release.
 //
-// It is a *separate build*, which is the only shape that proves anything: inside this
-// one, Gradle prefers a project over an external module of the same coordinates, so the
-// POM would never be read at all.
+// Each variant is a *separate build*, which is the only shape that proves anything:
+// inside this one, Gradle prefers a project over an external module of the same
+// coordinates, so the POM would never be read at all. One per way of depending on the
+// engine, and the last on the module path rather than the class path, because a
+// descriptor mistake only shows there.
 //
 //   ./gradlew :relix-dist:consumerSmokeTest
 // ---------------------------------------------------------------------------
-def consumerProject = layout.buildDirectory.dir('consumerSmoke/project')
+def consumerVariants = [
+        // name         dependencies                                   solver  docs   modular
+        [name: 'alone',  deps: ['relix'],                                solver: false, docs: false, modular: false],
+        [name: 'solver', deps: ['relix', 'relix-solver-ojalgo'],         solver: true,  docs: false, modular: false],
+        [name: 'docs',   deps: ['relix', 'relix-docs'],                  solver: false, docs: true,  modular: false],
+        [name: 'all',    deps: ['relix-all'],                            solver: true,  docs: true,  modular: false],
+        [name: 'modular', deps: ['relix-all'],                           solver: true,  docs: true,  modular: true],
+]
 
-def writeConsumerProject = tasks.register('writeConsumerProject') {
-    description = 'Generates the standalone build that consumes the published artifact.'
-    inputs.dir('src/consumerSmoke/java')
-    inputs.property('version', project.version)
-    outputs.dir(consumerProject)
-    doLast {
-        def root = consumerProject.get().asFile
-        root.deleteDir()
-        new File(root, 'src/main/java').mkdirs()
-        new File(root, 'settings.gradle').text = "rootProject.name = 'relix-consumer'\n"
-        new File(root, 'build.gradle').text = """\
-            plugins { id 'application' }
-            repositories { mavenLocal(); mavenCentral() }
-            java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
-            dependencies {
-                implementation 'com.darkcollective.relix:relix:${project.version}'
+def consumerRuns = consumerVariants.collect { variant ->
+    def root = layout.buildDirectory.dir("consumerSmoke/${variant.name}")
+    def write = tasks.register("writeConsumer${variant.name.capitalize()}") {
+        description = "Generates the standalone '${variant.name}' consumer of the published artifacts."
+        inputs.dir('src/consumerSmoke/java')
+        inputs.property('version', project.version)
+        inputs.property('variant', variant.toString())
+        outputs.dir(root)
+        doLast {
+            def dir = root.get().asFile
+            dir.deleteDir()
+            def sources = new File(dir, 'src/main/java')
+            sources.mkdirs()
+            new File(dir, 'settings.gradle').text = "rootProject.name = 'relix-consumer-${variant.name}'\n"
+            def dependencyLines = variant.deps
+                    .collect { "    implementation 'com.darkcollective.relix:${it}:${project.version}'" }
+                    .join('\n')
+            def launch = variant.modular
+                    ? "application {\n    mainModule = 'relix.consumer'\n    mainClass = 'consumer.ConsumerSmoke'\n}"
+                    : "application {\n    mainClass = 'consumer.ConsumerSmoke'\n}"
+            new File(dir, 'build.gradle').text = """\
+plugins { id 'application' }
+repositories { mavenLocal(); mavenCentral() }
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+dependencies {
+${dependencyLines}
+}
+${launch}
+run { args 'solver=${variant.solver}', 'docs=${variant.docs}', 'modular=${variant.modular}' }
+"""
+            copy {
+                from 'src/consumerSmoke/java'
+                into sources
             }
-            application { mainClass = 'ConsumerSmoke' }
-            """.stripIndent()
-        copy {
-            from 'src/consumerSmoke/java'
-            into new File(root, 'src/main/java')
+            if (variant.modular) {
+                // Reading the docs module, as a tool that shows the reference would. The
+                // solver is not named: a provider joins the module graph because the
+                // engine `uses` its service, which is the claim being tested.
+                new File(sources, 'module-info.java').text = """\
+module relix.consumer {
+    requires com.darkcollective.relix;
+    requires com.darkcollective.relix.docs;
+}
+"""
+            }
         }
+    }
+    tasks.register("consumerSmoke${variant.name.capitalize()}", GradleBuild) {
+        group = 'verification'
+        description = "Runs the '${variant.name}' consumer of the published artifacts, from ~/.m2."
+        dir = root
+        // `tasks` is GradleBuild's own property here, which shadows the project's task
+        // container — hence the qualified name on the line below.
+        tasks = ['run']
+        dependsOn write, project.tasks.named('publishToMavenLocal')
     }
 }
 
-tasks.register('consumerSmokeTest', GradleBuild) {
+tasks.register('consumerSmokeTest') {
     group = 'verification'
-    description = 'Runs a standalone consumer of the published relix artifact, from ~/.m2.'
-    dir = consumerProject
-    // `tasks` is GradleBuild's own property here, which shadows the project's task
-    // container — hence the qualified name on the line below.
-    tasks = ['run']
-    dependsOn writeConsumerProject, project.tasks.named('publishToMavenLocal')
+    description = 'Runs every standalone consumer of the published artifacts, from ~/.m2.'
+    dependsOn consumerRuns
 }
 
 // ---------------------------------------------------------------------------
@@ -365,11 +610,17 @@ def isSnapshot = { v -> v.toString().endsWith('-SNAPSHOT') }
 
 tasks.register('publishSnapshot') {
     group = 'publishing'
-    description = 'Publishes the relix artifact to the snapshot repository (a -SNAPSHOT version only).'
-    dependsOn 'publishRelixPublicationToSnapshotsRepository'
+    description = 'Publishes every artifact to the snapshot repository (a -SNAPSHOT version only).'
+    dependsOn 'publishAllPublicationsToSnapshotsRepository'
 }
 
-tasks.matching { it.name == 'publishRelixPublicationToSnapshotsRepository' }.configureEach {
+tasks.register('publishStaging') {
+    group = 'publishing'
+    description = 'Publishes every artifact to the staging directory a release uploads (a release version only).'
+    dependsOn 'publishAllPublicationsToStagingRepository'
+}
+
+tasks.matching { it.name ==~ /publish\w+PublicationToSnapshotsRepository/ }.configureEach {
     def v = project.version
     doFirst {
         if (!isSnapshot(v)) {
@@ -379,7 +630,7 @@ tasks.matching { it.name == 'publishRelixPublicationToSnapshotsRepository' }.con
     }
 }
 
-tasks.matching { it.name == 'publishRelixPublicationToStagingRepository' }.configureEach {
+tasks.matching { it.name ==~ /publish\w+PublicationToStagingRepository/ }.configureEach {
     def v = project.version
     doFirst {
         if (isSnapshot(v)) {
