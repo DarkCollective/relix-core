@@ -33,6 +33,7 @@ import java.util.List;
 import static com.darkcollective.relix.ast.AstBuilders.arith;
 import static com.darkcollective.relix.ast.AstBuilders.attr;
 import static com.darkcollective.relix.ast.AstBuilders.equation;
+import static com.darkcollective.relix.ast.AstBuilders.start;
 import static com.darkcollective.relix.ast.AstBuilders.unary;
 import static com.darkcollective.relix.processor.ProcessorAssertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -64,6 +65,37 @@ final class EquationSystemSolverTest extends ProcessorTestSupport {
 
     private static Row row4(String total, String diff, String a, String b) {
         return row(S, cell(total), cell(diff), cell(a), cell(b));
+    }
+
+    @Nested
+    @DisplayName("a START")
+    final class Starts {
+
+        /** total = a · b, diff = a − b — not linear, so solved by search. */
+        private static final List<SolveEquation> PRODUCT_AND_DIFFERENCE = List.of(
+                equation(attr("total"), times(attr("a"), attr("b"))),
+                equation(attr("diff"), minus(attr("a"), attr("b"))));
+
+        @Test
+        @DisplayName("chooses the root a search reaches")
+        void choosesTheRoot() {
+            Row fromOne = SOLVER.solve(PRODUCT_AND_DIFFERENCE, row4("12", "1", null, null));
+            Row fromBelow = SOLVER.solve(PRODUCT_AND_DIFFERENCE,
+                    List.of(start("a", unary(com.darkcollective.relix.ast.AstBuilders.num("5"))),
+                            start("b", unary(com.darkcollective.relix.ast.AstBuilders.num("5")))),
+                    row4("12", "1", null, null));
+            assertThat(fromOne).hasValue("a", "4").hasValue("b", "3");
+            assertThat(fromBelow).hasValue("a", "-3").hasValue("b", "-4");
+        }
+
+        @Test
+        @DisplayName("that is not a number is an error")
+        void rejectsANonNumber() {
+            assertThatThrownBy(() -> SOLVER.solve(PRODUCT_AND_DIFFERENCE,
+                    List.of(start("a", com.darkcollective.relix.ast.AstBuilders.str("five"))), row4("12", "1", null, null)))
+                    .isInstanceOf(EvaluationException.class)
+                    .hasMessageContaining("the START for 'a' must be a NUMBER, got STRING");
+        }
     }
 
     @Nested

@@ -209,7 +209,7 @@ public final class PhysicalPlanPrinter {
                     + (u.groupingAttributes().isEmpty()
                             ? "" : " " + String.join(", ", u.groupingAttributes()));
             case PhysicalNode.Solve s    -> DisplayLabels.solve(s.equations(), s.groupingKeys(),
-                    s.tolerance(), s.maxRounds());
+                    s.tolerance(), s.maxRounds(), s.starts());
             case PhysicalNode.Optimize o -> DisplayLabels.optimize(o.sense(), o.objective(),
                     o.constraints(), o.groupingKeys(), o.allocation());
             case PhysicalNode.TopK t      -> "TOP " + t.count()

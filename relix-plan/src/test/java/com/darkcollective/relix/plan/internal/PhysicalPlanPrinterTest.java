@@ -793,7 +793,7 @@ final class PhysicalPlanPrinterTest {
                                 new com.darkcollective.relix.ast.AttributeOperand("principal"),
                                 com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
                                 new com.darkcollective.relix.ast.AttributeOperand("rate")))),
-                List.of(), java.util.Optional.empty(), java.util.Optional.empty(),
+                List.of(), java.util.Optional.empty(), java.util.Optional.empty(), List.of(),
                 sqlScan("SELECT x FROM t"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
                 SOLVE total = principal * rate
@@ -814,9 +814,13 @@ final class PhysicalPlanPrinterTest {
                                 new com.darkcollective.relix.ast.AttributeOperand("v"))),
                 List.of("grp", "batch"),
                 java.util.Optional.of(new java.math.BigDecimal("0.001")), java.util.Optional.of(20),
+                List.of(com.darkcollective.relix.ast.AstBuilders.start("x",
+                                com.darkcollective.relix.ast.AstBuilders.num("2")),
+                        com.darkcollective.relix.ast.AstBuilders.start("u",
+                                com.darkcollective.relix.ast.AstBuilders.num("-1"))),
                 sqlScan("SELECT x FROM t"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
-                SOLVE { x = y, u = v } PER grp, batch WITHIN 0.001 MAX 20 ROUNDS
+                SOLVE { x = y, u = v } PER grp, batch WITHIN 0.001 MAX 20 ROUNDS START x = 2, u = -1
                 └─ PushedScan [jdbc/db] SELECT x FROM t
                 """);
     }

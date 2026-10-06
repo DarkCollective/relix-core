@@ -2,14 +2,15 @@
 
 # Syntax:
 SOLVE <left-expression> = <right-expression> [PER <key>, ...]
-      [WITHIN <tolerance>] [MAX <n> ROUNDS] (Relation)
+      [WITHIN <tolerance>] [MAX <n> ROUNDS] [START <column> = <expression>, ...] (Relation)
 SOLVE { <left> = <right>, <left> = <right>, ... } [PER <key>, ...]
-      [WITHIN <tolerance>] [MAX <n> ROUNDS] (Relation)
+      [WITHIN <tolerance>] [MAX <n> ROUNDS] [START <column> = <expression>, ...] (Relation)
 
 SOLVE total = principal * rate (Loans)
 SOLVE { cups = coffee + tea, revenue = 3.5 * coffee + 2.5 * tea } (Sales)
 SOLVE y = slope * x + intercept PER series (Points)
 SOLVE area = side * side (Squares)
+SOLVE area = side * side START side = -1 (Squares)
 
 # Description:
 SOLVE fills in missing (NULL) values in an arithmetic equation, per row, by
@@ -24,6 +25,10 @@ cannot be rearranged — the missing value appears twice, or two missing values
 multiply — is solved by searching for the answer instead. An equation may
 also be written with your own functions — a `def` whose body is arithmetic is
 solved through as if its formula had been written out.
+
+A search finds one answer, and some equations have several: a square of area 4 has
+a side of 2 or of −2. START says where the search begins for a missing value, and
+so which answer it finds.
 
 With PER, SOLVE fits instead of solving: rows that share a key are treated as
 measurements of the same thing, and the values missing from all of them are chosen
@@ -44,7 +49,14 @@ digits, as ÷ does. Output schema = input schema. Streaming; does not push down.
 
 The iteration starts every unknown at 1, so where an equation has more than one
 root it finds the one reached from 1 — for `area = side * side`, the positive
-one. It stops when no unknown moves by more than the tolerance in a round (WITHIN,
+one. START u = e, … starts the unknown u at e instead, an expression evaluated over
+the row being solved, so the start, and the root reached, may differ from row to
+row. An unknown START does not name still starts at 1, a START whose value is NULL
+in a row leaves its unknown at 1 there, and a row in which u is not blank ignores
+its START. Inversion and elimination find the one answer there is and do not read
+START. Each START must name a column an equation solves for, at most once, and its
+value must be a NUMBER; under PER, where one fit serves a whole group, it must be a
+constant. The iteration stops when no unknown moves by more than the tolerance in a round (WITHIN,
 default 0.0000000001), and each equation must then hold to within the tolerance
 times the larger of 1 and the size of its sides; MAX n ROUNDS caps the attempts
 (default 100). A row that cannot be posed — the wrong number of blanks, or
@@ -259,13 +271,63 @@ query { SOLVE balance = principal * (1 + rate) * (1 + rate) (Deposits) };
 A-100's rate was found by search, starting from 1 and settling on 5%. A-200 and
 A-300 multiplied and divided as they always did.
 
+Where an equation has more than one root, the start decides which one a search
+reaches. A projectile launched upward at `vy` from height `y0` is back at ground
+level when `0 = y0 + vy·t − ½·g·t²`. That quadratic has a root at or before launch
+and one at impact. `t` appears twice, so SOLVE searches, and from 1 it reaches the
+launch-side root:
+
+```relix
+Shots := [
+| shot_id | y0 | vy                 |
+|---------|----|--------------------|
+| 1       | 2  | 21.213203435596424 |
+| 2       | 0  | 25                 |
+];
+Unknown := [
+| shot_id | t |
+|---------|---|
+| 1       |   |
+| 2       |   |
+];
+
+query { π shot_id, t (SOLVE 0 = y0 + vy * t - 0.5 * 9.81 * t * t (Shots ⋈ Unknown)) };
+```
+
+```
+ shot_id  t
+ ───────  ─────────────
+       1  -0.0923105886
+       2              0
+(2 rows)
+```
+
+Impact is the later root, and from the launch height it comes just after the time
+the shot takes to return there, `2·vy/g`. Starting the search at that time, row by
+row, reaches the impact time instead:
+
+```relix
+query { π shot_id, t (SOLVE 0 = y0 + vy * t - 0.5 * 9.81 * t * t
+                      START t = 2 * vy / 9.81 (Shots ⋈ Unknown)) };
+```
+
+```
+ shot_id  t
+ ───────  ────────────
+       1  4.4171227059
+       2  5.0968399592
+(2 rows)
+```
+
 # Limitations:
 Only basic arithmetic (+ − × ÷, unary minus) can be solved, written directly or
 through a `def` whose body is such arithmetic; a built-in function cannot be
 solved through. A row is solved only where it has exactly as many blanks as there
 are equations and the equations determine them; any other row is left as-is. An
-equation solved by search yields one root — the one reached from 1 — and a row
-with no solution is an error rather than a row left blank. A PER fit buffers its
+equation solved by search yields one root — the one reached from its START, or
+from 1 — and a row with no solution is an error rather than a row left blank. A
+START cannot bound the search: it chooses where the search begins, not which
+values it may reach. A PER fit buffers its
 input. This is the goal-seek half of the declarative solver; the optimisation half
 is OPTIMIZE.
 

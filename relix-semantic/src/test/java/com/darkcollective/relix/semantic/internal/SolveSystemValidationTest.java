@@ -166,4 +166,62 @@ final class SolveSystemValidationTest {
                     .hasErrorContaining("PER key").hasErrorContaining("batch");
         }
     }
+
+    @Nested
+    @DisplayName("START")
+    final class Start {
+
+        @Test
+        @DisplayName("accepts an expression over the row's columns for a participating column")
+        void acceptsAStartOverTheRow() {
+            assertThat(analyze(PAIRS
+                    + "query { SOLVE { total = a * b, diff = a - b } START a = total / 2, b = 1 (Pairs) };"))
+                    .hasNoErrors();
+        }
+
+        @Test
+        @DisplayName("reports a column no equation solves for")
+        void reportsANonParticipatingColumn() {
+            assertThat(analyze(PAIRS + "query { SOLVE total = a * b START diff = 1 (Pairs) };"))
+                    .hasErrorContaining("START names 'diff', which no equation solves for");
+        }
+
+        @Test
+        @DisplayName("matches a participating column whatever its case, and through a def")
+        void matchesThroughCaseAndDefs() {
+            assertThat(analyze(RODS + """
+                    def stretch(L0: NUMBER, k: NUMBER, T: NUMBER) : NUMBER := { L0 * (1 + k * T) };
+                    query { SOLVE length = stretch(L0, k, temp) START K = 0.001 (Rods) };
+                    """)).hasNoErrors();
+        }
+
+        @Test
+        @DisplayName("reports a start naming a column the input does not have")
+        void reportsAnUnknownColumnInTheValue() {
+            assertThat(analyze(PAIRS + "query { SOLVE total = a * b START a = guess (Pairs) };"))
+                    .hasErrorContaining("START").hasErrorContaining("'guess'");
+        }
+
+        @Test
+        @DisplayName("reports a start that is not a number")
+        void reportsANonNumericStart() {
+            assertThat(analyze(PAIRS + "query { SOLVE total = a * b START a = \"one\" (Pairs) };"))
+                    .hasErrorContaining("the START for 'a' must be NUMBER (or ANY), got STRING");
+        }
+
+        @Test
+        @DisplayName("accepts a constant under PER")
+        void acceptsAConstantUnderPer() {
+            assertThat(analyze(PAIRS + "query { SOLVE total = a * b PER diff START a = 2 * 3 (Pairs) };"))
+                    .hasNoErrors();
+        }
+
+        @Test
+        @DisplayName("reports a start that reads a column under PER")
+        void reportsAColumnUnderPer() {
+            assertThat(analyze(PAIRS + "query { SOLVE total = a * b PER diff START a = total (Pairs) };"))
+                    .hasErrorContaining("a START under PER must be a constant")
+                    .hasErrorContaining("column 'total'");
+        }
+    }
 }

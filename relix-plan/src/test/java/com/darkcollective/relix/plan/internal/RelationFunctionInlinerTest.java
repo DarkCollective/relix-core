@@ -371,6 +371,12 @@ final class RelationFunctionInlinerTest {
             var solve = new com.darkcollective.relix.ast.SolveNode(p, p, A);
             assertFullyBound(bind(solve));
 
+            var started = com.darkcollective.relix.ast.AstBuilders.solve(
+                    List.of(com.darkcollective.relix.ast.AstBuilders.equation(attr("x"), attr("y"))),
+                    List.of(), java.util.Optional.empty(), java.util.Optional.empty(),
+                    List.of(com.darkcollective.relix.ast.AstBuilders.start("x", p)), A);
+            assertFullyBound(bind(started));
+
             var optimize = new com.darkcollective.relix.ast.OptimizeNode(
                     com.darkcollective.relix.ast.ObjectiveSense.MAXIMIZE,
                     attr("p"),

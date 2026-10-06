@@ -144,6 +144,48 @@ final class SolveParserTest extends ParserTestSupport {
     }
 
     @Test
+    void parsesStartsAfterTheLimits() {
+        RelNode started = solve(List.of(equation(num("0"),
+                        arith(attr("y0"), ArithmeticOperator.PLUS,
+                                arith(attr("vy"), ArithmeticOperator.MULTIPLY, attr("t"))))),
+                List.of(), Optional.empty(), Optional.of(50),
+                List.of(start("t", arith(num("2"), ArithmeticOperator.MULTIPLY, attr("vy"))),
+                        start("y0", num("0"))),
+                rel("Shots"));
+        assertParsesTo("SOLVE 0 = y0 + vy * t MAX 50 ROUNDS START t = 2 * vy, y0 = 0 (Shots)",
+                started);
+        assertPrettyPrints(started,
+                "SOLVE 0 = y0 + vy * t MAX 50 ROUNDS START t = 2 * vy, y0 = 0 (Shots)");
+        assertParsesTo(started.prettyPrint(), started);
+    }
+
+    @Test
+    void startIsAContextualWord() {
+        RelNode started = solve(List.of(equation(attr("start"), attr("y"))), List.of(),
+                Optional.empty(), Optional.empty(), List.of(start("start", attr("guess"))),
+                rel("R"));
+        assertParsesTo("SOLVE start = y start start = guess (R)", started);
+    }
+
+    @Test
+    void failsOnAStartNamedTwice() {
+        assertParseError("SOLVE x = y START x = 1, X = 2 (R)")
+                .hasMessageContaining("SOLVE START names 'X' more than once");
+    }
+
+    @Test
+    void failsOnAStartWithoutAValue() {
+        assertParseError("SOLVE x = y START x (R)")
+                .hasMessageContaining("Expected '=' after the START column 'x'");
+    }
+
+    @Test
+    void failsOnAStartWithoutAColumn() {
+        assertParseError("SOLVE x = y START = 1 (R)")
+                .hasMessageContaining("Expected an unknown column name after 'START'");
+    }
+
+    @Test
     void failsOnAZeroTolerance() {
         assertParseError("SOLVE x = y WITHIN 0 (R)").hasMessageContaining("greater than 0");
     }

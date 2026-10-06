@@ -31,6 +31,7 @@ import com.darkcollective.relix.ast.ProjectedAttribute;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.SolveEquation;
+import com.darkcollective.relix.ast.SolveStart;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.TieBreak;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -1204,6 +1205,28 @@ public final class Relation {
     public Relation solve(List<SolveEquation> equations, List<String> groupingKeys,
                           Optional<BigDecimal> tolerance, Optional<Integer> maxRounds) {
         return derive(AstBuilders.solve(equations, groupingKeys, tolerance, maxRounds, node));
+    }
+
+    /**
+     * SOLVE with the iteration's limits and where its search starts — {@code WITHIN ε},
+     * {@code MAX n ROUNDS} and {@code START u = e, …}. A start matters only to equations
+     * solved by Newton's method, where it decides which root the search reaches; an
+     * unknown no start names begins at 1.
+     *
+     * @param equations    the equations, at least one
+     * @param groupingKeys the columns a separate fit is made per; empty to solve row by row
+     * @param tolerance    the convergence tolerance, positive; empty for the default
+     * @param maxRounds    the round cap, at least 1; empty for the default
+     * @param starts       each named unknown's first estimate, at most one per column;
+     *                     constants under {@code PER}
+     * @return the solved relation
+     * @since 1.0
+     */
+    public Relation solve(List<SolveEquation> equations, List<String> groupingKeys,
+                          Optional<BigDecimal> tolerance, Optional<Integer> maxRounds,
+                          List<SolveStart> starts) {
+        return derive(AstBuilders.solve(equations, groupingKeys, tolerance, maxRounds, starts,
+                node));
     }
 
     /**

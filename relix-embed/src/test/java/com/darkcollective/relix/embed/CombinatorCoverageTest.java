@@ -198,6 +198,9 @@ final class CombinatorCoverageTest {
         if (generic.contains(com.darkcollective.relix.ast.SolveEquation.class.getName())) {
             return List.of(AstBuilders.equation(AstBuilders.attr("amount"), AstBuilders.attr("id")));
         }
+        if (generic.contains(com.darkcollective.relix.ast.SolveStart.class.getName())) {
+            return List.of(AstBuilders.start("amount", AstBuilders.num("1")));
+        }
         if (generic.contains(OptimizeConstraint.class.getName())) {
             return List.of(AstBuilders.constraint(AstBuilders.attr("amount"),
                     com.darkcollective.relix.ast.ComparisonOperator.LESS_EQUAL, 100d));

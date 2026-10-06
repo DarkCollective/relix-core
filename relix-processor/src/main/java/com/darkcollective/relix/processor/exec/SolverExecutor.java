@@ -70,7 +70,7 @@ final class SolverExecutor {
                 node.maxRounds().orElse(EquationSystemSolver.DEFAULT_MAX_ROUNDS));
         if (node.groupingKeys().isEmpty()) {
             return dispatch.execute(node.input(), ctx)
-                    .map(row -> solver.solve(node.equations(), row));
+                    .map(row -> solver.solve(node.equations(), node.starts(), row));
         }
         List<String> keys = node.groupingKeys();
         List<Row> rows;
@@ -86,7 +86,7 @@ final class SolverExecutor {
         Row[] out = new Row[rows.size()];
         for (var group : groups.entrySet()) {
             List<Integer> members = group.getValue();
-            List<Row> fitted = solver.fit(node.equations(),
+            List<Row> fitted = solver.fit(node.equations(), node.starts(),
                     members.stream().map(rows::get).toList(), describeGroup(keys, group.getKey()));
             for (int k = 0; k < members.size(); k++) {
                 out[members.get(k)] = fitted.get(k);

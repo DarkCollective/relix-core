@@ -31,7 +31,8 @@ import java.util.function.Supplier;
  * Newton's method when there are as many residuals as unknowns and the least-squares
  * fit when there are more.
  *
- * <p>Every unknown starts at 1. Each round evaluates the residuals {@code left − right}
+ * <p>The search starts from the point the caller gives — every unknown at 1 unless
+ * {@code SOLVE … START} says otherwise. Each round evaluates the residuals {@code left − right}
  * of every equation over every row, with their exact derivatives ({@link Dual}), and
  * solves {@code (JᵀJ + μI) Δ = −Jᵀr} for a step. A step that reduces the sum of squared
  * residuals is taken and {@code μ} falls tenfold, toward the Gauss–Newton step; one that
@@ -69,6 +70,7 @@ final class Newton {
      * @param unknowns  the unknown columns, lower-cased, in coordinate order
      * @param rows      the rows supplying the known columns — one, or a group's
      *                  observations; there are at least as many residuals as unknowns
+     * @param start     each unknown's first estimate, in coordinate order; not modified
      * @param tolerance the largest step that counts as converged; positive
      * @param maxRounds the round cap; at least 1
      * @param subject   names the row or group in a diagnostic
@@ -78,11 +80,11 @@ final class Newton {
      *         to a point at which a square system's equations do not hold
      */
     static Optional<BigDecimal[]> solve(List<SolveEquation> equations, List<String> unknowns,
-                                        List<Row> rows, BigDecimal tolerance, int maxRounds,
+                                        List<Row> rows, BigDecimal[] start,
+                                        BigDecimal tolerance, int maxRounds,
                                         Supplier<String> subject) {
         int n = unknowns.size();
-        BigDecimal[] x = new BigDecimal[n];
-        Arrays.fill(x, BigDecimal.ONE);
+        BigDecimal[] x = start.clone();
         Dual[] residuals = at(equations, unknowns, rows, x, subject);
         BigDecimal cost = sumOfSquares(residuals);
         BigDecimal damping = null;

@@ -216,6 +216,7 @@ final class AstBuilderCoverageTest {
             .ofListElement(AggregateFunction.class, i -> AstBuilders.agg(AggregateOperator.SUM, "m" + i))
             .ofListElement(OptimizeConstraint.class, i -> AstBuilders.constraint(AstBuilders.attr("a" + i), ComparisonOperator.LESS_EQUAL, 100d))
             .ofListElement(SolveEquation.class, i -> AstBuilders.equation(AstBuilders.attr("l" + i), AstBuilders.attr("r" + i)))
+            .ofListElement(SolveStart.class, i -> AstBuilders.start("s" + i, AstBuilders.num(String.valueOf(i))))
             .ofListElement(RenameNode.RenamePair.class, i -> AstBuilders.renamePair("f" + i, "t" + i))
             .ofListElement(StructConstruction.Field.class, i -> new StructConstruction.Field("f" + i, AstBuilders.attr("v" + i)))
             .override("date", 0, "2026-01-01")

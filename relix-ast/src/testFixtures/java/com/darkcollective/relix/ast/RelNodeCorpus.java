@@ -229,7 +229,8 @@ public final class RelNodeCorpus {
 
                 // ── solver ──────────────────────────────────────────────────────
                 solve(List.of(equation(attr("x"), num("42"))), List.of("k"),
-                        Optional.of(new java.math.BigDecimal("0.001")), Optional.of(10), LEFT),
+                        Optional.of(new java.math.BigDecimal("0.001")), Optional.of(10),
+                        List.of(AstBuilders.start("x", num("5"))), LEFT),
                 optimize(ObjectiveSense.MAXIMIZE, attr("value"),
                         List.of(constraint(attr("weight"), ComparisonOperator.LESS_EQUAL, 10.0)),
                         cols("dept"), Optional.of(allocation(0.0, 1.0, "share")), LEFT),

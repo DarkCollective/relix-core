@@ -836,8 +836,21 @@ public abstract class AstBuilders {
     public static SolveNode solve(List<SolveEquation> equations, List<String> groupingKeys,
                                   Optional<BigDecimal> tolerance, Optional<Integer> maxRounds,
                                   RelNode input) {
-        return new SolveNode(equations, groupingKeys, tolerance, maxRounds, input,
+        return new SolveNode(equations, groupingKeys, tolerance, maxRounds, List.of(), input,
                 SourceLocation.UNKNOWN);
+    }
+
+    /** {@code SOLVE … START u = e} — with where each named unknown's search starts. */
+    public static SolveNode solve(List<SolveEquation> equations, List<String> groupingKeys,
+                                  Optional<BigDecimal> tolerance, Optional<Integer> maxRounds,
+                                  List<SolveStart> starts, RelNode input) {
+        return new SolveNode(equations, groupingKeys, tolerance, maxRounds, starts, input,
+                SourceLocation.UNKNOWN);
+    }
+
+    /** One {@code START} value of a {@code SOLVE}: {@code column = value}. */
+    public static SolveStart start(String column, Operand value) {
+        return new SolveStart(column, value);
     }
 
     /** One {@code SOLVE} equation, {@code left = right}. */

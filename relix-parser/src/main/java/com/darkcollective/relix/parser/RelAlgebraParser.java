@@ -24,10 +24,13 @@ import java.time.DateTimeException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Set;
 
 /**
  * Recursive-descent parser for relational algebra expressions.
@@ -1603,12 +1606,14 @@ public final class RelAlgebraParser {
 
     /**
      * Parses a goal-seek operator:
-     * {@code SOLVE left = right [PER k, …] [WITHIN ε] [MAX n ROUNDS] (R)}, e.g.
+     * {@code SOLVE left = right [PER k, …] [WITHIN ε] [MAX n ROUNDS] [START u = e, …] (R)}, e.g.
      * {@code SOLVE total = principal * rate (Loans)}, or a system of equations in
      * braces, {@code SOLVE &#123; a = b, c = d &#125; (R)}, separated by commas as every
      * list inside an expression is — {@code ;} ends a statement. The sides are
      * arithmetic operands; the equations are validated during semantic analysis. A
      * {@code &#123;} cannot open a struct literal here, a struct never being a number.
+     * {@code START} is a contextual word, as {@code ROUNDS} is: only a {@code (} may
+     * follow the clauses, so a column named {@code start} is never in doubt.
      * The current token is the SOLVE keyword.
      */
     private SolveNode parseSolve() {
@@ -1643,8 +1648,21 @@ public final class RelAlgebraParser {
             }
             maxRounds = Optional.of(n);
         }
+        List<SolveStart> starts = new ArrayList<>();
+        if (matchWord("START")) {
+            Set<String> named = new HashSet<>();
+            do {
+                Token column = expectName("Expected an unknown column name after 'START'");
+                String name = column.lexeme();
+                if (!named.add(name.toLowerCase(Locale.ROOT))) {
+                    throw error(column, "SOLVE START names '" + name + "' more than once");
+                }
+                expect(TokenType.EQUAL, "Expected '=' after the START column '" + name + "'");
+                starts.add(new SolveStart(name, parseOperand()));
+            } while (match(TokenType.COMMA));
+        }
         RelNode input = parseParenthesizedRelation("Expected '(' after the SOLVE equation");
-        return new SolveNode(equations, keys, tolerance, maxRounds, input, loc(opTok));
+        return new SolveNode(equations, keys, tolerance, maxRounds, starts, input, loc(opTok));
     }
 
     private SolveEquation parseSolveEquation() {

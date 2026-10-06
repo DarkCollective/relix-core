@@ -20,8 +20,10 @@ import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.SolveEquation;
+import com.darkcollective.relix.ast.SolveStart;
 import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.ast.UnaryOperand;
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.value.NumberValue;
@@ -54,7 +56,9 @@ import java.util.Set;
  *       ({@link LinearSystems}); a singular system leaves the row unchanged;</li>
  *   <li>anything else is solved iteratively ({@link Newton}), which leaves the row
  *       unchanged when the equations do not determine the unknowns and raises when they
- *       have no solution or the search does not converge.</li>
+ *       have no solution or the search does not converge. The search starts every
+ *       unknown at 1, or where a {@code START} says; the first two strategies find the
+ *       one answer there is and ignore it.</li>
  * </ol>
  * Any other row is returned unchanged.
  *
@@ -75,6 +79,7 @@ public final class EquationSystemSolver {
     /** The round cap when {@code MAX … ROUNDS} is not given. */
     public static final int DEFAULT_MAX_ROUNDS = 100;
 
+    private final OperandEvaluator evaluator;
     private final EquationSolver inverter;
     private final BigDecimal tolerance;
     private final int maxRounds;
@@ -97,6 +102,7 @@ public final class EquationSystemSolver {
      * @param maxRounds the iteration's round cap; at least 1
      */
     public EquationSystemSolver(OperandEvaluator evaluator, BigDecimal tolerance, int maxRounds) {
+        this.evaluator = evaluator;
         this.inverter = new EquationSolver(evaluator);
         this.tolerance = tolerance;
         this.maxRounds = maxRounds;
@@ -114,6 +120,24 @@ public final class EquationSystemSolver {
      *         that does not converge
      */
     public Row solve(List<SolveEquation> equations, Row row) {
+        return solve(equations, List.of(), row);
+    }
+
+    /**
+     * Returns {@code row} with its unknowns filled, or unchanged when it cannot be
+     * posed, an iterative search starting each unknown a {@code START} names at that
+     * start's value over {@code row}. A start for a column the row knows is ignored, and
+     * one whose value is {@code NULL} leaves its unknown at 1.
+     *
+     * @param equations the equations, every function expanded; must not be null
+     * @param starts    the {@code START} values, possibly empty; must not be null
+     * @param row       the row to complete; must not be null
+     * @return the completed row, or {@code row} itself
+     * @throws com.darkcollective.relix.processor.EvaluationException on a non-numeric
+     *         known value or start, a division by zero among the known terms, or an
+     *         iteration that does not converge
+     */
+    public Row solve(List<SolveEquation> equations, List<SolveStart> starts, Row row) {
         Map<String, String> participating = participating(equations);
         List<String> unknowns = new ArrayList<>();
         List<Integer> positions = new ArrayList<>();
@@ -149,8 +173,8 @@ public final class EquationSystemSolver {
             Optional<BigDecimal[]> solution = LinearSystems.solve(a, b);
             return solution.map(x -> withValues(row, positions, x)).orElse(row);
         }
-        return Newton.solve(equations, unknowns, List.of(row), tolerance, maxRounds,
-                        () -> "the row " + describe(row, participating))
+        return Newton.solve(equations, unknowns, List.of(row), startPoint(unknowns, starts, row),
+                        tolerance, maxRounds, () -> "the row " + describe(row, participating))
                 .map(x -> withValues(row, positions, x))
                 .orElse(row);
     }
@@ -179,6 +203,25 @@ public final class EquationSystemSolver {
      *         that does not converge
      */
     public List<Row> fit(List<SolveEquation> equations, List<Row> group, String subject) {
+        return fit(equations, List.of(), group, subject);
+    }
+
+    /**
+     * Fits a group as {@link #fit(List, List, String)} does, an iterative fit starting
+     * each unknown a {@code START} names at that start's value. Under {@code PER} a
+     * start is a constant, so it is read once, over the group's first row.
+     *
+     * @param equations the equations, every function expanded; must not be null
+     * @param starts    the {@code START} values, possibly empty; must not be null
+     * @param group     the rows of one group, all of one schema; must not be null
+     * @param subject   names the group in a diagnostic, e.g. {@code material=steel}
+     * @return the group's rows, in order, completed or unchanged
+     * @throws com.darkcollective.relix.processor.EvaluationException on a non-numeric
+     *         known value or start, a division by zero among the known terms, or an
+     *         iteration that does not converge
+     */
+    public List<Row> fit(List<SolveEquation> equations, List<SolveStart> starts,
+                         List<Row> group, String subject) {
         if (group.isEmpty()) {
             return group;
         }
@@ -212,13 +255,38 @@ public final class EquationSystemSolver {
 
         Optional<BigDecimal[]> solution = linear(equations, Set.copyOf(unknowns))
                 ? leastSquares(equations, unknowns, observations)
-                : Newton.solve(equations, unknowns, observations, tolerance, maxRounds,
+                : Newton.solve(equations, unknowns, observations,
+                        startPoint(unknowns, starts, first), tolerance, maxRounds,
                         () -> "the group " + subject);
         if (solution.isEmpty()) {
             return group;
         }
         BigDecimal[] fitted = solution.get();
         return group.stream().map(row -> withValues(row, positions, fitted)).toList();
+    }
+
+    /**
+     * Where a search starts: each unknown at 1, except one a {@code START} names, which
+     * starts at that value over {@code row} — or at 1 still, when the value is
+     * {@code NULL}. A start for a column that is not an unknown here is not consulted.
+     */
+    private BigDecimal[] startPoint(List<String> unknowns, List<SolveStart> starts, Row row) {
+        BigDecimal[] x = new BigDecimal[unknowns.size()];
+        Arrays.fill(x, BigDecimal.ONE);
+        for (SolveStart start : starts) {
+            int k = unknowns.indexOf(start.column().toLowerCase(Locale.ROOT));
+            if (k < 0) {
+                continue;
+            }
+            Value value = evaluator.evaluate(start.value(), row);
+            if (value instanceof NumberValue number) {
+                x[k] = number.value();
+            } else if (!value.isNull()) {
+                throw new EvaluationException("SOLVE: the START for '" + start.column()
+                        + "' must be a NUMBER, got " + value.type());
+            }
+        }
+        return x;
     }
 
     /** The least-squares solution of a linear fit, by its normal equations. */
