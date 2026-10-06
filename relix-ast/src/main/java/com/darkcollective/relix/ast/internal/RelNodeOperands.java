@@ -61,6 +61,7 @@ import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.SessionizeNode;
 import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveNode;
+import com.darkcollective.relix.ast.SolveStart;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
@@ -218,10 +219,13 @@ public final class RelNodeOperands {
                 n.boundSource().ifPresent(onOperand);
                 n.boundTarget().ifPresent(onOperand);
             }
-            case SolveNode n -> n.equations().forEach(e -> {
-                onOperand.accept(e.left());
-                onOperand.accept(e.right());
-            });
+            case SolveNode n -> {
+                n.equations().forEach(e -> {
+                    onOperand.accept(e.left());
+                    onOperand.accept(e.right());
+                });
+                n.starts().forEach(s -> onOperand.accept(s.value()));
+            }
             case OptimizeNode n -> {
                 onOperand.accept(n.objective());
                 n.constraints().forEach(c -> onOperand.accept(c.expr()));
@@ -511,9 +515,13 @@ public final class RelNodeOperands {
                     return left == e.left() && right == e.right() ? e
                             : new SolveEquation(left, right);
                 });
-                yield equations == n.equations() ? n
+                List<SolveStart> starts = mapList(n.starts(), st -> {
+                    Operand value = onOperand.apply(st.value());
+                    return value == st.value() ? st : new SolveStart(st.column(), value);
+                });
+                yield equations == n.equations() && starts == n.starts() ? n
                         : new SolveNode(equations, n.groupingKeys(), n.tolerance(),
-                                n.maxRounds(), n.input(), n.location());
+                                n.maxRounds(), starts, n.input(), n.location());
             }
             case OptimizeNode n -> {
                 Operand objective = onOperand.apply(n.objective());

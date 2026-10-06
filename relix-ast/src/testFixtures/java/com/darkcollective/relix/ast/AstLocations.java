@@ -457,6 +457,9 @@ public final class AstLocations {
             return new SolveNode(node.equations().stream()
                     .map(e -> AstBuilders.equation(stripLocations(e.left()), stripLocations(e.right())))
                     .toList(), node.groupingKeys(), node.tolerance(), node.maxRounds(),
+                    node.starts().stream()
+                            .map(s -> AstBuilders.start(s.column(), stripLocations(s.value())))
+                            .toList(),
                     node.input().accept(this), SourceLocation.UNKNOWN);
         }
 

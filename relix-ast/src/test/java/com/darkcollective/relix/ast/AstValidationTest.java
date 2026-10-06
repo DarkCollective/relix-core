@@ -561,5 +561,25 @@ final class AstValidationTest extends AstTestSupport {
             assertThatIllegalArgumentException().isThrownBy(() -> AstBuilders.solve(one, List.of(),
                     Optional.empty(), Optional.of(0), r));
         }
+
+        @Test
+        @DisplayName("takes at most one START per column, whatever its case")
+        void oneStartPerColumn() {
+            SolveStart x = AstBuilders.start("x", AstBuilders.num("2"));
+            assertThat(AstBuilders.solve(one, List.of(), Optional.empty(), Optional.empty(),
+                    List.of(x), r).starts()).containsExactly(x);
+            assertThatIllegalArgumentException().isThrownBy(() -> AstBuilders.solve(one, List.of(),
+                    Optional.empty(), Optional.empty(),
+                    List.of(x, AstBuilders.start("X", AstBuilders.num("3"))), r))
+                    .withMessageContaining("START names a column more than once");
+        }
+
+        @Test
+        @DisplayName("a START names a column")
+        void startNamesAColumn() {
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> AstBuilders.start(" ", AstBuilders.num("1")))
+                    .withMessageContaining("must not be blank");
+        }
     }
 }

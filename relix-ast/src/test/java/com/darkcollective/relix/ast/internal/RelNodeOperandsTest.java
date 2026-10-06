@@ -34,6 +34,7 @@ import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.ReservoirSampleNode;
 import com.darkcollective.relix.ast.SampleNode;
+import com.darkcollective.relix.ast.SolveNode;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.ast.TieBreak;
@@ -183,6 +184,27 @@ final class RelNodeOperandsTest extends AstTestSupport {
         void solve() {
             assertThat(operandsOf(AstBuilders.solve(attr("x"), num("10"), A)))
                     .containsExactly(attr("x"), num("10"));
+        }
+
+        @Test
+        @DisplayName("SOLVE reports each START value after its equations")
+        void solveStarts() {
+            assertThat(operandsOf(AstBuilders.solve(List.of(equation(attr("x"), num("10"))),
+                    List.of(), Optional.empty(), Optional.empty(),
+                    List.of(start("x", attr("guess"))), A)))
+                    .containsExactly(attr("x"), num("10"), attr("guess"));
+        }
+
+        @Test
+        @DisplayName("SOLVE is rebuilt when only a START value changes")
+        void solveRebuiltForAStartAlone() {
+            Operand guess = attr("guess");
+            SolveNode node = AstBuilders.solve(List.of(equation(attr("x"), num("10"))),
+                    List.of(), Optional.empty(), Optional.empty(), List.of(start("x", guess)), A);
+            SolveNode mapped = (SolveNode) RelNodeOperands.map(node,
+                    o -> o == guess ? num("3") : o, UnaryOperator.identity());
+            assertThat(mapped.equations()).isSameAs(node.equations());
+            assertThat(mapped.starts()).containsExactly(start("x", num("3")));
         }
 
         @Test
@@ -502,6 +524,8 @@ final class RelNodeOperandsTest extends AstTestSupport {
                     trace("src", "dst", false, "w", ObjectiveSense.MINIMIZE, "path",
                             Optional.of(num("1")), Optional.of(num("9")),A),
                     solve(attr("x"), num("10"), A),
+                    solve(List.of(equation(attr("x"), num("10"))), List.of(), Optional.empty(),
+                            Optional.empty(), List.of(start("x", num("2"))), A),
                     optimize(ObjectiveSense.MAXIMIZE, attr("profit"),
                             List.of(constraint(attr("cost"),
                                     ComparisonOperator.LESS_EQUAL, 5)),

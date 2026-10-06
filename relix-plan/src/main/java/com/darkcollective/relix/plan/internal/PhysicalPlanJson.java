@@ -18,6 +18,7 @@ package com.darkcollective.relix.plan.internal;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
 import com.darkcollective.relix.ast.SolveEquation;
+import com.darkcollective.relix.ast.SolveStart;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -300,6 +301,16 @@ public final class PhysicalPlanJson {
                 }
                 if (s.maxRounds().isPresent()) {
                     w.name("maxRounds").value(s.maxRounds().get());
+                }
+                if (!s.starts().isEmpty()) {
+                    w.name("starts").beginArray();
+                    for (SolveStart start : s.starts()) {
+                        w.beginObject();
+                        w.name("column").value(start.column());
+                        w.name("value").value(start.value().accept(OPND));
+                        w.endObject();
+                    }
+                    w.endArray();
                 }
             }
 
