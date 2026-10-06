@@ -166,6 +166,7 @@ world rather than a tuning parameter:
 |---|---|
 | `jdbc(name, dataSource)` | a live database handle, under a connection name |
 | `catalog(provider)` | where schemas and statistics come from — live, or a snapshot |
+| `exactStatistics(timeout)` | count each database table's rows and columns, rather than read the database's estimates |
 | `clock(clock)` | what `NOW()` and `CURRENT_DATE` read |
 | `baseDirectory(path)` | what a relative file path in a source resolves against, when the declaration was not parsed from a file |
 | `functions(library)` | functions of your own, merged with the bundled ones |

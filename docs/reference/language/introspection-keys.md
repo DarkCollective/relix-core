@@ -50,7 +50,7 @@ rows contradicts it".
 A relation whose statistics were never collected contributes no rows — a view, a
 CSV or HTTP source that was not scanned. That is not the claim that it has no key;
 it is the absence of a claim. `relix.relations` tells the two apart: a relation with
-a `row_count` was measured.
+a `row_count` has statistics.
 
 # Technical Description:
 The rows are read from the same `RelationStatistics` the cost model uses, so a key
