@@ -25,7 +25,10 @@ struct and `[TYPE]` an array, composing to any depth. A column or field whose na
 is not a plain identifier, such as `unit-price`, is written between backticks, as it
 is in a query; a doubled backtick stands for one. `${VAR}` placeholders in URLs
 and other string values are resolved from the active environment when a query runs. Other source kinds (json, http, generator) exist for
-their respective connectors. CSV paths resolve relative to the script's directory.
+their respective connectors. A relative path resolves against the directory of the
+script file that declares it, so a script read from another directory still finds the
+files beside it; a declaration that comes from no file resolves against the directory
+the program using Relix chooses.
 
 In a CSV file an **empty field is a NULL** — `2,Grace,` gives a NULL third column.
 A row that simply *ends early* is a different thing and is refused, naming the line

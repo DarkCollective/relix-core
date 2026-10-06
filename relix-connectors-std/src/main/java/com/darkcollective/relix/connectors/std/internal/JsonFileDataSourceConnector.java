@@ -79,18 +79,38 @@ public final class JsonFileDataSourceConnector implements DataSourceConnector {
 
     private final SemanticModel model;
     private final Path          baseDir;
+    private final boolean       fromDeclaringFile;
+
+    /**
+     * Creates a connector for the given semantic model and base directory, resolving a
+     * relative path against the directory of the file that declares it where there is one
+     * ({@link FileResolver#directoryOf}).
+     *
+     * @param model   the fully-validated semantic model whose {@code sources} map
+     *                provides JSON path configuration; must not be null
+     * @param baseDir the directory used to resolve relative JSON paths a declaring file
+     *                does not place; must not be null
+     */
+    public JsonFileDataSourceConnector(SemanticModel model, Path baseDir) {
+        this(model, baseDir, true);
+    }
 
     /**
      * Creates a connector for the given semantic model and base directory.
      *
-     * @param model   the fully-validated semantic model whose {@code sources} map
-     *                provides JSON path configuration; must not be null
-     * @param baseDir the directory used to resolve relative JSON paths;
-     *                must not be null
+     * @param model             the fully-validated semantic model whose {@code sources}
+     *                          map provides JSON path configuration; must not be null
+     * @param baseDir           the directory used to resolve relative JSON paths;
+     *                          must not be null
+     * @param fromDeclaringFile whether a declaration written in a file resolves against
+     *                          that file's directory rather than {@code baseDir}; a closed
+     *                          sandbox passes {@code false}, its base directory being the
+     *                          one place its files may come from
      */
-    public JsonFileDataSourceConnector(SemanticModel model, Path baseDir) {
+    public JsonFileDataSourceConnector(SemanticModel model, Path baseDir, boolean fromDeclaringFile) {
         this.model   = Objects.requireNonNull(model,   "model");
         this.baseDir = Objects.requireNonNull(baseDir, "baseDir");
+        this.fromDeclaringFile = fromDeclaringFile;
     }
 
     /**
@@ -116,7 +136,8 @@ public final class JsonFileDataSourceConnector implements DataSourceConnector {
             throw new EvaluationException(
                     "Relation '" + relationName + "' is not a JSON source");
         }
-        Path path = baseDir.resolve(json.path());
+        Path base = fromDeclaringFile ? FileResolver.directoryOf(decl.location(), baseDir) : baseDir;
+        Path path = base.resolve(json.path());
         Value document = parse(path);
         List<Value> records = extractRecords(document, json.records(), path);
         return toRows(records, path).stream();

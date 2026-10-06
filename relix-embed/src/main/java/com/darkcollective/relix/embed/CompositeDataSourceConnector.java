@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.embed;
 
+import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
 import com.darkcollective.relix.lang.ast.source.ConnectionTableSourceConfig;
 import com.darkcollective.relix.lang.ast.source.CsvFileSourceConfig;
@@ -74,6 +75,7 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
 
     private final SemanticModel model;
     private final Path baseDir;
+    private final boolean fromDeclaringFile;
     private ConnectorRegistry registry;
     private final List<RelixConnector> supplied;
     private final ConnectorProvisioner connectorProvisioner;
@@ -102,6 +104,12 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
      *
      * @param model                the semantic model whose {@code sources} declare each relation's kind
      * @param baseDir              directory used to resolve relative CSV and JSON paths
+     *                             that no declaring file places
+     * @param fromDeclaringFile    whether a declaration written in a file resolves its
+     *                             relative paths against that file's directory
+     *                             ({@link FileResolver#directoryOf}); {@code false} for a
+     *                             closed sandbox, whose base directory is the one place its
+     *                             files may come from
      * @param driverProvisioner    the on-demand JDBC driver provisioner (a missing driver is
      *                             downloaded from the catalog when permitted); must not be null
      * @param connectorProvisioner the on-demand connector-plugin provisioner (a missing connector
@@ -113,14 +121,14 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
      * @param files                the session's file resolver, which hands a file-backed
      *                             connector a local path; must not be null
      */
-    CompositeDataSourceConnector(SemanticModel model, Path baseDir,
+    CompositeDataSourceConnector(SemanticModel model, Path baseDir, boolean fromDeclaringFile,
                                  DriverProvisioner driverProvisioner,
                                  ConnectorProvisioner connectorProvisioner,
                                  GeneratorRegistry generators,
                                  ConnectionPool pool,
                                  List<RelixConnector> connectors,
                                  FileResolver files) {
-        this(model, baseDir, connectorProvisioner, generators,
+        this(model, baseDir, fromDeclaringFile, connectorProvisioner, generators,
                 new JdbcDataSourceConnector(model, Objects.requireNonNull(pool, "pool"),
                         Objects.requireNonNull(driverProvisioner, "driverProvisioner")),
                 connectors, files);
@@ -128,6 +136,7 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
 
     /** The one real constructor. */
     private CompositeDataSourceConnector(SemanticModel model, Path baseDir,
+                                         boolean fromDeclaringFile,
                                          ConnectorProvisioner connectorProvisioner,
                                          GeneratorRegistry generators,
                                          JdbcDataSourceConnector jdbcConnector,
@@ -136,10 +145,11 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
         this.files = Objects.requireNonNull(files, "files");
         this.model = Objects.requireNonNull(model, "model");
         this.baseDir = Objects.requireNonNull(baseDir, "baseDir");
+        this.fromDeclaringFile = fromDeclaringFile;
         this.supplied = List.copyOf(Objects.requireNonNull(supplied, "connectors"));
         this.registry = ConnectorRegistry.createWith(this.supplied);
         this.connectorProvisioner = Objects.requireNonNull(connectorProvisioner, "connectorProvisioner");
-        this.jsonConnector = new JsonFileDataSourceConnector(model, baseDir);
+        this.jsonConnector = new JsonFileDataSourceConnector(model, baseDir, fromDeclaringFile);
         this.httpConnector = new HttpDataSourceConnector(model);
         this.jdbcConnector = jdbcConnector;
         this.generatorConnector = new GeneratorDataSourceConnector(model,
@@ -154,7 +164,7 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
                     "No source declaration for external relation '" + relationName + "'");
         }
         return switch (declaration.config()) {
-            case CsvFileSourceConfig csv -> openCsv(relationName, csv, schema);
+            case CsvFileSourceConfig csv -> openCsv(relationName, csv, schema, declaration.location());
             case JsonFileSourceConfig ignored -> jsonConnector.open(relationName, schema);
             case DatabaseSourceConfig ignored -> throw noConnector(relationName, "database");
             case HttpSourceConfig ignored     -> httpConnector.open(relationName, schema);
@@ -179,7 +189,8 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
         }
         RelixConnector connector = resolveOrProvision(type,
                 "connection '" + table.connection() + "', relation '" + relationName + "'");
-        return connector.open(files.prepare(connector, new ConnectorConfig(connection.properties()), baseDir),
+        return connector.open(files.prepare(connector, new ConnectorConfig(connection.properties()),
+                        baseFor(connection.location())),
                 table.table(), schema);
     }
 
@@ -210,13 +221,14 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
     }
 
     /** Opens a CSV relation through the registry's built-in {@code "csv"} connector. */
-    private Stream<Row> openCsv(String relationName, CsvFileSourceConfig csv, Schema schema) {
+    private Stream<Row> openCsv(String relationName, CsvFileSourceConfig csv, Schema schema,
+                                SourceLocation declaredAt) {
         RelixConnector connector = registry.forType("csv").orElseThrow(() -> new EvaluationException(
                 "No connector registered for CSV sources (relation '" + relationName + "')"));
         ConnectorConfig config = new ConnectorConfig(Map.of(
                 "path", csv.path(),
                 "header", String.valueOf(csv.hasHeader())));
-        return connector.open(files.prepare(connector, config, baseDir), relationName, schema);
+        return connector.open(files.prepare(connector, config, baseFor(declaredAt)), relationName, schema);
     }
 
     /**
@@ -237,8 +249,14 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
                     "No connection declaration for pushed query on '" + connection + "'");
         }
         RelixConnector connector = resolveOrProvision(connectorType, "connection '" + connection + "'");
-        return connector.openQuery(files.prepare(connector, new ConnectorConfig(declaration.properties()), baseDir),
+        return connector.openQuery(files.prepare(connector, new ConnectorConfig(declaration.properties()),
+                        baseFor(declaration.location())),
                 nativeQuery, schema);
+    }
+
+    /** {@return what a relative path in a declaration written at {@code declaredAt} resolves against} */
+    private Path baseFor(SourceLocation declaredAt) {
+        return fromDeclaringFile ? FileResolver.directoryOf(declaredAt, baseDir) : baseDir;
     }
 
     @Override

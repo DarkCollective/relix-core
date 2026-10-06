@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.connectors.std.internal;
 
+import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
 import com.darkcollective.relix.processor.connector.RelixConnector;
 import com.darkcollective.relix.processor.EvaluationException;
@@ -31,6 +32,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
@@ -42,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.GZIPInputStream;
@@ -125,6 +128,35 @@ public final class FileResolver {
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(30))
                 .build()));
+    }
+
+    /**
+     * {@return the directory a declaration's relative paths resolve against} The
+     * directory of the file the declaration was written in, when its location names that
+     * file by an absolute path — which is what {@code Relix.parse(text, source)} records
+     * when its {@code source} is one, and what a script loader records for an imported
+     * file. Anything else — a declaration made in a session, built in Java, or parsed
+     * under a label rather than a path — resolves against {@code fallback}.
+     *
+     * <p>It is the rule an {@code import} already follows, applied to the files a
+     * declaration reads: a catalog assembled from scripts in several directories reads
+     * each one's files from beside it, whatever directory the program was started in.
+     *
+     * @param location where the declaration was written; must not be null
+     * @param fallback the session's base directory; must not be null
+     */
+    public static Path directoryOf(SourceLocation location, Path fallback) {
+        Objects.requireNonNull(location, "location");
+        Objects.requireNonNull(fallback, "fallback");
+        Path file;
+        try {
+            file = Path.of(location.filePath());
+        } catch (InvalidPathException e) {
+            // A label such as <session> is not a path on every platform.
+            return fallback;
+        }
+        Path directory = file.isAbsolute() ? file.getParent() : null;
+        return directory != null ? directory : fallback;
     }
 
     /**
