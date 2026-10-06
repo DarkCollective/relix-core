@@ -39,6 +39,11 @@ dependencies {
     // (D3) so the large body of text-driven tests — ParserTestSupport, the
     // analyze(src) fixtures — keeps working unchanged.
     testImplementation project(':relix-lang')
+    // The reference guard reads the manual's own CSV fixtures to infer the heading of a
+    // source that declares none, with the connector a session reads them with: a second
+    // reader written here would check the manual against itself. Test-only, and no cycle:
+    // relix-connectors-std needs this module's main classes, not its tests.
+    testImplementation project(':relix-connectors-std')
     testFixturesImplementation project(':relix-lang')
 
     // The default function library (ADR-0026 S3) is on the TEST classpath only —

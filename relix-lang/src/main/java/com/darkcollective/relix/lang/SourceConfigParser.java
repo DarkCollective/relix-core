@@ -431,7 +431,8 @@ final class SourceConfigParser {
         parser.consume(LangTokenType.LBRACE);
 
         boolean hasHeader = true;
-        List<ColumnSpec> columns = null;
+        List<ColumnSpec> columns = List.of();
+        List<String> names = List.of();
         List<ColumnReference> references = List.of();
 
         FieldLoop loop = new FieldLoop("CSV");
@@ -439,15 +440,42 @@ final class SourceConfigParser {
             switch (field) {
                 case "header"     -> hasHeader  = parser.requireBool("CSV header flag");
                 case "schema"     -> columns    = parseSchemaBlock(false);
+                case "columns"    -> names      = parseColumnNames();
                 case "references" -> references = parseReferencesBlock();
                 default -> throw loop.unknownField(field);
             }
         }
         LangToken end = loop.end();
 
-        if (columns == null) throw new LangParseException("CSV source missing 'schema'", end.line(), end.column());
+        if (!columns.isEmpty() && !names.isEmpty()) {
+            throw new LangParseException("A CSV source declares a 'schema' or its 'columns', not both"
+                    + " — 'columns' names the columns and leaves their types to be inferred",
+                    end.line(), end.column());
+        }
+        try {
+            return new CsvFileSourceConfig(path, hasHeader, columns, references, names);
+        } catch (IllegalArgumentException e) {
+            throw new LangParseException("A CSV source's 'columns' " + e.getMessage()
+                    .replace("a CSV source ", ""), end.line(), end.column());
+        }
+    }
 
-        return new CsvFileSourceConfig(path, hasHeader, columns, references);
+    /**
+     * {@code [id, region, `unit price`]}: a CSV source's column names, in file order,
+     * their types left to be inferred. At least one.
+     */
+    private List<String> parseColumnNames() {
+        parser.consume(LangTokenType.LBRACKET);
+        List<String> names = new ArrayList<>();
+        do {
+            names.add(parser.requireColumnName("column name in 'columns'"));
+            if (parser.current.type() != LangTokenType.COMMA) {
+                break;
+            }
+            parser.advance();
+        } while (parser.current.type() != LangTokenType.RBRACKET);
+        parser.consume(LangTokenType.RBRACKET);
+        return names;
     }
 
     // ── JSON file source ──────────────────────────────────────────────────────

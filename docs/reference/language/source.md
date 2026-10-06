@@ -3,6 +3,8 @@
 # Syntax:
 source <Name> from database { url: "...", table: "...", schema: { ... } };
 source <Name> from csv("<path>") { header: true, schema: { ... } };
+source <Name> from csv("<path>") { };                                   -- heading read from the file
+source <Name> from csv("<path>") { header: false, columns: [ ... ] };  -- names given, types read
 
 source Orders from database {
     url: "${DB_URL}", table: "orders",
@@ -18,7 +20,7 @@ expected, just like any other table.
 # Technical Description:
 `source` binds a relation symbol (SourceRelationSymbol) to an external connector.
 `from database` requires `url`, `table`, and a `schema`; `from csv("path")` takes
-an optional `header:` flag (default true) and a `schema`. Column types are NUMBER,
+an optional `header:` flag (default true) and an optional `schema`. Column types are NUMBER,
 STRING, BOOLEAN, ANY, and the temporal types DATE/TIME/TIMESTAMP/DURATION. A column
 may also be **nested**: `{ field: TYPE, … }` declares a
 struct and `[TYPE]` an array, composing to any depth. A column or field whose name
@@ -29,6 +31,22 @@ their respective connectors. A relative path resolves against the directory of t
 script file that declares it, so a script read from another directory still finds the
 files beside it; a declaration that comes from no file resolves against the directory
 the program using Relix chooses.
+
+**A CSV source may leave its schema out**, and its heading is then read from the
+file when the script is analysed: each column is named by the header row and typed
+as the narrowest type every value in the first 1000 records reads as — NUMBER, then
+BOOLEAN (`true`/`false`), then DATE, then TIMESTAMP, else STRING; a column with no
+value in those records is a STRING. A file with no header row names its columns with
+`columns: [ … ]`, in file order, and their types are read the same way; `columns`
+also replaces a header whose names are not wanted, which is then skipped, and the
+columns are read by position. A source declares a `schema` or its `columns`, not
+both. A headerless file with neither, an empty file, and a file that cannot be read
+are each reported when the script is analysed, naming the source and the file,
+rather than as a column some query could not find. A value after the first 1000
+records that does not read as its column's type fails the query, naming its line;
+declare the schema to read such a file. Reading the file at analysis is the one
+difference a schema makes to *when* a file is opened: a script that must be analysed
+without its files — offline, or before they exist — declares its schema.
 
 In a CSV file an **empty field is a NULL** — `2,Grace,` gives a NULL third column.
 A row that simply *ends early* is a different thing and is refused, naming the line
@@ -53,6 +71,23 @@ source Orders from database {
     schema: { order_id: NUMBER, customer_id: NUMBER, amount: NUMBER }
 };
 ```
+
+A CSV file read with no schema: its columns are named by its header row and typed by
+its values — here `id` and `score` are NUMBERs, `passed` a BOOLEAN and `answered` a
+DATE, so a query over them is type-checked like any other:
+```relix
+source Survey from csv("survey.csv") { };
+query { π id, region (σ score > 8 ∧ passed = true (Survey)) };
+```
+
+A CSV file with no header row, its columns named and their types read from the file:
+```relix
+source Visits from csv("visits.csv") { header: false, columns: [day, page, hits] };
+query { γ page, SUM(hits) → total (σ day ≥ DATE '2026-03-01' (Visits)) };
+```
+
+A source names its columns or declares its schema, not both: `columns` is for a heading
+whose types are read from the file, and a `schema` already says them.
 
 A nested column — a struct, and an array of structs:
 ```relix
@@ -117,7 +152,8 @@ source Orders from database {
 # Limitations:
 Nesting is available on a *column* only — a `def`'s parameters and return type are
 scalar. A CSV source reads a
-nested-typed column as raw text, since its cells are flat. The schema you declare is
+nested-typed column as raw text, since its cells are flat. A heading read from a CSV file reflects its first 1000 records; a JSON
+file's source with no schema is open (schema-on-read) rather than read. The schema you declare is
 what the engine trusts; mismatched real data is coerced or errors per connector. Secrets in
 URLs should come from the environment via ${VAR}, not be hard-coded.
 

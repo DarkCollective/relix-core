@@ -135,6 +135,30 @@ a second read of the relation does:
   so a second query, or one that reads the relation twice, replays them; reading a large
   stream more than once therefore holds it in memory.
 
+Delimited text with no header row has nothing to name its columns, so you name them, in
+order, with `names(…)`; their types are still inferred from the records:
+
+```java
+String visits = "2026-03-01,/home,12\n2026-03-01,/about,3\n2026-03-02,/home,8\n";
+relix.input("Visits", Input.of(InputFormat.CSV,
+        new ByteArrayInputStream(visits.getBytes(StandardCharsets.UTF_8)))
+        .names("day", "page", "hits"));
+
+for (Row row : relix.relation("τ page (γ page, SUM(hits) → total (Visits))").toList()) {
+    System.out.println(row.get("page").asDisplayString()
+            + " " + row.get("total").asDisplayString());
+}
+```
+
+```
+/about 3
+/home 20
+```
+
+A `csv("…")` source in a script does the same with `columns: [day, page, hits]`, and may
+leave its schema out altogether, its heading then read from the file when the script is
+analysed.
+
 A record after the sample whose value does not fit its column's inferred type fails the
 query, naming the record. Declare the heading, or raise the sample with `sample(n)` (a
 thousand records by default).

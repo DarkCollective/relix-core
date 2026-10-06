@@ -1,0 +1,4 @@
+id,region,score,passed,answered
+1,north,7.5,true,2026-01-02
+2,south,9,false,2026-01-03
+3,north,8.5,true,2026-02-01

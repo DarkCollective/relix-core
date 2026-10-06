@@ -16,6 +16,7 @@
 package com.darkcollective.relix.semantic;
 
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
+import com.darkcollective.relix.lang.ast.SourceDeclaration;
 import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.Schema;
 
@@ -81,6 +82,26 @@ public interface CatalogProvider {
      *         name; or empty if this provider cannot enumerate them
      */
     default Optional<List<String>> tables(ConnectionDeclaration connection) {
+        return Optional.empty();
+    }
+
+    /**
+     * Returns the heading of a source that declares none, read from what the source
+     * names — the start of a CSV file whose schema was left out — or
+     * {@link Optional#empty()} if this provider does not read sources.
+     *
+     * <p>Unlike a table's schema, there is no declaration to fall back on: a source that
+     * left its schema out has its heading here or nowhere. So a provider that reads the
+     * source and cannot — the file is missing, or holds no header to name its columns —
+     * says why by throwing, and the analyser reports that rather than a column it cannot
+     * find. The default reads nothing.
+     *
+     * @param source the declaration, its placeholders resolved
+     * @return the source's heading, or empty if this provider does not read sources
+     * @throws RuntimeException naming the source when it is read and cannot be described
+     * @since 1.0
+     */
+    default Optional<Schema> sourceSchema(SourceDeclaration source) {
         return Optional.empty();
     }
 

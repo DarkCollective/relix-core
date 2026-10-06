@@ -271,10 +271,29 @@ final class LangAstSourceTest {
         }
 
         @Test
-        @DisplayName("Rejects empty columns")
-        void rejectsEmptyColumns() {
-            assertThatThrownBy(() -> new CsvFileSourceConfig("./data.csv", true, List.of()))
-                    .isInstanceOf(IllegalArgumentException.class);
+        @DisplayName("Empty columns mean the schema is inferred")
+        void emptyColumnsInfer() {
+            CsvFileSourceConfig cfg = new CsvFileSourceConfig("./data.csv", true, List.of());
+            assertThat(cfg.infersSchema()).isTrue();
+            assertThat(cfg.names()).isEmpty();
+            assertThat(new CsvFileSourceConfig("./data.csv", true, cols).infersSchema()).isFalse();
+        }
+
+        @Test
+        @DisplayName("Names are kept, and are not given beside a schema or twice")
+        void names() {
+            CsvFileSourceConfig cfg = new CsvFileSourceConfig("./data.csv", false, List.of(),
+                    List.of(), List.of("day", "hits"));
+            assertThat(cfg.names()).containsExactly("day", "hits");
+            assertThat(cfg.infersSchema()).isTrue();
+            assertThatThrownBy(() -> new CsvFileSourceConfig("./data.csv", false, cols,
+                    List.of(), List.of("day")))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("a schema or column names, not both");
+            assertThatThrownBy(() -> new CsvFileSourceConfig("./data.csv", false, List.of(),
+                    List.of(), List.of("day", "DAY")))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("names a column more than once");
         }
 
         @Test

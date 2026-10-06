@@ -627,7 +627,9 @@ public final class SymbolCollector {
             // exactly like a JSON file; a declared schema makes it closed + typed.
             case HttpSourceConfig     http -> http.isOpen() ? Schema.open() : closedSchema(http.columns());
             case DatabaseSourceConfig db   -> closedSchema(db.columns());
-            case CsvFileSourceConfig  csv  -> closedSchema(csv.columns());
+            case CsvFileSourceConfig  csv  -> csv.infersSchema()
+                    ? inferredSchema(src, csv)
+                    : closedSchema(csv.columns());
             case ConnectionTableSourceConfig ct -> closedSchema(ct.columns());
             // Generator-owned schema (ADR-0008): resolved from the registry by name.
             case GeneratorSourceConfig gen -> generatorSchema(src, gen);
@@ -646,6 +648,31 @@ public final class SymbolCollector {
                     "Unknown generator '" + gen.generatorName() + "' for source '" + src.name() + "'"));
             return UNRESOLVED_SCHEMA;
         });
+    }
+
+    /**
+     * The heading of a CSV source that left its schema out, read from the file by the
+     * catalog. A file that cannot be read, and a catalog that reads no files, are each
+     * reported naming the source — what the user has to fix is there, not at the column a
+     * query could not find — and the placeholder {@code UNRESOLVED_SCHEMA} keeps the rest of
+     * the analysis from cascading.
+     */
+    private Schema inferredSchema(SourceDeclaration src, CsvFileSourceConfig csv) {
+        String what = "CSV source '" + src.name() + "' (\"" + csv.path() + "\")";
+        String problem;
+        try {
+            Optional<Schema> schema = catalog.sourceSchema(src);
+            if (schema.isPresent()) {
+                return schema.get();
+            }
+            problem = "Cannot infer the columns of " + what + ": its schema is inferred from"
+                    + " the file, and this analysis reads no files; declare its schema";
+        } catch (RuntimeException e) {
+            problem = "Cannot infer the columns of " + what + ": " + e.getMessage();
+        }
+        errors.add(SemanticError.error(src.location().filePath(), src.location().line(),
+                src.location().column(), problem));
+        return UNRESOLVED_SCHEMA;
     }
 
     private static Schema closedSchema(List<ColumnSpec> specs) {
