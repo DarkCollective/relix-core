@@ -1,7 +1,7 @@
 # Bringing your own data and code
 
 "Here is my in-memory data, joined against my database table" is one of the reasons to
-embed a query engine at all. Five calls cover it. The first three differ in one axis —
+embed a query engine at all. Six calls cover it. The first four differ in one axis —
 how much the program hands over, and how late — and the last two hand over code rather
 than rows.
 
@@ -9,6 +9,7 @@ than rows.
 |---|---|
 | `table(name, rows)` | Rows already in memory — reference data, fixtures, a result computed elsewhere |
 | `source(name, schema, supplier)` | Anything lazy or large: a stream the program produces per scan |
+| `input(name, input)` | Rows arriving as text — CSV, TSV, JSON, JSON lines — from a file, a pipe or standard input |
 | `materialize(name, relation)` | A result this session computed, kept under a name and queried again |
 | `connector(connector)` | A backend of the program's own, read through the connector SPI |
 | `functions(library)` | Scalar or aggregate functions of the program's own |
@@ -92,6 +93,58 @@ through `Stream.onClose`.
 The engine treats a supplied source as **finite**, so the collecting terminals read it to
 the end. A supplier whose stream does not terminate is read with `stream()`, which is
 lazy and stops the moment you stop pulling.
+
+## Rows that arrive as text
+
+`input` names text as a relation: CSV, TSV, a JSON array, or JSON lines — one object per
+line, what `jq -c` writes. The text is read by the rules a `csv("…")` or `json("…")`
+source reads a file with, and the heading is inferred from the first records unless you
+declare one with `schema(…)`: a delimited format's column names come from its header row,
+JSON's from the keys, and each column's type from its values.
+
+```java
+import com.darkcollective.relix.embed.Input;
+import com.darkcollective.relix.embed.InputFormat;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+
+String piped = """
+        {"order_id": 1, "carrier": "Rail", "weight": 120}
+        {"order_id": 2, "carrier": "Air", "weight": 8}
+        """;
+relix.input("Parcels", Input.of(InputFormat.NDJSON,
+        new ByteArrayInputStream(piped.getBytes(StandardCharsets.UTF_8))));
+
+for (Row row : relix.relation("π order_id, weight (σ weight > 100 (Parcels))").toList()) {
+    System.out.println(row.get("order_id").asDisplayString()
+            + " " + row.get("weight").asDisplayString());
+}
+```
+
+```
+1 120
+```
+
+`Input.of` takes either an `InputStream` or a supplier of one, and the difference is what
+a second read of the relation does:
+
+- **A supplier** is called for each scan, as `source`'s is, so the text is opened afresh
+  every time. That is the form for a file: `Input.of(InputFormat.CSV, () ->
+  Files.newInputStream(path))`.
+- **A stream** is read once — standard input, a pipe. Its rows are kept as they are read,
+  so a second query, or one that reads the relation twice, replays them; reading a large
+  stream more than once therefore holds it in memory.
+
+A record after the sample whose value does not fit its column's inferred type fails the
+query, naming the record. Declare the heading, or raise the sample with `sample(n)` (a
+thousand records by default).
+
+A stream that never ends — a log being followed, a feed — is marked `unbounded()`. The
+engine then treats it as it treats any endless relation: a query streams it a row at a
+time, and one that would have to read all of it first, such as a sort, a grouping or
+`toList()`, is refused before it starts. Nothing of an unbounded stream is kept, so it can
+be read by one scan; and a JSON array, being one document, cannot be unbounded — write one
+object per line instead.
 
 ## A result you want to keep
 

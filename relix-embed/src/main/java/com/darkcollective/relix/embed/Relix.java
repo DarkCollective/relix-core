@@ -238,6 +238,9 @@ public final class Relix implements AutoCloseable {
      * <p>Concurrent for the reason {@link #closed} is volatile — a relation may be
      * streamed on one thread while another opens its own.
      */
+    /** The single-pass inputs declared here, whose streams close with the session. */
+    private final List<InputRows> inputs = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     /** The executions running now, which {@link #cancel()} stops. */
     private final Set<QueryCancellation> running = ConcurrentHashMap.newKeySet();
 
@@ -820,6 +823,51 @@ public final class Relix implements AutoCloseable {
     }
 
     /**
+     * Declares a relation whose rows arrive as text: CSV, TSV, a JSON array or JSON
+     * lines, from a file, a pipe or standard input.
+     *
+     * <p>The text is read by the same rules a {@code csv("…")} or {@code json("…")} source
+     * reads a file with. Its heading is the one {@link Input#schema(Schema)} declares, or
+     * one inferred now from its first records — so a stream with no header row, or with
+     * nothing in it, is refused here rather than when a query reads it. See {@link Input}
+     * for what a second read of the relation does, and {@link Input#unbounded()} for a
+     * stream that never ends.
+     *
+     * <pre>{@code
+     * relix.input("orders", Input.of(InputFormat.NDJSON, System.in));
+     * relix.relation("orders ⋈ Customers").stream()...
+     * }</pre>
+     *
+     * @param name  the relation name; must not be null
+     * @param input the text and how to read it; must not be null
+     * @return this session, for chaining
+     * @throws RelixException if the name is taken, or the text cannot be read as its format
+     * @since 1.0
+     */
+    public Relix input(String name, Input input) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(input, "input");
+        requireOpen();
+        InputRows rows;
+        try {
+            rows = InputRows.declare(name, input);
+        } catch (RelixException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new RelixException("cannot read input '" + name + "': " + e.getMessage(), e);
+        }
+        try {
+            generators.register(rows);
+        } catch (IllegalArgumentException e) {
+            rows.close();
+            throw new RelixException("cannot declare input '" + name + "': " + e.getMessage(), e);
+        }
+        inputs.add(rows);
+        return install(new Script(namespace, List.of(ScriptBuilders.source(
+                name, ScriptBuilders.generatorSource(name, Map.of())))));
+    }
+
+    /**
      * Declares a relation from the rows another relation produces, computed now.
      *
      * <p>The step a multi-stage program otherwise writes by hand: compute something
@@ -1173,6 +1221,7 @@ public final class Relix implements AutoCloseable {
         // rather than left reading through connections the pool is about to close.
         cancel();
         int abandoned = releaseAbandoned();
+        inputs.forEach(InputRows::close);
         // The pool and the default catalog are the resources the session owns: the pool
         // holds idle JDBC connections opened on its behalf, and the catalog holds the
         // connector registry it introspects through. A bound DataSource is the caller's
