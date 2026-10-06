@@ -30,6 +30,7 @@ import com.darkcollective.relix.ast.NotPredicate;
 import com.darkcollective.relix.ast.NullPredicate;
 import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.Operand;
+import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.OrPredicate;
 import com.darkcollective.relix.ast.PatternPredicate;
 import com.darkcollective.relix.ast.Predicate;
@@ -69,6 +70,9 @@ import java.util.function.Consumer;
  */
 public final class OperandWalker {
 
+    /** The parameter callback of the two-callback walks, which report none. */
+    private static final Consumer<ParameterOperand> IGNORE = unused -> { };
+
     private OperandWalker() {
     }
 
@@ -81,33 +85,45 @@ public final class OperandWalker {
     public static void walk(Operand expr,
                             Consumer<AttributeOperand> onAttribute,
                             Consumer<FunctionCall> onFunction) {
+        walk(expr, onAttribute, onFunction, IGNORE);
+    }
+
+    /**
+     * Walks {@code expr} as {@link #walk(Operand, Consumer, Consumer)} does, also invoking
+     * {@code onParameter} for each bound parameter ({@code $name}).
+     */
+    public static void walk(Operand expr,
+                            Consumer<AttributeOperand> onAttribute,
+                            Consumer<FunctionCall> onFunction,
+                            Consumer<ParameterOperand> onParameter) {
         switch (expr) {
             case AttributeOperand attr -> onAttribute.accept(attr);
+            case ParameterOperand param -> onParameter.accept(param);
             case FunctionCall fn -> {
                 for (Operand arg : fn.arguments()) {
-                    walk(arg, onAttribute, onFunction);
+                    walk(arg, onAttribute, onFunction, onParameter);
                 }
                 onFunction.accept(fn);
             }
             case BinaryArithmeticExpression arith -> {
-                walk(arith.left(), onAttribute, onFunction);
-                walk(arith.right(), onAttribute, onFunction);
+                walk(arith.left(), onAttribute, onFunction, onParameter);
+                walk(arith.right(), onAttribute, onFunction, onParameter);
             }
-            case UnaryOperand unary -> walk(unary.operand(), onAttribute, onFunction);
-            case ConditionOperand cond -> walk(cond.predicate(), onAttribute, onFunction);
+            case UnaryOperand unary -> walk(unary.operand(), onAttribute, onFunction, onParameter);
+            case ConditionOperand cond -> walk(cond.predicate(), onAttribute, onFunction, onParameter);
             case SetLiteralOperand set -> {
                 for (Operand elem : set.elements()) {
-                    walk(elem, onAttribute, onFunction);
+                    walk(elem, onAttribute, onFunction, onParameter);
                 }
             }
             case StructConstruction struct -> {
                 for (StructConstruction.Field field : struct.fields()) {
-                    walk(field.value(), onAttribute, onFunction);
+                    walk(field.value(), onAttribute, onFunction, onParameter);
                 }
             }
             case ArrayConstruction array -> {
                 for (Operand elem : array.elements()) {
-                    walk(elem, onAttribute, onFunction);
+                    walk(elem, onAttribute, onFunction, onParameter);
                 }
             }
             // literals reference no columns and need no callback
@@ -130,28 +146,39 @@ public final class OperandWalker {
     public static void walk(Predicate predicate,
                             Consumer<AttributeOperand> onAttribute,
                             Consumer<FunctionCall> onFunction) {
+        walk(predicate, onAttribute, onFunction, IGNORE);
+    }
+
+    /**
+     * Walks {@code predicate} as {@link #walk(Predicate, Consumer, Consumer)} does, also
+     * invoking {@code onParameter} for each bound parameter ({@code $name}).
+     */
+    public static void walk(Predicate predicate,
+                            Consumer<AttributeOperand> onAttribute,
+                            Consumer<FunctionCall> onFunction,
+                            Consumer<ParameterOperand> onParameter) {
         switch (predicate) {
             case ComparisonPredicate c -> {
-                walk(c.left(), onAttribute, onFunction);
-                walk(c.right(), onAttribute, onFunction);
+                walk(c.left(), onAttribute, onFunction, onParameter);
+                walk(c.right(), onAttribute, onFunction, onParameter);
             }
             case AndPredicate a -> {
-                walk(a.left(), onAttribute, onFunction);
-                walk(a.right(), onAttribute, onFunction);
+                walk(a.left(), onAttribute, onFunction, onParameter);
+                walk(a.right(), onAttribute, onFunction, onParameter);
             }
             case OrPredicate o -> {
-                walk(o.left(), onAttribute, onFunction);
-                walk(o.right(), onAttribute, onFunction);
+                walk(o.left(), onAttribute, onFunction, onParameter);
+                walk(o.right(), onAttribute, onFunction, onParameter);
             }
-            case NotPredicate n -> walk(n.predicate(), onAttribute, onFunction);
-            case NullPredicate n -> walk(n.operand(), onAttribute, onFunction);
+            case NotPredicate n -> walk(n.predicate(), onAttribute, onFunction, onParameter);
+            case NullPredicate n -> walk(n.operand(), onAttribute, onFunction, onParameter);
             case ElementOfPredicate e -> {
-                walk(e.element(), onAttribute, onFunction);
-                walk(e.setExpression(), onAttribute, onFunction);
+                walk(e.element(), onAttribute, onFunction, onParameter);
+                walk(e.setExpression(), onAttribute, onFunction, onParameter);
             }
             case PatternPredicate p -> {
-                walk(p.operand(), onAttribute, onFunction);
-                walk(p.pattern(), onAttribute, onFunction);
+                walk(p.operand(), onAttribute, onFunction, onParameter);
+                walk(p.pattern(), onAttribute, onFunction, onParameter);
             }
         }
     }

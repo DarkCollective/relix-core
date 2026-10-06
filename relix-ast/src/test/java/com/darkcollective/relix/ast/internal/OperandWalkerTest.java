@@ -173,4 +173,20 @@ final class OperandWalkerTest {
             assertThat(functions).containsExactly("UCase");
         }
     }
+    @Test
+    @DisplayName("reports parameters to the four-callback walk, and to the others not at all")
+    void reportsParameters() {
+        java.util.List<String> parameters = new java.util.ArrayList<>();
+        com.darkcollective.relix.ast.Operand expr = arith(param("a"),
+                com.darkcollective.relix.ast.ArithmeticOperator.PLUS, func("Abs", param("b")));
+        OperandWalker.walk(expr, a -> { }, f -> { }, p -> parameters.add(p.name()));
+        OperandWalker.walk(cmp(attr("x"), com.darkcollective.relix.ast.ComparisonOperator.EQUAL,
+                param("c")), a -> { }, f -> { }, p -> parameters.add(p.name()));
+        assertThat(parameters).containsExactly("a", "b", "c");
+
+        OperandWalker.walk(expr, a -> { }, f -> { });
+        OperandWalker.walk(cmp(attr("x"), com.darkcollective.relix.ast.ComparisonOperator.EQUAL,
+                param("c")), a -> { }, f -> { });
+    }
+
 }

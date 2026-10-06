@@ -191,8 +191,9 @@ final class SqlPushdownPlanner implements PushdownRenderer {
     }
 
     private static PhysicalNode.PushedScan toScan(Pushed p) {
-        return new PhysicalNode.PushedScan(p.schema, p.connectorType, p.connection, p.toSql(),
-                Ordering.of(p.deliveredKeys));
+        SqlExpressions.Bound bound = SqlExpressions.bind(p.toSql());
+        return new PhysicalNode.PushedScan(p.schema, p.connectorType, p.connection, bound.sql(),
+                Ordering.of(p.deliveredKeys), bound.parameters());
     }
 
     private Optional<Pushed> build(RelNode node) {

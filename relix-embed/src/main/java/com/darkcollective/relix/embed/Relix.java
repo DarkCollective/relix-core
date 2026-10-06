@@ -175,6 +175,9 @@ public final class Relix implements AutoCloseable {
     private final Path baseDirectory;
     private final Clock clock;
 
+    /** The session's parameter values, by name as given, which a relation's own bindings override. */
+    private final Map<String, Object> parameters;
+
     /** How this session resolves a declaration's {@code ${NAME}} placeholders. */
     private final Placeholders placeholders;
 
@@ -307,6 +310,7 @@ public final class Relix implements AutoCloseable {
                 ? builder.baseDirectory
                 : sandbox.baseDirectory().orElse(builder.baseDirectory);
         this.clock = builder.clock;
+        this.parameters = builder.parameters;
         this.maxFixpointRounds = stricter(builder.maxFixpointRounds, sandbox.maxFixpointRounds());
         this.maxMaterializedRows = stricter(builder.maxMaterializedRows, sandbox.maxMaterializedRows());
         this.maxProcessedRows = sandbox.maxProcessedRows().isPresent()
@@ -1275,6 +1279,11 @@ public final class Relix implements AutoCloseable {
         return clock;
     }
 
+    /** The parameter values every query of this session reads unless it binds its own. */
+    Map<String, Object> parameters() {
+        return parameters;
+    }
+
     /** How this session resolves placeholders, for each execution to apply. */
     Placeholders placeholders() {
         return placeholders;
@@ -1694,6 +1703,7 @@ public final class Relix implements AutoCloseable {
         private final Map<String, DataSource> connections = new java.util.LinkedHashMap<>();
         private CatalogProvider catalog;
         private Clock clock = Clock.systemUTC();
+        private Map<String, Object> parameters = Map.of();
         private Path baseDirectory = Path.of("");
         private boolean allowUnresolved;
         private Duration exactStatistics;
@@ -1890,6 +1900,26 @@ public final class Relix implements AutoCloseable {
          */
         public Builder clock(Clock clock) {
             this.clock = Objects.requireNonNull(clock, "clock");
+            return this;
+        }
+
+        /**
+         * Values for the script's bound parameters ({@code $name}), read by every query
+         * of the session that uses one and does not {@link Relation#bind bind} its own.
+         *
+         * <p>A parameter is how a value reaches a query without being written into its
+         * text, so a value holding a quote cannot change what the query means. Each value
+         * is checked against the type the script uses its parameter as when a query that
+         * uses it runs; see {@link Relation#bind}.
+         *
+         * @param values each parameter's value, keyed by its name without the {@code $},
+         *               matched ignoring case; must not be null, and a value may be null
+         * @return this builder
+         * @since 1.0
+         */
+        public Builder parameters(Map<String, ?> values) {
+            Objects.requireNonNull(values, "values");
+            this.parameters = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(values));
             return this;
         }
 

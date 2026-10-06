@@ -406,10 +406,24 @@ public sealed interface PhysicalNode {
      * @param nativeQuery   the backend-native query text (SQL for JDBC, etc.)
      * @param ordering      the row order the query guarantees on its output;
      *                      {@link Ordering#none()} when unordered
+     * @param parameters    the bound parameters ({@code $name}) the query's placeholders
+     *                      stand for, one name per placeholder in the order they appear;
+     *                      their values are supplied when the query runs
      */
     record PushedScan(Schema schema, String connectorType, String connection,
-                      String nativeQuery, Ordering ordering) implements PhysicalNode {
-        /** A pushed scan with no guaranteed row order. */
+                      String nativeQuery, Ordering ordering, List<String> parameters)
+            implements PhysicalNode {
+        public PushedScan {
+            parameters = List.copyOf(parameters);
+        }
+
+        /** A pushed scan with no bound parameters. */
+        public PushedScan(Schema schema, String connectorType, String connection,
+                          String nativeQuery, Ordering ordering) {
+            this(schema, connectorType, connection, nativeQuery, ordering, List.of());
+        }
+
+        /** A pushed scan with no guaranteed row order and no bound parameters. */
         public PushedScan(Schema schema, String connectorType, String connection, String nativeQuery) {
             this(schema, connectorType, connection, nativeQuery, Ordering.none());
         }

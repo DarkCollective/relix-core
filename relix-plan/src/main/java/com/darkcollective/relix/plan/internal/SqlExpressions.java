@@ -36,6 +36,7 @@ import com.darkcollective.relix.ast.OrPredicate;
 import com.darkcollective.relix.ast.PatternPredicate;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.SetLiteralOperand;
+import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.TimeOperand;
 import com.darkcollective.relix.ast.TimestampOperand;
@@ -63,6 +64,9 @@ import java.util.StringJoiner;
  * <p>String literals are single-quoted with embedded quotes doubled.  This keeps
  * the generated SQL portable across the dialects relix targets without a
  * per-dialect literal layer.
+ *
+ * <p>A bound parameter ({@code $name}) compared with a column or a value is sent as a
+ * JDBC {@code ?}, never as a literal, so its value cannot change the statement.
  */
 public final class SqlExpressions {
 
@@ -172,7 +176,7 @@ public final class SqlExpressions {
         ColumnRenderer equal = ColumnRenderer.withComparing(cols, cols, ordering);
         ColumnRenderer order = ColumnRenderer.withComparing(ordering, cols, ordering);
         return switch (predicate) {
-            case ComparisonPredicate c -> binary(c.left(), sqlOp(c.operator()), c.right(),
+            case ComparisonPredicate c -> comparison(c.left(), sqlOp(c.operator()), c.right(),
                     ordersValues(c.operator()) ? order : equal, dialect, functions);
             case AndPredicate a -> combine(a.left(), "AND", a.right(), cols, ordering, dialect, functions);
             case OrPredicate o -> combine(o.left(), "OR", o.right(), cols, ordering, dialect, functions);
@@ -205,7 +209,9 @@ public final class SqlExpressions {
         return switch (operand) {
             case AttributeOperand a -> cols.render(a.name());
             case NumberOperand n -> Optional.of(n.value());
-            case StringOperand s -> Optional.of(dialect.stringLiteral(s.value()));
+            // A literal holding a placeholder character would read back as a parameter.
+            case StringOperand s -> containsPlaceholder(s.value()) ? Optional.empty()
+                    : Optional.of(dialect.stringLiteral(s.value()));
             case BooleanOperand b -> Optional.of(dialect.booleanLiteral(b.value()));
             // Temporal literals render per-dialect (ADR-0013), and a dialect with no
             // date types declines them.
@@ -221,6 +227,76 @@ public final class SqlExpressions {
             case FunctionCall f -> functionCall(f, cols, dialect, functions);
             default -> Optional.empty();
         };
+    }
+
+    /**
+     * One side of a comparison: a bound parameter compared with something that is not a
+     * parameter renders as a placeholder ({@link #parameter}), and anything else as an
+     * operand.
+     *
+     * <p>Only there. A placeholder's type is the database's to infer from its context,
+     * and the other side of a comparison is the one context every backend reads it from;
+     * {@code ? + 1}, a selected {@code ?} or {@code ? = ?} leaves Postgres asking what
+     * type the parameter has. Such a parameter is not pushed, and the engine evaluates
+     * it instead.
+     */
+    private static Optional<String> comparand(Operand side, Operand other, ColumnRenderer cols,
+                                              Dialect dialect, PushdownFunctions functions) {
+        if (side instanceof ParameterOperand p && !(other instanceof ParameterOperand)) {
+            return Optional.of(parameter(p.name()));
+        }
+        return operand(side, cols, dialect, functions);
+    }
+
+    /** Opens a parameter's placeholder in rendered text; a private-use character. */
+    static final char PARAMETER_OPEN = '\uE000';
+
+    /** Closes a parameter's placeholder in rendered text; a private-use character. */
+    static final char PARAMETER_CLOSE = '\uE001';
+
+    /**
+     * The placeholder a bound parameter is rendered as while a statement is assembled:
+     * its name between two private-use characters. A statement is built from fragments
+     * and the fragments are not concatenated in reading order, so the position of each
+     * {@code ?} is only known once the text is complete; {@link #bind} reads them off it
+     * then.
+     */
+    static String parameter(String name) {
+        return PARAMETER_OPEN + name + String.valueOf(PARAMETER_CLOSE);
+    }
+
+    /**
+     * A statement's text with each parameter placeholder replaced by {@code ?}, and the
+     * names of the parameters each {@code ?} stands for, in order.
+     *
+     * @param sql        the text to send
+     * @param parameters one name per {@code ?}, in the order they appear
+     */
+    record Bound(String sql, List<String> parameters) {
+    }
+
+    /** Replaces each placeholder in {@code sql} with {@code ?}, recording its name. */
+    static Bound bind(String sql) {
+        StringBuilder out = new StringBuilder(sql.length());
+        List<String> names = new ArrayList<>();
+        int i = 0;
+        while (i < sql.length()) {
+            char c = sql.charAt(i);
+            if (c == PARAMETER_OPEN) {
+                int close = sql.indexOf(PARAMETER_CLOSE, i);
+                names.add(sql.substring(i + 1, close));
+                out.append('?');
+                i = close + 1;
+            } else {
+                out.append(c);
+                i++;
+            }
+        }
+        return new Bound(out.toString(), List.copyOf(names));
+    }
+
+    private static boolean containsPlaceholder(String text) {
+        return text.indexOf(PARAMETER_OPEN) >= 0 || text.indexOf(PARAMETER_CLOSE) >= 0;
     }
 
     /** Strips any qualifier (text before the last dot) and returns the bare column name. */
@@ -239,6 +315,18 @@ public final class SqlExpressions {
                                            PushdownFunctions functions) {
         Optional<String> l = operand(left, cols, dialect, functions);
         Optional<String> r = operand(right, cols, dialect, functions);
+        if (l.isEmpty() || r.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of("(" + l.get() + " " + op + " " + r.get() + ")");
+    }
+
+    /** A comparison: {@link #binary}, except that either side may be a parameter's placeholder. */
+    private static Optional<String> comparison(Operand left, String op, Operand right,
+                                               ColumnRenderer cols, Dialect dialect,
+                                               PushdownFunctions functions) {
+        Optional<String> l = comparand(left, right, cols, dialect, functions);
+        Optional<String> r = comparand(right, left, cols, dialect, functions);
         if (l.isEmpty() || r.isEmpty()) {
             return Optional.empty();
         }

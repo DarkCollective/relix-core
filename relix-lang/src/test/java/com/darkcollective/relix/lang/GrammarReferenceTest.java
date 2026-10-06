@@ -211,6 +211,12 @@ final class GrammarReferenceTest {
             "query { σ x IN {} (R) };",
             "query { σ x NOT IN {1} (R) };",
             "query { σ x ∉ {1} (R) };",
+            // a bound parameter is "$" touching a name, and nothing else
+            "query { σ id = $id ∧ $since_2 < at (R) };",
+            "query { π x * $rate → y (R) };",
+            "query { σ id = $ id (R) };",
+            "query { σ id = $1 (R) };",
+            "query { σ id = $ (R) };",
             // comparisons, and what is not one
             "query { σ status <> 'open' (Orders) };",
             "query { σ a != 1 ∧ b ≠ 2 ∧ c <= 3 ∧ d ≥ 4 (R) };",

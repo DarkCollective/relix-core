@@ -135,7 +135,8 @@ public final class ProvenanceEvaluator {
         Objects.requireNonNull(semiring,      "semiring");
         Objects.requireNonNull(ctx,           "ctx");
         Objects.requireNonNull(baseAnnotator, "baseAnnotator");
-        OperandEvaluator operandEval = new OperandEvaluator(ctx.symbolTable(), ctx.functions(), ctx.functionContext());
+        OperandEvaluator operandEval = new OperandEvaluator(ctx.symbolTable(), ctx.functions(),
+                ctx.functionContext()).withParameters(ctx.parameters());
         PredicateEvaluator predicateEval = new PredicateEvaluator(operandEval);
         return eval(node, semiring, ctx, operandEval, predicateEval, baseAnnotator);
     }

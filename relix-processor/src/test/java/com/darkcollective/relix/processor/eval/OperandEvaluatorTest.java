@@ -364,4 +364,26 @@ final class OperandEvaluatorTest extends ProcessorTestSupport {
         }
     }
 
+    @Nested
+    @DisplayName("bound parameters")
+    class Parameters {
+
+        @Test
+        @DisplayName("a parameter reads its bound value, matched ignoring case")
+        void readsTheBoundValue() {
+            OperandEvaluator bound = eval.withParameters(java.util.Map.of("Limit", num(7)));
+            assertThat(bound.evaluate(arith(param("limit"), ArithmeticOperator.PLUS, attr("id")), row)
+                    .asDisplayString()).isEqualTo("49");
+        }
+
+        @Test
+        @DisplayName("an unbound parameter is an error naming it, and binding leaves the original alone")
+        void unbound() {
+            eval.withParameters(java.util.Map.of("other", num(1)));
+            assertThatThrownBy(() -> eval.evaluate(param("limit"), row))
+                    .isInstanceOf(EvaluationException.class)
+                    .hasMessage("Parameter $limit is not bound");
+        }
+    }
+
 }

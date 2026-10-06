@@ -175,6 +175,13 @@ public final class PhysicalPlanJson {
                 w.name("connectorType").value(s.connectorType());
                 w.name("connection").value(s.connection());
                 w.name("query").value(s.nativeQuery());
+                if (!s.parameters().isEmpty()) {
+                    w.name("parameters").beginArray();
+                    for (String name : s.parameters()) {
+                        w.value(name);
+                    }
+                    w.endArray();
+                }
             }
             case PhysicalNode.Unnest u -> {
                 w.name("column").value(u.column());

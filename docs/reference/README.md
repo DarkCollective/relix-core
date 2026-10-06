@@ -46,6 +46,7 @@ The shape of a `.relix` file — declaring data, naming results, and reusing cod
 | [inline-table](language/inline-table.md) | Embed small reference data directly in a script |
 | [assignment & query](language/assignment.md) | Name a view with `:=` and mark a result `query` |
 | [delimited identifier](language/delimited-identifier.md) | Backtick a name that collides with a reserved word (`` `order` ``) |
+| [bound parameter](language/parameter.md) | `$name` — a value supplied when the query runs, never written into it |
 | [comments](language/comments.md) | `--` to end of line, `/* … */` for a block |
 | [operator spellings](language/spellings.md) | Every operator's Unicode glyph and its ASCII equivalent |
 | [grammar (EBNF)](language/grammar.md) | The whole language as one EBNF grammar — every statement, operator and token |

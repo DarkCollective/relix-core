@@ -80,4 +80,37 @@ final class DataSourceConnectorDefaultsTest {
                 .isInstanceOf(EvaluationException.class)
                 .hasMessageContaining("warehouse");
     }
+    @Test
+    @DisplayName("a pushed query with parameters is refused by a connector that cannot bind them")
+    void openQueryWithParametersIsRefused() {
+        DataSourceConnector connector = lambdaConnector();
+        assertThatThrownBy(() -> connector.openQuery("jdbc", "db", "SELECT ?", Schema.empty(),
+                java.util.List.of(com.darkcollective.relix.value.NumberValue.of("1"))))
+                .isInstanceOf(EvaluationException.class)
+                .hasMessageContaining("cannot bind query parameters (connection 'db')");
+        assertThatThrownBy(() -> connector.openQuery("jdbc", "db", "SELECT 1", Schema.empty(),
+                java.util.List.of()))
+                .isInstanceOf(EvaluationException.class)
+                .hasMessageContaining("does not support native-query pushdown");
+    }
+
+    @Test
+    @DisplayName("a pushed query with no parameters reaches the connector's own openQuery")
+    void openQueryWithoutParametersDelegates() {
+        DataSourceConnector pushing = new DataSourceConnector() {
+            @Override
+            public Stream<com.darkcollective.relix.processor.Row> open(String name, Schema schema) {
+                return Stream.of();
+            }
+
+            @Override
+            public Stream<com.darkcollective.relix.processor.Row> openQuery(String connection,
+                    String nativeQuery, Schema schema) {
+                return Stream.of();
+            }
+        };
+        assertThat(pushing.openQuery("jdbc", "db", "SELECT 1", Schema.empty(), java.util.List.of()))
+                .isEmpty();
+    }
+
 }

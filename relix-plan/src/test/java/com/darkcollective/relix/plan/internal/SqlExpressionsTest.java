@@ -667,4 +667,46 @@ final class SqlExpressionsTest {
             throw new UnsupportedOperationException("not evaluated in this test");
         }
     }
+    @Nested
+    @DisplayName("bound parameters")
+    class Parameters {
+
+        @Test
+        @DisplayName("is a placeholder on either side of a comparison")
+        void inAComparison() {
+            String left = SqlExpressions.parameter("id");
+            assertThat(renderP(cmp(attr("id"), ComparisonOperator.EQUAL, param("id"))))
+                    .hasValue("(id = " + left + ")");
+            assertThat(renderP(cmp(param("id"), ComparisonOperator.LESS, num("3"))))
+                    .hasValue("(" + left + " < 3)");
+        }
+
+        @Test
+        @DisplayName("is not rendered where the backend could not type it")
+        void notElsewhere() {
+            assertThat(render(param("id"))).isEmpty();
+            assertThat(renderP(cmp(attr("id"), ComparisonOperator.EQUAL,
+                    arith(param("id"), ArithmeticOperator.PLUS, num("1"))))).isEmpty();
+            assertThat(renderP(cmp(param("a"), ComparisonOperator.EQUAL, param("b")))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a string literal holding a placeholder character is not rendered")
+        void literalWithAPlaceholderCharacter() {
+            assertThat(render(str("a" + SqlExpressions.PARAMETER_OPEN))).isEmpty();
+            assertThat(render(str("a" + SqlExpressions.PARAMETER_CLOSE))).isEmpty();
+            assertThat(render(str("plain"))).hasValue("'plain'");
+        }
+
+        @Test
+        @DisplayName("bind turns each placeholder into ? and lists the names in order")
+        void bind() {
+            SqlExpressions.Bound bound = SqlExpressions.bind("SELECT a FROM t WHERE (a = "
+                    + SqlExpressions.parameter("x") + ") AND (b < "
+                    + SqlExpressions.parameter("y") + ")");
+            assertThat(bound.sql()).isEqualTo("SELECT a FROM t WHERE (a = ?) AND (b < ?)");
+            assertThat(bound.parameters()).containsExactly("x", "y");
+            assertThat(SqlExpressions.bind("SELECT 1").parameters()).isEmpty();
+        }
+    }
 }

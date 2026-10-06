@@ -25,6 +25,7 @@ import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.NumberOperand;
+import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.StringOperand;
@@ -136,6 +137,9 @@ final class OperandTypeInferrer {
                     new ArrayType(arrayElementType(array.elements(), inputSchema));
             // A predicate in operand position is a boolean value.
             case ConditionOperand    ignored -> ScalarType.BOOLEAN;
+            // A parameter's type is read from where it is used, not from the parameter
+            // itself (QueryParameters); on its own it is whatever its value turns out to be.
+            case ParameterOperand    ignored -> ScalarType.ANY;
         };
     }
 

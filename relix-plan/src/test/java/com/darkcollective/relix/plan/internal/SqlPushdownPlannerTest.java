@@ -1825,4 +1825,31 @@ final class SqlPushdownPlannerTest {
                             + "FROM stays stays JOIN bookings bookings ON (stays.checkout = bookings.bfrom)");
         }
     }
+    @Nested
+    @DisplayName("bound parameters")
+    class BoundParameters {
+
+        @Test
+        @DisplayName("a parameter compared with a column is sent as ?, and the scan names it")
+        void placeholder() {
+            PhysicalNode.PushedScan s = scanOf(push(ORDERS + "query { σ id = $id (Orders) };"));
+            assertThat(s.nativeQuery()).isEqualTo("SELECT id, amount FROM orders WHERE (id = ?)");
+            assertThat(s.parameters()).containsExactly("id");
+        }
+
+        @Test
+        @DisplayName("the names follow the placeholders' order in the text, repeats included")
+        void inTextOrder() {
+            PhysicalNode.PushedScan s = scanOf(push(ORDERS
+                    + "query { σ $low < amount ∧ (id = $id ∨ amount = $low) (Orders) };"));
+            assertThat(s.nativeQuery()).doesNotContain("$").contains("(? < amount)");
+            assertThat(s.parameters()).containsExactly("low", "id", "low");
+        }
+
+        @Test
+        @DisplayName("a query with none has none")
+        void none() {
+            assertThat(scanOf(push(ORDERS + "query { σ id = 1 (Orders) };")).parameters()).isEmpty();
+        }
+    }
 }

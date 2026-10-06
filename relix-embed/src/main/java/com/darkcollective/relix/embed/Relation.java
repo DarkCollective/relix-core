@@ -70,22 +70,27 @@ import com.darkcollective.relix.processor.provenance.AnnotatedRelation;
 import com.darkcollective.relix.processor.provenance.internal.BaseAnnotator;
 import com.darkcollective.relix.processor.provenance.internal.ProvenanceEvaluator;
 import com.darkcollective.relix.provenance.Semiring;
+import com.darkcollective.relix.semantic.internal.QueryParameters;
 import com.darkcollective.relix.semantic.internal.SchemaInference;
 import com.darkcollective.relix.semantic.internal.RelationDeterminism;
 import com.darkcollective.relix.semantic.internal.LogicalPlanJson;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.RelationStatistics;
+import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;
+import com.darkcollective.relix.symbol.Type;
 import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.Value;
 
 import java.time.Duration;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.OptionalInt;
 import java.util.Optional;
 import java.util.Spliterator;
@@ -181,16 +186,23 @@ public final class Relation {
 
     private final Rewriting rewriting;
 
+    /**
+     * The values {@link #bind} gave this relation's parameters, keyed by lower-cased
+     * name; they take precedence over the session's {@link Relix.Builder#parameters}.
+     */
+    private final Map<String, Value> bindings;
+
     Relation(Relix session, SemanticModel model, RelNode node) {
-        this(session, model, node, List.of(), List.of(), null, Rewriting.REWRITE);
+        this(session, model, node, List.of(), List.of(), null, Rewriting.REWRITE, Map.of());
     }
 
     Relation(Relix session, SemanticModel model, RelNode node, String label) {
-        this(session, model, node, List.of(), List.of(), label, Rewriting.REWRITE);
+        this(session, model, node, List.of(), List.of(), label, Rewriting.REWRITE, Map.of());
     }
 
     private Relation(Relix session, SemanticModel model, RelNode node, List<QueryEvent> events,
-                     List<TransformationRecord> rewrites, String label, Rewriting rewriting) {
+                     List<TransformationRecord> rewrites, String label, Rewriting rewriting,
+                     Map<String, Value> bindings) {
         this.session = Objects.requireNonNull(session, "session");
         this.model = Objects.requireNonNull(model, "model");
         this.node = Objects.requireNonNull(node, "node");
@@ -198,6 +210,7 @@ public final class Relation {
         this.rewrites = List.copyOf(rewrites);
         this.label = label;
         this.rewriting = Objects.requireNonNull(rewriting, "rewriting");
+        this.bindings = Map.copyOf(bindings);
     }
 
     /**
@@ -253,7 +266,7 @@ public final class Relation {
      * second full analysis.
      */
     private Relation derive(RelNode composed) {
-        return derive(composed, model);
+        return derive(composed, model, bindings);
     }
 
     /**
@@ -269,11 +282,13 @@ public final class Relation {
      * {@code this} was pinned.
      */
     private Relation derive(RelNode composed, Relation right) {
-        return derive(composed, ComposedModel.of(model, right.model));
+        return derive(composed, ComposedModel.of(model, right.model),
+                ParameterValues.merge(bindings, right.bindings));
     }
 
     /** As {@link #derive(RelNode)}, over an environment that is not necessarily this one's. */
-    private Relation derive(RelNode composed, SemanticModel environment) {
+    private Relation derive(RelNode composed, SemanticModel environment,
+                            Map<String, Value> bindings) {
         // A combinator adds an expression nothing has rewritten, so REWRITTEN cannot
         // survive it — the added structure would never be seen by a rule. AS_WRITTEN is
         // the caller's instruction rather than a fact about the tree, so it does.
@@ -290,7 +305,8 @@ public final class Relation {
                 List.of(),
                 List.of(),
                 null,
-                rewriting == Rewriting.AS_WRITTEN ? Rewriting.AS_WRITTEN : Rewriting.REWRITE);
+                rewriting == Rewriting.AS_WRITTEN ? Rewriting.AS_WRITTEN : Rewriting.REWRITE,
+                bindings);
     }
 
     /**
@@ -1003,7 +1019,7 @@ public final class Relation {
         return new Relation(session, new SemanticModel(model.namespace(), model.symbolTable(),
                 model.sources(), model.connections(), model.statistics(),
                 new SchemaAnnotations(entries), model.schemaGraph(), model.rootQueries(),
-                model.functions()), ref);
+                model.functions()), ref, List.of(), List.of(), null, Rewriting.REWRITE, bindings);
     }
 
     /**
@@ -1344,8 +1360,99 @@ public final class Relation {
         List<TransformationRecord> applied =
                 results.isEmpty() ? List.of() : results.getFirst().applied();
         Relation derived = derive(rewritten);
-        return new Relation(
-                session, derived.model, rewritten, collected, applied, label, Rewriting.REWRITTEN);
+        return new Relation(session, derived.model, rewritten, collected, applied, label,
+                Rewriting.REWRITTEN, bindings);
+    }
+
+    /**
+     * This relation with its parameter {@code $name} bound to {@code value}.
+     *
+     * <p>A parameter is how a value reaches a query from outside its text: the script
+     * writes {@code σ order_id = $id (Orders)}, and the program supplies {@code id}. The
+     * value never becomes part of the query — {@link #render()} still prints {@code $id},
+     * and a query pushed to a database sends it as a bind parameter — so a value holding
+     * a quote, or anything else, cannot change what the query means.
+     *
+     * <p>The value must be of the type the script uses the parameter as (see
+     * {@link SemanticModel#parameters()}): a number, string, boolean,
+     * {@link java.time.LocalDate}, {@link java.time.LocalTime}, {@link java.time.Instant}
+     * (or an offset or zoned date-time), {@link java.time.Duration}, or null. A binding
+     * here takes precedence over the session's {@link Relix.Builder#parameters}, and
+     * survives composition: a relation built from this one keeps it.
+     *
+     * {@snippet lang = "java":
+     * Relation order = relix.relation("σ order_id = $id (Orders)").bind("id", 42);
+     * }
+     *
+     * @param name  the parameter, without its {@code $} (a leading {@code $} is
+     *              accepted), matched ignoring case
+     * @param value its value
+     * @return a new relation; this one is unchanged
+     * @throws RelixException if this relation has no parameter of that name, or the
+     *         value is not one a parameter of its type can hold
+     * @since 1.0
+     */
+    public Relation bind(String name, Object value) {
+        Objects.requireNonNull(name, "name");
+        String key = ParameterValues.key(name);
+        Set<String> reached = QueryParameters.reachedBy(node, model.symbolTable());
+        if (!reached.contains(key)) {
+            throw new RelixException("this relation has no parameter $" + key
+                    + (reached.isEmpty() ? "" : "; its parameters are "
+                            + reached.stream().map(p -> "$" + p).toList()));
+        }
+        Map<String, Value> next = new HashMap<>(bindings);
+        next.put(key, ParameterValues.of(key, value, parameterType(key)));
+        return new Relation(session, model, node, events, rewrites, label, rewriting, next);
+    }
+
+    /** The type the script uses parameter {@code key} (lower-cased) as; {@code ANY} if unknown. */
+    private Type parameterType(String key) {
+        return model.parameters().entrySet().stream()
+                .filter(e -> e.getKey().equalsIgnoreCase(key))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(ScalarType.ANY);
+    }
+
+    /**
+     * The values this relation's parameters take when it runs: its own bindings, then the
+     * session's for any it does not bind.
+     *
+     * @throws RelixException naming every parameter the query reaches that has no value,
+     *         before anything runs — a query over an empty table would otherwise succeed
+     *         without ever noticing
+     */
+    private Map<String, Value> parameterValues(SemanticModel run) {
+        Set<String> reached = QueryParameters.reachedBy(node, run.symbolTable());
+        if (reached.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Value> values = new HashMap<>();
+        List<String> unbound = new ArrayList<>();
+        for (String key : reached) {
+            Value bound = bindings.get(key);
+            if (bound == null) {
+                Optional<Map.Entry<String, Object>> fallback = session.parameters().entrySet()
+                        .stream().filter(e -> ParameterValues.key(e.getKey()).equals(key))
+                        .findFirst();
+                if (fallback.isPresent()) {
+                    bound = ParameterValues.of(key, fallback.get().getValue(), parameterType(key));
+                }
+            }
+            if (bound == null) {
+                unbound.add("$" + key);
+            } else {
+                values.put(key, bound);
+            }
+        }
+        if (!unbound.isEmpty()) {
+            throw new RelixException((unbound.size() == 1 ? "parameter " : "parameters ")
+                    + String.join(", ", unbound) + (unbound.size() == 1 ? " is" : " are")
+                    + " not bound; give a value with bind(name, value) or"
+                    + " Relix.Builder.parameters");
+        }
+        return values;
     }
 
     /**
@@ -1386,7 +1493,8 @@ public final class Relation {
     public Relation asWritten() {
         return rewriting == Rewriting.AS_WRITTEN
                 ? this
-                : new Relation(session, model, node, events, rewrites, label, Rewriting.AS_WRITTEN);
+                : new Relation(session, model, node, events, rewrites, label, Rewriting.AS_WRITTEN,
+                        bindings);
     }
 
     /**
@@ -2041,6 +2149,7 @@ public final class Relation {
     private ExecutionContext context(SemanticModel run, DataSourceConnector connector,
                                      QueryEventListener listener, QueryCancellation cancellation) {
         return ExecutionContext.of(run, connector)
+                .withParameters(parameterValues(run))
                 .withClock(session.clock())
                 // The session's cap, not the context's default of unlimited. Every guard
                 // built on it reads it from here — FIX's round limit, TRACE's

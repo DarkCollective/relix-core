@@ -55,6 +55,8 @@ package com.darkcollective.relix.parser;
  */
 public enum TokenType {
     IDENTIFIER,
+    // A bound query parameter, `$name`; the literal is the name without the `$`.
+    PARAMETER,
     STRING,
     NUMBER,
     TRUE,

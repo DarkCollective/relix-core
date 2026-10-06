@@ -60,4 +60,6 @@ public interface OperandVisitor<R> {
     R visit(ArrayConstruction node);
     /** Visits a boolean-valued condition operand (a predicate in operand position). */
     R visit(ConditionOperand node);
+    /** Visits a bound query parameter ({@code $name}). */
+    R visit(ParameterOperand node);
 }

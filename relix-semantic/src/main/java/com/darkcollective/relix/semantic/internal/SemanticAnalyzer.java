@@ -465,6 +465,7 @@ public final class SemanticAnalyzer {
                 schemaGraph,
                 collector.rootQueries(),
                 functions);
+        errors.addAll(QueryParameters.conflicts(model));
 
         return errors.isEmpty()
                 ? SemanticResult.success(model)

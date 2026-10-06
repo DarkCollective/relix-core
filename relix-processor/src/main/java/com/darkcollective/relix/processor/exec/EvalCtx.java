@@ -54,7 +54,8 @@ record EvalCtx(DataSourceConnector connector,
 
     static EvalCtx from(ExecutionContext ctx) {
         OperandEvaluator eval = new OperandEvaluator(
-                ctx.symbolTable(), ctx.functions(), ctx.functionContext());
+                ctx.symbolTable(), ctx.functions(), ctx.functionContext())
+                .withParameters(ctx.parameters());
         return new EvalCtx(ctx.connector(), eval, new PredicateEvaluator(eval),
                 ctx.listener(), Map.of(), new SpoolCache(), ctx.maxFixpointRounds(),
                 ctx.maxMaterializedRows(), WorkBudget.startingNow(ctx), ctx);

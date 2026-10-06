@@ -35,6 +35,7 @@ import com.darkcollective.relix.ast.TimestampOperand;
 import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.NumberOperand;
+import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.SetLiteralOperand;
@@ -142,6 +143,8 @@ final class OperandSimplifier {
             case AttributeOperand  a -> a;
             case NumberOperand     n -> n;
             case StringOperand     s -> s;
+            // A parameter's value is not known until the query runs, so nothing folds it.
+            case ParameterOperand  p -> p;
             case BooleanOperand    b -> b;
             case DateOperand       d -> d;
             case TimeOperand       t -> t;
