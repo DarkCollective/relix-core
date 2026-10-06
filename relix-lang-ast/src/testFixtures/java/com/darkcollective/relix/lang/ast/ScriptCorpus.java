@@ -114,7 +114,10 @@ public final class ScriptCorpus extends ScriptBuilders {
      * <p>A second HTTP source carries the one {@link HttpMethod} the first does not reach
      * beyond the default: {@code QUERY}, which exists only with a body.
      *
-     * @return four declarations, two HTTP sources and two relates, nothing left at default
+     * <p>Two CSV sources leave their schema out: one infers its heading from its header,
+     * the other names the columns of a file with none.
+     *
+     * @return six declarations — two HTTP sources, two relates, two inferring CSV sources
      */
     public static List<Statement> everyPopulatedComponent() {
         HttpSourceConfig http = httpSource(
@@ -140,6 +143,9 @@ public final class ScriptCorpus extends ScriptBuilders {
         return List.of(
                 source("Remote", http),
                 source("Searched", query),
+                source("Inferred", csvSourceInferred("./responses.csv", true, List.of())),
+                source("Named", csvSourceInferred("./visits.csv", false,
+                        List.of("day", "page name", "hits"))),
                 relate("places", Optional.of("placed by"), true,
                         endpoint("Orders", List.of("customer_id")),
                         endpoint("Customers", List.of("id"), 1, java.util.OptionalLong.of(1))),

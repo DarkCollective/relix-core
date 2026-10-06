@@ -167,6 +167,16 @@ final class Placeholders {
             public Optional<List<String>> tables(ConnectionDeclaration connection) {
                 return resolvedOrEmpty(connection).flatMap(catalog::tables);
             }
+
+            /**
+             * A source is read with its placeholders resolved, as a query reads it; one that
+             * cannot be resolved says so, there being nothing else its heading could come
+             * from.
+             */
+            @Override
+            public Optional<Schema> sourceSchema(SourceDeclaration source) {
+                return catalog.sourceSchema(new Execution().resolve(source));
+            }
         };
     }
 
@@ -286,7 +296,7 @@ final class Placeholders {
                     columns(db.columns(), value), db.references());
             case CsvFileSourceConfig csv -> new CsvFileSourceConfig(
                     value.apply(csv.path()), csv.hasHeader(), columns(csv.columns(), value),
-                    csv.references());
+                    csv.references(), csv.names());
             case JsonFileSourceConfig json -> new JsonFileSourceConfig(
                     value.apply(json.path()), json.records(), json.references());
             case ConnectionTableSourceConfig table -> new ConnectionTableSourceConfig(

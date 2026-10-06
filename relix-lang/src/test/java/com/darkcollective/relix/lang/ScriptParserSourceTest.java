@@ -669,13 +669,34 @@ class ScriptParserSourceTest {
         }
 
         @Test
-        @DisplayName("CSV source missing schema throws")
-        void csvMissingSchema() {
-            assertThatThrownBy(() -> parse("""
-                    source S from csv("./file.csv") {
-                        header: true
-                    };
-                    """)).isInstanceOf(LangParseException.class);
+        @DisplayName("CSV source with no schema infers one, from its header or its named columns")
+        void csvWithoutSchema() {
+            CsvFileSourceConfig header = (CsvFileSourceConfig) ((SourceDeclaration) firstStatement(
+                    parse("source S from csv(\"./file.csv\") { header: true };"))).config();
+            assertThat(header.infersSchema()).isTrue();
+            assertThat(header.names()).isEmpty();
+
+            CsvFileSourceConfig named = (CsvFileSourceConfig) ((SourceDeclaration) firstStatement(
+                    parse("source S from csv(\"./file.csv\") { header: false,"
+                            + " columns: [day, `page name`, hits,] };"))).config();
+            assertThat(named.names()).containsExactly("day", "page name", "hits");
+            assertThat(named.hasHeader()).isFalse();
+        }
+
+        @Test
+        @DisplayName("CSV source columns are a non-empty list of distinct names, not beside a schema")
+        void csvColumnsErrors() {
+            assertThatThrownBy(() -> parse(
+                    "source S from csv(\"f.csv\") { schema: { a: NUMBER }, columns: [a] };"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("declares a 'schema' or its 'columns', not both");
+            assertThatThrownBy(() -> parse("source S from csv(\"f.csv\") { columns: [a, A] };"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("'columns' names a column more than once");
+            assertThatThrownBy(() -> parse("source S from csv(\"f.csv\") { columns: [] };"))
+                    .isInstanceOf(LangParseException.class);
+            assertThatThrownBy(() -> parse("source S from csv(\"f.csv\") { columns: a };"))
+                    .isInstanceOf(LangParseException.class);
         }
 
         @Test

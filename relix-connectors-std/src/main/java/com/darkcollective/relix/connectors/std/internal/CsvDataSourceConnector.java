@@ -141,7 +141,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
                     "Relation '" + relationName + "' is not a CSV source");
         }
         Path path = baseDir.resolve(csv.path());
-        return readCsv(path, csv.hasHeader(), schema);
+        return readCsv(path, csv.hasHeader(), !csv.names().isEmpty(), schema);
     }
 
     // =========================================================================
@@ -151,9 +151,11 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
     /**
      * Reads a CSV file at {@code path} into a stream of rows for {@code schema}.
      * Package-private so the {@link CsvConnector} built-in {@code RelixConnector}
-     * can reuse the same RFC 4180 parsing and type coercion.
+     * can reuse the same RFC 4180 parsing and type coercion. With {@code positional} the
+     * columns are read by position — for a source that named its columns — and a header
+     * row, if there is one, is skipped rather than matched.
      */
-    static Stream<Row> readCsv(Path path, boolean hasHeader, Schema schema) {
+    static Stream<Row> readCsv(Path path, boolean hasHeader, boolean positional, Schema schema) {
         List<String> lines;
         try {
             lines = FileResolver.readLines(path);
@@ -172,7 +174,10 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
         int     startRow   = 0;
         int[]   colMapping; // schema column index → CSV column index
 
-        if (hasHeader) {
+        if (hasHeader && positional) {
+            colMapping = positionalMapping(schema.width());
+            startRow   = 1;
+        } else if (hasHeader) {
             if (lines.isEmpty()) {
                 return Stream.empty();
             }

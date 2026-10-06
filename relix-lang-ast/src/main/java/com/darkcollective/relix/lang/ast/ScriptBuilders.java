@@ -299,6 +299,15 @@ public abstract class ScriptBuilders extends AstBuilders {
         return new CsvFileSourceConfig(path, hasHeader, columns);
     }
 
+    /**
+     * {@code from csv { header: …, columns: [ … ] }}: the columns named, their types
+     * inferred from the file; with no names, the heading is the header row's.
+     */
+    public static CsvFileSourceConfig csvSourceInferred(String path, boolean hasHeader,
+                                                        List<String> names) {
+        return new CsvFileSourceConfig(path, hasHeader, List.of(), List.of(), names);
+    }
+
     /** {@code from json { … }} reading the whole document. */
     public static JsonFileSourceConfig jsonSource(String path) {
         return new JsonFileSourceConfig(path, Optional.empty());

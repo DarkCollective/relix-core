@@ -114,16 +114,44 @@ public final class StreamInput {
      * @throws EvaluationException if the stream has no header, or is not what its format says
      */
     public static StreamInput open(Format format, InputStream in, Schema declared, int sample, String name) {
+        return open(format, in, declared, sample,
+                "input '" + name + "' (" + format.name().toLowerCase(java.util.Locale.ROOT) + ")",
+                true, List.of());
+    }
+
+    /**
+     * Starts reading {@code in}, settling the heading, with the delimited layout spelt out.
+     *
+     * <p>{@code names} names a delimited stream's columns by position, their types still
+     * inferred when no heading is declared: for a stream with no header row, or one whose
+     * header's names are not wanted, which is then skipped. A delimited stream with no
+     * header row needs names or a declared heading, since nothing else could name its
+     * columns. The JSON formats ignore both.
+     *
+     * @param format    how the stream is written
+     * @param in        the stream; this instance closes it when its rows are closed
+     * @param declared  the heading to read it as, or null to infer one
+     * @param sample    how many records to infer a heading from; at least 1
+     * @param where     what to call the input in a message, e.g. {@code CSV file 'a.csv'}
+     * @param headerRow whether a delimited stream's first line is a header row
+     * @param names     a delimited stream's column names, in order; empty to take them
+     *                  from the header row, or from {@code declared}
+     * @return the input, its heading settled and its stream positioned at the first record
+     * @throws EvaluationException if the stream has nothing to name its columns with, or
+     *         is not what its format says
+     */
+    public static StreamInput open(Format format, InputStream in, Schema declared, int sample,
+                                   String where, boolean headerRow, List<String> names) {
         Objects.requireNonNull(format, "format");
         Objects.requireNonNull(in, "in");
+        Objects.requireNonNull(names, "names");
         if (sample < 1) {
             throw new IllegalArgumentException("sample must be at least 1, was: " + sample);
         }
-        String where = "input '" + name + "' (" + format.name().toLowerCase(java.util.Locale.ROOT) + ")";
         BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
         try {
             return switch (format) {
-                case CSV, TSV -> delimited(format, where, reader, declared, sample);
+                case CSV, TSV -> delimited(format, where, reader, declared, sample, headerRow, names);
                 case NDJSON -> lines(where, reader, declared, sample);
                 case JSON -> array(where, reader, declared, sample);
             };
@@ -161,16 +189,33 @@ public final class StreamInput {
     // -------------------------------------------------------------------------
 
     private static StreamInput delimited(Format format, String where, BufferedReader reader,
-                                         Schema declared, int sample) throws IOException {
+                                         Schema declared, int sample, boolean headerRow,
+                                         List<String> names) throws IOException {
         String first = reader.readLine();
-        if (first == null) {
-            throw new EvaluationException(where + " is empty: it needs a header row naming its columns");
-        }
-        if (first.startsWith("\uFEFF")) {
+        if (first != null && first.startsWith("\uFEFF")) {
             first = first.substring(1);
         }
-        List<String> header = split(format, first);
+        List<String> header;
         List<Object> lines = new ArrayList<>();
+        if (headerRow) {
+            if (first == null && names.isEmpty()) {
+                throw new EvaluationException(where + " is empty: it needs a header row naming its columns");
+            }
+            // A header that names gives is skipped: what the columns are called is decided.
+            header = names.isEmpty() ? split(format, first) : names;
+        } else {
+            if (!names.isEmpty()) {
+                header = names;
+            } else if (declared != null) {
+                header = declared.columns().stream().map(ColumnDefinition::name).toList();
+            } else {
+                throw new EvaluationException(where + " has no header row, so nothing names its"
+                        + " columns; name them, or declare its schema");
+            }
+            if (first != null) {
+                lines.add(first);
+            }
+        }
         if (declared == null) {
             String line;
             while (lines.size() < sample && (line = reader.readLine()) != null) {
@@ -178,7 +223,7 @@ public final class StreamInput {
             }
         }
         Schema schema = declared != null ? declared : inferDelimited(format, header, lines);
-        return new StreamInput(format, where, schema, reader, header, lines, 2);
+        return new StreamInput(format, where, schema, reader, header, lines, headerRow ? 2 : 1);
     }
 
     private static Schema inferDelimited(Format format, List<String> header, List<Object> lines) {

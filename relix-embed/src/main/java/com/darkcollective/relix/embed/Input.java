@@ -18,6 +18,7 @@ package com.darkcollective.relix.embed;
 import com.darkcollective.relix.symbol.Schema;
 
 import java.io.InputStream;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -58,15 +59,17 @@ public final class Input {
     private final Schema schema;
     private final int sample;
     private final boolean unbounded;
+    private final List<String> names;
 
     private Input(InputFormat format, Supplier<InputStream> reopen, InputStream once,
-                  Schema schema, int sample, boolean unbounded) {
+                  Schema schema, int sample, boolean unbounded, List<String> names) {
         this.format = format;
         this.reopen = reopen;
         this.once = once;
         this.schema = schema;
         this.sample = sample;
         this.unbounded = unbounded;
+        this.names = names;
     }
 
     /**
@@ -80,7 +83,7 @@ public final class Input {
      */
     public static Input of(InputFormat format, Supplier<InputStream> open) {
         return new Input(Objects.requireNonNull(format, "format"),
-                Objects.requireNonNull(open, "open"), null, null, DEFAULT_SAMPLE, false);
+                Objects.requireNonNull(open, "open"), null, null, DEFAULT_SAMPLE, false, List.of());
     }
 
     /**
@@ -94,7 +97,7 @@ public final class Input {
      */
     public static Input of(InputFormat format, InputStream stream) {
         return new Input(Objects.requireNonNull(format, "format"), null,
-                Objects.requireNonNull(stream, "stream"), null, DEFAULT_SAMPLE, false);
+                Objects.requireNonNull(stream, "stream"), null, DEFAULT_SAMPLE, false, List.of());
     }
 
     /**
@@ -107,7 +110,47 @@ public final class Input {
      */
     public Input schema(Schema heading) {
         return new Input(format, reopen, once, Objects.requireNonNull(heading, "heading"),
-                sample, unbounded);
+                sample, unbounded, names);
+    }
+
+    /**
+     * This input, read as text with no header row whose columns are {@code columns}, in
+     * order — their types inferred as for any heading, unless one is
+     * {@link #schema(Schema) declared}.
+     *
+     * <p>Without names, a delimited input's first line is its header row, and one that has
+     * none cannot be read with an inferred heading: nothing else would name its columns.
+     *
+     * @param first the first column's name
+     * @param more  the rest, in order; each column is named once
+     * @return the input
+     * @throws IllegalArgumentException for a JSON format, whose columns are its keys, or
+     *         for a name given twice
+     * @since 1.0
+     */
+    public Input names(String first, String... more) {
+        if (format == InputFormat.JSON || format == InputFormat.NDJSON) {
+            throw new IllegalArgumentException("a JSON record names its own columns with its"
+                    + " keys; names are for CSV and TSV with no header row");
+        }
+        List<String> given = new java.util.ArrayList<>();
+        given.add(first);
+        given.addAll(List.of(more));
+        if (given.stream().map(n -> n.toLowerCase(java.util.Locale.ROOT)).distinct().count()
+                != given.size()) {
+            throw new IllegalArgumentException("names gives a column twice: " + given);
+        }
+        return new Input(format, reopen, once, schema, sample, unbounded, List.copyOf(given));
+    }
+
+    /**
+     * {@return the column names a headerless input was given, or empty when its first
+     * line is its header row}
+     *
+     * @since 1.0
+     */
+    public List<String> names() {
+        return names;
     }
 
     /**
@@ -121,7 +164,7 @@ public final class Input {
         if (records < 1) {
             throw new IllegalArgumentException("sample must be at least 1, was: " + records);
         }
-        return new Input(format, reopen, once, schema, records, unbounded);
+        return new Input(format, reopen, once, schema, records, unbounded, names);
     }
 
     /**
@@ -142,7 +185,7 @@ public final class Input {
             throw new IllegalArgumentException("a JSON array is read whole, so it cannot be "
                     + "unbounded; write one object per line and read it as NDJSON");
         }
-        return new Input(format, reopen, once, schema, sample, true);
+        return new Input(format, reopen, once, schema, sample, true, names);
     }
 
     /**
