@@ -44,15 +44,19 @@ final class QueryCancellationTest {
     }
 
     @Test
-    @DisplayName("cancel runs each registered action once, however often it is called")
-    void runsActionsOnce() {
+    @DisplayName("each cancel runs every action still registered")
+    void runsActionsEachTime() {
         QueryCancellation cancellation = QueryCancellation.create();
         AtomicInteger ran = new AtomicInteger();
+        QueryCancellation.Registration first = cancellation.onCancel(ran::incrementAndGet);
         cancellation.onCancel(ran::incrementAndGet);
-        cancellation.onCancel(ran::incrementAndGet);
-        cancellation.cancel();
         cancellation.cancel();
         assertThat(ran).hasValue(2);
+        // A second request reaches work the first may have arrived too early for; work
+        // that has finished, and closed its registration, is left alone.
+        first.close();
+        cancellation.cancel();
+        assertThat(ran).hasValue(3);
     }
 
     @Test
@@ -71,8 +75,13 @@ final class QueryCancellationTest {
         QueryCancellation cancellation = QueryCancellation.create();
         cancellation.cancel();
         AtomicInteger ran = new AtomicInteger();
-        cancellation.onCancel(ran::incrementAndGet).close();
-        assertThat(ran).as("ran at once, and closing it afterwards is harmless").hasValue(1);
+        QueryCancellation.Registration registration = cancellation.onCancel(ran::incrementAndGet);
+        assertThat(ran).as("ran at once").hasValue(1);
+        cancellation.cancel();
+        assertThat(ran).as("and stays registered for the next request").hasValue(2);
+        registration.close();
+        cancellation.cancel();
+        assertThat(ran).hasValue(2);
     }
 
     @Test

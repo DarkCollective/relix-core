@@ -42,7 +42,7 @@ public final class QueryCancellation {
     public static final QueryCancellation NONE = new QueryCancellation(false);
 
     private final boolean cancellable;
-    /** Guarded by {@code this}; emptied by {@link #cancel()}, which runs what it held. */
+    /** Guarded by {@code this}; each stays until its registration is closed. */
     private final Set<Runnable> actions = new LinkedHashSet<>();
     private volatile boolean cancelled;
 
@@ -83,8 +83,9 @@ public final class QueryCancellation {
     /**
      * Registers how to stop work this execution is waiting on.
      *
-     * <p>If the execution is already cancelled the action runs at once, so a source that
-     * registers just after a cancellation does not start work nobody wants.
+     * <p>If the execution is already cancelled the action also runs at once. A source
+     * should still check {@link #isCancelled()} before it starts the work: an action run
+     * before the work began may have had nothing to stop.
      *
      * @param action what stops the work, such as {@code statement::cancel}; must not be
      *               null, and must not throw anything the caller needs to see
@@ -95,23 +96,29 @@ public final class QueryCancellation {
         if (!cancellable) {
             return () -> { };
         }
+        boolean late;
         synchronized (this) {
-            if (!cancelled) {
-                actions.add(action);
-                return () -> {
-                    synchronized (this) {
-                        actions.remove(action);
-                    }
-                };
-            }
+            actions.add(action);
+            late = cancelled;
         }
-        runQuietly(action);
-        return () -> { };
+        if (late) {
+            runQuietly(action);
+        }
+        return () -> {
+            synchronized (this) {
+                actions.remove(action);
+            }
+        };
     }
 
     /**
      * Cancels the execution: every later {@link #check()} raises, and every registered
-     * action runs, once.
+     * action runs.
+     *
+     * <p>Calling it again runs the actions still registered again. That is not
+     * redundancy: a driver ignores a cancel that reaches a statement in the instant before
+     * it starts executing, and a second request is what reaches it then. An action stays
+     * registered until the work it stops is finished and its registration is closed.
      *
      * <p>The actions run outside the lock, so one that blocks — a driver's
      * {@code cancel()} can wait on the database — holds up nothing but this call.
@@ -124,7 +131,6 @@ public final class QueryCancellation {
         synchronized (this) {
             cancelled = true;
             toRun = List.copyOf(actions);
-            actions.clear();
         }
         toRun.forEach(QueryCancellation::runQuietly);
     }

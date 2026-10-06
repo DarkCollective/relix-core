@@ -299,6 +299,15 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
             // working reaches the statement rather than waiting for the result.
             Statement live = stmt;
             registration = cancellation.onCancel(() -> cancelQuietly(live));
+            // A cancellation that came while this was being prepared reached a statement
+            // that had not started, which a driver ignores; executing now would run the
+            // query nobody wants to its end.
+            if (cancellation.isCancelled()) {
+                registration.close();
+                closeQuietly(stmt);
+                pool.release(connection, conn);
+                cancellation.check();
+            }
             rs = stmt.executeQuery(sql);
             return resultStream(connection, conn, stmt, rs, schema, reader, context, registration);
         } catch (SQLException e) {
