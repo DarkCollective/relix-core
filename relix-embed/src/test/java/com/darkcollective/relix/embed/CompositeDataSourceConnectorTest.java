@@ -18,6 +18,7 @@ package com.darkcollective.relix.embed;
 import com.darkcollective.relix.connectors.std.internal.ConnectionPool;
 import com.darkcollective.relix.connectors.std.internal.FileResolver;
 import com.darkcollective.relix.connectors.std.DriverProvisioner;
+import com.darkcollective.relix.processor.internal.QueryCancellation;
 import com.darkcollective.relix.processor.connector.ConnectorProvisioner;
 import com.darkcollective.relix.processor.connector.Fetcher;
 import com.darkcollective.relix.processor.EvaluationException;
@@ -89,7 +90,7 @@ final class CompositeDataSourceConnectorTest {
                 ConnectorProvisioner.create(false, NO_NETWORK),
                 new GeneratorRegistry(), new ConnectionPool(),
                 List.of(new FakeRegisteredConnector()),
-                FileResolver.create(baseDir.resolve("cache"), false));
+                FileResolver.create(baseDir.resolve("cache"), false), QueryCancellation.NONE);
     }
 
     /** A script declaring one connection of {@code type} and one table-backed source on it. */

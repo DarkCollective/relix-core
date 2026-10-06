@@ -162,7 +162,7 @@ final class MaterializationBudget {
             // cancellable. A blocking operator reads its whole input inside one
             // tryAdvance, so the root's own check is not reached again until it is done,
             // which for the query worth cancelling is far too late.
-            return Cancellation.interruptible(rows);
+            return Cancellation.interruptible(rows, ctx.executionContext().cancellation());
         }
         Spliterator<Row> source = rows.spliterator();
         long[] buffered = {0};
@@ -174,7 +174,7 @@ final class MaterializationBudget {
             public boolean tryAdvance(Consumer<? super Row> action) {
                 // Per row, for the reason above: this is the pull a blocking operator is
                 // inside for the whole of its drain.
-                Cancellation.checkNotInterrupted();
+                Cancellation.check(ctx.executionContext().cancellation());
                 // Only the pull is timed, so the elapsed time is what filling the buffer
                 // cost and not what the operator then did with it — the same structure,
                 // and for the same reason, as LeafExecutor's scan.

@@ -20,6 +20,7 @@ import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
 import com.darkcollective.relix.lang.ast.SourceDeclaration;
 import com.darkcollective.relix.lang.ast.source.ConnectionTableSourceConfig;
 import com.darkcollective.relix.plan.internal.Dialect;
+import com.darkcollective.relix.processor.internal.QueryCancellation;
 import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.internal.DataSourceConnector;
 import com.darkcollective.relix.processor.Row;
@@ -95,6 +96,7 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
     private final boolean ownsPool;
     /** Optional on-demand driver provisioner; null = no provisioning (legacy behaviour). */
     private final DriverProvisioner provisioner;
+    private final QueryCancellation cancellation;
 
     /**
      * Creates a connector with its own {@link ConnectionPool}, closed by
@@ -131,30 +133,43 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
     }
 
     /**
-     * Creates a connector over a shared {@link ConnectionPool} that also provisions a
-     * missing JDBC driver on demand — the two halves of the other constructors at once.
+     * Creates a connector over a shared pool for one execution, whose statements that
+     * execution's cancellation stops, provisioning a missing JDBC driver on demand.
      *
      * <p>This is the shape a long-lived host wants: the pool outlives any one query, so
      * it is the caller's and is <em>not</em> closed by {@link #close()}, while a pool
      * built over a {@link ConnectionProvider} that serves live handles is how a bound
      * {@code DataSource} reaches execution.
      *
-     * @param model       the semantic model; must not be null
-     * @param pool        the shared connection pool; must not be null
-     * @param provisioner the driver provisioner consulted when no driver is registered
-     *                    for a connection URL; must not be null
+     * <p>A thread blocked in {@code executeQuery} or {@code ResultSet.next} does not answer
+     * to interruption, so the engine's own cancellation check is never reached while a
+     * database is still working. Each statement is therefore registered with
+     * {@code cancellation} before it executes, and cancelling the execution — from any
+     * thread — calls {@link Statement#cancel()} on it.
+     *
+     * @param model        the semantic model; must not be null
+     * @param pool         the shared connection pool; must not be null
+     * @param provisioner  the driver provisioner; must not be null
+     * @param cancellation the execution's cancellation; must not be null
      */
     public JdbcDataSourceConnector(SemanticModel model, ConnectionPool pool,
-                                   DriverProvisioner provisioner) {
-        this(model, pool, false, Objects.requireNonNull(provisioner, "provisioner"));
+                                   DriverProvisioner provisioner, QueryCancellation cancellation) {
+        this(model, pool, false, Objects.requireNonNull(provisioner, "provisioner"),
+                Objects.requireNonNull(cancellation, "cancellation"));
     }
 
     private JdbcDataSourceConnector(SemanticModel model, ConnectionPool pool, boolean ownsPool,
                                     DriverProvisioner provisioner) {
+        this(model, pool, ownsPool, provisioner, QueryCancellation.NONE);
+    }
+
+    private JdbcDataSourceConnector(SemanticModel model, ConnectionPool pool, boolean ownsPool,
+                                    DriverProvisioner provisioner, QueryCancellation cancellation) {
         this.model = Objects.requireNonNull(model, "model");
         this.pool = Objects.requireNonNull(pool, "pool");
         this.ownsPool = ownsPool;
         this.provisioner = provisioner;
+        this.cancellation = cancellation;
     }
 
     @Override
@@ -275,21 +290,43 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
         Connection conn = null;
         Statement stmt = null;
         ResultSet rs = null;
+        QueryCancellation.Registration registration = null;
         try {
             conn = pool.borrow(connection);
             stmt = conn.createStatement();
             stmt.setFetchSize(FETCH_SIZE);
+            // Before executing, so a cancellation that arrives while the database is still
+            // working reaches the statement rather than waiting for the result.
+            Statement live = stmt;
+            registration = cancellation.onCancel(() -> cancelQuietly(live));
             rs = stmt.executeQuery(sql);
-            return resultStream(connection, conn, stmt, rs, schema, reader, context);
+            return resultStream(connection, conn, stmt, rs, schema, reader, context, registration);
         } catch (SQLException e) {
+            if (registration != null) {
+                registration.close();
+            }
             closeQuietly(rs, stmt);
             pool.release(connection, conn);
+            // A cancelled statement fails with whatever the driver says about it; what the
+            // caller needs to know is that it was cancelled.
+            cancellation.check();
             throw new EvaluationException(context + ": " + e.getMessage(), e);
         }
     }
 
+    /** Asks the database to stop executing {@code stmt}; a driver that cannot is left to finish. */
+    private static void cancelQuietly(Statement stmt) {
+        try {
+            stmt.cancel();
+        } catch (SQLException | RuntimeException ignored) {
+            // best effort: the statement is closed next either way
+        }
+    }
+
     private Stream<Row> resultStream(ConnectionDeclaration connection, Connection conn, Statement stmt,
-                                     ResultSet rs, Schema schema, RowReader reader, String context) {
+                                     ResultSet rs, Schema schema, RowReader reader, String context,
+                                     QueryCancellation.Registration registration) {
+        boolean[] exhausted = {false};
         Iterator<Row> iterator = new Iterator<>() {
             private Boolean hasNext;   // null = not yet probed
 
@@ -299,8 +336,10 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
                     try {
                         hasNext = rs.next();
                     } catch (SQLException e) {
+                        cancellation.check();
                         throw new EvaluationException(context + ": " + e.getMessage(), e);
                     }
+                    exhausted[0] = !hasNext;
                 }
                 return hasNext;
             }
@@ -322,6 +361,13 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
                 iterator, Spliterator.ORDERED | Spliterator.NONNULL);
         return StreamSupport.stream(spliterator, false)
                 .onClose(() -> {
+                    registration.close();
+                    // Closed before the last row: the database may still be producing rows,
+                    // and a driver that streams them would otherwise finish the query, or
+                    // read the rest of the result, before close() returns.
+                    if (!exhausted[0]) {
+                        cancelQuietly(stmt);
+                    }
                     closeQuietly(rs, stmt);
                     pool.release(connection, conn);   // return the connection for reuse
                 });

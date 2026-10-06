@@ -72,7 +72,7 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
                     (n, s) -> null, null, ExecutionContext.UNLIMITED_FIXPOINT_ROUNDS,
                     ExecutionContext.UNLIMITED_MATERIALIZED_ROWS,
-                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(), FunctionCatalog.empty()))
+                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(), FunctionCatalog.empty(), QueryCancellation.NONE))
                     .isInstanceOf(NullPointerException.class);
         }
 
@@ -163,7 +163,7 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     (n, s) -> null, QueryEventListener.NONE,
                     ExecutionContext.UNLIMITED_FIXPOINT_ROUNDS,
                     ExecutionContext.UNLIMITED_MATERIALIZED_ROWS,
-                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, null, FunctionCatalog.empty()))
+                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, null, FunctionCatalog.empty(), QueryCancellation.NONE))
                     .isInstanceOf(NullPointerException.class);
         }
     }
@@ -382,7 +382,7 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
                     (n, s) -> null, QueryEventListener.NONE, 0,
                     ExecutionContext.UNLIMITED_MATERIALIZED_ROWS, ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(),
-                    FunctionCatalog.empty()))
+                    FunctionCatalog.empty(), QueryCancellation.NONE))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("maxFixpointRounds");
         }
@@ -395,7 +395,7 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
                     (n, s) -> null, QueryEventListener.NONE, -1,
                     ExecutionContext.UNLIMITED_MATERIALIZED_ROWS, ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(),
-                    FunctionCatalog.empty()))
+                    FunctionCatalog.empty(), QueryCancellation.NONE))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -468,7 +468,7 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
                     (n, s) -> null, QueryEventListener.NONE,
                     ExecutionContext.UNLIMITED_FIXPOINT_ROUNDS, 0,
-                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(), FunctionCatalog.empty()))
+                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(), FunctionCatalog.empty(), QueryCancellation.NONE))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("maxMaterializedRows");
         }

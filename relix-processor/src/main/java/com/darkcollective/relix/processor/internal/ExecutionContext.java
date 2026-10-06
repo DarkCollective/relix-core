@@ -120,6 +120,10 @@ import java.util.Objects;
  *                           {@link #of(SemanticModel, DataSourceConnector)} takes it
  *                           from the model; a context built without one gets
  *                           {@link #installedFunctions()}. Must not be {@code null}
+ * @param cancellation       the signal that cancels this execution from another thread,
+ *                           and stops the work its sources are waiting on;
+ *                           {@link QueryCancellation#NONE} by default. Must not be
+ *                           {@code null}
  */
 public record ExecutionContext(
         SymbolTable symbolTable,
@@ -134,7 +138,8 @@ public record ExecutionContext(
         long maxProcessedRows,
         Duration timeout,
         Clock clock,
-        FunctionCatalog functions) {
+        FunctionCatalog functions,
+        QueryCancellation cancellation) {
 
     /** Sentinel value meaning no cap on fixpoint iteration rounds; also the default. */
     public static final int UNLIMITED_FIXPOINT_ROUNDS = Integer.MAX_VALUE;
@@ -181,6 +186,7 @@ public record ExecutionContext(
         Objects.requireNonNull(clock,        "clock");
         Objects.requireNonNull(functions,    "functions");
         Objects.requireNonNull(timeout,      "timeout");
+        Objects.requireNonNull(cancellation, "cancellation");
         if (maxFixpointRounds < 1) {
             throw new IllegalArgumentException(
                     "maxFixpointRounds must be >= 1, was: " + maxFixpointRounds);
@@ -294,7 +300,7 @@ public record ExecutionContext(
                 QueryEventListener.NONE, UNLIMITED_FIXPOINT_ROUNDS,
                 DEFAULT_MAX_MATERIALIZED_ROWS, UNLIMITED_PROCESSED_ROWS, UNLIMITED_TIMEOUT,
                 Clock.systemUTC(),
-                installedFunctions());
+                installedFunctions(), QueryCancellation.NONE);
     }
 
     /**
@@ -307,7 +313,7 @@ public record ExecutionContext(
     public ExecutionContext withListener(QueryEventListener listener) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions);
+                maxProcessedRows, timeout, clock, functions, cancellation);
     }
 
     /**
@@ -323,7 +329,7 @@ public record ExecutionContext(
     public ExecutionContext withMaxFixpointRounds(int maxFixpointRounds) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions);
+                maxProcessedRows, timeout, clock, functions, cancellation);
     }
 
     /**
@@ -350,7 +356,7 @@ public record ExecutionContext(
     public ExecutionContext withMaxMaterializedRows(int maxMaterializedRows) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions);
+                maxProcessedRows, timeout, clock, functions, cancellation);
     }
 
     /**
@@ -371,7 +377,7 @@ public record ExecutionContext(
     public ExecutionContext withMaxProcessedRows(long maxProcessedRows) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions);
+                maxProcessedRows, timeout, clock, functions, cancellation);
     }
 
     /**
@@ -390,7 +396,7 @@ public record ExecutionContext(
         Objects.requireNonNull(timeout, "timeout");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions);
+                maxProcessedRows, timeout, clock, functions, cancellation);
     }
 
     /**
@@ -414,7 +420,7 @@ public record ExecutionContext(
         Objects.requireNonNull(clock, "clock");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions);
+                maxProcessedRows, timeout, clock, functions, cancellation);
     }
 
     /**
@@ -433,7 +439,20 @@ public record ExecutionContext(
         Objects.requireNonNull(functions, "functions");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions);
+                maxProcessedRows, timeout, clock, functions, cancellation);
+    }
+
+    /**
+     * Returns a copy with {@code cancellation} as the signal this execution answers to.
+     *
+     * @param cancellation the signal; {@link QueryCancellation#NONE} for none
+     * @return a new context
+     */
+    public ExecutionContext withCancellation(QueryCancellation cancellation) {
+        Objects.requireNonNull(cancellation, "cancellation");
+        return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
+                connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
+                maxProcessedRows, timeout, clock, functions, cancellation);
     }
 
     /**
@@ -466,7 +485,7 @@ public record ExecutionContext(
                 QueryEventListener.NONE, UNLIMITED_FIXPOINT_ROUNDS,
                 DEFAULT_MAX_MATERIALIZED_ROWS, UNLIMITED_PROCESSED_ROWS, UNLIMITED_TIMEOUT,
                 Clock.systemUTC(),
-                model.functions());
+                model.functions(), QueryCancellation.NONE);
     }
 
     /**
@@ -489,7 +508,7 @@ public record ExecutionContext(
                 QueryEventListener.NONE, UNLIMITED_FIXPOINT_ROUNDS,
                 DEFAULT_MAX_MATERIALIZED_ROWS, UNLIMITED_PROCESSED_ROWS, UNLIMITED_TIMEOUT,
                 Clock.systemUTC(),
-                model.functions());
+                model.functions(), QueryCancellation.NONE);
     }
 
     /**
