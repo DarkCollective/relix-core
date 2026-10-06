@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.connectors.std.internal;
 
+import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.processor.connector.ConnectorConfig;
 import com.darkcollective.relix.processor.connector.RelixConnector;
 import com.darkcollective.relix.processor.EvaluationException;
@@ -76,6 +77,37 @@ final class FileResolverTest {
                 throw failure;
             }
             return answers.removeFirst();
+        }
+    }
+
+    @Nested
+    @DisplayName("the directory a declaration reads from")
+    class DeclaringFile {
+
+        @Test
+        @DisplayName("is the directory of the file it was written in, named absolutely")
+        void besideItsFile(@TempDir Path base) {
+            Path file = base.resolve("project/.relix/catalog.relix").toAbsolutePath();
+            assertThat(FileResolver.directoryOf(new SourceLocation(file.toString(), 3, 1), base))
+                    .isEqualTo(file.getParent());
+        }
+
+        @Test
+        @DisplayName("is the fallback for a relative name, a label, or no location")
+        void otherwiseTheFallback(@TempDir Path base) {
+            for (String name : List.of("catalog.relix", "a/catalog.relix", "<session>", "<unknown>", "")) {
+                assertThat(FileResolver.directoryOf(new SourceLocation(name, 1, 1), base))
+                        .as(name).isEqualTo(base);
+            }
+            assertThat(FileResolver.directoryOf(SourceLocation.UNKNOWN, base)).isEqualTo(base);
+        }
+
+        @Test
+        @DisplayName("is the fallback for a root with no parent")
+        void root(@TempDir Path base) {
+            Path root = base.toAbsolutePath().getRoot();
+            assertThat(FileResolver.directoryOf(new SourceLocation(root.toString(), 0, 0), base))
+                    .isEqualTo(base);
         }
     }
 

@@ -84,7 +84,7 @@ final class CompositeDataSourceConnectorTest {
     };
 
     private CompositeDataSourceConnector connectorFor(SemanticModel model) {
-        return new CompositeDataSourceConnector(model, baseDir,
+        return new CompositeDataSourceConnector(model, baseDir, true,
                 DriverProvisioner.create(false, NO_NETWORK),
                 ConnectorProvisioner.create(false, NO_NETWORK),
                 new GeneratorRegistry(), new ConnectionPool(),

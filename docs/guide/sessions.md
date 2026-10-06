@@ -167,7 +167,7 @@ world rather than a tuning parameter:
 | `jdbc(name, dataSource)` | a live database handle, under a connection name |
 | `catalog(provider)` | where schemas and statistics come from — live, or a snapshot |
 | `clock(clock)` | what `NOW()` and `CURRENT_DATE` read |
-| `baseDirectory(path)` | what a relative file path in a source resolves against |
+| `baseDirectory(path)` | what a relative file path in a source resolves against, when the declaration was not parsed from a file |
 | `functions(library)` | functions of your own, merged with the bundled ones |
 | `connector(connector)` | a backend of your own |
 | `scriptLoader(loader)` | what an `import` statement resolves through |
