@@ -182,7 +182,7 @@ final class ReferenceExampleAnalysisTest {
      * fixture.
      */
     private static SemanticResult analyseWithStandIns(String fixture, String body) {
-        SemanticResult first = SemanticFixtures.analyze(fixture + "\n" + body);
+        SemanticResult first = SemanticFixtures.analyze(fixture + "\n" + body, FIXTURE_FILES);
         java.util.LinkedHashSet<String> undefined = new java.util.LinkedHashSet<>();
         for (SemanticError error : first.errors()) {
             java.util.regex.Matcher m = UNDEFINED.matcher(error.message());
@@ -198,8 +198,41 @@ final class ReferenceExampleAnalysisTest {
             standIns.append("source ").append(name)
                     .append(" from json(\"").append(name).append(".json\");\n");
         }
-        return SemanticFixtures.analyze(fixture + "\n" + standIns + "\n" + body);
+        return SemanticFixtures.analyze(fixture + "\n" + standIns + "\n" + body, FIXTURE_FILES);
     }
+
+    /**
+     * Describes a CSV source that declares no schema from the manual's own fixture file,
+     * in {@code docs/reference/.fixtures}, read by the connector a session reads it with —
+     * so an example that leaves its schema out is checked against the heading a reader
+     * would actually get.
+     */
+    private static final com.darkcollective.relix.semantic.CatalogProvider FIXTURE_FILES =
+            new com.darkcollective.relix.semantic.CatalogProvider() {
+                @Override
+                public java.util.Optional<com.darkcollective.relix.symbol.Schema> tableSchema(
+                        com.darkcollective.relix.lang.ast.ConnectionDeclaration connection,
+                        String table) {
+                    return java.util.Optional.empty();
+                }
+
+                @Override
+                public java.util.Optional<com.darkcollective.relix.symbol.Schema> sourceSchema(
+                        com.darkcollective.relix.lang.ast.SourceDeclaration source) {
+                    if (!(source.config() instanceof
+                            com.darkcollective.relix.lang.ast.source.CsvFileSourceConfig csv)) {
+                        return java.util.Optional.empty();
+                    }
+                    var config = new java.util.LinkedHashMap<>(
+                            com.darkcollective.relix.connectors.std.internal.CsvConnector
+                                    .config(csv).values());
+                    config.put("path", referenceRoot().resolve(".fixtures")
+                            .resolve(csv.path()).toString());
+                    return new com.darkcollective.relix.connectors.std.internal.CsvConnector()
+                            .tableSchema(new com.darkcollective.relix.processor.connector
+                                    .ConnectorConfig(config), source.name());
+                }
+            };
 
     // ── extraction ──────────────────────────────────────────────────────────────
 
@@ -438,15 +471,34 @@ final class ReferenceExampleAnalysisTest {
      *
      * <p>A {@code source}, {@code connection} or {@code import} names an external
      * system, so its schema is whatever the declaration says and analysing it checks
-     * the example against itself. A {@code namespace} declaration has a different
+     * the example against itself — except a CSV source that declares no schema over one
+     * of the manual's fixture files, whose heading is read from the file. A {@code namespace} declaration has a different
      * reason: it must be a script's <em>first</em> statement, so prepending anything
      * at all makes it a parse error.
      */
     private static boolean reachesOutside(String body) {
-        return java.util.regex.Pattern
-                .compile("(?m)^[ \t]*(source|connection|import|namespace)\\b")
-                .matcher(body).find();
+        if (java.util.regex.Pattern.compile("(?m)^[ \t]*(connection|import|namespace)\\b")
+                .matcher(body).find()) {
+            return true;
+        }
+        // A CSV source that declares no schema, over one of the manual's own fixture
+        // files, is the exception: its heading is read from that file, not from the
+        // declaration, so analysing it checks the example against the data it reads.
+        java.util.regex.Matcher source = SOURCE_LINE.matcher(body);
+        while (source.find()) {
+            if (!FIXTURE_CSV.matcher(source.group()).matches() || body.contains("schema:")) {
+                return true;
+            }
+        }
+        return false;
     }
+
+    private static final java.util.regex.Pattern SOURCE_LINE =
+            java.util.regex.Pattern.compile("(?m)^[ \t]*source\\b.*$");
+
+    /** {@code source X from csv("file.csv") …}: a file name with no directory, a fixture. */
+    private static final java.util.regex.Pattern FIXTURE_CSV = java.util.regex.Pattern.compile(
+            "[ \t]*source\\s+\\w+\\s+from\\s+csv\\(\"[^\"/]+\"\\).*");
 
     private static List<Path> referencePages(Path root) {
         try (Stream<Path> walk = Files.walk(root)) {

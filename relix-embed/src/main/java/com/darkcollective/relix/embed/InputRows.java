@@ -78,8 +78,10 @@ final class InputRows implements Generator, AutoCloseable {
         if (stream == null) {
             throw new RelixException("the supplier for input '" + name + "' produced no stream");
         }
-        return StreamInput.open(StreamInput.Format.valueOf(input.format().name()), stream,
-                declared, input.sample(), name);
+        StreamInput.Format format = StreamInput.Format.valueOf(input.format().name());
+        return StreamInput.open(format, stream, declared, input.sample(),
+                "input '" + name + "' (" + format.name().toLowerCase(java.util.Locale.ROOT) + ")",
+                input.names().isEmpty(), input.names());
     }
 
     @Override

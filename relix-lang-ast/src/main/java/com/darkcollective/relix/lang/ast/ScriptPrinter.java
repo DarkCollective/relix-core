@@ -295,6 +295,9 @@ public final class ScriptPrinter {
             case CsvFileSourceConfig c -> "csv(" + quote(c.path()) + ") " + block(
                     entry("header", Boolean.toString(c.hasHeader())),
                     schemaEntry(c.columns()),
+                    c.names().isEmpty() ? null : entry("columns", c.names().stream()
+                            .map(ScriptPrinter::columnName)
+                            .collect(java.util.stream.Collectors.joining(", ", "[", "]"))),
                     references(c.references(), "references: "));
             case JsonFileSourceConfig c -> "json(" + quote(c.path()) + ") " + block(
                     c.records().map(r -> entry("records", quote(r))).orElse(null),

@@ -138,10 +138,13 @@ source_config     ::= csv_source
    commas between them are optional, and a trailing comma is allowed.
    Which fields are required is noted per source; a missing one is an error. */
 
-/* source Orders from csv("orders.csv") { schema: { id: NUMBER } };   schema required */
+/* source Orders from csv("orders.csv") { schema: { id: NUMBER } };
+   With no schema the heading is inferred from the file: names from its header row, or
+   from columns: [ … ] for a file with none; not both schema and columns. */
 csv_source        ::= "csv" "(" STRING_DQ ")" "{" ( csv_field ( ","? csv_field )* ","? )? "}"
 csv_field         ::= "header" ":" boolean_literal
                     | "schema" ":" schema_block
+                    | "columns" ":" "[" column_name ( "," column_name )* ","? "]"
                     | "references" ":" references_block
 
 /* source Docs from json("docs.json") { records: "$.items" };   the block is optional */
@@ -653,6 +656,8 @@ are easy to miss in the rules above.
 - **There is no NULL value to write.** `⊥` and `NULL` appear only in a null test:
   `x = ⊥`, `x = NULL`, `x IS NULL` and `x IS NOT NULL` all ask whether `x` is NULL.
   Anywhere else, the word `null` names a column.
+- **A CSV source declares a `schema` or its `columns`, not both.** `csv_field`
+  allows either; giving the two in one source is an error.
 - **`<>` is not an operator.** Write `!=` or `≠`.
 - **Two minus signs.** The ASCII hyphen `-` subtracts numbers. The Unicode minus `−`
   (U+2212) is set difference, whose ASCII spellings are `DIFF`, `MINUS` and

@@ -23,6 +23,8 @@ import com.darkcollective.relix.connectors.std.internal.DataSourceRegistry;
 import com.darkcollective.relix.connectors.std.DriverProvisioner;
 import com.darkcollective.relix.connectors.std.HttpFetcher;
 import com.darkcollective.relix.connectors.std.internal.ConnectorCatalogProvider;
+import com.darkcollective.relix.connectors.std.internal.CsvConnector;
+import com.darkcollective.relix.lang.ast.source.CsvFileSourceConfig;
 import com.darkcollective.relix.connectors.std.internal.FileResolver;
 import com.darkcollective.relix.connectors.std.internal.JdbcCatalogProvider;
 import com.darkcollective.relix.lang.ScriptParser;
@@ -290,7 +292,7 @@ public final class Relix implements AutoCloseable {
         this.placeholders = builder.placeholders;
         this.files = FileResolver.create(FileResolver.DEFAULT_CACHE, builder.remoteFiles);
         if (builder.catalog != null) {
-            this.catalog = placeholders.catalog(builder.catalog);
+            this.catalog = placeholders.catalog(readingFiles(builder.catalog));
             this.ownedCatalog = null;
         } else {
             // The database's own estimates unless the caller asked for counts: an estimate
@@ -299,7 +301,7 @@ public final class Relix implements AutoCloseable {
                     builder.exactStatistics == null
                             ? new JdbcCatalogProvider(dataSources)
                             : new JdbcCatalogProvider(dataSources, builder.exactStatistics));
-            this.catalog = placeholders.catalog(built);
+            this.catalog = placeholders.catalog(readingFiles(built));
             this.ownedCatalog = built;
         }
         this.allowUnresolved = builder.allowUnresolved;
@@ -1273,6 +1275,50 @@ public final class Relix implements AutoCloseable {
     // -------------------------------------------------------------------------
     // Internals
     // -------------------------------------------------------------------------
+
+    /**
+     * {@code catalog}, also describing a CSV source that left its schema out, by reading
+     * the start of its file.
+     *
+     * <p>The file is found exactly as a query would find it — beside the script that
+     * declared it unless the sandbox is closed, fetched if it is remote — which is why
+     * this is the session's to supply rather than a connector's: only the session knows
+     * where a relative path starts. It wraps a caller's catalog as readily as the one
+     * built here, because a catalog describes databases and is not where a file's heading
+     * would be looked for.
+     */
+    private CatalogProvider readingFiles(CatalogProvider catalog) {
+        return new CatalogProvider() {
+            @Override
+            public Optional<Schema> tableSchema(ConnectionDeclaration connection, String table) {
+                return catalog.tableSchema(connection, table);
+            }
+
+            @Override
+            public Optional<RelationStatistics> tableStatistics(ConnectionDeclaration connection,
+                                                                String table) {
+                return catalog.tableStatistics(connection, table);
+            }
+
+            @Override
+            public Optional<List<String>> tables(ConnectionDeclaration connection) {
+                return catalog.tables(connection);
+            }
+
+            @Override
+            public Optional<Schema> sourceSchema(SourceDeclaration source) {
+                if (source.config() instanceof CsvFileSourceConfig csv) {
+                    CsvConnector reader = new CsvConnector();
+                    Path base = sandbox.isOpen()
+                            ? FileResolver.directoryOf(source.location(), baseDirectory)
+                            : baseDirectory;
+                    return reader.tableSchema(
+                            files.prepare(reader, CsvConnector.config(csv), base), source.name());
+                }
+                return catalog.sourceSchema(source);
+            }
+        };
+    }
 
     /** The clock this session's {@code NOW()} reads. */
     Clock clock() {

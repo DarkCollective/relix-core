@@ -36,6 +36,7 @@ import com.darkcollective.relix.connectors.std.DriverProvisioner;
 import com.darkcollective.relix.processor.generator.GeneratorDataSourceConnector;
 import com.darkcollective.relix.connectors.std.internal.HttpDataSourceConnector;
 import com.darkcollective.relix.connectors.std.internal.ConnectionPool;
+import com.darkcollective.relix.connectors.std.internal.CsvConnector;
 import com.darkcollective.relix.connectors.std.internal.FileResolver;
 import com.darkcollective.relix.connectors.std.internal.JdbcDataSourceConnector;
 import com.darkcollective.relix.connectors.std.internal.JsonFileDataSourceConnector;
@@ -231,10 +232,8 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
                                 SourceLocation declaredAt) {
         RelixConnector connector = registry.forType("csv").orElseThrow(() -> new EvaluationException(
                 "No connector registered for CSV sources (relation '" + relationName + "')"));
-        ConnectorConfig config = new ConnectorConfig(Map.of(
-                "path", csv.path(),
-                "header", String.valueOf(csv.hasHeader())));
-        return connector.open(files.prepare(connector, config, baseFor(declaredAt)), relationName, schema);
+        return connector.open(files.prepare(connector, CsvConnector.config(csv), baseFor(declaredAt)),
+                relationName, schema);
     }
 
     /**
