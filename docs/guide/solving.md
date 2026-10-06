@@ -168,6 +168,27 @@ SOLVE later = now * (1 + rate) * (1 + rate) WITHIN 0.000001 MAX 25 ROUNDS (Growt
 (service=search, now=100, later=121, rate=0.1)
 ```
 
+A search finds one root, and `(1 + rate)² = 1.21` has two: a tenth, and −2.1. From 1 it
+reaches the first. A fifth argument says where the search starts for the blanks it names,
+as an expression over the row, and so which root it reaches; a blank it does not name
+starts at 1, and an equation that is rearranged or eliminated has one answer and ignores
+it:
+
+```java
+Relation shrink = relix.relation("Growth").solve(
+        List.of(equation(attr("later"),
+                times(times(attr("now"), plus(num(1), attr("rate"))), plus(num(1), attr("rate"))))),
+        List.of(), Optional.empty(), Optional.empty(), List.of(start("rate", num(-3))));
+
+System.out.println(shrink.render());
+shrink.toList().forEach(System.out::println);
+```
+
+```
+SOLVE later = now * (1 + rate) * (1 + rate) START rate = -3 (Growth)
+(service=search, now=100, later=121, rate=-2.1)
+```
+
 A row whose equations have no solution — a negative area for a square — is an error
 naming the row rather than a row left blank, and so is a search that runs out of rounds.
 A row whose blanks the equations do not pin down, as when only their product appears,

@@ -19,6 +19,7 @@ import com.darkcollective.relix.ast.visitor.RelNodeVisitor;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -34,7 +35,7 @@ import java.util.Optional;
  * equations, by the cheapest strategy that applies: a single equation whose unknown
  * appears once is inverted by rearranging it; equations linear in the unknowns are
  * solved by elimination; anything else is solved by Newton's method, every unknown
- * starting at 1. A row that cannot be posed — the wrong number of unknowns, or a
+ * starting at 1 unless {@code starts} says otherwise. A row that cannot be posed — the wrong number of unknowns, or a
  * singular linear system — passes through unchanged; a row that is posed but on which
  * the iteration does not converge is an error.
  *
@@ -48,7 +49,10 @@ import java.util.Optional;
  *
  * <p>{@code tolerance} ({@code WITHIN ε}) and {@code maxRounds} ({@code MAX n ROUNDS})
  * govern the iteration, and are left empty for the engine's defaults; an iteration
- * stops when no unknown moves by more than the tolerance in a round.
+ * stops when no unknown moves by more than the tolerance in a round. {@code starts}
+ * ({@code START u = e, …}) gives an unknown's first estimate as an expression over the
+ * row's known columns, so a query can choose which root a search reaches; over a
+ * {@code PER} group it must be a constant.
  *
  * <p>The output schema equals the input schema — {@code solve} fills holes, it never
  * adds or removes columns. The sides are restricted to arithmetic (column references,
@@ -63,22 +67,25 @@ import java.util.Optional;
  * @param groupingKeys the {@code PER} columns a fit is made per; empty to solve row by row
  * @param tolerance    the {@code WITHIN} convergence tolerance, positive; empty for the default
  * @param maxRounds    the {@code MAX … ROUNDS} iteration cap, at least 1; empty for the default
+ * @param starts       the {@code START} values, at most one per column; empty to start at 1
  * @param input        the relation whose rows are completed; must not be null
  * @param location     the source location of this node; never null
  */
 public record SolveNode(List<SolveEquation> equations, List<String> groupingKeys,
                         Optional<BigDecimal> tolerance, Optional<Integer> maxRounds,
-                        RelNode input, SourceLocation location)
+                        List<SolveStart> starts, RelNode input, SourceLocation location)
         implements RelNode {
     public SolveNode {
         Objects.requireNonNull(equations, "equations");
         Objects.requireNonNull(groupingKeys, "groupingKeys");
         Objects.requireNonNull(tolerance, "tolerance");
         Objects.requireNonNull(maxRounds, "maxRounds");
+        Objects.requireNonNull(starts, "starts");
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(location, "location");
         equations = List.copyOf(equations);
         groupingKeys = List.copyOf(groupingKeys);
+        starts = List.copyOf(starts);
         if (equations.isEmpty()) {
             throw new IllegalArgumentException("SOLVE needs at least one equation");
         }
@@ -88,11 +95,15 @@ public record SolveNode(List<SolveEquation> equations, List<String> groupingKeys
         if (maxRounds.isPresent() && maxRounds.get() < 1) {
             throw new IllegalArgumentException("SOLVE round cap must be at least 1");
         }
+        if (starts.stream().map(s -> s.column().toLowerCase(Locale.ROOT)).distinct().count()
+                != starts.size()) {
+            throw new IllegalArgumentException("SOLVE START names a column more than once");
+        }
     }
 
     /** Convenience constructor for tests; uses {@link SourceLocation#UNKNOWN}. */
     public SolveNode(List<SolveEquation> equations, List<String> groupingKeys, RelNode input) {
-        this(equations, groupingKeys, Optional.empty(), Optional.empty(), input,
+        this(equations, groupingKeys, Optional.empty(), Optional.empty(), List.of(), input,
                 SourceLocation.UNKNOWN);
     }
 

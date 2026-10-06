@@ -596,7 +596,7 @@ public final class IrReport {
                     + s.seed().map(seed -> " SEED " + seed).orElse("");
 
             case SolveNode s -> DisplayLabels.solve(s.equations(), s.groupingKeys(),
-                    s.tolerance(), s.maxRounds());
+                    s.tolerance(), s.maxRounds(), s.starts());
 
             case OptimizeNode o -> DisplayLabels.optimize(o.sense(), o.objective(),
                     o.constraints(), o.groupingKeys(), o.allocation());

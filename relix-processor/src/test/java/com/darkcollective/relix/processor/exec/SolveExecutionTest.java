@@ -214,6 +214,126 @@ final class SolveExecutionTest extends ProcessorTestSupport {
                 .isLessThan(new java.math.BigDecimal("0.1"));
     }
 
+    private static final String SHOTS = """
+            Shots := [
+            | shot_id | y0 | vy                 |
+            |---------|----|--------------------|
+            | 1       | 2  | 21.213203435596424 |
+            | 2       | 0  | 25                 |
+            ];
+            Unknown := [
+            | shot_id | t |
+            |---------|---|
+            | 1       |   |
+            | 2       |   |
+            ];
+            """;
+
+    @Test
+    @DisplayName("without START a search starts at 1 and reaches the launch-side root")
+    void searchStartsAtOne() {
+        var rows = collect(SHOTS + """
+                query { π shot_id, t (SOLVE 0 = y0 + vy * t - 0.5 * 9.81 * t * t
+                    (Shots ⋈ Unknown)) };
+                """);
+
+        assertThat(byShot(rows, "1")).hasValue("t", "-0.0923105886");
+        assertThat(byShot(rows, "2")).hasValue("t", "0");
+    }
+
+    @Test
+    @DisplayName("START, an expression over the row, chooses which root the search reaches")
+    void startChoosesTheRoot() {
+        var rows = collect(SHOTS + """
+                query { π shot_id, t (SOLVE 0 = y0 + vy * t - 0.5 * 9.81 * t * t
+                    START t = 2 * vy / 9.81 (Shots ⋈ Unknown)) };
+                """);
+
+        assertThat(byShot(rows, "1")).hasValue("t", "4.4171227059");
+        assertThat(byShot(rows, "2")).hasValue("t", "5.0968399592");
+    }
+
+    @Test
+    @DisplayName("START is read per row, so rows may reach different roots")
+    void startIsPerRow() {
+        var rows = collect("""
+                Squares := [
+                | id | area | sign | side |
+                |----|------|------|------|
+                | 1  | 4    | 1    |      |
+                | 2  | 4    | -1   |      |
+                ];
+                query { SOLVE area = side * side START side = sign (Squares) };
+                """);
+
+        assertThat(byId(rows, "1")).hasValue("side", "2");
+        assertThat(byId(rows, "2")).hasValue("side", "-2");
+    }
+
+    @Test
+    @DisplayName("START is ignored by inversion and by elimination, which have one answer")
+    void startIgnoredWithoutASearch() {
+        var inverted = collect("""
+                Loans := [
+                | id | total | rate | principal |
+                |----|-------|------|-----------|
+                | 1  | 50    | 5    |           |
+                ];
+                query { SOLVE total = principal * rate START principal = 1000 (Loans) };
+                """);
+        var eliminated = collect("""
+                Pairs := [
+                | id | total | diff | a | b |
+                |----|-------|------|---|---|
+                | 1  | 10    | 2    |   |   |
+                ];
+                query { SOLVE { total = a + b, diff = a - b } START a = 100, b = -7 (Pairs) };
+                """);
+
+        assertThat(byId(inverted, "1")).hasValue("principal", "10");
+        assertThat(byId(eliminated, "1")).hasValue("a", "6").hasValue("b", "4");
+    }
+
+    @Test
+    @DisplayName("a row that knows the START column ignores the start, and a NULL start is 1")
+    void startForAKnownColumnOrNullIsIgnored() {
+        var rows = collect("""
+                Squares := [
+                | id | area | guess | side |
+                |----|------|-------|------|
+                | 1  |      | -5    | 3    |
+                | 2  | 4    |       |      |
+                ];
+                query { SOLVE area = side * side START side = guess (Squares) };
+                """);
+
+        assertThat(byId(rows, "1")).hasValue("area", "9").hasValue("side", "3");
+        assertThat(byId(rows, "2")).hasValue("side", "2");
+    }
+
+    @Test
+    @DisplayName("under PER a constant START begins the group's iterative fit")
+    void startUnderPer() {
+        var rows = collect("""
+                Areas := [
+                | id | series | area | side |
+                |----|--------|------|------|
+                | 1  | s1     | 4    |      |
+                | 2  | s1     | 4    |      |
+                ];
+                query { SOLVE area = side * side PER series START side = -3 (Areas) };
+                """);
+
+        assertThat(byId(rows, "1")).hasValue("side", "-2");
+        assertThat(byId(rows, "2")).hasValue("side", "-2");
+    }
+
+    private static Row byShot(List<Row> rows, String id) {
+        return rows.stream()
+                .filter(r -> id.equals(r.get("shot_id").asDisplayString()))
+                .findFirst().orElseThrow();
+    }
+
     private static Row byId(List<Row> rows, String id) {
         return rows.stream()
                 .filter(r -> id.equals(r.get("id").asDisplayString()))

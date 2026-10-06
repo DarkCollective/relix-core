@@ -86,6 +86,7 @@ import com.darkcollective.relix.ast.SessionizeNode;
 import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveNode;
+import com.darkcollective.relix.ast.SolveStart;
 import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
@@ -676,6 +677,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         // A column may appear any number of times: an equation the engine cannot
         // rearrange is solved iteratively instead, so repetition is not an error.
         Set<String> typeChecked = new HashSet<>();
+        Set<String> participating = new HashSet<>();
         for (SolveEquation written : node.equations()) {
             SolveEquation equation = SolveEquations.expand(written, functions, symbolTable);
 
@@ -692,6 +694,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
 
             for (String col : columns) {
                 String colName = AttributeNames.stripQualifier(col);
+                participating.add(colName.toLowerCase(Locale.ROOT));
                 if (!typeChecked.add(colName.toLowerCase(Locale.ROOT))) {
                     continue;
                 }
@@ -707,7 +710,41 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 }
             }
         }
+        for (SolveStart start : node.starts()) {
+            validateSolveStart(start, participating, !node.groupingKeys().isEmpty(), input,
+                    node.location());
+        }
         return null;
+    }
+
+    /**
+     * Validates one {@code START u = e}: {@code u} must be a column the equations name —
+     * a start for anything else would be silently ignored — and {@code e} a
+     * {@code NUMBER} over the input's columns. Under {@code PER} the start is shared by
+     * a whole group's fit, so it may name no column at all: a constant is the only value
+     * that is the same in every row of the group.
+     */
+    private void validateSolveStart(SolveStart start, Set<String> participating, boolean grouped,
+                                    Schema input, SourceLocation loc) {
+        if (!participating.contains(start.column().toLowerCase(Locale.ROOT))) {
+            error(loc, "Solve SOLVE: START names '" + start.column()
+                    + "', which no equation solves for");
+        }
+        if (grouped) {
+            OperandWalker.walk(start.value(),
+                    attr -> error(attr.location(), "Solve SOLVE: a START under PER must be a"
+                            + " constant, since one fit serves the whole group; '"
+                            + start.column() + "' names column '" + attr.name() + "'"),
+                    this::validateFunctionCall);
+        } else {
+            validateOperandColumns(start.value(), input, "Solve SOLVE START: ",
+                    "Solve SOLVE START: column");
+        }
+        Type type = new OperandTypeInferrer(symbolTable, functions).infer(start.value(), input);
+        if (type != ScalarType.NUMBER && type != ScalarType.ANY) {
+            error(loc, "Solve SOLVE: the START for '" + start.column()
+                    + "' must be NUMBER (or ANY), got " + type);
+        }
     }
 
     /**

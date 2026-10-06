@@ -370,13 +370,15 @@ final class PhysicalPlanJsonTest {
                                     attr("rate")))),
                     List.of("region"),
                     java.util.Optional.of(new java.math.BigDecimal("1E-6")), java.util.Optional.of(50),
+                    List.of(com.darkcollective.relix.ast.AstBuilders.start("total", attr("rate"))),
                     leaf());
             assertThat(PhysicalPlanJson.toJson(solve))
                     .contains("\"op\":\"Solve\"")
                     .contains("\"equations\":[{\"left\":\"total\",\"right\":\"principal * rate\"}]")
                     .contains("\"groupingKeys\":[\"region\"]")
                     .contains("\"tolerance\":\"0.000001\"")
-                    .contains("\"maxRounds\":50");
+                    .contains("\"maxRounds\":50")
+                    .contains("\"starts\":[{\"column\":\"total\",\"value\":\"rate\"}]");
         }
 
         @Test
