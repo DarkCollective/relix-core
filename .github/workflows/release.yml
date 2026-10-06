@@ -15,9 +15,12 @@
 #
 # What it releases is not what the private repository releases. There the assets are
 # the jlink platform archives, which are `relix-cli` — a module this tree does not
-# carry. Here they are the published artifact and the three manuals:
+# carry. Here they are the published artifacts and the three manuals:
 #
-#   relix-<v>.jar / -sources.jar / -javadoc.jar / .pom   the coordinate
+#   relix-<v>.jar / -sources.jar / -javadoc.jar / .pom   the engine
+#   relix-docs-<v>.jar / … / .pom                         the language reference
+#   relix-solver-ojalgo-<v>.jar / … / .pom                the solver
+#   relix-all-<v>.pom                                     all three, by one coordinate
 #   reference.pdf, guide.pdf, problem-solving.pdf         the manuals, sealed to the tag
 #   relix-mongo-connector-<v>.jar                         the out-of-tree plugin
 #   relix-connectors.json                                 the hosted connector catalog
@@ -157,7 +160,7 @@ jobs:
       # Into a directory in Maven repository layout, which is both what the Central
       # Portal takes as a bundle and what carries the .md5/.sha1 files it requires.
       - name: Stage the Maven artifacts
-        run: ./gradlew --no-daemon :relix-dist:publishRelixPublicationToStagingRepository -PrelixVersion="$VERSION"
+        run: ./gradlew --no-daemon :relix-dist:publishStaging -PrelixVersion="$VERSION"
 
       # The plugin, and its catalog entry. The entry names the URL the jar will be
       # served from, which is a release asset of the tag this run is producing — so it
@@ -187,9 +190,11 @@ jobs:
       - name: Gather the release assets
         run: |
           mkdir -p assets
-          cp relix-dist/build/staging-deploy/com/darkcollective/relix/relix/"$VERSION"/*.jar assets/
-          cp relix-dist/build/staging-deploy/com/darkcollective/relix/relix/"$VERSION"/*.pom assets/
-          cp relix-dist/build/staging-deploy/com/darkcollective/relix/relix/"$VERSION"/*.zip assets/
+          # Every published artifact: relix, relix-docs, relix-solver-ojalgo and the
+          # POM-only relix-all. Copied with find rather than globs, because relix-all has
+          # no jar and only relix has a manuals zip.
+          find relix-dist/build/staging-deploy/com/darkcollective/relix -path "*/$VERSION/*" \
+            \( -name '*.jar' -o -name '*.pom' -o -name '*.zip' \) -exec cp {} assets/ \;
           cp relix-mongo-connector/build/libs/relix-mongo-connector-"$VERSION".jar assets/
           cp relix-mongo-connector/build/connector-catalog-entry.json assets/
           cp connectors/relix-connectors.json assets/relix-connectors.json

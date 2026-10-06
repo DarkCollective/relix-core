@@ -61,11 +61,10 @@ module com.darkcollective.relix {
     requires transitive java.sql;
     requires java.net.http;
     requires java.logging;
-    // The shipped solver. Bundled rather than optional: OPTIMIZE and COVER EXACT need
-    // one, and a client who has to install a solver to run a documented operator has
-    // been handed assembly work this artifact exists to spare them.
-    requires ojalgo;
-
+    // The solver SPI, to the one provider published beside this artifact
+    // (relix-solver-ojalgo) and to nobody else: implementing it is not part of the
+    // surface a client programs against.
+    exports com.darkcollective.relix.solver to com.darkcollective.relix.solver.ojalgo;
     // The provider seams, and the implementations that ship inside. A modular runtime
     // reads these; a class path reads the merged META-INF/services beside them.
     uses com.darkcollective.relix.function.FunctionLibrary;
@@ -78,6 +77,4 @@ module com.darkcollective.relix {
             with com.darkcollective.relix.function.builtin.BuiltinFunctionLibrary;
     provides com.darkcollective.relix.processor.connector.RelixConnector
             with com.darkcollective.relix.connectors.std.internal.CsvConnector;
-    provides com.darkcollective.relix.solver.MathProgrammingSolver
-            with com.darkcollective.relix.solver.ojalgo.OjAlgoSolver;
 }

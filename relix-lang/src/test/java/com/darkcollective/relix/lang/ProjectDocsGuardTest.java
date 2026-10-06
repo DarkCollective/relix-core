@@ -234,13 +234,13 @@ final class ProjectDocsGuardTest {
         Path root = repoRoot();
         String index = read(root.resolve("docs/reference/README.md"));
         // The second half of this check asks whether a page is in an index a tool can
-        // find it by: the published jar's (Relix.referencePages()), or, for a page about a
+        // find it by: the relix-docs artifact's (RelixDocs.referencePages()), or, for a page about a
         // front end, that front end's. Where neither file is present the index half still
         // runs: a tree without them still has a manual whose pages must be reachable from
         // its own contents.
         String docEntry = null;
         for (String index2 : List.of(
-                "relix-embed/src/main/java/com/darkcollective/relix/embed/ReferenceIndex.java",
+                "relix-docs/src/main/java/com/darkcollective/relix/docs/ReferenceIndex.java",
                 "relix-console/src/main/java/com/darkcollective/relix/console/docs/DocEntry.java")) {
             Path f = root.resolve(index2);
             if (Files.isRegularFile(f)) {

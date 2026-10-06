@@ -1,0 +1,17 @@
+// relix-docs — the language reference, as an artifact of its own.
+//
+// The engine never reads the pages: only a tool that shows them does. So they are not in
+// the engine's artifact, where every embedder would download them, but here, beside the
+// small API that lists and reads them. It depends on nothing, not even the engine.
+//
+// docs/reference stays the source of truth, where its gates run; this is the copy a
+// program with only the artifact can read. Function pages are left out, their libraries
+// serving them, and so is README.md, the manual's own contents page.
+processResources {
+    from("${rootProject.projectDir}/docs/reference") {
+        into 'com/darkcollective/relix/docs/reference'
+        include '**/*.md'
+        exclude 'functions/**'
+        exclude 'README.md'
+    }
+}

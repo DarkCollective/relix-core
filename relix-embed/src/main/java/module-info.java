@@ -60,11 +60,11 @@ module com.darkcollective.relix.embed {
     // resolved graph rather than being dropped (ADR-0026 D9).
     requires transitive com.darkcollective.relix.connectors.std;
 
-    // The batteries: discovered at runtime, named here because a module nothing
+    // The battery: discovered at runtime, named here because a module nothing
     // `requires` is dropped from the resolved graph — and because "batteries included"
-    // has to mean the facade installs them, not that someone else must.
+    // has to mean the facade installs it, not that someone else must. The solver is
+    // discovered the same way but not required: it is an artifact of its own.
     requires com.darkcollective.relix.function.builtin;
-    requires com.darkcollective.relix.solver.ojalgo;
 
     // javax.sql.DataSource is in the public signature of Relix.Builder.jdbc.
     requires transitive java.sql;

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.darkcollective.relix.embed;
+package com.darkcollective.relix.docs;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,19 +28,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** The language reference, as the jar serves it. */
-@DisplayName("Relix.referencePages / referencePage — the reference in the jar")
+@DisplayName("RelixDocs.referencePages / referencePage — the reference in the jar")
 final class ReferencePagesTest {
 
     @Test
     @DisplayName("every indexed page is in the jar, and is a reference page")
     void everyPageIsBundled() {
         List<String> missing = new ArrayList<>();
-        for (ReferencePage page : Relix.referencePages()) {
-            Relix.referencePage(page.path())
+        for (ReferencePage page : RelixDocs.referencePages()) {
+            RelixDocs.referencePage(page.path())
                     .filter(md -> md.startsWith("# "))
                     .ifPresentOrElse(md -> { }, () -> missing.add(page.path()));
         }
-        assertThat(Relix.referencePages()).hasSizeGreaterThan(90);
+        assertThat(RelixDocs.referencePages()).hasSizeGreaterThan(90);
         assertThat(missing).as("indexed pages the jar does not carry").isEmpty();
     }
 
@@ -49,7 +49,7 @@ final class ReferencePagesTest {
     void keysAreUnique() {
         Map<String, String> owner = new HashMap<>();
         List<String> clashes = new ArrayList<>();
-        for (ReferencePage page : Relix.referencePages()) {
+        for (ReferencePage page : RelixDocs.referencePages()) {
             for (String key : page.keys()) {
                 String previous = owner.putIfAbsent(key.toLowerCase(Locale.ROOT), page.path());
                 if (previous != null && !previous.equals(page.path())) {
@@ -63,7 +63,7 @@ final class ReferencePagesTest {
     @Test
     @DisplayName("a page is keyed by its symbol, so looking up what the index prints finds it")
     void symbolIsAKey() {
-        assertThat(Relix.referencePages()).allSatisfy(page -> assertThat(page.keys())
+        assertThat(RelixDocs.referencePages()).allSatisfy(page -> assertThat(page.keys())
                 .as(page.path())
                 .contains(page.symbol().toLowerCase(Locale.ROOT)));
 
@@ -116,7 +116,7 @@ final class ReferencePagesTest {
     /** The page a key finds, as a reader of the index would look it up. */
     static String lookup(String key) {
         String wanted = key.toLowerCase(Locale.ROOT);
-        return Relix.referencePages().stream()
+        return RelixDocs.referencePages().stream()
                 .filter(page -> page.keys().contains(wanted))
                 .map(ReferencePage::path)
                 .findFirst()
@@ -126,20 +126,20 @@ final class ReferencePagesTest {
     @Test
     @DisplayName("a path the reference has no page at answers empty")
     void unknownPaths() {
-        assertThat(Relix.referencePage("operators/nothing.md")).isEmpty();
-        assertThat(Relix.referencePage("../../../module-info.class")).isEmpty();
-        assertThat(Relix.referencePage("operators/select")).isEmpty();
-        assertThatThrownBy(() -> Relix.referencePage(null)).isInstanceOf(NullPointerException.class);
+        assertThat(RelixDocs.referencePage("operators/nothing.md")).isEmpty();
+        assertThat(RelixDocs.referencePage("../../../module-info.class")).isEmpty();
+        assertThat(RelixDocs.referencePage("operators/select")).isEmpty();
+        assertThatThrownBy(() -> RelixDocs.referencePage(null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
     @DisplayName("function pages and the REPL page are not in it")
     void whatIsLeftOut() {
-        assertThat(Relix.referencePages()).extracting(ReferencePage::path)
+        assertThat(RelixDocs.referencePages()).extracting(ReferencePage::path)
                 .noneMatch(p -> p.startsWith("functions/"))
                 .doesNotContain("advanced/repl.md");
-        assertThat(Relix.referencePage("advanced/repl.md")).isEmpty();
-        assertThat(Relix.referencePage("operators/select.md")).get().asString()
+        assertThat(RelixDocs.referencePage("advanced/repl.md")).isEmpty();
+        assertThat(RelixDocs.referencePage("operators/select.md")).get().asString()
                 .startsWith("# Name: Selection");
     }
 

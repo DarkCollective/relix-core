@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.darkcollective.relix.embed;
+package com.darkcollective.relix.docs;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,7 +32,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The language reference bundled in this module: every page, and how to find it.
+ * The language reference this module carries: every page, and how to find it.
  *
  * <p>The pages are {@code docs/reference}, copied in at build time (the function pages
  * excepted: a function's page belongs to the library that offers the function, and is
@@ -43,7 +43,7 @@ import java.util.regex.Pattern;
 final class ReferenceIndex {
 
     /** Where the pages are, among this module's resources. */
-    static final String ROOT = "/com/darkcollective/relix/embed/reference/";
+    static final String ROOT = "/com/darkcollective/relix/docs/reference/";
 
     /** A backticked span in a spellings-table cell. */
     private static final Pattern SPAN = Pattern.compile("`([^`]+)`");

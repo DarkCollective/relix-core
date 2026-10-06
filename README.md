@@ -15,7 +15,7 @@ the language reference and worked examples.
 
 ## Install
 
-Relix needs Java 21. It is one artifact on Maven Central, carrying the engine, the
+Relix needs Java 21. The engine is one artifact on Maven Central, carrying the
 function library and the CSV, JSON, HTTP and JDBC connectors. Use the version on the
 badge above.
 
@@ -32,6 +32,14 @@ dependencies {
     <version><!-- the version on the badge --></version>
 </dependency>
 ```
+
+Two optional artifacts sit beside it, at the same version:
+
+| Artifact | Add it for |
+|---|---|
+| `relix-solver-ojalgo` | `OPTIMIZE` and `COVER EXACT`, which need a solver |
+| `relix-docs` | the language reference, for a tool that shows it to its users |
+| `relix-all` | everything: the engine and both of the above |
 
 ## A first query
 
