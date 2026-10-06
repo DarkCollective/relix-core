@@ -27,6 +27,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
@@ -237,6 +238,59 @@ final class JdbcCatalogProviderTest {
     }
 
     @Test
+    @DisplayName("a database the estimates do not name is asked through JDBC metadata")
+    void metadataFallback() throws SQLException {
+        String url = metadataTable("cat_metadata");
+        // H2 answering as a product nothing here knows, so the generic path is taken. H2
+        // reports no table-statistic row there, and the table has no key: nothing is
+        // known, which is reported as no statistics rather than as empty ones.
+        ConnectionProvider anonymous = connection -> renamed(
+                ConnectionProvider.FROM_URL.connectionFor(connection), null);
+        assertThat(new JdbcCatalogProvider(anonymous).tableStatistics(connection(url), "plain"))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("a driver's approximate table-statistic row is its row estimate")
+    void metadataTableStatistic() throws SQLException {
+        String url = metadataTable("cat_metadata_stat");
+        // What a driver with a table statistic reports: a row of TYPE tableIndexStatistic
+        // whose CARDINALITY is the table's size.
+        ConnectionProvider reporting = connection -> renamed(
+                ConnectionProvider.FROM_URL.connectionFor(connection),
+                "SELECT CAST(" + DatabaseMetaData.tableIndexStatistic + " AS SMALLINT) AS TYPE, "
+                        + "CAST(42 AS BIGINT) AS CARDINALITY");
+        assertThat(new JdbcCatalogProvider(reporting).tableStatistics(connection(url), "plain"))
+                .hasValueSatisfying(stats -> assertThat(stats.rowCount()).hasValue(42L));
+    }
+
+    @Test
+    @DisplayName("with no row estimate, a primary key is still statistics worth reporting")
+    void keyWithoutEstimate() throws SQLException {
+        String url = "jdbc:h2:mem:cat_metadata_key;DB_CLOSE_DELAY=-1";
+        try (Connection c = DriverManager.getConnection(url)) {
+            c.createStatement().execute("CREATE TABLE keyed (id INT PRIMARY KEY)");
+        }
+        ConnectionProvider anonymous = connection -> renamed(
+                ConnectionProvider.FROM_URL.connectionFor(connection), null);
+        assertThat(new JdbcCatalogProvider(anonymous).tableStatistics(connection(url), "keyed"))
+                .hasValueSatisfying(stats -> {
+                    assertThat(stats.rowCount()).isEmpty();
+                    assertThat(stats.keys()).containsExactly(List.of("ID"));
+                });
+    }
+
+    private static String metadataTable(String name) throws SQLException {
+        String url = "jdbc:h2:mem:" + name + ";DB_CLOSE_DELAY=-1";
+        try (Connection c = DriverManager.getConnection(url)) {
+            var st = c.createStatement();
+            st.execute("CREATE TABLE plain (x INT)");
+            st.execute("INSERT INTO plain VALUES (1), (2), (3)");
+        }
+        return url;
+    }
+
+    @Test
     @DisplayName("an unreachable database leaves the statistics unknown")
     void unreachable() {
         ConnectionProvider failing = connection -> {
@@ -244,6 +298,25 @@ final class JdbcCatalogProviderTest {
         };
         assertThat(new JdbcCatalogProvider(failing).tableStatistics(connection("jdbc:h2:mem:x"), "t"))
                 .isEmpty();
+    }
+
+    /**
+     * {@code real}, reporting a database name no estimate is written for, and — when
+     * {@code indexInfo} is given — answering {@code getIndexInfo} with that query's rows.
+     */
+    private static Connection renamed(Connection real, String indexInfo) throws SQLException {
+        DatabaseMetaData meta = real.getMetaData();
+        DatabaseMetaData named = (DatabaseMetaData) Proxy.newProxyInstance(
+                DatabaseMetaData.class.getClassLoader(), new Class<?>[]{DatabaseMetaData.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "getDatabaseProductName" -> "Some Other Database";
+                    case "getIndexInfo" -> indexInfo == null ? invoke(meta, method, args)
+                            : real.createStatement().executeQuery(indexInfo);
+                    default -> invoke(meta, method, args);
+                });
+        return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                new Class<?>[]{Connection.class}, (proxy, method, args) ->
+                        method.getName().equals("getMetaData") ? named : invoke(real, method, args));
     }
 
     /**

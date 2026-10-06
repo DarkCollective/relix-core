@@ -152,7 +152,10 @@ public final class JdbcCatalogProvider implements CatalogProvider {
             if (exactTimeout == null) {
                 OptionalLong rows = StatisticsEstimates.rows(conn, resolved);
                 Map<String, ColumnStatistics> columnStats = StatisticsEstimates.columns(conn, resolved, rows);
-                return rows.isEmpty() && columnStats.isEmpty() && keys.isEmpty()
+                // Column figures alone are not a reason to report statistics: every
+                // database that keeps them keeps a row count too, which they are read
+                // against.
+                return rows.isEmpty() && keys.isEmpty()
                         ? Optional.empty()
                         : Optional.of(new RelationStatistics(rows, columnStats, keys));
             }
