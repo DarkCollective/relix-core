@@ -284,10 +284,66 @@ An `IN` column is a request parameter and not a field, so it is never selected e
 when the query reads it back. An **open** source declares no columns at all, and a
 GraphQL request must name its fields up front, so nothing is generated for one.
 
+# REST pushdown — a λ and an equality fold into the request:
+Over a REST source, two things an adjacent query asks for fold into the request
+itself, rather than running only after the whole collection is fetched.
+
+A query **`λ`** adjacent to a source that declares a `paginate` limit sets that limit
+parameter, so a top-N query fetches N rows instead of the lot:
+
+```relix
+source Products from http {
+    url:      "https://dummyjson.com/products",
+    extract:  json("$.products[*]"),
+    paginate: { limit: query("limit") [default: 5] },
+    schema:   { id: NUMBER, title: STRING }
+};
+
+query { λ 10 (Products) };
+```
+
+requests `?limit=10` rather than the declared default of 5.
+
+A **`σ` equality** on an `IN` column folds into that column's binding — a query
+parameter or a `{path}` segment — turning a full-collection pull into a
+single-resource request:
+
+```relix
+source Spell from http {
+    url:    "https://www.dnd5eapi.co/api/spells/{index}",
+    schema: { index: in STRING as path("index") [required], name: out STRING at "$.name" }
+};
+
+query { σ index = "fireball" (Spell) };
+```
+
+requests `/api/spells/fireball`.
+
+Both are **pure optimizations**: the engine `λ` and `σ` stay in the plan above the
+scan, so a server that ignores a page-size parameter, clamps it, or does not filter
+still yields the right answer — the request fetches fewer rows and the engine
+operators are the backstop. `explain` shows what folded: the scan reads
+`⟨request limit 10, index=fireball⟩`.
+
+The rules that keep it correct:
+
+- Only an **equality** on an `IN` column folds (`col = literal`, and conjunctions of
+  them). A range, an inequality, or an equality on an output column stays a residual
+  `σ` run in the engine.
+- A pushed equality **satisfies a `[required]` `IN` column**, so a lookup source need
+  not declare a `[default: …]` when every query filters on its key.
+- A `λ` folds only when it is **adjacent to the scan** (through a column-pruning `π`).
+  A `λ` above a `σ`, a `τ` or a `γ` is not pushed — a page cap below a filter or a sort
+  returns the wrong rows — and a `λ` with an `OFFSET` is not pushed either.
+- Pushing is a **single request**. A `λ` larger than the endpoint's page maximum is
+  clamped by the server and capped by the engine `λ`; multi-request paging
+  (offset/cursor) is not done.
+
 # Limitations:
-Predicates are not pushed into request parameters: a `[required]` `IN` column
-with no `[default: …]` is an error. Provide a default, or filter the result with
-`σ` after the fetch. A pagination default is a whole number:
+A `[required]` `IN` column needs either a pushed `σ` equality on it (see *REST
+pushdown*) or a `[default: …]`; a query giving it neither is an error. Only
+equalities fold into a request — a range or inequality stays a residual `σ` after the
+fetch. A pagination default is a whole number:
 
 ```relix-invalid
 source Products from http { url: "https://dummyjson.com/products",

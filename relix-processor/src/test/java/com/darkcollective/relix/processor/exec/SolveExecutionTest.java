@@ -101,4 +101,122 @@ final class SolveExecutionTest extends ProcessorTestSupport {
         // k=1: total present ⇒ unchanged (left as 99).
         assertThat(withTotal(rows, "99")).isNotNull();
     }
+
+    @Test
+    @DisplayName("solves a system of equations per row, passing the unsolvable through")
+    void solvesASystem() {
+        var rows = collect("""
+                Pairs := [
+                | id | total | diff | a | b |
+                |----|-------|------|---|---|
+                | 1  | 10    | 2    |   |   |
+                | 2  |       |      | 7 | 3 |
+                | 3  | 10    |      |   |   |
+                ];
+                query { SOLVE { total = a + b, diff = a - b } (Pairs) };
+                """);
+
+        assertThat(rows).hasSize(3);
+        assertThat(byId(rows, "1")).hasValue("a", "6").hasValue("b", "4");
+        assertThat(byId(rows, "2")).hasValue("total", "10").hasValue("diff", "4");
+        // Three unknowns, two equations: left as it came in.
+        assertThat(byId(rows, "3").get("a").isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("solves through a def, the call expanded into its body")
+    void solvesThroughADef() {
+        var rows = collect("""
+                Rods := [
+                | id | length | L0  | k      | temp |
+                |----|--------|-----|--------|------|
+                | 1  | 100.1  | 100 |        | 30   |
+                | 2  |        | 100 | 0.0001 | 70   |
+                ];
+                def predicted(L0: NUMBER, k: NUMBER, T: NUMBER) : NUMBER := { L0 * (1 + k * (T - 20)) };
+                query { SOLVE length = predicted(L0, k, temp) (Rods) };
+                """);
+
+        assertThat(byId(rows, "1")).hasValue("k", "0.0001");
+        assertThat(byId(rows, "2")).hasValue("length", "100.5");
+    }
+
+    @Test
+    @DisplayName("fits PER group by least squares, keeping input order")
+    void fitsPerGroup() {
+        var rows = collect("""
+                Points := [
+                | id | series | x | y | a | b |
+                |----|--------|---|---|---|---|
+                | 1  | s1     | 1 | 3 |   |   |
+                | 2  | s2     | 0 | 1 |   |   |
+                | 3  | s1     | 2 | 5 |   |   |
+                | 4  | s2     | 1 | 3 |   |   |
+                | 5  | s1     | 3 | 7 |   |   |
+                | 6  | s2     | 2 | 4 |   |   |
+                ];
+                query { SOLVE y = a * x + b PER series (Points) };
+                """);
+
+        assertThat(rows).extracting(r -> r.get("id").asDisplayString())
+                .containsExactly("1", "2", "3", "4", "5", "6");
+        assertThat(byId(rows, "5")).hasValue("a", "2").hasValue("b", "1");
+        assertThat(byId(rows, "6")).hasValue("a", "1.5").hasValue("b", "1.1666666667");
+    }
+
+    @Test
+    @DisplayName("solves a nonlinear equation iteratively, row by row")
+    void solvesIteratively() {
+        var rows = collect("""
+                Squares := [
+                | id | area | side |
+                |----|------|------|
+                | 1  | 2    |      |
+                | 2  |      | 3    |
+                ];
+                query { SOLVE area = side * side (Squares) };
+                """);
+
+        assertThat(byId(rows, "1")).hasValue("side", "1.4142135624");
+        assertThat(byId(rows, "2")).hasValue("area", "9");
+    }
+
+    @Test
+    @DisplayName("honours MAX … ROUNDS, raising when the cap is reached")
+    void honoursTheRoundCap() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> collect("""
+                        Squares := [
+                        | area | side |
+                        |------|------|
+                        | 1000000 |   |
+                        ];
+                        query { SOLVE area = side * side MAX 1 ROUNDS (Squares) };
+                        """))
+                .hasMessageContaining("no solution within 1 rounds");
+    }
+
+    @Test
+    @DisplayName("honours WITHIN, stopping at a coarser tolerance")
+    void honoursTheTolerance() {
+        var rows = collect("""
+                Squares := [
+                | area | side |
+                |------|------|
+                | 2    |      |
+                ];
+                query { SOLVE area = side * side WITHIN 0.1 (Squares) };
+                """);
+        // Stopped as soon as a step fell under 0.1: close to √2, but not to ten digits.
+        String side = rows.getFirst().get("side").asDisplayString();
+        org.assertj.core.api.Assertions.assertThat(side).isNotEqualTo("1.4142135624");
+        org.assertj.core.api.Assertions.assertThat(new java.math.BigDecimal(side)
+                        .subtract(new java.math.BigDecimal("1.4142135624")).abs())
+                .isLessThan(new java.math.BigDecimal("0.1"));
+    }
+
+    private static Row byId(List<Row> rows, String id) {
+        return rows.stream()
+                .filter(r -> id.equals(r.get("id").asDisplayString()))
+                .findFirst().orElseThrow();
+    }
 }

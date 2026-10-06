@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.plan.HttpScanPushdown;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
 import com.darkcollective.relix.ast.ComparisonOperator;
@@ -155,11 +156,20 @@ public final class PhysicalPlanPrinter {
         }
     }
 
+    /** Renders a scan's folded HTTP request pushdown — the limit and equalities sent. */
+    private static String renderHttpPushdown(HttpScanPushdown pushdown) {
+        List<String> parts = new java.util.ArrayList<>();
+        pushdown.limit().ifPresent(n -> parts.add("limit " + n));
+        pushdown.equalities().forEach((column, value) -> parts.add(column + "=" + value));
+        return parts.isEmpty() ? "" : " ⟨request " + String.join(", ", parts) + "⟩";
+    }
+
     private static String label(PhysicalNode node) {
         return switch (node) {
             case PhysicalNode.Scan s     -> "Scan " + s.source().declaredName()
                     + s.produceBound().map(b -> " ⟨produce while "
-                            + DisplayLabels.produceBound(b) + "⟩").orElse("");
+                            + DisplayLabels.produceBound(b) + "⟩").orElse("")
+                    + s.httpPushdown().map(PhysicalPlanPrinter::renderHttpPushdown).orElse("");
             case PhysicalNode.PushedScan s -> "PushedScan [" + s.connectorType() + "/" + s.connection() + "] " + s.nativeQuery();
             case PhysicalNode.Spool sp   -> "Spool #" + sp.id();
             case PhysicalNode.Select s   -> "Select";
@@ -198,8 +208,8 @@ public final class PhysicalPlanPrinter {
             case PhysicalNode.Universal u -> "Universal"
                     + (u.groupingAttributes().isEmpty()
                             ? "" : " " + String.join(", ", u.groupingAttributes()));
-            case PhysicalNode.Solve s    -> "SOLVE " + s.left().accept(OPND)
-                    + " = " + s.right().accept(OPND);
+            case PhysicalNode.Solve s    -> DisplayLabels.solve(s.equations(), s.groupingKeys(),
+                    s.tolerance(), s.maxRounds());
             case PhysicalNode.Optimize o -> DisplayLabels.optimize(o.sense(), o.objective(),
                     o.constraints(), o.groupingKeys(), o.allocation());
             case PhysicalNode.TopK t      -> "TOP " + t.count()
@@ -216,6 +226,10 @@ public final class PhysicalPlanPrinter {
             case PhysicalNode.BernoulliSample s -> "SAMPLE " + s.probability()
                     + s.seed().map(seed -> " SEED " + seed).orElse("");
             case PhysicalNode.ReservoirSample s -> "SAMPLE " + s.count() + " ROWS"
+                    + s.seed().map(seed -> " SEED " + seed).orElse("");
+            case PhysicalNode.Shuffle s  -> "SHUFFLE" + s.seed().map(seed -> " SEED " + seed).orElse("");
+            case PhysicalNode.Roll s     -> "ROLL"
+                    + s.weight().map(w -> " BY " + w.accept(OPND)).orElse("")
                     + s.seed().map(seed -> " SEED " + seed).orElse("");
             case PhysicalNode.Cover v    -> (v.exact() ? "COVER EXACT " : "COVER ") + v.strength();
             // Same COVER keyword as the IR label, plus the physical strategy —

@@ -29,6 +29,7 @@ import com.darkcollective.relix.function.FunctionSignature;
 import com.darkcollective.relix.function.PushdownSpelling;
 import com.darkcollective.relix.function.ScalarFunction;
 import com.darkcollective.relix.function.StrictScalarFunction;
+import com.darkcollective.relix.plan.internal.SqlExpressions.ColumnRenderer;
 import com.darkcollective.relix.symbol.FunctionProperty;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.value.Value;
@@ -64,6 +65,12 @@ final class SqlExpressionsTest {
     private static Optional<String> render(Operand operand, Dialect dialect) {
         return SqlExpressions.operand(operand, SqlExpressions.ColumnRenderer.STRIP_QUALIFIER,
                 dialect, FUNCTIONS);
+    }
+
+    /** As {@link #render(Operand)}, with a renderer that knows what a condition compares through. */
+    private static Optional<String> renderConditions(Operand operand) {
+        ColumnRenderer strip = SqlExpressions.ColumnRenderer.STRIP_QUALIFIER;
+        return SqlExpressions.operand(operand, ColumnRenderer.withComparing(strip, strip, strip), FUNCTIONS);
     }
 
     private static Optional<String> renderP(Predicate predicate) {
@@ -139,6 +146,87 @@ final class SqlExpressionsTest {
         void functionCallUnsupported() {
             assertThat(render(func("UCase",attr("name"))))
                     .isEmpty();
+        }
+
+        @Test
+        @DisplayName("Switch folds to a searched CASE, its conditions rendered as predicates")
+        void switchFolds() {
+            assertThat(renderConditions(func("Switch",
+                    condition(gt(attr("t"), num("30"))), str("hot"),
+                    condition(gt(attr("t"), num("20"))), str("warm"),
+                    str("cold"))))
+                    .hasValue("CASE WHEN (t > 30) THEN 'hot' WHEN (t > 20) THEN 'warm' ELSE 'cold' END");
+        }
+
+        @Test
+        @DisplayName("IIf folds to a CASE testing its condition and the negation, with no ELSE")
+        void iifFolds() {
+            assertThat(renderConditions(func("IIf", condition(gt(attr("t"), num("30"))), str("hot"), str("cold"))))
+                    .hasValue("CASE WHEN (t > 30) THEN 'hot' WHEN NOT ((t > 30)) THEN 'cold' END");
+            assertThat(renderConditions(func("IIf", condition(isNull(attr("t"))), num("0"), attr("t"))))
+                    .hasValue("CASE WHEN t IS NULL THEN 0 WHEN NOT (t IS NULL) THEN t END");
+        }
+
+        @Test
+        @DisplayName("a condition position takes a condition: a bare boolean column declines")
+        void bareValueInConditionPositionDeclines() {
+            // The renderer cannot see that `hot` is boolean, and a non-boolean the engine
+            // rejects as a condition could be one a backend answers. `hot = true` folds.
+            assertThat(renderConditions(func("Switch", attr("hot"), str("a"), str("c")))).isEmpty();
+            assertThat(renderConditions(func("IIf", attr("hot"), str("a"), str("c")))).isEmpty();
+            assertThat(renderConditions(func("IIf", condition(eq(attr("hot"), bool(true))), str("a"), str("c"))))
+                    .hasValue("CASE WHEN (hot = TRUE) THEN 'a' WHEN NOT ((hot = TRUE)) THEN 'c' END");
+        }
+
+        @Test
+        @DisplayName("a condition declines where the renderer knows nothing to compare it through")
+        void conditionWithoutComparisonRenderersDeclines() {
+            assertThat(render(func("IIf", condition(gt(attr("t"), num("30"))), str("hot"), str("cold"))))
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("a condition compares through the comparison renderers; a branch value renders plainly")
+        void conditionComparesExactly() {
+            ColumnRenderer plain = name -> Optional.of(name);
+            ColumnRenderer items = ColumnRenderer.withComparing(plain,
+                    name -> Optional.of("EQ(" + name + ")"), name -> Optional.of("ORD(" + name + ")"));
+
+            assertThat(SqlExpressions.operand(
+                    func("IIf", condition(eq(attr("code"), str("east"))), attr("code"), str("other")),
+                    items, Dialect.MYSQL, FUNCTIONS))
+                    .hasValue("CASE WHEN (EQ(code) = 'east') THEN code "
+                            + "WHEN NOT ((EQ(code) = 'east')) THEN 'other' END");
+            assertThat(SqlExpressions.operand(
+                    func("IIf", condition(gt(attr("code"), str("m"))), num("1"), num("0")),
+                    items, Dialect.MYSQL, FUNCTIONS))
+                    .hasValue("CASE WHEN (ORD(code) > 'm') THEN 1 WHEN NOT ((ORD(code) > 'm')) THEN 0 END");
+        }
+
+        @Test
+        @DisplayName("a condition inside a predicate compares as that predicate does")
+        void conditionInsidePredicate() {
+            ColumnRenderer equality = name -> Optional.of("EQ(" + name + ")");
+            ColumnRenderer ordering = name -> Optional.of("ORD(" + name + ")");
+            Predicate pred = eq(func("IIf", condition(gt(attr("code"), str("m"))), num("1"), num("0")), num("1"));
+
+            assertThat(SqlExpressions.predicate(pred, equality, ordering, Dialect.GENERIC, FUNCTIONS))
+                    .hasValue("(CASE WHEN (ORD(code) > 'm') THEN 1 WHEN NOT ((ORD(code) > 'm')) THEN 0 END = 1)");
+        }
+
+        @Test
+        @DisplayName("a condition in a value position still declines")
+        void conditionAsValueDeclines() {
+            assertThat(renderConditions(condition(gt(attr("t"), num("30"))))).isEmpty();
+            assertThat(renderConditions(func("Coalesce", condition(gt(attr("t"), num("30"))), bool(false))))
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("Choose folds to a simple CASE on its 1-based index")
+        void chooseFolds() {
+            assertThat(render(func("Choose", attr("tier"), str("a"), str("b"))))
+                    .hasValue("CASE tier WHEN 1 THEN 'a' WHEN 2 THEN 'b' END");
         }
 
         @Test

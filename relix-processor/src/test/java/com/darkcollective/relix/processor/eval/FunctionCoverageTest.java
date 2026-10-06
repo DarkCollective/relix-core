@@ -102,6 +102,8 @@ final class FunctionCoverageTest {
             num  ("tan",     "Tan(0)",                             "0"),
             num  ("atn",     "Atn(0)",                             "0"),
             num  ("power",   "Power(2, 10)",                       "1024"),
+            num  ("mod",     "Mod(-7, 3)",                         "-1"),
+            num  ("pi",      "Pi()",                               "3.141592653589793"),
             regex("rand",    "Rand()",                             "^0(\\.\\d+)?$"),
             // ── Date/Time (typed, ADR-0013) ─────────────────────────────────────
             regex("now",          "NOW()",          "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"),
@@ -124,6 +126,8 @@ final class FunctionCoverageTest {
             exact("iif",     "IIf(3 > 2, \"y\", \"n\")",           "y"),   // comparison-arg regression guard
             exact("nz",      "Nz(\"present\", \"fallback\")",      "present"),
             exact("coalesce","Coalesce(\"first\", \"second\")",    "first"),
+            exact("switch",  "Switch(1 > 2, \"a\", 3 > 2, \"b\", \"c\")", "b"),  // first match wins; else default
+            exact("choose",  "Choose(2, \"a\", \"b\", \"c\")",           "b"),  // 1-based positional pick
             // ── Type check ──────────────────────────────────────────────────────
             exact("isnull",   "IsNull(\"x\")",                     "false"),
             exact("isnumeric","IsNumeric(\"123\")",                "true"),
@@ -134,7 +138,10 @@ final class FunctionCoverageTest {
             // ── Nested data ─────────────────────────────────────────────────────
             // Its argument is a constructed struct, since no literal spells an object.
             exact("entries", "Entries({ us: 3, gb: 7 })",
-                    "[{key: us, value: 3}, {key: gb, value: 7}]")
+                    "[{key: us, value: 3}, {key: gb, value: 7}]"),
+            // ── Ordering ────────────────────────────────────────────────────────
+            num  ("least",    "LEAST(5, 2, 8)",                    "2"),
+            num  ("greatest", "GREATEST(5, 2, 8)",                 "8")
     );
 
     /** Evaluates a scalar expression over a one-row relation, returning its display string. */

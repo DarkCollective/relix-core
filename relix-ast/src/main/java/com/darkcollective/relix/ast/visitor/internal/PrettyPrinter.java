@@ -17,6 +17,7 @@ package com.darkcollective.relix.ast.visitor.internal;
 
 import com.darkcollective.relix.ast.visitor.RelNodeVisitor;
 import com.darkcollective.relix.ast.*;
+import com.darkcollective.relix.ast.internal.DisplayLabels;
 import com.darkcollective.relix.ast.internal.*;
 
 import java.util.stream.Collectors;
@@ -266,8 +267,9 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(SolveNode node) {
-        return "SOLVE " + node.left().accept(operandPrinter) + " = "
-                + node.right().accept(operandPrinter) + " (" + node.input().accept(this) + ")";
+        return DisplayLabels.solve(node.equations(), node.groupingKeys(), node.tolerance(),
+                node.maxRounds())
+                + " (" + node.input().accept(this) + ")";
     }
 
     @Override
@@ -336,6 +338,19 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                 .map(this::renderSortKey)
                 .collect(Collectors.joining(", "));
         return "τ " + specs + " (" + node.input().accept(this) + ")";
+    }
+
+    @Override
+    public String visit(ShuffleNode node) {
+        String seed = node.seed().map(s -> " SEED " + s).orElse("");
+        return "SHUFFLE" + seed + " (" + node.input().accept(this) + ")";
+    }
+
+    @Override
+    public String visit(RollNode node) {
+        String weight = node.weight().map(w -> " BY " + w.accept(operandPrinter)).orElse("");
+        String seed = node.seed().map(s -> " SEED " + s).orElse("");
+        return "ROLL" + weight + seed + " (" + node.input().accept(this) + ")";
     }
 
     /** Renders a grouping key as {@code expression [→ alias]}. */

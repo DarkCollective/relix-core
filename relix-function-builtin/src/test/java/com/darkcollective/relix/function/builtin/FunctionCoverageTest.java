@@ -100,6 +100,8 @@ final class FunctionCoverageTest {
             num("Tan", "0", n("0")),
             num("Atn", "0", n("0")),
             num("Power", "1024", n("2"), n("10")),
+            num("Mod", "1", n("7"), n("3")),
+            num("Pi", "3.141592653589793"),
             // ── Date/time ───────────────────────────────────────────────────────
             exact("NOW", "2026-07-08T13:40:30Z"),
             exact("CURRENT_DATE", "2026-07-08"),
@@ -121,6 +123,9 @@ final class FunctionCoverageTest {
             exact("IIf", "y", com.darkcollective.relix.value.BooleanValue.TRUE, s("y"), s("n")),
             exact("Nz", "fallback", NullValue.INSTANCE, s("fallback")),
             exact("Coalesce", "first", NullValue.INSTANCE, s("first")),
+            exact("Switch", "b", com.darkcollective.relix.value.BooleanValue.FALSE, s("a"),
+                    com.darkcollective.relix.value.BooleanValue.TRUE, s("b"), s("c")),
+            exact("Choose", "b", n("2"), s("a"), s("b"), s("c")),
             // ── Type check ──────────────────────────────────────────────────────
             exact("IsNull", "false", s("x")),
             exact("IsNumeric", "true", s("123")),
@@ -129,7 +134,10 @@ final class FunctionCoverageTest {
             num("CInt", "4", n("3.7")),
             num("CDbl", "3.14", s("3.14")),
             // ── Nested ──────────────────────────────────────────────────────────
-            exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))));
+            exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
+            // ── Ordering ──────────────────────────────────────────────────────────
+            num("LEAST", "2", n("5"), n("2"), n("8")),
+            num("GREATEST", "8", n("5"), n("2"), n("8")));
 
     /**
      * {@code Rand} is deliberately absent from the table above and named here instead:

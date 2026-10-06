@@ -362,16 +362,21 @@ final class PhysicalPlanJsonTest {
         void solveCarriesTheEquation() {
             var solve = new PhysicalNode.Solve(
                     SCHEMA,
-                    attr("total"),
-                    new com.darkcollective.relix.ast.BinaryArithmeticExpression(
-                            attr("principal"),
-                            com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
-                            attr("rate")),
+                    List.of(new com.darkcollective.relix.ast.SolveEquation(
+                            attr("total"),
+                            new com.darkcollective.relix.ast.BinaryArithmeticExpression(
+                                    attr("principal"),
+                                    com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
+                                    attr("rate")))),
+                    List.of("region"),
+                    java.util.Optional.of(new java.math.BigDecimal("1E-6")), java.util.Optional.of(50),
                     leaf());
             assertThat(PhysicalPlanJson.toJson(solve))
                     .contains("\"op\":\"Solve\"")
-                    .contains("\"left\":\"total\"")
-                    .contains("\"right\":\"principal * rate\"");
+                    .contains("\"equations\":[{\"left\":\"total\",\"right\":\"principal * rate\"}]")
+                    .contains("\"groupingKeys\":[\"region\"]")
+                    .contains("\"tolerance\":\"0.000001\"")
+                    .contains("\"maxRounds\":50");
         }
 
         @Test
@@ -420,6 +425,24 @@ final class PhysicalPlanJsonTest {
                     .contains("\"op\":\"BernoulliSample\"")
                     .contains("\"probability\":0.5")
                     .contains("\"seed\":99");
+        }
+
+        @Test
+        void weightedRollCarriesWeightAndSeed() {
+            var roll = new PhysicalNode.Roll(SCHEMA, Optional.of(7L), Optional.of(attr("w")), leaf());
+            assertThat(PhysicalPlanJson.toJson(roll))
+                    .contains("\"op\":\"Roll\"")
+                    .contains("\"weight\":\"w\"")
+                    .contains("\"seed\":7");
+        }
+
+        @Test
+        void uniformRollCarriesNoWeight() {
+            var roll = new PhysicalNode.Roll(SCHEMA, Optional.empty(), Optional.empty(), leaf());
+            assertThat(PhysicalPlanJson.toJson(roll))
+                    .contains("\"op\":\"Roll\"")
+                    .doesNotContain("\"weight\"")
+                    .doesNotContain("\"seed\"");
         }
 
         @Test

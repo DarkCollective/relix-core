@@ -68,7 +68,10 @@ import static com.darkcollective.relix.ast.AstBuilders.sample;
 import static com.darkcollective.relix.ast.AstBuilders.select;
 import static com.darkcollective.relix.ast.AstBuilders.semiJoin;
 import static com.darkcollective.relix.ast.AstBuilders.sessionize;
+import static com.darkcollective.relix.ast.AstBuilders.equation;
 import static com.darkcollective.relix.ast.AstBuilders.solve;
+import static com.darkcollective.relix.ast.AstBuilders.roll;
+import static com.darkcollective.relix.ast.AstBuilders.shuffle;
 import static com.darkcollective.relix.ast.AstBuilders.sort;
 import static com.darkcollective.relix.ast.AstBuilders.symmetricDifference;
 import static com.darkcollective.relix.ast.AstBuilders.topK;
@@ -163,6 +166,8 @@ public final class RelNodeCorpus {
                 rename("Renamed", cols("a", "b"), LEFT),
                 groupBy(cols("dept"), List.of(agg(AggregateOperator.SUM, "amount")), LEFT),
                 sort(List.of(asc("a"), desc("b")), LEFT),
+                shuffle(Optional.of(42L), LEFT),
+                roll(Optional.of(42L), attr("weight"), LEFT),
                 limit(Optional.of(5L), 10L, LEFT),
                 distinct(LEFT),
                 unnest("tags", true, Optional.of("ordinality"), LEFT),
@@ -223,7 +228,8 @@ public final class RelNodeCorpus {
                 tree("id", "parent_id", List.of(asc("ordinal")), "children", LEFT),
 
                 // ── solver ──────────────────────────────────────────────────────
-                solve(attr("x"), num("42"), LEFT),
+                solve(List.of(equation(attr("x"), num("42"))), List.of("k"),
+                        Optional.of(new java.math.BigDecimal("0.001")), Optional.of(10), LEFT),
                 optimize(ObjectiveSense.MAXIMIZE, attr("value"),
                         List.of(constraint(attr("weight"), ComparisonOperator.LESS_EQUAL, 10.0)),
                         cols("dept"), Optional.of(allocation(0.0, 1.0, "share")), LEFT),

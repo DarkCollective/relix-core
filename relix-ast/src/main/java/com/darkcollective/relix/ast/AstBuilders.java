@@ -417,6 +417,31 @@ public abstract class AstBuilders {
         return new SortNode(sortSpecs, input);
     }
 
+    /** SHUFFLE — random permutation, non-deterministic. */
+    public static ShuffleNode shuffle(RelNode input) {
+        return new ShuffleNode(input);
+    }
+
+    /** SHUFFLE SEED — reproducible random permutation. */
+    public static ShuffleNode shuffle(Optional<Long> seed, RelNode input) {
+        return new ShuffleNode(seed, input, SourceLocation.UNKNOWN);
+    }
+
+    /** ROLL — an endless uniform draw with replacement (non-deterministic). */
+    public static RollNode roll(RelNode input) {
+        return new RollNode(input);
+    }
+
+    /** ROLL SEED — a reproducible endless sequence of draws. */
+    public static RollNode roll(Optional<Long> seed, RelNode input) {
+        return new RollNode(seed, input, SourceLocation.UNKNOWN);
+    }
+
+    /** ROLL BY — an endless weighted (loaded) draw, with an optional seed. */
+    public static RollNode roll(Optional<Long> seed, Operand weight, RelNode input) {
+        return new RollNode(seed, Optional.of(weight), input, SourceLocation.UNKNOWN);
+    }
+
     /** λ — limit, no offset. */
     public static LimitNode limit(long count, RelNode input) {
         return new LimitNode(Optional.empty(), count, input);
@@ -794,6 +819,30 @@ public abstract class AstBuilders {
     /** {@code SOLVE} — invert an equation for its single unknown. */
     public static SolveNode solve(Operand left, Operand right, RelNode input) {
         return new SolveNode(left, right, input);
+    }
+
+    /** {@code SOLVE { … }} — solve a list of equations for the row's unknowns. */
+    public static SolveNode solve(List<SolveEquation> equations, RelNode input) {
+        return new SolveNode(equations, List.of(), input);
+    }
+
+    /** {@code SOLVE … PER} — fit the equations' unknowns across each group of rows. */
+    public static SolveNode solve(List<SolveEquation> equations, List<String> groupingKeys,
+                                  RelNode input) {
+        return new SolveNode(equations, groupingKeys, input);
+    }
+
+    /** {@code SOLVE … WITHIN ε MAX n ROUNDS} — with the iteration's tolerance and cap. */
+    public static SolveNode solve(List<SolveEquation> equations, List<String> groupingKeys,
+                                  Optional<BigDecimal> tolerance, Optional<Integer> maxRounds,
+                                  RelNode input) {
+        return new SolveNode(equations, groupingKeys, tolerance, maxRounds, input,
+                SourceLocation.UNKNOWN);
+    }
+
+    /** One {@code SOLVE} equation, {@code left = right}. */
+    public static SolveEquation equation(Operand left, Operand right) {
+        return new SolveEquation(left, right);
     }
 
     /** {@code OPTIMIZE} — subset selection (MIP mode). */

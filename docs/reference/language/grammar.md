@@ -326,7 +326,7 @@ relation_keyword  ::= "UNIT" | "DEE" | "EMPTY" | "DUM"
                     | "PROJECT" | "SELECT" | "RENAME" | "GROUP" | "SORT" | "ORDER"
                     | "LIMIT" | "DISTINCT" | "UNNEST" | "WHY"
                     | "CLOSURE" | "RCLOSURE" | "CLUSTER" | "PATH" | "TRACE" | "FIX"
-                    | "ITERATE" | "FORALL" | "SAMPLE" | "SOLVE" | "OPTIMIZE" | "TOP" | "COVER"
+                    | "ITERATE" | "FORALL" | "SAMPLE" | "SHUFFLE" | "ROLL" | "SOLVE" | "OPTIMIZE" | "TOP" | "COVER"
                     | "DOWNSAMPLE" | "ROLLING" | "WINDOW" | "SESSIONIZE"
                     | "PIVOT" | "UNPIVOT" | "TREE"
 ```
@@ -338,7 +338,7 @@ relation_keyword  ::= "UNIT" | "DEE" | "EMPTY" | "DUM"
 unary_operation   ::= projection | selection | rename | aggregation | sort | limit
                     | distinct | why | unnest
                     | closure | cluster | path | trace | fixpoint | iterate
-                    | universal | sample | solve | optimize | top_k | cover
+                    | universal | sample | shuffle | roll | solve | optimize | top_k | cover
                     | downsample | rolling | window | sessionize | tree | pivot | unpivot
 
 input             ::= "(" rel_expr ")"
@@ -412,8 +412,22 @@ universal         ::= ( "∀" | "FORALL" ) ( name ( "," name )* )? ":" predicate
 sample            ::= "SAMPLE" NUMBER ( "SEED" INTEGER )? input
                     | "SAMPLE" INTEGER "ROWS" ( "SEED" INTEGER )? input
 
-/* SOLVE total = price * qty (R) */
-solve             ::= "SOLVE" operand "=" operand input
+/* SHUFFLE (R): every row once, in random order.  SHUFFLE SEED 7 (R): reproducible. */
+shuffle           ::= "SHUFFLE" ( "SEED" INTEGER )? input
+
+/* ROLL (R): an endless uniform draw with replacement from the faces R (a die roll).
+   The result is unbounded — compose λ to take a finite number of rolls. A BY weight
+   expression draws each face with probability proportional to it (a loaded die). */
+roll              ::= "ROLL" ( "BY" operand )? ( "SEED" INTEGER )? input
+
+/* SOLVE total = price * qty (R).  Several equations solve for as many blanks:
+   SOLVE { total = a + b, diff = a - b } (R).  PER fits across each group:
+   SOLVE y = slope * x + intercept PER series (R).  WITHIN and MAX … ROUNDS govern
+   an equation solved by search: SOLVE area = side * side WITHIN 0.001 (R) */
+solve             ::= "SOLVE" ( equation | "{" equation ( "," equation )* "}" )
+                      per_identifiers? ( "WITHIN" NUMBER )? ( "MAX" INTEGER "ROUNDS" )?
+                      input
+equation          ::= operand "=" operand
 
 /* OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(weight) <= 50 PER owner (Items)
    OPTIMIZE ALLOCATE (0, 1) MINIMIZE SUM(cost) SUBJECT TO SUM(share) = 1 -> share (Plans) */
@@ -556,7 +570,7 @@ reserved_word     ::= "TRUE" | "FALSE" | "NULL" | "UNIT" | "DEE" | "EMPTY" | "DU
                     | "ASC" | "DESC" | "PROJECT" | "SELECT" | "RENAME" | "GROUP" | "SORT"
                     | "ORDER" | "LIMIT" | "DISTINCT" | "UNNEST" | "WITH" | "ORDINALITY"
                     | "CLOSURE" | "RCLOSURE" | "CLUSTER" | "PATH" | "HOPS" | "AS" | "OVER"
-                    | "FIX" | "ITERATE" | "FORALL" | "SAMPLE" | "SEED" | "SOLVE" | "OPTIMIZE"
+                    | "FIX" | "ITERATE" | "FORALL" | "SAMPLE" | "SHUFFLE" | "ROLL" | "SEED" | "SOLVE" | "OPTIMIZE"
                     | "ALLOCATE" | "MAXIMIZE" | "MINIMIZE" | "SUBJECT" | "TO" | "TOP" | "PER"
                     | "ROWS" | "COVER" | "EXACT" | "DOWNSAMPLE" | "BY" | "USING" | "FOR"
                     | "LATERAL" | "ROLLING" | "WINDOW" | "SESSIONIZE" | "GAP" | "TRACE"

@@ -62,6 +62,8 @@ import com.darkcollective.relix.ast.SampleNode;
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.SolveNode;
+import com.darkcollective.relix.ast.RollNode;
+import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
@@ -234,6 +236,8 @@ final class RecursiveRefChecker {
             case ReservoirSampleNode n -> countRecursiveRefs(n.input(), name, firstReason(forbidden, "under SAMPLE"));
             case LimitNode n       -> countRecursiveRefs(n.input(), name, firstReason(forbidden, "under λ"));
             case SortNode n        -> countRecursiveRefs(n.input(), name, firstReason(forbidden, "under τ"));
+            case ShuffleNode n     -> countRecursiveRefs(n.input(), name, firstReason(forbidden, "under SHUFFLE"));
+            case RollNode n        -> countRecursiveRefs(n.input(), name, firstReason(forbidden, "under ROLL"));
             case ClosureNode n     -> countRecursiveRefs(n.input(), name, firstReason(forbidden, "under CLOSURE"));
             case ClusterNode n     -> countRecursiveRefs(n.input(), name, firstReason(forbidden, "under CLUSTER"));
             case PathNode n        -> countRecursiveRefs(n.input(), name, firstReason(forbidden, "under PATH"));

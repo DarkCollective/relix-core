@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.plan.HttpScanPushdown;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.SortDirection;
@@ -1452,6 +1453,20 @@ final class PlannerTest {
     class Solve {
 
         @Test
+        @DisplayName("SOLVE plans its equations with every def expanded")
+        void expandsDefsInThePlan() {
+            PhysicalNode plan = planFirstQuery(
+                    "Loans := [| total | principal | rate |\n" +
+                    "           | 100 | 20 | 5 |];\n" +
+                    "def product(x: NUMBER, y: NUMBER) : NUMBER := { x * y };\n" +
+                    "query { SOLVE total = product(principal, rate) (Loans) };");
+
+            PhysicalNode.Solve s = assertThat(plan).asNode(PhysicalNode.Solve.class);
+            assertThat(s.equations().getFirst().right().accept(new com.darkcollective.relix.ast.visitor.internal.OperandPrettyPrinter()))
+                    .isEqualTo("principal * rate");
+        }
+
+        @Test
         @DisplayName("SOLVE translates to a PhysicalNode.Solve over its planned input")
         void translatesToPhysicalSolve() {
             PhysicalNode plan = planFirstQuery(
@@ -1461,8 +1476,8 @@ final class PlannerTest {
 
             PhysicalNode.Solve s = assertThat(plan).asNode(PhysicalNode.Solve.class);
             assertThat(s.input()).isNode(PhysicalNode.Scan.class);
-            assertThat(s.left()).isInstanceOf(com.darkcollective.relix.ast.AttributeOperand.class);
-            assertThat(s.right()).isInstanceOf(
+            assertThat(s.equations().getFirst().left()).isInstanceOf(com.darkcollective.relix.ast.AttributeOperand.class);
+            assertThat(s.equations().getFirst().right()).isInstanceOf(
                     com.darkcollective.relix.ast.BinaryArithmeticExpression.class);
             // Output schema equals the input schema (fills holes, adds nothing).
             assertThat(s.schema().columns().stream().map(c -> c.name()).toList())
@@ -2869,6 +2884,159 @@ final class PlannerTest {
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("explode")
                     .hasMessageContaining("LATERAL");
+        }
+    }
+
+    @Nested
+    @DisplayName("HTTP request pushdown — query λ into paginate, σ equality into IN columns")
+    class HttpRequestPushdown {
+
+        private static final String PAGED = """
+                source Paged from http {
+                    url:      "https://x/items",
+                    extract:  json("$.items[*]"),
+                    paginate: { limit: query("per_page") [default: 5] },
+                    schema:   { id: NUMBER, name: STRING }
+                };
+                """;
+
+        private static final String LOOKUP = """
+                source Lookup from http {
+                    url:    "https://x/spells/{index}",
+                    schema: { index: in STRING as path("index") [required],
+                              name: out STRING at "$.name" }
+                };
+                """;
+
+        private static final String FILTERED = """
+                source Filtered from http {
+                    url:    "https://x/items",
+                    schema: { kind: in STRING as query("kind"),
+                              tier: in STRING as query("tier"),
+                              id:   NUMBER, name: STRING }
+                };
+                """;
+
+        private static PhysicalNode plan(String src) {
+            SemanticModel model = model(src);
+            RelNode logical =
+                    ((ExpressionQueryTarget) model.rootQueries().get(0).target()).expression();
+            return new Planner(model.symbolTable(), model.nodeSchemas(), model.statistics(),
+                    model.sources(), model.connections()).plan(logical);
+        }
+
+        private static PhysicalNode.Scan scanOf(PhysicalNode node) {
+            PhysicalNode inner = node;
+            while (!(inner instanceof PhysicalNode.Scan) && !inner.children().isEmpty()) {
+                inner = inner.children().get(0);
+            }
+            return (PhysicalNode.Scan) inner;
+        }
+
+        @Test
+        @DisplayName("a λ adjacent to a paginated source folds its count into the limit")
+        void limitPushedIntoPaginate() {
+            PhysicalNode.Scan scan = scanOf(plan(PAGED + "query { λ 10 (Paged) };"));
+            org.assertj.core.api.Assertions.assertThat(scan.httpPushdown())
+                    .get().extracting(HttpScanPushdown::limit)
+                    .isEqualTo(java.util.Optional.of(10L));
+        }
+
+        @Test
+        @DisplayName("the engine λ stays above the scan as a backstop")
+        void limitKeepsEngineLimit() {
+            assertThat(plan(PAGED + "query { λ 10 (Paged) };"))
+                    .isNode(PhysicalNode.Limit.class).input().isNode(PhysicalNode.Scan.class);
+        }
+
+        @Test
+        @DisplayName("a source with no paginate limit is not folded")
+        void noPaginateNoPush() {
+            String src = """
+                    source Plain from http { url: "https://x", schema: { id: NUMBER } };
+                    query { λ 10 (Plain) };
+                    """;
+            org.assertj.core.api.Assertions.assertThat(scanOf(plan(src)).httpPushdown()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a λ with an offset is not folded — the skipped rows must be fetched")
+        void offsetNotPushed() {
+            org.assertj.core.api.Assertions.assertThat(
+                    scanOf(plan(PAGED + "query { λ 5, 10 (Paged) };")).httpPushdown()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a λ with an explicit zero offset still folds")
+        void zeroOffsetIsPushed() {
+            PhysicalNode.Scan scan = scanOf(plan(PAGED + "query { λ 0, 10 (Paged) };"));
+            org.assertj.core.api.Assertions.assertThat(scan.httpPushdown())
+                    .get().extracting(HttpScanPushdown::limit)
+                    .isEqualTo(java.util.Optional.of(10L));
+        }
+
+        @Test
+        @DisplayName("an equality whose other side is a column, not a literal, is not folded")
+        void equalityAgainstColumnNotPushed() {
+            // index is an IN column and name an OUT column — a column = column comparison
+            // has no literal to bind, so it stays a residual σ.
+            org.assertj.core.api.Assertions.assertThat(scanOf(plan(LOOKUP
+                    + "query { σ index = name (Lookup) };")).httpPushdown()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a λ above a selection is not folded — the filter must run first")
+        void limitNotPushedThroughSelection() {
+            PhysicalNode.Scan scan = scanOf(plan(FILTERED
+                    + "query { λ 10 (σ kind = \"rare\" (Filtered)) };"));
+            // The equality folds, but the limit does not: a page cap below a filter is wrong.
+            org.assertj.core.api.Assertions.assertThat(scan.httpPushdown())
+                    .get().extracting(HttpScanPushdown::limit)
+                    .isEqualTo(java.util.Optional.empty());
+        }
+
+        @Test
+        @DisplayName("a σ equality on an IN path column folds into the request")
+        void equalityPushedIntoPathColumn() {
+            PhysicalNode.Scan scan = scanOf(plan(LOOKUP
+                    + "query { σ index = \"fireball\" (Lookup) };"));
+            org.assertj.core.api.Assertions.assertThat(scan.httpPushdown())
+                    .get().extracting(HttpScanPushdown::equalities)
+                    .isEqualTo(java.util.Map.of("index", "fireball"));
+        }
+
+        @Test
+        @DisplayName("a conjunction folds every equality on an IN column")
+        void conjunctionFoldsEachEquality() {
+            PhysicalNode.Scan scan = scanOf(plan(FILTERED
+                    + "query { σ kind = \"rare\" ∧ tier = \"gold\" (Filtered) };"));
+            org.assertj.core.api.Assertions.assertThat(scan.httpPushdown())
+                    .get().extracting(HttpScanPushdown::equalities)
+                    .isEqualTo(java.util.Map.of("kind", "rare", "tier", "gold"));
+        }
+
+        @Test
+        @DisplayName("an equality on a non-IN column is left residual")
+        void equalityOnNonInColumnNotPushed() {
+            org.assertj.core.api.Assertions.assertThat(scanOf(plan(FILTERED
+                    + "query { σ name = \"sword\" (Filtered) };")).httpPushdown()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("the σ stays above the scan as a backstop")
+        void equalityKeepsEngineSelection() {
+            assertThat(plan(LOOKUP + "query { σ index = \"fireball\" (Lookup) };"))
+                    .isNode(PhysicalNode.Select.class).input().isNode(PhysicalNode.Scan.class);
+        }
+
+        @Test
+        @DisplayName("an equality folds through a column-pruning projection")
+        void equalityFoldsThroughProjection() {
+            PhysicalNode.Scan scan = scanOf(plan(FILTERED
+                    + "query { σ kind = \"rare\" (π id (Filtered)) };"));
+            org.assertj.core.api.Assertions.assertThat(scan.httpPushdown())
+                    .get().extracting(HttpScanPushdown::equalities)
+                    .isEqualTo(java.util.Map.of("kind", "rare"));
         }
     }
 }

@@ -64,6 +64,18 @@ final class IrReportTest {
         return IrReport.generate(model(src));
     }
 
+    @Test
+    @DisplayName("a weighted ROLL shows its BY expression in the IR")
+    void weightedRollShowsByExpression() {
+        String src = """
+                Faces := [| face | weight |
+                          | a    | 1      |
+                          | b    | 2      |];
+                query { λ 3 (ROLL BY weight SEED 7 (Faces)) };
+                """;
+        assertThat(report(src)).contains("ROLL BY weight");
+    }
+
     // =========================================================================
     // 1. Line-width contract
     // =========================================================================
@@ -985,6 +997,31 @@ final class IrReportTest {
         }
 
         @Test
+        @DisplayName("Shuffle node label contains SHUFFLE (buffers → [bag])")
+        void shuffleLabel() {
+            String src = """
+                    source Events from database { url: "j", table: "e",
+                        schema: { id: NUMBER } };
+                    Shuffled := { SHUFFLE (Events) };
+                    """;
+            String rpt = report(src);
+            assertThat(rpt).contains("SHUFFLE");
+            assertThat(rpt).contains("[bag]");
+        }
+
+        @Test
+        @DisplayName("Roll node label contains ROLL (streaming, no tag)")
+        void rollLabel() {
+            String src = """
+                    source Die from database { url: "j", table: "d",
+                        schema: { face: NUMBER } };
+                    Rolled := { LIMIT 5 (ROLL (Die)) };
+                    """;
+            String rpt = report(src);
+            assertThat(rpt).contains("ROLL");
+        }
+
+        @Test
         @DisplayName("COLLECT renders a nested array type code in the symbol table")
         void nestedArrayTypeCode() {
             String src = """
@@ -1696,6 +1733,42 @@ final class IrReportTest {
                     Sampled := { SAMPLE 100 ROWS (Events) };
                     """);
             assertThat(unseeded).contains("SAMPLE 100 ROWS").doesNotContain("SEED");
+        }
+
+        @Test
+        @DisplayName("SHUFFLE renders its SEED, and omits it when there is none")
+        void shuffleSeed() {
+            String seeded = report("""
+                    source Events from database { url: "${DB}", table: "events",
+                        schema: { id: NUMBER } };
+                    Shuffled := { SHUFFLE SEED 7 (Events) };
+                    """);
+            assertThat(seeded).contains("SHUFFLE SEED 7");
+
+            String unseeded = report("""
+                    source Events from database { url: "${DB}", table: "events",
+                        schema: { id: NUMBER } };
+                    Shuffled := { SHUFFLE (Events) };
+                    """);
+            assertThat(unseeded).contains("SHUFFLE").doesNotContain("SEED");
+        }
+
+        @Test
+        @DisplayName("ROLL renders its SEED, and omits it when there is none")
+        void rollSeed() {
+            String seeded = report("""
+                    source Die from database { url: "${DB}", table: "die",
+                        schema: { face: NUMBER } };
+                    Rolled := { LIMIT 5 (ROLL SEED 7 (Die)) };
+                    """);
+            assertThat(seeded).contains("ROLL SEED 7");
+
+            String unseeded = report("""
+                    source Die from database { url: "${DB}", table: "die",
+                        schema: { face: NUMBER } };
+                    Rolled := { LIMIT 5 (ROLL (Die)) };
+                    """);
+            assertThat(unseeded).contains("ROLL").doesNotContain("SEED");
         }
 
         @Test

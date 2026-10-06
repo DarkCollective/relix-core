@@ -19,9 +19,17 @@ IIf **short-circuits**: the condition is evaluated, then *only* the branch it
 selects — the other is never evaluated (and a NULL condition evaluates neither).
 That is what makes IIf usable as a guard: the untaken branch may be an expression
 that would fail on those rows, such as converting a value that is not a number.
-[Nz](nz.md) and [Coalesce](coalesce.md) are lazy in the same way, and these three
-are the only built-ins that are — every other function evaluates all its
-arguments.
+[Switch](switch.md), [Choose](choose.md), [Nz](nz.md) and [Coalesce](coalesce.md) are
+lazy in the same way, and these five are the only built-ins that are — every other
+function evaluates all its arguments.
+
+IIf folds into a backend `CASE` on every SQL dialect, so a query over a database
+source pushes it down. It is written `CASE WHEN c THEN a WHEN NOT (c) THEN b END`
+rather than with an `ELSE`: a NULL condition matches neither arm and the `CASE` is
+NULL, which is IIf's answer, where an `ELSE` would take the false branch. The
+condition folds when it is written as one — a comparison, a null test, or a connective
+over them — so `IIf(active = true, …)` folds where `IIf(active, …)` over a boolean
+column is evaluated in-engine. MongoDB, which has no `CASE`, evaluates it in-engine.
 
 # Examples:
 Pass/fail label:
@@ -41,7 +49,7 @@ in type). A NULL condition yields NULL — neither branch is evaluated in that c
 Nz / Coalesce specifically for substituting a value when something is NULL.
 
 # See Also:
-[nz](nz.md), [coalesce](coalesce.md), [isnull](../typecheck/isnull.md), [comparison](../../predicates/comparison.md)
+[switch](switch.md), [choose](choose.md), [nz](nz.md), [coalesce](coalesce.md), [isnull](../typecheck/isnull.md), [comparison](../../predicates/comparison.md)
 
 # Notes:
 For "replace NULL with a default" the dedicated Nz/Coalesce read more clearly than

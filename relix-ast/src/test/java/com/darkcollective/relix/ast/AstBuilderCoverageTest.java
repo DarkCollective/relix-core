@@ -85,7 +85,7 @@ final class AstBuilderCoverageTest {
     final class Completeness {
 
         @Test
-        @DisplayName("RelNode — all 53 concrete node kinds")
+        @DisplayName("RelNode — all 55 concrete node kinds")
         void relNodesAreCovered() {
             assertThat(uncovered(RelNode.class))
                     .as("RelNode kinds with no AstBuilders factory")
@@ -114,9 +114,9 @@ final class AstBuilderCoverageTest {
     final class Counts {
 
         @Test
-        @DisplayName("RelNode permits 53 concrete kinds")
+        @DisplayName("RelNode permits 55 concrete kinds")
         void relNodeCount() {
-            assertThat(concreteKinds(RelNode.class)).hasSize(53);
+            assertThat(concreteKinds(RelNode.class)).hasSize(55);
         }
 
         @Test
@@ -203,6 +203,9 @@ final class AstBuilderCoverageTest {
             .of(SortDirection.class, i -> SortDirection.values()[i % SortDirection.values().length])
             .of(TieBreak.class, i -> TieBreak.values()[i % TieBreak.values().length])
             .ofListElement(Long.class, i -> (long) (i + 1))
+            // Optional<E> takes its element from here too: SOLVE's WITHIN and MAX … ROUNDS.
+            .ofListElement(java.math.BigDecimal.class, i -> java.math.BigDecimal.valueOf(i + 1))
+            .ofListElement(Integer.class, i -> i + 1)
             .ofListElement(String.class, i -> "c" + i)
             .ofListElement(Operand.class, i -> AstBuilders.attr("a" + i))
             .ofListElement(Predicate.class, i -> AstBuilders.nullPred(AstBuilders.attr("p" + i), true))
@@ -212,6 +215,7 @@ final class AstBuilderCoverageTest {
             .ofListElement(GroupingKey.class, i -> AstBuilders.key("g" + i))
             .ofListElement(AggregateFunction.class, i -> AstBuilders.agg(AggregateOperator.SUM, "m" + i))
             .ofListElement(OptimizeConstraint.class, i -> AstBuilders.constraint(AstBuilders.attr("a" + i), ComparisonOperator.LESS_EQUAL, 100d))
+            .ofListElement(SolveEquation.class, i -> AstBuilders.equation(AstBuilders.attr("l" + i), AstBuilders.attr("r" + i)))
             .ofListElement(RenameNode.RenamePair.class, i -> AstBuilders.renamePair("f" + i, "t" + i))
             .ofListElement(StructConstruction.Field.class, i -> new StructConstruction.Field("f" + i, AstBuilders.attr("v" + i)))
             .override("date", 0, "2026-01-01")

@@ -24,18 +24,22 @@ import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.Value;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
+import static com.darkcollective.relix.function.builtin.Arguments.number;
 import static com.darkcollective.relix.function.builtin.Arguments.reject;
 import static com.darkcollective.relix.function.builtin.Category.PURE_DETERMINISTIC;
 import static com.darkcollective.relix.function.builtin.Category.p;
 import static com.darkcollective.relix.symbol.ScalarType.ANY;
+import static com.darkcollective.relix.symbol.ScalarType.NUMBER;
 import static com.darkcollective.relix.symbol.ScalarType.STRING;
 
 /**
- * The conditional built-ins — the three special forms.
+ * The conditional built-ins — the five special forms.
  *
- * <p>All three are lazy, and that is their meaning rather than an optimisation: the
+ * <p>All five are lazy, and that is their meaning rather than an optimisation: the
  * branch a condition does not select may be an expression that would fail on this row.
  *
  * <pre>{@code IIf(IsNumeric(raw), CDbl(raw), 0)}</pre>
@@ -44,6 +48,14 @@ import static com.darkcollective.relix.symbol.ScalarType.STRING;
  * call rather than the declaration. Where the branches agree on a type the call has that
  * type; where they disagree the answer is genuinely unknown until the row is seen, and
  * the type is {@code ANY}.
+ *
+ * <p>{@code Switch} is the multi-branch form (a searched {@code CASE}) and {@code Choose}
+ * the positional one (a simple {@code CASE} on a 1-based index) — both functions rather
+ * than grammar, because a conditional is scalar work and the two-way {@code IIf} already
+ * is a function. All three fold into a backend {@code CASE} (see {@link Spellings}).
+ * {@code IIf}'s is the one with a twist: its NULL condition yields NULL, where a
+ * {@code CASE … ELSE} would take the else branch, so it tests the negation in a second
+ * {@code WHEN} rather than writing an {@code ELSE}.
  */
 final class ConditionalFunctions {
 
@@ -57,6 +69,7 @@ final class ConditionalFunctions {
                 CONDITIONAL.lazy("IIf", ANY, PURE_DETERMINISTIC,
                         List.of(p("condition", ANY), p("trueValue", ANY), p("falseValue", ANY)),
                         Arity.exactly(3), ConditionalFunctions::iifReturnType,
+                        Spellings.twoWayCase(),
                         ConditionalFunctions::iif),
 
                 // Nz(value) and Nz(value, valueIfNull) differ only in whether the
@@ -72,9 +85,30 @@ final class ConditionalFunctions {
                 // makes the declaration true.
                 CONDITIONAL.lazy("Coalesce", ANY, PURE_DETERMINISTIC,
                         List.of(p("value", ANY), p("default", ANY)),
-                        Arity.atLeast(1), ConditionalFunctions::widest,
+                        Arity.atLeast(1), Category::widest,
                         Spellings.sql("COALESCE"),
-                        ConditionalFunctions::coalesce));
+                        ConditionalFunctions::coalesce),
+
+                // Switch(cond1, val1, cond2, val2, …[, default]) — the searched CASE. The
+                // first condition that holds picks its value; a trailing odd argument is the
+                // default, and with none and no match the result is NULL. Lazy like IIf — a
+                // branch not chosen is never evaluated, so an earlier condition can guard a
+                // later value. The three declared parameters stand for the shape; the arity
+                // is what lets a call carry as many pairs as it needs.
+                CONDITIONAL.lazy("Switch", ANY, PURE_DETERMINISTIC,
+                        List.of(p("condition", ANY), p("value", ANY), p("default", ANY)),
+                        Arity.atLeast(2), ConditionalFunctions::switchReturnType,
+                        Spellings.searchedCase(),
+                        ConditionalFunctions::switchValue),
+
+                // Choose(index, val1, val2, …) — the 1-based positional pick, a simple CASE.
+                // Returns the index-th value; an index that is NULL or outside 1..n matches
+                // nothing and the result is NULL. Lazy — only the chosen value is evaluated.
+                CONDITIONAL.lazy("Choose", ANY, PURE_DETERMINISTIC,
+                        List.of(p("index", NUMBER), p("value", ANY)),
+                        Arity.atLeast(2), ConditionalFunctions::chooseReturnType,
+                        Spellings.indexedCase(),
+                        ConditionalFunctions::choose));
     }
 
     // ── Implementations ───────────────────────────────────────────────────────
@@ -110,12 +144,46 @@ final class ConditionalFunctions {
         return NullValue.INSTANCE;
     }
 
+    private static Value switchValue(List<Argument> arguments) {
+        int pairs = arguments.size() / 2;              // a trailing default is not a pair
+        for (int i = 0; i < pairs; i++) {
+            Value condition = arguments.get(2 * i).value();
+            if (condition.isNull()) {
+                continue;                              // a NULL condition is not a match, as in SQL CASE
+            }
+            if (!(condition instanceof BooleanValue decided)) {
+                throw reject("Switch: condition " + (i + 1) + " must be BOOLEAN, got " + condition.type());
+            }
+            if (decided.value()) {
+                return arguments.get(2 * i + 1).value();
+            }
+        }
+        // An odd argument count leaves a trailing default; with none, an unmatched call is NULL.
+        return arguments.size() % 2 == 1
+                ? arguments.get(arguments.size() - 1).value()
+                : NullValue.INSTANCE;
+    }
+
+    private static Value choose(List<Argument> arguments) {
+        Value index = arguments.get(0).value();
+        if (index.isNull()) {
+            return NullValue.INSTANCE;                  // a NULL selector matches no branch
+        }
+        BigDecimal position = number(index, "Choose");
+        for (int k = 1; k < arguments.size(); k++) {    // 1-based: argument k is the k-th choice
+            if (position.compareTo(BigDecimal.valueOf(k)) == 0) {  // numeric equality, so 2.0 picks the 2nd
+                return arguments.get(k).value();
+            }
+        }
+        return NullValue.INSTANCE;                       // out of range → NULL, as a CASE with no match
+    }
+
     // ── Result types ──────────────────────────────────────────────────────────
 
     /** {@code IIf} returns one of its two branches; the condition's type says nothing. */
     private static ScalarType iifReturnType(List<ScalarType> argumentTypes) {
         return argumentTypes.size() == 3
-                ? widest(argumentTypes.subList(1, 3))
+                ? Category.widest(argumentTypes.subList(1, 3))
                 : ANY;
     }
 
@@ -128,28 +196,32 @@ final class ConditionalFunctions {
         if (argumentTypes.size() == 1) {
             return argumentTypes.get(0) == STRING ? STRING : ANY;
         }
-        return widest(argumentTypes);
+        return Category.widest(argumentTypes);
     }
 
     /**
-     * The type every candidate shares, or {@code ANY} when they do not share one.
-     *
-     * <p>There is no lattice of scalar types to climb here: two types are either the
-     * same, in which case the result is known, or different, in which case the row
-     * decides and nothing narrower than {@code ANY} is true.
+     * {@code Switch} returns one of its value branches — the odd-positioned arguments,
+     * plus the trailing default when the argument count is odd. The conditions decide
+     * <em>which</em> value, not its type, so only the values are weighed.
      */
-    private static ScalarType widest(List<ScalarType> types) {
-        ScalarType agreed = null;
-        for (ScalarType type : types) {
-            if (type == ANY) {
-                return ANY;
-            }
-            if (agreed == null) {
-                agreed = type;
-            } else if (agreed != type) {
-                return ANY;
-            }
+    private static ScalarType switchReturnType(List<ScalarType> argumentTypes) {
+        List<ScalarType> values = new ArrayList<>();
+        for (int i = 1; i < argumentTypes.size(); i += 2) {
+            values.add(argumentTypes.get(i));
         }
-        return agreed == null ? ANY : agreed;
+        if (argumentTypes.size() % 2 == 1) {
+            values.add(argumentTypes.get(argumentTypes.size() - 1));
+        }
+        return Category.widest(values);
+    }
+
+    /**
+     * {@code Choose} returns one of its value branches — every argument after the index —
+     * so the index's type is set aside and only the values are weighed.
+     */
+    private static ScalarType chooseReturnType(List<ScalarType> argumentTypes) {
+        return argumentTypes.size() <= 1
+                ? ANY
+                : Category.widest(argumentTypes.subList(1, argumentTypes.size()));
     }
 }

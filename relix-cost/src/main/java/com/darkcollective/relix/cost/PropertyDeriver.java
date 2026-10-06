@@ -54,9 +54,11 @@ import com.darkcollective.relix.ast.RelationFunctionCall;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.RenameNode;
 import com.darkcollective.relix.ast.ReservoirSampleNode;
+import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.RightOuterJoinNode;
 import com.darkcollective.relix.ast.SampleNode;
 import com.darkcollective.relix.ast.SelectionNode;
+import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.SolveNode;
 import com.darkcollective.relix.ast.SortNode;
@@ -183,8 +185,10 @@ public final class PropertyDeriver {
     /**
      * Derives boundedness bottom-up: a leaf takes its boundedness from the source,
      * {@code λ} (LIMIT) is always {@link Boundedness#BOUNDED} (it bounds its input),
-     * and every other operator is the least upper bound of its children's
-     * boundedness — an unbounded input makes the result unbounded.
+     * {@code ROLL} is always {@link Boundedness#UNBOUNDED} (it draws from its finite
+     * input forever — the one operator that originates unboundedness rather than
+     * propagating it), and every other operator is the least upper bound of its
+     * children's boundedness — an unbounded input makes the result unbounded.
      *
      * <p><strong>Contagious-only is a choice, not a theorem</strong> (#874). Unboundedness
      * travels up from a leaf that declares it and no operator here invents any, which is
@@ -220,6 +224,14 @@ public final class PropertyDeriver {
         }
         if (node instanceof LimitNode) {
             return Boundedness.BOUNDED;
+        }
+        // ROLL draws from its finite input forever: its output is unbounded no matter
+        // how its input is bounded. It is the one operator that *originates*
+        // UNBOUNDED rather than merely propagating it — its finite input is buffered
+        // (BoundednessChecker rejects an unbounded one), and the endless stream it
+        // emits is what a blocking operator above it is rejected over.
+        if (node instanceof RollNode) {
+            return Boundedness.UNBOUNDED;
         }
         // A bounded-frame window buffers at most n rows per partition (ADR-0015 §D5),
         // so it bounds its input the same way λ does — regardless of input boundedness.
@@ -279,6 +291,9 @@ public final class PropertyDeriver {
             // left's candidate keys still uniquely identify output rows.
             case SelectionNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
             case SortNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
+            // SHUFFLE reorders rows and keeps each exactly once, so the input's
+            // distinctness survives — a permutation of a set is a set.
+            case ShuffleNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
             case LimitNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
             case SampleNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
             case ReservoirSampleNode ignored -> deriveAt(node.children().get(0), depth + 1, src);
@@ -306,6 +321,9 @@ public final class PropertyDeriver {
             // WHY appends a provenance column and is a hard barrier (ADR-0018); derive
             // distinctness conservatively rather than threading the input's keys across it.
             case RelationFunctionCall ignored -> RelationProperties.none();
+            // ROLL draws with replacement, so the same face can be emitted twice —
+            // the output is not duplicate-free even when the face set is.
+            case RollNode ignored -> RelationProperties.none();
             case ProjectionNode ignored -> RelationProperties.none();
             case UnnestNode ignored -> RelationProperties.none();
             case SolveNode ignored -> RelationProperties.none();

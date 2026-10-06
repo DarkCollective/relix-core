@@ -22,12 +22,14 @@ import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.OptimizeConstraint;
 import com.darkcollective.relix.ast.ProduceBound;
 import com.darkcollective.relix.ast.RelNode;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
 import com.darkcollective.relix.ast.WindowFunction;
 import com.darkcollective.relix.ast.visitor.internal.OperandPrettyPrinter;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -214,5 +216,39 @@ public final class DisplayLabels {
                 .orElse("");
         return "OPTIMIZE " + mode + (sense == ObjectiveSense.MAXIMIZE ? "max" : "min")
                 + " SUM(" + objective.accept(OPND) + ") s.t. " + rendered + keys;
+    }
+
+    /**
+     * Renders a {@code SOLVE} operator's equations — {@code SOLVE l = r} for one, and the
+     * braced list {@code SOLVE &#123; l1 = r1, l2 = r2 &#125;} for several — followed by
+     * {@code PER k, …} when it fits per group, and by {@code WITHIN ε} and
+     * {@code MAX n ROUNDS} when they were given. The rendering is also the operator's
+     * source spelling, so it parses back to the same node.
+     *
+     * @param equations    the equations, never empty; must not be null
+     * @param groupingKeys the {@code PER} columns, possibly empty; must not be null
+     * @param tolerance    the {@code WITHIN} tolerance, if given; must not be null
+     * @param maxRounds    the {@code MAX … ROUNDS} cap, if given; must not be null
+     * @return the rendered label
+     */
+    public static String solve(List<SolveEquation> equations, List<String> groupingKeys,
+                               Optional<BigDecimal> tolerance, Optional<Integer> maxRounds) {
+        Objects.requireNonNull(equations, "equations");
+        Objects.requireNonNull(groupingKeys, "groupingKeys");
+        Objects.requireNonNull(tolerance, "tolerance");
+        Objects.requireNonNull(maxRounds, "maxRounds");
+        String rendered = equations.size() == 1
+                ? "SOLVE " + equation(equations.getFirst())
+                : equations.stream()
+                        .map(DisplayLabels::equation)
+                        .collect(Collectors.joining(", ", "SOLVE { ", " }"));
+        return rendered
+                + (groupingKeys.isEmpty() ? "" : " PER " + String.join(", ", groupingKeys))
+                + tolerance.map(t -> " WITHIN " + t.toPlainString()).orElse("")
+                + maxRounds.map(n -> " MAX " + n + " ROUNDS").orElse("");
+    }
+
+    private static String equation(SolveEquation equation) {
+        return equation.left().accept(OPND) + " = " + equation.right().accept(OPND);
     }
 }

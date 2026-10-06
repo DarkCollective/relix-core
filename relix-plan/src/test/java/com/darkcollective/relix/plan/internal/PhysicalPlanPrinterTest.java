@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import static com.darkcollective.relix.ast.AstBuilders.attr;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("PhysicalPlanPrinter — physical plan → ASCII tree")
@@ -61,6 +62,23 @@ final class PhysicalPlanPrinterTest {
         // one operator display site left behind when the rest moved to symbol().
         assertThat(PhysicalPlanPrinter.explain(scan))
                 .isEqualTo("Scan Naturals ⟨produce while n ≤ 10⟩\n");
+    }
+
+    @Test
+    @DisplayName("a Scan's HTTP request pushdown shows the folded limit and equality")
+    void httpPushdownShowsFoldedRequest() {
+        var source = new com.darkcollective.relix.symbol.relation.InlineRelationSymbol(
+                "default", "Spells",
+                com.darkcollective.relix.symbol.Provenance.USER,
+                com.darkcollective.relix.symbol.ShadowPolicy.FORBIDDEN,
+                SCHEMA, List.of());
+        var scan = new PhysicalNode.Scan(SCHEMA, source, java.util.Optional.empty(),
+                java.util.Optional.of("Spells"),
+                java.util.Optional.of(new com.darkcollective.relix.plan.HttpScanPushdown(
+                        java.util.Optional.of(10L), java.util.Map.of("index", "fireball"))));
+
+        assertThat(PhysicalPlanPrinter.explain(scan))
+                .isEqualTo("Scan Spells ⟨request limit 10, index=fireball⟩\n");
     }
 
     @Test
@@ -598,6 +616,27 @@ final class PhysicalPlanPrinterTest {
     }
 
     @Test
+    @DisplayName("a roll shows its weight and its seed, so a weighted roll does not read as uniform")
+    void rollLabels() {
+        PhysicalNode uniform = new PhysicalNode.Roll(
+                SCHEMA, Optional.of(7L), Optional.empty(), sqlScan("SELECT x FROM t"));
+        assertThat(PhysicalPlanPrinter.explain(uniform)).startsWith("ROLL SEED 7\n");
+
+        PhysicalNode weighted = new PhysicalNode.Roll(
+                SCHEMA, Optional.of(7L), Optional.of(attr("w")),
+                sqlScan("SELECT x FROM t"));
+        assertThat(PhysicalPlanPrinter.explain(weighted)).isEqualTo("""
+                ROLL BY w SEED 7
+                └─ PushedScan [jdbc/db] SELECT x FROM t
+                """);
+
+        PhysicalNode unseeded = new PhysicalNode.Roll(
+                SCHEMA, Optional.empty(), Optional.of(attr("w")),
+                sqlScan("SELECT x FROM t"));
+        assertThat(PhysicalPlanPrinter.explain(unseeded)).startsWith("ROLL BY w\n");
+    }
+
+    @Test
     @DisplayName("a merge interval join names the /merge strategy")
     void mergeIntervalJoinLabel() {
         PhysicalNode plan = new PhysicalNode.IntervalJoin(
@@ -748,14 +787,36 @@ final class PhysicalPlanPrinterTest {
     void solveLabel() {
         PhysicalNode plan = new PhysicalNode.Solve(
                 SCHEMA,
-                new com.darkcollective.relix.ast.AttributeOperand("total"),
-                new com.darkcollective.relix.ast.BinaryArithmeticExpression(
-                        new com.darkcollective.relix.ast.AttributeOperand("principal"),
-                        com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
-                        new com.darkcollective.relix.ast.AttributeOperand("rate")),
+                List.of(new com.darkcollective.relix.ast.SolveEquation(
+                        new com.darkcollective.relix.ast.AttributeOperand("total"),
+                        new com.darkcollective.relix.ast.BinaryArithmeticExpression(
+                                new com.darkcollective.relix.ast.AttributeOperand("principal"),
+                                com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
+                                new com.darkcollective.relix.ast.AttributeOperand("rate")))),
+                List.of(), java.util.Optional.empty(), java.util.Optional.empty(),
                 sqlScan("SELECT x FROM t"));
         assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
                 SOLVE total = principal * rate
+                └─ PushedScan [jdbc/db] SELECT x FROM t
+                """);
+    }
+
+    @Test
+    @DisplayName("a solve node over a system shows every equation, its PER keys and its limits")
+    void solveSystemLabel() {
+        PhysicalNode plan = new PhysicalNode.Solve(
+                SCHEMA,
+                List.of(new com.darkcollective.relix.ast.SolveEquation(
+                                new com.darkcollective.relix.ast.AttributeOperand("x"),
+                                new com.darkcollective.relix.ast.AttributeOperand("y")),
+                        new com.darkcollective.relix.ast.SolveEquation(
+                                new com.darkcollective.relix.ast.AttributeOperand("u"),
+                                new com.darkcollective.relix.ast.AttributeOperand("v"))),
+                List.of("grp", "batch"),
+                java.util.Optional.of(new java.math.BigDecimal("0.001")), java.util.Optional.of(20),
+                sqlScan("SELECT x FROM t"));
+        assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo("""
+                SOLVE { x = y, u = v } PER grp, batch WITHIN 0.001 MAX 20 ROUNDS
                 └─ PushedScan [jdbc/db] SELECT x FROM t
                 """);
     }

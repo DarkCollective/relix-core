@@ -84,7 +84,10 @@ import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.SessionizeNode;
 import com.darkcollective.relix.ast.SetLiteralOperand;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveNode;
+import com.darkcollective.relix.ast.RollNode;
+import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.SourceLocation;
@@ -462,6 +465,43 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         return null;
     }
 
+    @Override
+    public Void visit(ShuffleNode node) {
+        // A permutation imposes no requirement on its input beyond its own validity;
+        // the output schema is the input schema unchanged.
+        node.input().accept(this);
+        return null;
+    }
+
+    @Override
+    public Void visit(RollNode node) {
+        // ROLL draws from its input's rows; it imposes no schema requirement beyond the
+        // input's validity (the face set must be bounded — a plan-time boundedness check,
+        // not a semantic one). The output schema is the input schema unchanged.
+        node.input().accept(this);
+        node.weight().ifPresent(weight -> {
+            Optional<Schema> inputOpt = annotations.get(node.input());
+            if (inputOpt.isPresent()) {
+                validateRollWeight(weight, inputOpt.get(), node.location());
+            }
+        });
+        return null;
+    }
+
+    /**
+     * Validates a {@code ROLL BY <weight>} weight expression: its column references must
+     * resolve against the face schema, and it must be a {@code NUMBER} (or {@code ANY}),
+     * since a draw probability is formed from it. The sign check — a weight must be
+     * non-negative — is a per-row runtime condition, not a semantic one.
+     */
+    private void validateRollWeight(Operand weight, Schema input, SourceLocation loc) {
+        validateOperandColumns(weight, input, "Roll ROLL BY: ", "Roll ROLL BY: weight");
+        Type type = new OperandTypeInferrer(symbolTable, functions).infer(weight, input);
+        if (type != ScalarType.NUMBER && type != ScalarType.ANY) {
+            error(loc, "Roll ROLL BY: weight expression must be NUMBER (or ANY), got " + type);
+        }
+    }
+
     // =========================================================================
     // Downsampling — timestamp column exists and is TIMESTAMP, grouping keys
     // exist, interval is parseable, maxRows ≥ 1
@@ -627,36 +667,44 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         if (inputOpt.isEmpty()) return null;
         Schema input = inputOpt.get();
 
-        List<String> columns = new ArrayList<>();
-        boolean invertible = collectSolveColumns(node.left(), columns, node.location())
-                & collectSolveColumns(node.right(), columns, node.location());
-        if (!invertible) return null; // non-invertible construct already reported
-
-        if (columns.isEmpty()) {
-            error(node.location(),
-                    "Solve SOLVE: the equation must reference at least one column");
-            return null;
+        for (String key : node.groupingKeys()) {
+            if (input.column(AttributeNames.stripQualifier(key)).isEmpty()) {
+                columnNotFound(node.location(), "Solve SOLVE: PER key", key, input);
+            }
         }
 
-        Set<String> seen = new HashSet<>();
-        for (String col : columns) {
-            String colName = AttributeNames.stripQualifier(col);
-            String key = colName.toLowerCase(Locale.ROOT);
+        // A column may appear any number of times: an equation the engine cannot
+        // rearrange is solved iteratively instead, so repetition is not an error.
+        Set<String> typeChecked = new HashSet<>();
+        for (SolveEquation written : node.equations()) {
+            SolveEquation equation = SolveEquations.expand(written, functions, symbolTable);
 
-            Optional<ColumnDefinition> def = input.column(colName);
-            if (def.isEmpty()) {
-                columnNotFound(node.location(), "Solve SOLVE: column", col, input);
-            } else {
-                Type t = def.get().type();
-                if (t != ScalarType.NUMBER && t != ScalarType.ANY) {
-                    error(node.location(), "Solve SOLVE: column '" + col
-                            + "' must be NUMBER (or ANY) to be solved, got " + t);
-                }
+            List<String> columns = new ArrayList<>();
+            boolean invertible = collectSolveColumns(equation.left(), columns, node.location())
+                    & collectSolveColumns(equation.right(), columns, node.location());
+            if (!invertible) continue; // non-invertible construct already reported
+
+            if (columns.isEmpty()) {
+                error(node.location(),
+                        "Solve SOLVE: the equation must reference at least one column");
+                continue;
             }
-            if (!seen.add(key)) {
-                error(node.location(), "Solve SOLVE: column '" + colName
-                        + "' appears more than once in the equation; each column may "
-                        + "appear at most once so the inversion is deterministic");
+
+            for (String col : columns) {
+                String colName = AttributeNames.stripQualifier(col);
+                if (!typeChecked.add(colName.toLowerCase(Locale.ROOT))) {
+                    continue;
+                }
+                Optional<ColumnDefinition> def = input.column(colName);
+                if (def.isEmpty()) {
+                    columnNotFound(node.location(), "Solve SOLVE: column", col, input);
+                } else {
+                    Type t = def.get().type();
+                    if (t != ScalarType.NUMBER && t != ScalarType.ANY) {
+                        error(node.location(), "Solve SOLVE: column '" + col
+                                + "' must be NUMBER (or ANY) to be solved, got " + t);
+                    }
+                }
             }
         }
         return null;
@@ -682,8 +730,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             case UnaryOperand unary -> collectSolveColumns(unary.operand(), out, loc);
             default -> {
                 error(loc, "Solve SOLVE: the equation may contain only column references, "
-                        + "numeric literals, and the arithmetic operators + − × ÷; "
-                        + "functions, strings, and other constructs cannot be inverted");
+                        + "numeric literals, the arithmetic operators + − × ÷, and defs "
+                        + "whose bodies are such arithmetic; built-in functions, strings, "
+                        + "and other constructs cannot be inverted");
                 yield false;
             }
         };
@@ -1996,20 +2045,64 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      */
     private void validateProjectedOperand(Operand expr, Schema inputSchema) {
         validateTemporalArithmetic(expr, inputSchema);
+        validateOperandColumns(expr, inputSchema, "Projection π: ", "Projection π: attribute");
+    }
+
+    /**
+     * Checks that every attribute an operand names resolves against {@code inputSchema} —
+     * a relation-qualified reference by source-relation provenance (never silently
+     * stripped), an unqualified one as a column, a JSON path, or a bound parameter. Shared
+     * by projection and {@code ROLL BY}, which resolve a scalar expression over their input
+     * the same way; the {@code prefix}/{@code label} name the operator in the diagnostic.
+     */
+    private void validateOperandColumns(Operand expr, Schema inputSchema,
+                                        String prefix, String label) {
         OperandWalker.walk(expr,
                 attr -> {
-                    // A relation-qualified reference must resolve by source-relation
-                    // provenance — never silently strip its qualifier.
                     String qualifiedError = QualifiedReferences.resolutionError(attr, inputSchema);
                     if (qualifiedError != null) {
-                        error(attr.location(), "Projection π: " + qualifiedError);
+                        error(attr.location(), prefix + qualifiedError);
                         return;
                     }
                     String colName = attr.unqualifiedName();
                     if (inputSchema.column(colName).isEmpty()
                             && inputSchema.resolvePath(attr.name()).isEmpty()
                             && !parameters.contains(colName.toLowerCase(Locale.ROOT))) {
-                        columnNotFound(attr.location(), "Projection π: attribute", attr.name(), inputSchema);
+                        columnNotFound(attr.location(), label, attr.name(), inputSchema);
+                    }
+                },
+                this::validateFunctionCall);
+    }
+
+    /**
+     * Validates a scalar {@code def} body — the single operand expression a
+     * user-defined function computes. A body is not an RA tree, so the node
+     * visitor never reaches it; it is walked here directly for the two kinds of
+     * reference it may hold.
+     *
+     * <ul>
+     *   <li>Every {@link FunctionCall} must resolve, exactly as one at a
+     *       projection or predicate call site does (see
+     *       {@link #validateFunctionCall(FunctionCall)}). This is the gap the
+     *       method closes: an unknown call <em>inside</em> a body passed analysis
+     *       and failed only at run time, while the same call at an ordinary site
+     *       was caught.</li>
+     *   <li>Every {@link AttributeOperand} must name one of the function's
+     *       parameters. A body has no input relation, so a bare name is a
+     *       parameter or nothing ({@code def.md}: "a single operand expression
+     *       over the parameters").</li>
+     * </ul>
+     *
+     * <p>The in-scope parameter names are supplied to the constructor as
+     * {@code parameters}, so both checks read the field the table-valued-function
+     * path already uses.
+     */
+    void validateScalarFunctionBody(Operand body) {
+        OperandWalker.walk(body,
+                attr -> {
+                    if (!parameters.contains(attr.unqualifiedName().toLowerCase(Locale.ROOT))) {
+                        error(attr.location(), "Function body: '" + attr.name()
+                                + "' is not a parameter of this function");
                     }
                 },
                 this::validateFunctionCall);

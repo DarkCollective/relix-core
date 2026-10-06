@@ -24,6 +24,7 @@ import com.darkcollective.relix.lang.ast.QueryStatement;
 import com.darkcollective.relix.symbol.ParameterDefinition;
 import com.darkcollective.relix.symbol.Symbol;
 import com.darkcollective.relix.symbol.function.RelationFunctionSymbol;
+import com.darkcollective.relix.symbol.function.ScalarFunctionSymbol;
 import com.darkcollective.relix.symbol.relation.QueryRelationSymbol;
 import com.darkcollective.relix.symbol.relation.RelationSymbol;
 import com.darkcollective.relix.symbol.table.SymbolTable;
@@ -98,6 +99,8 @@ public final class SemanticValidator {
                 validateTree(qrs.body(), ctx);
             } else if (sym instanceof RelationFunctionSymbol rfs) {
                 validateRelationFunctionTree(rfs);
+            } else if (sym instanceof ScalarFunctionSymbol sfs) {
+                sfs.body().ifPresent(body -> validateScalarFunctionBody(sfs, body));
             }
         }
 
@@ -159,6 +162,25 @@ public final class SemanticValidator {
      * reference to a parameter (e.g. {@code cid} in {@code σ customer_id = cid (Orders)})
      * resolves to the parameter rather than being reported as a missing column.
      */
+    /**
+     * Validates a scalar {@code def} body with its parameters in scope, so a
+     * reference to a parameter resolves rather than being flagged, and a call to
+     * an undeclared function inside the body is reported at analysis time rather
+     * than surfacing only when the function runs. A built-in carries no body, so
+     * the {@code ifPresent} guard in {@link #validate} means only user definitions
+     * reach here.
+     */
+    private void validateScalarFunctionBody(ScalarFunctionSymbol sfs,
+                                            com.darkcollective.relix.ast.Operand body) {
+        Set<String> params = sfs.parameters().stream()
+                .map(ParameterDefinition::name)
+                .map(n -> n.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toUnmodifiableSet());
+        String ctx = sfs.namespace() + "." + sfs.declaredName();
+        var validator = new RelAlgebraValidator(symbolTable, annotations, functions, errors, ctx, params);
+        validator.validateScalarFunctionBody(body);
+    }
+
     private void validateRelationFunctionTree(RelationFunctionSymbol rfs) {
         // Only a scalar parameter is a value a bare column reference can mean; a relation
         // parameter is a relation, and is resolved as one through the parameter scope.

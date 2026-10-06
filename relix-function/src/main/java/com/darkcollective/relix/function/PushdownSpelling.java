@@ -39,6 +39,14 @@ import java.util.Optional;
  * <p>The rendered arguments are already in the target's syntax, so a MongoDB spelling
  * composes JSON fragments and a SQL one composes SQL. A function whose spelling differs
  * per dialect branches on {@link PushdownTarget#variant()}.
+ *
+ * <h2>Conditions</h2>
+ * An argument is normally a <em>value</em>. A spelling that writes one as a
+ * <em>condition</em> instead — the test of a {@code CASE WHEN} — says so through
+ * {@link #isCondition}, because the two are different syntax in SQL: a comparison is
+ * a condition everywhere, and a value only where the backend has a boolean type. The
+ * engine renders a condition argument as a predicate, and declines the whole call when
+ * the argument is not one it can render as a predicate.
  */
 @FunctionalInterface
 public interface PushdownSpelling {
@@ -56,4 +64,19 @@ public interface PushdownSpelling {
      *         evaluates the call itself
      */
     Optional<String> render(PushdownTarget target, List<String> renderedArguments);
+
+    /**
+     * Whether this spelling writes the argument at {@code position} as a condition
+     * rather than a value — see <em>Conditions</em> above.
+     *
+     * <p>No argument is a condition unless a spelling says so.
+     *
+     * @param position the argument's zero-based position in the call
+     * @param arity    the call's argument count, since which positions are conditions
+     *                 can depend on it
+     * @return whether that argument is rendered as a predicate
+     */
+    default boolean isCondition(int position, int arity) {
+        return false;
+    }
 }

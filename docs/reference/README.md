@@ -71,6 +71,8 @@ The everyday relational-algebra operators — the ones you reach for first.
 | [Rename](operators/rename.md) | `ρ` / `RENAME` | Rename a relation or its columns |
 | [Distinct](operators/distinct.md) | `δ` / `DISTINCT` | Remove duplicate rows |
 | [Sort](operators/sort.md) | `τ` / `SORT` / `ORDER [BY]` | Order rows by one or more keys |
+| [Shuffle](operators/shuffle.md) | `SHUFFLE` | Return every row once, in a uniformly random order |
+| [Roll](operators/roll.md) | `ROLL` | Endless uniform draws with replacement from a finite face set (a die roll) |
 | [Limit](operators/limit.md) | `λ` / `LIMIT` | Take the first N rows (with optional offset) |
 
 ## 4. Predicates
@@ -199,10 +201,12 @@ argument).
 [Log](functions/math/log.md),
 [Exp](functions/math/exp.md),
 [Power](functions/math/power.md),
+[Mod](functions/math/mod.md),
 [Sin](functions/math/sin.md),
 [Cos](functions/math/cos.md),
 [Tan](functions/math/tan.md),
 [Atn](functions/math/atn.md),
+[Pi](functions/math/pi.md),
 [Rand](functions/math/rand.md)
 
 **Date / time** —
@@ -225,8 +229,14 @@ argument).
 
 **Conditional** —
 [IIf](functions/conditional/iif.md),
+[Switch](functions/conditional/switch.md),
+[Choose](functions/conditional/choose.md),
 [Nz](functions/conditional/nz.md),
 [Coalesce](functions/conditional/coalesce.md)
+
+**Ordering** —
+[LEAST](functions/ordering/least.md),
+[GREATEST](functions/ordering/greatest.md)
 
 **Type check** —
 [IsNull](functions/typecheck/isnull.md),

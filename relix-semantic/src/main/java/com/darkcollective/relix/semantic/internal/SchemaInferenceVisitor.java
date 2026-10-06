@@ -74,6 +74,8 @@ import com.darkcollective.relix.ast.OuterUnionNode;
 import com.darkcollective.relix.ast.ReservoirSampleNode;
 import com.darkcollective.relix.ast.SampleNode;
 import com.darkcollective.relix.ast.SolveNode;
+import com.darkcollective.relix.ast.RollNode;
+import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
@@ -373,6 +375,18 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
 
     @Override
     public Optional<Schema> visit(SortNode node) {
+        return passthrough(node, node.input());
+    }
+
+    @Override
+    public Optional<Schema> visit(ShuffleNode node) {
+        // A permutation changes only row order; the heading is the input's.
+        return passthrough(node, node.input());
+    }
+
+    @Override
+    public Optional<Schema> visit(RollNode node) {
+        // Each draw is one face; the output heading is the face relation's.
         return passthrough(node, node.input());
     }
 

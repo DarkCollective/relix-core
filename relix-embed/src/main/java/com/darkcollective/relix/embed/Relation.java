@@ -30,6 +30,7 @@ import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.ProjectedAttribute;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.TieBreak;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -77,6 +78,7 @@ import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.Value;
 
 import java.time.Duration;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -412,6 +414,57 @@ public final class Relation {
      */
     public Relation sort(SortSpecification... sortSpecs) {
         return sort(Arrays.asList(sortSpecs));
+    }
+
+    /**
+     * SHUFFLE — every row once, in a uniformly random order (non-deterministic).
+     *
+     * <p>The random-ordering sibling of {@link #sort(List)}: a full permutation, so it
+     * buffers its input and, like {@code τ}, is rejected over a provably unbounded input.
+     *
+     * @return the randomly permuted relation
+     * @since 1.0
+     */
+    public Relation shuffle() {
+        return derive(AstBuilders.shuffle(node));
+    }
+
+    /**
+     * SHUFFLE with a seed — a reproducible random permutation.
+     *
+     * @param seed the RNG seed; the same seed and input give the same order every run
+     * @return the randomly permuted relation
+     * @since 1.0
+     */
+    public Relation shuffle(long seed) {
+        return derive(AstBuilders.shuffle(Optional.of(seed), node));
+    }
+
+    /**
+     * ROLL — an endless uniform draw with replacement from this relation's rows (a die
+     * roll), non-deterministic.
+     *
+     * <p>The result is <b>unbounded</b>: compose {@link #limit(long)} to take a finite
+     * number of draws. A blocking terminal ({@link #toList()}, {@link #sort(List)}, …)
+     * over it is rejected, exactly as over any endless generator; this relation's own
+     * rows (the faces) must be bounded.
+     *
+     * @return an unbounded relation of uniform draws from this relation's rows
+     * @since 1.0
+     */
+    public Relation roll() {
+        return derive(AstBuilders.roll(node));
+    }
+
+    /**
+     * ROLL with a seed — a reproducible endless sequence of draws.
+     *
+     * @param seed the RNG seed; the same seed and faces give the same sequence every run
+     * @return an unbounded relation of uniform draws from this relation's rows
+     * @since 1.0
+     */
+    public Relation roll(long seed) {
+        return derive(AstBuilders.roll(Optional.of(seed), node));
     }
 
     /**
@@ -1109,6 +1162,47 @@ public final class Relation {
      */
     public Relation solve(Operand left, Operand right) {
         return derive(AstBuilders.solve(left, right, node));
+    }
+
+    /**
+     * SOLVE over a system of equations — fills each row's unknowns when it has as many
+     * as there are equations and the system is linear in them.
+     *
+     * @param equations the equations, at least one
+     * @return the solved relation
+     * @since 1.0
+     */
+    public Relation solve(List<SolveEquation> equations) {
+        return derive(AstBuilders.solve(equations, node));
+    }
+
+    /**
+     * SOLVE … PER — fits the equations' unknowns across each group of rows by least
+     * squares, writing the fitted values into every row of the group.
+     *
+     * @param equations    the equations, at least one
+     * @param groupingKeys the columns a separate fit is made per
+     * @return the fitted relation
+     * @since 1.0
+     */
+    public Relation solve(List<SolveEquation> equations, List<String> groupingKeys) {
+        return derive(AstBuilders.solve(equations, groupingKeys, node));
+    }
+
+    /**
+     * SOLVE with the iteration's limits — {@code WITHIN ε} and {@code MAX n ROUNDS} —
+     * which govern equations solved by Newton's method.
+     *
+     * @param equations    the equations, at least one
+     * @param groupingKeys the columns a separate fit is made per; empty to solve row by row
+     * @param tolerance    the convergence tolerance, positive; empty for the default
+     * @param maxRounds    the round cap, at least 1; empty for the default
+     * @return the solved relation
+     * @since 1.0
+     */
+    public Relation solve(List<SolveEquation> equations, List<String> groupingKeys,
+                          Optional<BigDecimal> tolerance, Optional<Integer> maxRounds) {
+        return derive(AstBuilders.solve(equations, groupingKeys, tolerance, maxRounds, node));
     }
 
     /**

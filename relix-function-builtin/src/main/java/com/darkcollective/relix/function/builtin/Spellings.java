@@ -230,6 +230,114 @@ final class Spellings {
                 : Optional.empty();
     }
 
+    /**
+     * A searched {@code CASE} — {@code CASE WHEN c1 THEN v1 … [ELSE default] END} — in
+     * every SQL dialect, for the {@code (condition, value)} pairs and optional trailing
+     * default a {@code Switch} call carries. A searched {@code CASE} short-circuits and
+     * treats an unknown (NULL) condition as unmatched, which is exactly the engine's
+     * {@code Switch}, so the backend computes the same value.
+     *
+     * <p>Each {@code ci} is a condition (see {@link PushdownSpelling#isCondition}), so it
+     * arrives as a predicate and is valid after {@code WHEN} on every dialect, SQL
+     * Server's included.
+     *
+     * <p>Declines below two arguments, which is not a call the engine admits.
+     *
+     * @return the spelling
+     */
+    static PushdownSpelling searchedCase() {
+        PushdownSpelling render = (target, arguments) -> {
+            if (!target.isFamily(PushdownTarget.SQL) || arguments.size() < 2) {
+                return Optional.empty();
+            }
+            StringBuilder sql = new StringBuilder("CASE");
+            int pairs = arguments.size() / 2;
+            for (int i = 0; i < pairs; i++) {
+                sql.append(" WHEN ").append(arguments.get(2 * i))
+                        .append(" THEN ").append(arguments.get(2 * i + 1));
+            }
+            if (arguments.size() % 2 == 1) {                 // a trailing odd argument is the default
+                sql.append(" ELSE ").append(arguments.get(arguments.size() - 1));
+            }
+            return Optional.of(sql.append(" END").toString());
+        };
+        // The even positions before a trailing default are the conditions.
+        return withConditions(render, (position, arity) -> position % 2 == 0 && position < arity - arity % 2);
+    }
+
+    /**
+     * The two-way conditional — {@code CASE WHEN c THEN a WHEN NOT (c) THEN b END} — in
+     * every SQL dialect, for an {@code IIf} call's condition and two branches.
+     *
+     * <p>The second {@code WHEN} is the point. {@code IIf} answers NULL for a NULL
+     * condition, where {@code CASE WHEN c THEN a ELSE b END} would take the else branch.
+     * Testing the negation instead leaves an unknown condition matching neither arm, and
+     * a {@code CASE} with no {@code ELSE} and no match is NULL. That is faithful because
+     * the engine's predicates are three-valued as SQL's are: {@code NOT} of an unknown
+     * is unknown on both sides.
+     *
+     * <p>The condition is a condition (see {@link PushdownSpelling#isCondition}), and is
+     * written twice. That is sound because a call only folds when it is deterministic.
+     *
+     * <p>Declines any argument count but three, which is not a call the engine admits.
+     *
+     * @return the spelling
+     */
+    static PushdownSpelling twoWayCase() {
+        PushdownSpelling render = (target, arguments) -> target.isFamily(PushdownTarget.SQL)
+                && arguments.size() == 3
+                ? Optional.of("CASE WHEN " + arguments.get(0) + " THEN " + arguments.get(1)
+                        + " WHEN NOT (" + arguments.get(0) + ") THEN " + arguments.get(2) + " END")
+                : Optional.empty();
+        return withConditions(render, (position, arity) -> position == 0);
+    }
+
+    /**
+     * A simple {@code CASE} — {@code CASE index WHEN 1 THEN a WHEN 2 THEN b … END} — in
+     * every SQL dialect, for a {@code Choose} call's 1-based selector and its values. A
+     * simple {@code CASE} with integer labels is the engine's {@code Choose}: an index
+     * that is none of the positions — out of range, or NULL — matches no branch and the
+     * result is NULL.
+     *
+     * <p>Declines below two arguments (a selector and at least one value).
+     *
+     * @return the spelling
+     */
+    static PushdownSpelling indexedCase() {
+        return (target, arguments) -> {
+            if (!target.isFamily(PushdownTarget.SQL) || arguments.size() < 2) {
+                return Optional.empty();
+            }
+            StringBuilder sql = new StringBuilder("CASE ").append(arguments.get(0));
+            for (int position = 1; position < arguments.size(); position++) {
+                sql.append(" WHEN ").append(position)
+                        .append(" THEN ").append(arguments.get(position));
+            }
+            return Optional.of(sql.append(" END").toString());
+        };
+    }
+
+    /** Which positions of a call are conditions, given its argument count. */
+    @FunctionalInterface
+    private interface ConditionPositions {
+        boolean test(int position, int arity);
+    }
+
+    /** {@code spelling}, declaring the argument positions it writes as conditions. */
+    private static PushdownSpelling withConditions(PushdownSpelling spelling, ConditionPositions conditions) {
+        return new PushdownSpelling() {
+            @Override
+            public Optional<String> render(PushdownTarget target, List<String> renderedArguments) {
+                return spelling.render(target, renderedArguments);
+            }
+
+            @Override
+            public boolean isCondition(int position, int arity) {
+                return conditions.test(position, arity);
+            }
+        };
+    }
+
     private static String call(String function, List<String> arguments) {
         return function + "(" + String.join(", ", arguments) + ")";
     }

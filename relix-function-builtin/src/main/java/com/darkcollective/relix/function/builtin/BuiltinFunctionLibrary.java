@@ -115,6 +115,7 @@ public final class BuiltinFunctionLibrary implements FunctionLibrary {
         all.addAll(TypeCheckFunctions.all());
         all.addAll(ConversionFunctions.all());
         all.addAll(NestedFunctions.all());
+        all.addAll(OrderingFunctions.all());
         return List.copyOf(all);
     }
 }

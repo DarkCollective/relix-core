@@ -22,7 +22,7 @@ import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.eval.AllocationRow;
-import com.darkcollective.relix.processor.eval.EquationSolver;
+import com.darkcollective.relix.processor.eval.EquationSystemSolver;
 import com.darkcollective.relix.processor.eval.SubsetOptimizer;
 import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.Value;
@@ -58,15 +58,41 @@ final class SolverExecutor {
     }
 
     /**
-     * Goal-seek: for each row, fills the single NULL participating column of the
-     * equation {@code left = right} by inverting the arithmetic.  Streaming and
-     * per-row — rows without exactly one NULL participating column pass through
-     * unchanged.
+     * Goal-seek: for each row, fills the NULL participating columns of the equations —
+     * by inversion, elimination or Newton's method, whichever is the cheapest that
+     * applies.  Streaming and per-row — a row that cannot be posed passes through
+     * unchanged.  With {@code PER} keys the input is buffered and each group is fitted
+     * by least squares instead, the rows coming back in input order.
      */
     Stream<Row> executeSolve(PhysicalNode.Solve node, EvalCtx ctx) {
-        EquationSolver solver = new EquationSolver(ctx.operandEval());
-        return dispatch.execute(node.input(), ctx)
-                .map(row -> solver.solve(node.left(), node.right(), row));
+        EquationSystemSolver solver = new EquationSystemSolver(ctx.operandEval(),
+                node.tolerance().orElse(EquationSystemSolver.DEFAULT_TOLERANCE),
+                node.maxRounds().orElse(EquationSystemSolver.DEFAULT_MAX_ROUNDS));
+        if (node.groupingKeys().isEmpty()) {
+            return dispatch.execute(node.input(), ctx)
+                    .map(row -> solver.solve(node.equations(), row));
+        }
+        List<String> keys = node.groupingKeys();
+        List<Row> rows;
+        try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
+            rows = input.toList();
+        }
+        SequencedMap<List<Value>, List<Integer>> groups = new LinkedHashMap<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Row row = rows.get(i);
+            groups.computeIfAbsent(keys.stream().map(row::get).toList(), k -> new ArrayList<>())
+                    .add(i);
+        }
+        Row[] out = new Row[rows.size()];
+        for (var group : groups.entrySet()) {
+            List<Integer> members = group.getValue();
+            List<Row> fitted = solver.fit(node.equations(),
+                    members.stream().map(rows::get).toList(), describeGroup(keys, group.getKey()));
+            for (int k = 0; k < members.size(); k++) {
+                out[members.get(k)] = fitted.get(k);
+            }
+        }
+        return Stream.of(out);
     }
 
     /**
@@ -238,6 +264,113 @@ final class SolverExecutor {
         double p = node.probability();
         Random rnd = node.seed().<Random>map(Random::new).orElseGet(ThreadLocalRandom::current);
         return dispatch.execute(node.input(), ctx).filter(unused -> rnd.nextDouble() < p);
+    }
+
+    /**
+     * Random permutation (SHUFFLE): buffers the whole input and returns its rows in a
+     * uniformly random order via {@link java.util.Collections#shuffle} (the Fisher–Yates
+     * shuffle).  When a seed is present the permutation is deterministic; without one,
+     * {@code ThreadLocalRandom} supplies fresh randomness.  Output rows are the full input
+     * rows and the schema equals the input schema.  Like {@code τ}, it is a blocking
+     * operator — a plan-time check rejects it over a provably unbounded input.
+     */
+    Stream<Row> executeShuffle(PhysicalNode.Shuffle node, EvalCtx ctx) {
+        List<Row> rows;
+        try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
+            rows = new ArrayList<>(input.toList());
+        }
+        Random rnd = node.seed().<Random>map(Random::new).orElseGet(ThreadLocalRandom::current);
+        java.util.Collections.shuffle(rows, rnd);
+        return BagRelation.of(node.schema(), rows).stream();
+    }
+
+    /**
+     * Endless uniform draw with replacement (ROLL): buffers the finite face set, then
+     * emits an unbounded stream in which each row is an independent uniform draw from
+     * the faces — a die roll.  When a seed is present the sequence of draws is
+     * deterministic; without one, {@code ThreadLocalRandom} supplies fresh randomness.
+     *
+     * <p>The face set must be buffered to be indexed, and a plan-time boundedness check
+     * has already rejected an unbounded one, so the buffering here terminates.  An
+     * <em>empty</em> face set has nothing to draw, so the result is the empty stream
+     * rather than an endless one — otherwise a {@code λ} above it would never fill.
+     * The stream the caller sees is unbounded, so a non-{@code λ} consumer drains it
+     * forever; the executor is pull-based, so no work happens until it is pulled.
+     *
+     * <p><b>Weighted draws (a loaded die).</b> When the node carries a {@code BY} weight
+     * expression, each face is drawn with probability proportional to that non-negative
+     * {@code NUMBER} evaluated over the face: the weights are summed into a cumulative
+     * table once, and each draw is a binary search for a uniform point in {@code [0, Σw)}.
+     * A zero-weight face adds nothing to the table and so is never selected; a negative
+     * weight is a runtime error; and an all-zero (or empty) face set has total weight
+     * zero and yields the empty stream, exactly as an empty uniform {@code ROLL} does. A
+     * NULL weight counts as zero — an unknown weight draws nothing rather than failing an
+     * endless stream.
+     */
+    Stream<Row> executeRoll(PhysicalNode.Roll node, EvalCtx ctx) {
+        List<Row> faces;
+        try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
+            faces = input.toList();
+        }
+        if (faces.isEmpty()) {
+            return Stream.empty();
+        }
+        Random rnd = node.seed().<Random>map(Random::new).orElseGet(ThreadLocalRandom::current);
+        if (node.weight().isEmpty()) {
+            return Stream.generate(() -> faces.get(rnd.nextInt(faces.size())));
+        }
+        return weightedRoll(node, faces, rnd, ctx);
+    }
+
+    /** The weighted draw: a cumulative-weight table built once, binary-searched per draw. */
+    private Stream<Row> weightedRoll(PhysicalNode.Roll node, List<Row> faces, Random rnd,
+                                     EvalCtx ctx) {
+        var weightExpr = node.weight().orElseThrow();
+        var eval = ctx.operandEval();
+        double[] cumulative = new double[faces.size()];
+        double total = 0.0;
+        for (int i = 0; i < faces.size(); i++) {
+            Value value = eval.evaluate(weightExpr, faces.get(i));
+            double weight;
+            if (value.isNull()) {
+                weight = 0.0;
+            } else if (value instanceof NumberValue number) {
+                weight = number.value().doubleValue();
+            } else {
+                throw new EvaluationException(
+                        "ROLL BY: weight must be a NUMBER, got " + value.type());
+            }
+            if (weight < 0.0) {
+                throw new EvaluationException(
+                        "ROLL BY: weight must be non-negative, got " + weight);
+            }
+            total += weight;
+            cumulative[i] = total;
+        }
+        if (total <= 0.0) {
+            return Stream.empty();
+        }
+        double totalWeight = total;
+        return Stream.generate(() -> faces.get(drawIndex(cumulative, rnd.nextDouble() * totalWeight)));
+    }
+
+    /**
+     * The index of the face a uniform point {@code target} in {@code [0, Σw)} lands on —
+     * the first cumulative weight strictly greater than it. A zero-weight face does not
+     * raise the running total, so no point can fall on it.
+     */
+    private static int drawIndex(double[] cumulative, double target) {
+        int lo = 0;
+        int hi = cumulative.length - 1;
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (cumulative[mid] > target) {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        return lo;
     }
 
     /**

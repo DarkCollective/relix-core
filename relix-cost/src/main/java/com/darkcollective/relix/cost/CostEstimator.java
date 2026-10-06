@@ -57,8 +57,10 @@ import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.OptimizeNode;
 import com.darkcollective.relix.ast.OuterUnionNode;
 import com.darkcollective.relix.ast.ReservoirSampleNode;
+import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.SampleNode;
 import com.darkcollective.relix.ast.SolveNode;
+import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.TopKNode;
@@ -334,6 +336,11 @@ public final class CostEstimator {
             case ProjectionNode ignored -> rowsAt(node.children().get(0), depth + 1);
             case RenameNode ignored -> rowsAt(node.children().get(0), depth + 1);
             case SortNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            // SHUFFLE is a permutation: the row count is exactly the input's.
+            case ShuffleNode ignored -> rowsAt(node.children().get(0), depth + 1);
+            // ROLL draws from its finite input forever — its cardinality is unbounded,
+            // so there is no finite estimate to give (a λ above it supplies one).
+            case RollNode ignored -> OptionalLong.empty();
             case DistinctNode ignored -> rowsAt(node.children().get(0), depth + 1);
             case UnnestNode ignored -> rowsAt(node.children().get(0), depth + 1);
             case ClusterNode ignored -> rowsAt(node.children().get(0), depth + 1);

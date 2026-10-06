@@ -94,6 +94,43 @@ final class BoundednessCheckerTest {
         }
 
         @Test
+        @DisplayName("SHUFFLE over an unbounded input is rejected — it is blocking, like τ")
+        void shuffleOverUnbounded() {
+            assertThat(check(AstBuilders.shuffle(inf())))
+                    .singleElement().asString().contains("SHUFFLE");
+        }
+
+        @Test
+        @DisplayName("SOLVE … PER over an unbounded input is rejected — a group is fitted whole")
+        void solvePerOverUnbounded() {
+            assertThat(check(AstBuilders.solve(
+                    List.of(AstBuilders.equation(attr("y"), attr("x"))), List.of("g"), inf())))
+                    .singleElement().asString().contains("SOLVE … PER");
+        }
+
+        @Test
+        @DisplayName("SOLVE row by row streams an unbounded input — not flagged")
+        void solvePerRowOverUnbounded() {
+            assertThat(check(AstBuilders.solve(attr("y"), attr("x"), inf()))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("ROLL over an unbounded face set is rejected — the faces must be buffered")
+        void rollOverUnboundedFaces() {
+            assertThat(check(AstBuilders.roll(inf())))
+                    .singleElement().asString().contains("face set of ROLL");
+        }
+
+        @Test
+        @DisplayName("a blocking operator over a ROLL is rejected — ROLL's output is unbounded")
+        void blockingOverRoll() {
+            // ROLL produces an unbounded stream from a bounded face set, so τ above it
+            // (the first non-leaf unbounded producer) is rejected like τ over any generator.
+            assertThat(check(sort(List.of(asc("id")), AstBuilders.roll(rel("R")))))
+                    .singleElement().asString().contains("τ");
+        }
+
+        @Test
         @DisplayName("ω (WHY) over an unbounded input is rejected — it is blocking")
         void whyOverUnbounded() {
             assertThat(check(new com.darkcollective.relix.ast.WhyNode(inf())))
@@ -164,6 +201,16 @@ final class BoundednessCheckerTest {
         @DisplayName("λ below a blocking operator rescues it (the input becomes bounded)")
         void limitRescuesBlocking() {
             assertThat(check(groupBy("region", limit(100L, inf())))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("ROLL over a bounded face set is fine, and λ above its unbounded output rescues")
+        void rollOverBounded() {
+            // The face set is bounded, so ROLL itself is safe; its output is unbounded,
+            // but λ above it bounds that, so a blocking operator above the λ is fine too.
+            assertThat(check(AstBuilders.roll(rel("R")))).isEmpty();
+            assertThat(check(sort(List.of(asc("id")),
+                    limit(10L, AstBuilders.roll(rel("R")))))).isEmpty();
         }
 
         @Test

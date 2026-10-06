@@ -193,6 +193,41 @@ final class SemanticValidationTest {
     }
 
     // =========================================================================
+    // ROLL BY — weight expression validation
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Roll ROLL BY — weight expression")
+    class RollWeightValidation {
+
+        @Test
+        @DisplayName("a NUMBER weight over the face columns is valid")
+        void numericWeightValid() {
+            // Users(id: NUMBER, …) — a bare NUMBER column is a fine weight.
+            assertThat(inferAndValidate(roll(Optional.empty(), attr("id"), rel("Users"))))
+                    .isEmpty();
+        }
+
+        @Test
+        @DisplayName("a non-NUMBER weight is an error")
+        void nonNumericWeightIsError() {
+            List<SemanticError> errors =
+                    inferAndValidate(roll(Optional.empty(), attr("name"), rel("Users")));
+            assertThat(errors).anySatisfy(e ->
+                    assertThat(e.message()).contains("ROLL BY").containsIgnoringCase("NUMBER"));
+        }
+
+        @Test
+        @DisplayName("a weight naming an unknown column is an error")
+        void unknownColumnInWeightIsError() {
+            List<SemanticError> errors =
+                    inferAndValidate(roll(Optional.empty(), attr("nonexistent"), rel("Users")));
+            assertThat(errors).anySatisfy(e ->
+                    assertThat(e.message()).contains("nonexistent"));
+        }
+    }
+
+    // =========================================================================
     // Set-operation compatibility
     // =========================================================================
 
@@ -1968,13 +2003,11 @@ final class SemanticValidationTest {
         }
 
         @Test
-        @DisplayName("a column used twice is rejected (non-deterministic inversion)")
+        @DisplayName("a column used twice is accepted (solved iteratively when it is the unknown)")
         void duplicateColumn() {
             RelNode tree = solve(attr("amount"),
                     bin(attr("order_id"), ArithmeticOperator.PLUS, attr("order_id")));
-            List<SemanticError> errors = inferAndValidate(tree);
-            assertThat(errors).hasSize(1);
-            assertThat(errors.get(0).message()).containsIgnoringCase("more than once").contains("order_id");
+            assertThat(inferAndValidate(tree)).isEmpty();
         }
 
         @Test

@@ -27,12 +27,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The five {@code default} arms of {@link RelNodeVisitor}.
+ * The {@code default} arms of {@link RelNodeVisitor}.
  *
- * <p>Those five node kinds are reached through a {@code default} that throws rather than
+ * <p>Those node kinds are reached through a {@code default} that throws rather than
  * through an abstract method, so that a visitor with no meaningful answer for a covering
- * reduction, a least fixpoint, a correlated TVF join or a lineage reification inherits the
- * failure instead of being forced to carry a stub. That is a contract with two halves and
+ * reduction, a least fixpoint, a correlated TVF join, a lineage reification or a random
+ * permutation inherits the failure instead of being forced to carry a stub. That is a
+ * contract with two halves and
  * both are checked here: an overriding visitor is dispatched to, and a visitor that does
  * not override gets an {@link UnsupportedOperationException} naming the operator rather
  * than a silent {@code null}.
@@ -88,6 +89,20 @@ final class RelNodeVisitorDefaultsTest {
     }
 
     @Test
+    void shuffleDefaultThrows() {
+        assertThatThrownBy(() -> AstBuilders.shuffle(INPUT).accept(BARE))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("SHUFFLE");
+    }
+
+    @Test
+    void rollDefaultThrows() {
+        assertThatThrownBy(() -> AstBuilders.roll(INPUT).accept(BARE))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("ROLL");
+    }
+
+    @Test
     @DisplayName("An overriding visitor is dispatched to instead of the default")
     void overridingVisitorWins() {
         RelNodeVisitor<String> overriding = new BareRelNodeVisitor<String>() {
@@ -97,6 +112,8 @@ final class RelNodeVisitorDefaultsTest {
             @Override public String visit(RecursiveRefNode node) { return "ref"; }
             @Override public String visit(LateralJoinNode node)  { return "lateral"; }
             @Override public String visit(WhyNode node)          { return "why"; }
+            @Override public String visit(ShuffleNode node)      { return "shuffle"; }
+            @Override public String visit(RollNode node)         { return "roll"; }
         };
         assertThat(cover().accept(overriding)).isEqualTo("cover");
         assertThat(fixpoint("T", INPUT, INPUT).accept(overriding)).isEqualTo("fix");
@@ -105,6 +122,8 @@ final class RelNodeVisitorDefaultsTest {
         assertThat(lateral(INPUT, "explode").accept(overriding))
                 .isEqualTo("lateral");
         assertThat(why(INPUT).accept(overriding)).isEqualTo("why");
+        assertThat(AstBuilders.shuffle(INPUT).accept(overriding)).isEqualTo("shuffle");
+        assertThat(AstBuilders.roll(INPUT).accept(overriding)).isEqualTo("roll");
     }
 
     private static CoverNode cover() {

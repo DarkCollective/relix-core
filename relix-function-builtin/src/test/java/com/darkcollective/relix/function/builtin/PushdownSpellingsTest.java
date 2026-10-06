@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.function.builtin;
 
+import com.darkcollective.relix.function.PushdownSpelling;
 import com.darkcollective.relix.function.PushdownTarget;
 import com.darkcollective.relix.function.ScalarFunction;
 import org.junit.jupiter.api.DisplayName;
@@ -271,6 +272,43 @@ final class PushdownSpellingsTest {
             assertThat(render("Fix", MYSQL, "`x`")).contains("TRUNCATE(`x`, 0)");
             assertThat(render("Fix", POSTGRES, "\"x\"")).contains("TRUNC(\"x\")");
             assertThat(render("Fix", GENERIC, "x")).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("Mod — MOD where it means the same, declined where it does not")
+    final class Modulo {
+
+        @Test
+        @DisplayName("becomes MOD(x, y) where the dialect truncates and raises on zero as relix does")
+        void folds() {
+            assertThat(render("Mod", POSTGRES, "\"x\"", "\"y\"")).contains("MOD(\"x\", \"y\")");
+            assertThat(render("Mod", DUCKDB, "x", "y")).contains("MOD(x, y)");
+            assertThat(render("Mod", DB2, "x", "y")).contains("MOD(x, y)");
+            assertThat(render("Mod", GENERIC, "x", "y")).contains("MOD(x, y)");
+        }
+
+        @Test
+        @DisplayName("becomes a $mod array in MongoDB")
+        void mongo() {
+            assertThat(render("Mod", MONGO, "\"$x\"", "\"$y\""))
+                    .contains("{\"$mod\": [\"$x\", \"$y\"]}");
+        }
+
+        @Test
+        @DisplayName("declines MySQL, SQLite and SQL Server, whose modulo differs on an edge or a type")
+        void declines() {
+            assertThat(render("Mod", MYSQL, "`x`", "`y`")).isEmpty();
+            assertThat(render("Mod", SQLITE, "x", "y")).isEmpty();
+            assertThat(render("Mod", SQLSERVER, "x", "y")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("declines an argument count it has no spelling for, and an unknown family")
+        void declinesOtherwise() {
+            assertThat(render("Mod", POSTGRES, "x")).isEmpty();
+            assertThat(render("Mod", MONGO, "x", "y", "z")).isEmpty();
+            assertThat(render("Mod", new PushdownTarget("graphql", ""), "x", "y")).isEmpty();
         }
     }
 
@@ -540,12 +578,124 @@ final class PushdownSpellingsTest {
         }
     }
 
+    @Nested
+    @DisplayName("Ordering — LEAST / GREATEST on NULL-propagating dialects only")
+    final class Ordering {
+
+        @Test
+        @DisplayName("folds to LEAST/GREATEST(…) on MySQL and Db2, at any argument count")
+        void propagatingDialectsFold() {
+            assertThat(render("LEAST", MYSQL, "a", "b")).contains("LEAST(a, b)");
+            assertThat(render("LEAST", DB2, "a", "b", "c")).contains("LEAST(a, b, c)");
+            assertThat(render("GREATEST", MYSQL, "a", "b")).contains("GREATEST(a, b)");
+            assertThat(render("GREATEST", DB2, "a", "b")).contains("GREATEST(a, b)");
+        }
+
+        @Test
+        @DisplayName("declines where NULL is skipped, there is no such function, or it is Mongo")
+        void otherDialectsDecline() {
+            for (PushdownTarget target : List.of(POSTGRES, SQLSERVER, DUCKDB, SQLITE, GENERIC, MONGO)) {
+                assertThat(render("LEAST", target, "a", "b"))
+                        .as("LEAST on %s", target).isEmpty();
+                assertThat(render("GREATEST", target, "a", "b"))
+                        .as("GREATEST on %s", target).isEmpty();
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Conditional — IIf, Switch and Choose fold to CASE")
+    final class Conditional {
+
+        @Test
+        @DisplayName("IIf tests its condition and the negation, with no ELSE, in every SQL dialect")
+        void iifTwoWayCase() {
+            for (PushdownTarget target : List.of(GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE, SQLSERVER, DB2)) {
+                assertThat(render("IIf", target, "(a > 1)", "'x'", "'y'"))
+                        .as("IIf on %s", target)
+                        .contains("CASE WHEN (a > 1) THEN 'x' WHEN NOT ((a > 1)) THEN 'y' END");
+            }
+        }
+
+        @Test
+        @DisplayName("IIf's condition is its first argument, and its branches are values")
+        void iifCondition() {
+            PushdownSpelling iif = BuiltinCalls.function("IIf").pushdown();
+            assertThat(iif.isCondition(0, 3)).isTrue();
+            assertThat(iif.isCondition(1, 3)).isFalse();
+            assertThat(iif.isCondition(2, 3)).isFalse();
+        }
+
+        @Test
+        @DisplayName("Switch's conditions are the even positions, and a trailing default is a value")
+        void switchConditions() {
+            PushdownSpelling sw = BuiltinCalls.function("Switch").pushdown();
+            // Switch(c1, v1, c2, v2)
+            assertThat(List.of(0, 1, 2, 3).stream().map(i -> sw.isCondition(i, 4)))
+                    .containsExactly(true, false, true, false);
+            // Switch(c1, v1, c2, v2, default)
+            assertThat(List.of(0, 1, 2, 3, 4).stream().map(i -> sw.isCondition(i, 5)))
+                    .containsExactly(true, false, true, false, false);
+        }
+
+        @Test
+        @DisplayName("Choose has no condition — its selector is a value it compares")
+        void chooseHasNoCondition() {
+            PushdownSpelling choose = BuiltinCalls.function("Choose").pushdown();
+            assertThat(List.of(0, 1, 2).stream().map(i -> choose.isCondition(i, 3)))
+                    .containsOnly(false);
+        }
+
+        @Test
+        @DisplayName("IIf declines MongoDB, and any argument count but three")
+        void iifDeclines() {
+            assertThat(render("IIf", MONGO, "c", "'x'", "'y'")).isEmpty();
+            assertThat(render("IIf", POSTGRES, "c", "'x'")).isEmpty();
+            assertThat(render("IIf", POSTGRES, "c", "'x'", "'y'", "'z'")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("Switch is a searched CASE in every SQL dialect")
+        void switchSearchedCase() {
+            assertThat(render("Switch", POSTGRES, "a > 1", "'x'", "a > 0", "'y'", "'z'"))
+                    .contains("CASE WHEN a > 1 THEN 'x' WHEN a > 0 THEN 'y' ELSE 'z' END");
+            assertThat(render("Switch", MYSQL, "`a` > 1", "'x'", "`a` > 0", "'y'"))
+                    .contains("CASE WHEN `a` > 1 THEN 'x' WHEN `a` > 0 THEN 'y' END");
+            assertThat(render("Switch", GENERIC, "a > 1", "'x'", "'z'"))
+                    .contains("CASE WHEN a > 1 THEN 'x' ELSE 'z' END");
+        }
+
+        @Test
+        @DisplayName("Choose is a simple CASE on its 1-based index in every SQL dialect")
+        void chooseIndexedCase() {
+            assertThat(render("Choose", POSTGRES, "i", "'a'", "'b'", "'c'"))
+                    .contains("CASE i WHEN 1 THEN 'a' WHEN 2 THEN 'b' WHEN 3 THEN 'c' END");
+            assertThat(render("Choose", GENERIC, "i", "'a'", "'b'"))
+                    .contains("CASE i WHEN 1 THEN 'a' WHEN 2 THEN 'b' END");
+        }
+
+        @Test
+        @DisplayName("neither folds into MongoDB, which has no CASE")
+        void declineMongo() {
+            assertThat(render("Switch", MONGO, "a > 1", "'x'", "'z'")).isEmpty();
+            assertThat(render("Choose", MONGO, "i", "'a'", "'b'")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("too few arguments decline, even on a SQL dialect")
+        void tooFewDecline() {
+            assertThat(render("Switch", POSTGRES, "'only'")).isEmpty();
+            assertThat(render("Choose", POSTGRES, "i")).isEmpty();
+        }
+    }
+
     @Test
     @DisplayName("every other built-in is evaluated in-engine, and declines every target")
     void everythingElseDeclines() {
         List<String> spelled = List.of("year", "month", "day", "hour", "minute", "second",
-                "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "replace",
-                "coalesce", "nz", "isnull", "len", "left", "right", "mid");
+                "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "mod", "replace",
+                "coalesce", "nz", "isnull", "len", "left", "right", "mid", "least", "greatest",
+                "iif", "switch", "choose");
 
         List<String> unexpected = BuiltinCalls.all().stream()
                 .filter(fn -> !spelled.contains(fn.signature().canonicalName()))

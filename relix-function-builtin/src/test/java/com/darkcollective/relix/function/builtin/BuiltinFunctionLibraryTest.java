@@ -45,10 +45,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 final class BuiltinFunctionLibraryTest {
 
     /**
-     * The 52 the port had to reproduce function for function, plus {@code Entries}, which
-     * is the first built-in that was never in the library the port started from.
+     * The 52 the port had to reproduce function for function, plus {@code Entries},
+     * {@code Pi} — the two built-ins that were never in the library the port started from
+     * — {@code Mod}, and the multi-branch conditionals {@code Switch} and {@code Choose}.
      */
-    private static final int BUILTIN_COUNT = 53;
+    private static final int BUILTIN_COUNT = 59;
 
     /** The eight aggregates: five SQL reducers, one that gathers, two that pick a row. */
     private static final int AGGREGATE_COUNT = 8;
@@ -117,7 +118,7 @@ final class BuiltinFunctionLibraryTest {
         }
 
         @Test
-        @DisplayName("the seven documented categories, complete")
+        @DisplayName("the eight documented categories, complete")
         void categories() {
             Map<String, Long> byCategory = FUNCTIONS.stream()
                     .collect(Collectors.groupingBy(fn -> fn.signature().category(),
@@ -125,16 +126,17 @@ final class BuiltinFunctionLibraryTest {
 
             assertThat(byCategory).containsOnly(
                     Map.entry("string", 13L),
-                    Map.entry("math", 15L),
+                    Map.entry("math", 17L),
                     Map.entry("datetime", 16L),
-                    Map.entry("conditional", 3L),
+                    Map.entry("conditional", 5L),
                     Map.entry("typecheck", 2L),
                     Map.entry("conversion", 3L),
-                    Map.entry("nested", 1L));
+                    Map.entry("nested", 1L),
+                    Map.entry("ordering", 2L));
         }
 
         @Test
-        @DisplayName("exactly the three special forms are lazy")
+        @DisplayName("exactly the five special forms are lazy")
         void specialForms() {
             Set<String> lazy = FUNCTIONS.stream()
                     .filter(fn -> fn instanceof LazyScalarFunction)
@@ -144,7 +146,7 @@ final class BuiltinFunctionLibraryTest {
             assertThat(lazy)
                     .as("a lazy function skips work its meaning says to skip; every "
                             + "other built-in reads all of its arguments")
-                    .containsExactlyInAnyOrder("iif", "nz", "coalesce");
+                    .containsExactlyInAnyOrder("iif", "nz", "coalesce", "switch", "choose");
         }
 
         @Test

@@ -35,6 +35,7 @@ import com.darkcollective.relix.lang.ast.source.JsonExtractSpec;
 import com.darkcollective.relix.lang.ast.source.PaginateEntry;
 import com.darkcollective.relix.lang.ast.source.PathParamBinding;
 import com.darkcollective.relix.lang.ast.source.QueryParamBinding;
+import com.darkcollective.relix.plan.HttpScanPushdown;
 import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.internal.DataSourceConnector;
 import com.darkcollective.relix.processor.internal.DocumentRow;
@@ -174,12 +175,17 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
 
     @Override
     public Stream<Row> open(String relationName, Schema schema) {
+        return open(relationName, schema, HttpScanPushdown.none());
+    }
+
+    @Override
+    public Stream<Row> open(String relationName, Schema schema, HttpScanPushdown pushdown) {
         SourceDeclaration declaration = model.sources().get(relationName.toLowerCase(Locale.ROOT));
         if (declaration == null || !(declaration.config() instanceof HttpSourceConfig http)) {
             throw new EvaluationException(
                     "No HTTP source declaration for external relation '" + relationName + "'");
         }
-        HttpRequestSpec request = buildRequest(relationName, http, schema);
+        HttpRequestSpec request = buildRequest(relationName, http, schema, pushdown);
         HttpFetchResult result = send(request, relationName);
         if (result.statusCode() < 200 || result.statusCode() >= 300) {
             throw new EvaluationException(
@@ -187,34 +193,37 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
                     + ": " + snippet(result.body()));
         }
         List<Value> records = extractRecords(relationName, http, result.body());
-        return toRows(relationName, http, schema, records).stream();
+        return toRows(relationName, http, schema, records, pushdown).stream();
     }
 
     // ── Request building ──────────────────────────────────────────────────────
 
     private HttpRequestSpec buildRequest(String relationName, HttpSourceConfig http,
-                                         Schema schema) {
+                                         Schema schema, HttpScanPushdown pushdown) {
         Map<String, String> headers = new LinkedHashMap<>(http.headers());
         Map<String, String> pathParams = new LinkedHashMap<>();
         List<String> queryParams = new ArrayList<>();
 
         http.auth().ifPresent(auth -> applyAuth(auth, headers, queryParams));
 
-        // Pagination parameters from their declared defaults.
+        // Pagination parameters from their declared defaults — except the limit, which a
+        // pushed query λ overrides when the planner folded one in.
         http.paginate().ifPresent(p -> {
             for (PaginateEntry entry : p.entries()) {
-                entry.defaultValue().ifPresent(
-                        def -> queryParams.add(encode(entry.paramName()) + "=" + encode(Long.toString(def))));
+                Optional<Long> value = entry.logicalName().equals("limit") && pushdown.limit().isPresent()
+                        ? pushdown.limit()
+                        : entry.defaultValue();
+                value.ifPresent(
+                        v -> queryParams.add(encode(entry.paramName()) + "=" + encode(Long.toString(v))));
             }
         });
 
-        // IN columns from their [default: …]; a required IN column with no default
-        // cannot be satisfied without predicate pushdown (a planned follow-on).
+        // IN columns from a pushed σ equality, else their [default: …].
         for (ColumnSpec col : http.columns()) {
             if (col.direction() != ColumnDirection.IN) {
                 continue;
             }
-            Optional<String> value = resolveInputValue(relationName, http, col);
+            Optional<String> value = resolveInputValue(relationName, http, col, pushdown);
             value.ifPresent(v -> applyInputBinding(col, v, headers, pathParams, queryParams));
         }
 
@@ -234,16 +243,25 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
         return headers.keySet().stream().anyMatch(name::equalsIgnoreCase);
     }
 
-    /** Resolves an IN column's value: its default, or empty (required-without-default errors). */
-    private Optional<String> resolveInputValue(String relationName, HttpSourceConfig http, ColumnSpec col) {
+    /**
+     * Resolves an IN column's value: a pushed {@code σ} equality on it, else its
+     * declared {@code [default: …]}, else empty — and a {@code [required]} column with
+     * neither is an error naming the predicate that would satisfy it.
+     */
+    private Optional<String> resolveInputValue(String relationName, HttpSourceConfig http,
+                                               ColumnSpec col, HttpScanPushdown pushdown) {
+        String pushed = pushdown.equalities().get(col.name());
+        if (pushed != null) {
+            return Optional.of(pushed);
+        }
         if (col.defaultValue().isPresent()) {
             return col.defaultValue();
         }
         if (col.required()) {
             throw new EvaluationException(
                     "HTTP source '" + relationName + "': required input column '" + col.name()
-                    + "' has no value — predicate pushdown into HTTP requests is not yet supported, "
-                    + "so an IN column must declare a [default: …]");
+                    + "' has no value — give it an equality predicate (σ " + col.name()
+                    + " = …) that can be pushed into the request, or declare a [default: …]");
         }
         return Optional.empty();
     }
@@ -388,19 +406,22 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
 
     // ── Records → rows ────────────────────────────────────────────────────────
 
-    private List<Row> toRows(String relationName, HttpSourceConfig http, Schema schema, List<Value> records) {
+    private List<Row> toRows(String relationName, HttpSourceConfig http, Schema schema,
+                             List<Value> records, HttpScanPushdown pushdown) {
         List<Row> rows = new ArrayList<>(records.size());
         for (Value record : records) {
             if (!(record instanceof StructValue document)) {
                 throw new EvaluationException(
                         "HTTP source '" + relationName + "': each record must be a JSON object");
             }
-            rows.add(http.isOpen() ? new DocumentRow(document) : closedRow(relationName, http, schema, document));
+            rows.add(http.isOpen() ? new DocumentRow(document)
+                    : closedRow(relationName, http, schema, document, pushdown));
         }
         return rows;
     }
 
-    private Row closedRow(String relationName, HttpSourceConfig http, Schema schema, StructValue record) {
+    private Row closedRow(String relationName, HttpSourceConfig http, Schema schema,
+                          StructValue record, HttpScanPushdown pushdown) {
         // Driven by the schema rather than by the declaration, because the two can differ:
         // a planner that narrowed this scan asks for a subset, and a row has to be what it
         // was asked for. A column the declaration does not carry is NULL rather than an
@@ -412,7 +433,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
                 values.add(NullValue.INSTANCE);
             } else if (col.direction() == ColumnDirection.IN) {
                 // The input value echoed back as a column (constant across rows).
-                values.add(resolveInputValue(relationName, http, col)
+                values.add(resolveInputValue(relationName, http, col, pushdown)
                         .map(v -> coerceString(relationName, v, col))
                         .orElse(NullValue.INSTANCE));
             } else {

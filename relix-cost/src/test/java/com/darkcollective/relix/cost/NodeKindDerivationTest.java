@@ -126,6 +126,7 @@ final class NodeKindDerivationTest {
             // opaque or trivially distinct.
             Map.entry("RelationNode", Distinctness.PRESERVES),
             Map.entry("RelationFunctionCall", Distinctness.BREAKS),
+            Map.entry("RollNode", Distinctness.BREAKS),
             Map.entry("TruthRelationNode", Distinctness.ESTABLISHES),
             Map.entry("EmptyRelationNode", Distinctness.ESTABLISHES),
             Map.entry("RecursiveRefNode", Distinctness.BREAKS),
@@ -133,6 +134,7 @@ final class NodeKindDerivationTest {
             // Row-subset operators keep whatever the input had.
             Map.entry("SelectionNode", Distinctness.PRESERVES),
             Map.entry("SortNode", Distinctness.PRESERVES),
+            Map.entry("ShuffleNode", Distinctness.PRESERVES),
             Map.entry("LimitNode", Distinctness.PRESERVES),
             Map.entry("SampleNode", Distinctness.PRESERVES),
             Map.entry("ReservoirSampleNode", Distinctness.PRESERVES),
@@ -284,17 +286,21 @@ final class NodeKindDerivationTest {
         }
 
         @TestFactory
-        @DisplayName("no kind invents unboundedness over finite leaves")
+        @DisplayName("no kind invents unboundedness over finite leaves, except ROLL")
         Stream<DynamicTest> noKindInventsUnboundedness() {
-            // PropertyDeriver states this as its contagious-only invariant, and
-            // BoundednessChecker's javadoc relies on it ("a tree whose leaves are all
-            // BOUNDED never trips this check"). Stated once, checked for all 52.
+            // PropertyDeriver's derivation is contagious, with one deliberate exception:
+            // ROLL draws from its finite input forever, so it *originates* UNBOUNDED even
+            // over bounded leaves. Every other kind must stay BOUNDED over finite leaves —
+            // one that quietly reports UNBOUNDED would refuse a legal query. Stated once,
+            // checked for all kinds.
             return RelNodeCorpus.everyKind().stream().map(node -> {
                 String kind = node.getClass().getSimpleName();
+                Boundedness expected = node instanceof com.darkcollective.relix.ast.RollNode
+                        ? Boundedness.UNBOUNDED : Boundedness.BOUNDED;
                 return DynamicTest.dynamicTest(kind, () ->
                         assertThat(PropertyDeriver.boundedness(node, ALL_BOUNDED))
-                                .as("%s reported UNBOUNDED over finite leaves", kind)
-                                .isEqualTo(Boundedness.BOUNDED));
+                                .as("%s boundedness over finite leaves", kind)
+                                .isEqualTo(expected));
             });
         }
 
@@ -362,15 +368,28 @@ final class NodeKindDerivationTest {
         }
 
         @TestFactory
-        @DisplayName("no streaming kind is flagged")
+        @DisplayName("no streaming kind is flagged, except ROLL, which must buffer its faces")
         Stream<DynamicTest> streamingKindsAreNeverFlagged() {
+            // ROLL is the one streaming kind whose input must still be bounded: it buffers
+            // its face set to index it, so an endless face set is flagged even though
+            // ROLL's own output materialisation is STREAM. Every other streaming kind
+            // pipelines an endless input without buffering, so it is never flagged.
             return RelNodeCorpus.everyKind().stream()
                     .filter(node -> node.materializationMode() == MaterializationMode.STREAM)
+                    .filter(node -> !(node instanceof com.darkcollective.relix.ast.RollNode))
                     .map(node -> DynamicTest.dynamicTest(node.getClass().getSimpleName(), () ->
                             assertThat(BoundednessChecker.check(node, ALL_UNBOUNDED))
                                     .as("%s streams, so it may consume an endless input",
                                             node.getClass().getSimpleName())
                                     .isEmpty()));
+        }
+
+        @Test
+        @DisplayName("ROLL streams its output but is flagged over an endless face set")
+        void rollRequiresBoundedFaces() {
+            assertThat(BoundednessChecker.check(AstBuilders.roll(RelNodeCorpus.LEFT), ALL_UNBOUNDED))
+                    .as("ROLL buffers its faces, so an unbounded face set must be flagged")
+                    .isNotEmpty();
         }
 
         @Test

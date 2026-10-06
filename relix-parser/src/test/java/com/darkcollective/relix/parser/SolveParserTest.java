@@ -16,6 +16,9 @@
 package com.darkcollective.relix.parser;
 
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Optional;
 import com.darkcollective.relix.ast.*;
 import com.darkcollective.relix.ast.internal.*;
 
@@ -64,12 +67,117 @@ final class SolveParserTest extends ParserTestSupport {
     @Test
     void capturesBothSides() {
         SolveNode node = (SolveNode) parse("SOLVE x = y (R)");
-        org.assertj.core.api.Assertions.assertThat(node.left())
+        org.assertj.core.api.Assertions.assertThat(node.equations().getFirst().left())
                 .isInstanceOfSatisfying(AttributeOperand.class,
                         a -> org.assertj.core.api.Assertions.assertThat(a.name()).isEqualTo("x"));
-        org.assertj.core.api.Assertions.assertThat(node.right())
+        org.assertj.core.api.Assertions.assertThat(node.equations().getFirst().right())
                 .isInstanceOfSatisfying(AttributeOperand.class,
                         a -> org.assertj.core.api.Assertions.assertThat(a.name()).isEqualTo("y"));
+    }
+
+    // ─── Systems ────────────────────────────────────────────────────────────
+
+    @Test
+    void parsesABracedSystem() {
+        assertParsesTo("SOLVE { total = a + b, diff = a - b } (Pairs)",
+                solve(List.of(
+                        equation(attr("total"),
+                                arith(attr("a"), ArithmeticOperator.PLUS, attr("b"))),
+                        equation(attr("diff"),
+                                arith(attr("a"), ArithmeticOperator.MINUS, attr("b")))),
+                        rel("Pairs")));
+    }
+
+    @Test
+    void oneBracedEquationIsThePlainForm() {
+        assertParsesTo("SOLVE { x = y } (R)", solve(attr("x"), attr("y"), rel("R")));
+    }
+
+    @Test
+    void prettyPrintsASystemInBraces() {
+        RelNode system = solve(List.of(
+                        equation(attr("x"), attr("y")),
+                        equation(attr("u"), arith(attr("v"), ArithmeticOperator.MULTIPLY, num("2")))),
+                rel("R"));
+        assertPrettyPrints(system, "SOLVE { x = y, u = v * 2 } (R)");
+        assertParsesTo(system.prettyPrint(), system);
+    }
+
+    @Test
+    void parsesPerKeysAfterOneEquation() {
+        assertParsesTo("SOLVE y = a * x PER series, run (Points)",
+                solve(List.of(equation(attr("y"),
+                                arith(attr("a"), ArithmeticOperator.MULTIPLY, attr("x")))),
+                        List.of("series", "run"), rel("Points")));
+    }
+
+    @Test
+    void parsesPerKeysAfterASystem() {
+        RelNode fitted = solve(List.of(equation(attr("x"), attr("y")), equation(attr("u"), attr("v"))),
+                List.of("g"), rel("R"));
+        assertParsesTo("SOLVE { x = y, u = v } PER g (R)", fitted);
+        assertPrettyPrints(fitted, "SOLVE { x = y, u = v } PER g (R)");
+        assertParsesTo(fitted.prettyPrint(), fitted);
+    }
+
+    @Test
+    void parsesTheIterationLimits() {
+        RelNode limited = solve(List.of(equation(attr("area"),
+                        arith(attr("side"), ArithmeticOperator.MULTIPLY, attr("side")))),
+                List.of("shape"), Optional.of(new java.math.BigDecimal("0.000001")), Optional.of(50),
+                rel("Squares"));
+        assertParsesTo("SOLVE area = side * side PER shape WITHIN 0.000001 MAX 50 ROUNDS (Squares)",
+                limited);
+        assertPrettyPrints(limited,
+                "SOLVE area = side * side PER shape WITHIN 0.000001 MAX 50 ROUNDS (Squares)");
+        assertParsesTo(limited.prettyPrint(), limited);
+    }
+
+    @Test
+    void parsesEitherLimitAlone() {
+        RelNode within = solve(List.of(equation(attr("x"), attr("y"))), List.of(),
+                Optional.of(new java.math.BigDecimal("0.01")), Optional.empty(), rel("R"));
+        assertParsesTo("SOLVE x = y WITHIN 0.01 (R)", within);
+        RelNode capped = solve(List.of(equation(attr("x"), attr("y"))), List.of(),
+                Optional.empty(), Optional.of(7), rel("R"));
+        assertParsesTo("SOLVE x = y MAX 7 ROUNDS (R)", capped);
+    }
+
+    @Test
+    void failsOnAZeroTolerance() {
+        assertParseError("SOLVE x = y WITHIN 0 (R)").hasMessageContaining("greater than 0");
+    }
+
+    @Test
+    void failsOnAZeroRoundCap() {
+        assertParseError("SOLVE x = y MAX 0 ROUNDS (R)")
+                .hasMessageContaining("A SOLVE round count must be at least 1");
+    }
+
+    @Test
+    void failsOnAFractionalRoundCap() {
+        assertParseError("SOLVE x = y MAX 2.5 ROUNDS (R)")
+                .hasMessageContaining("A SOLVE round count must be a whole number");
+    }
+
+    @Test
+    void failsOnACapWithoutRounds() {
+        assertParseError("SOLVE x = y MAX 5 (R)").hasMessageContaining("'ROUNDS'");
+    }
+
+    @Test
+    void failsOnPerWithoutAKey() {
+        assertParseError("SOLVE x = y PER (R)").hasMessageContaining("PER");
+    }
+
+    @Test
+    void failsOnAnUnclosedSystem() {
+        assertParseError("SOLVE { x = y (R)").hasMessageContaining("'}'");
+    }
+
+    @Test
+    void failsOnAnEmptySystem() {
+        assertParseError("SOLVE { } (R)");
     }
 
     // ─── Pretty printing ────────────────────────────────────────────────────

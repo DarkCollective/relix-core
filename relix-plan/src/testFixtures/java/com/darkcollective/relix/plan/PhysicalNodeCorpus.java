@@ -19,6 +19,7 @@ import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.AggregateOperator;
 import com.darkcollective.relix.ast.AllenRelation;
 import com.darkcollective.relix.ast.ComparisonOperator;
+import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ConsolidationFunction;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.ObjectiveSense;
@@ -40,6 +41,7 @@ import com.darkcollective.relix.symbol.relation.InlineRelationSymbol;
 
 import java.time.Duration;
 import java.util.List;
+import com.darkcollective.relix.plan.HttpScanPushdown;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -138,7 +140,9 @@ public final class PhysicalNodeCorpus {
                 new PhysicalNode.Scan(SCHEMA, SOURCE,
                         Optional.of(produceBound("x", ComparisonOperator.LESS,
                                 num("100"))),
-                        Optional.of("T")),
+                        Optional.of("T"),
+                        Optional.of(new HttpScanPushdown(Optional.of(10L),
+                                java.util.Map.of("x", "1")))),
                 new PhysicalNode.Empty(SCHEMA),
                 new PhysicalNode.PushedScan(SCHEMA, "jdbc", "db", "SELECT x FROM t",
                         Ordering.of(List.of(sortKey(X, SortDirection.ASC)))),
@@ -175,6 +179,8 @@ public final class PhysicalNodeCorpus {
                 new PhysicalNode.Limit(SCHEMA, Optional.of(5L), 10L, LEFT),
                 new PhysicalNode.Sort(SCHEMA,
                         List.of(sortKey(X, SortDirection.DESC)), LEFT),
+                new PhysicalNode.Shuffle(SCHEMA, Optional.of(7L), LEFT),
+                new PhysicalNode.Roll(SCHEMA, Optional.of(7L), LEFT),
                 new PhysicalNode.Aggregate(SCHEMA, List.of(GroupingKey.column("x")),
                         List.of(AggregateFunction.simple(AggregateOperator.SUM, "x")),
                         true, SORTED_LEFT),
@@ -198,7 +204,8 @@ public final class PhysicalNodeCorpus {
                 new PhysicalNode.ReservoirSample(SCHEMA, 100L, Optional.of(7L), LEFT),
 
                 // ── solver ──────────────────────────────────────────────────────
-                new PhysicalNode.Solve(SCHEMA, X, ONE, LEFT),
+                new PhysicalNode.Solve(SCHEMA, List.of(AstBuilders.equation(X, ONE)), List.of("k"),
+                        Optional.of(new java.math.BigDecimal("0.001")), Optional.of(10), LEFT),
                 new PhysicalNode.Optimize(SCHEMA, ObjectiveSense.MAXIMIZE, X,
                         List.of(constraint(X, ComparisonOperator.LESS_EQUAL, 10d)),
                         List.of("x"), Optional.of(allocation(0d, 1d, "share")), LEFT),

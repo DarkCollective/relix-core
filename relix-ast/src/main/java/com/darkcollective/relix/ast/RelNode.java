@@ -58,6 +58,8 @@ public sealed interface RelNode permits
         CompositionNode,
         AggregationNode,
         SortNode,
+        ShuffleNode,
+        RollNode,
         LimitNode,
         DistinctNode,
         UnnestNode,
@@ -98,7 +100,8 @@ public sealed interface RelNode permits
      *   <li>{@link MaterializationMode#SORTED} — {@link SortNode}</li>
      *   <li>{@link MaterializationMode#BAG} — {@link AggregationNode},
      *       {@link UniversalNode}, {@link UnionAllNode}, {@link DivisionNode},
-     *       {@link FullOuterJoinNode}</li>
+     *       {@link FullOuterJoinNode}, and a {@link SolveNode} that fits {@code PER}
+     *       group</li>
      *   <li>{@link MaterializationMode#SET} — {@link UnionNode},
      *       {@link OuterUnionNode}, {@link IntersectionNode},
      *       {@link DifferenceNode}, {@link SymmetricDifferenceNode}</li>
@@ -110,9 +113,11 @@ public sealed interface RelNode permits
     default MaterializationMode materializationMode() {
         return switch (this) {
             case SortNode          ignored -> MaterializationMode.SORTED;
+            case ShuffleNode       ignored -> MaterializationMode.BAG;
             case AggregationNode   ignored -> MaterializationMode.BAG;
             case UniversalNode     ignored -> MaterializationMode.BAG;
             case OptimizeNode      ignored -> MaterializationMode.BAG;
+            case SolveNode s when !s.groupingKeys().isEmpty() -> MaterializationMode.BAG;
             case TopKNode          ignored -> MaterializationMode.BAG;
             case ReservoirSampleNode ignored -> MaterializationMode.BAG;
             case UnionAllNode      ignored -> MaterializationMode.BAG;
@@ -166,6 +171,8 @@ public sealed interface RelNode permits
             case RenameNode n          -> List.of(n.input());
             case AggregationNode n     -> List.of(n.input());
             case SortNode n            -> List.of(n.input());
+            case ShuffleNode n         -> List.of(n.input());
+            case RollNode n            -> List.of(n.input());
             case LimitNode n           -> List.of(n.input());
             case DistinctNode n        -> List.of(n.input());
             case UnnestNode n          -> List.of(n.input());
@@ -249,6 +256,15 @@ public sealed interface RelNode permits
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n : new SortNode(n.sortSpecs(), in, n.location());
             }
+            case ShuffleNode n -> {
+                RelNode in = f.apply(n.input());
+                yield in == n.input() ? n : new ShuffleNode(n.seed(), in, n.location());
+            }
+            case RollNode n -> {
+                RelNode in = f.apply(n.input());
+                yield in == n.input() ? n
+                        : new RollNode(n.seed(), n.weight(), in, n.location());
+            }
             case LimitNode n -> {
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n : new LimitNode(n.offset(), n.count(), in, n.location());
@@ -311,7 +327,8 @@ public sealed interface RelNode permits
             case SolveNode n -> {
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n
-                        : new SolveNode(n.left(), n.right(), in, n.location());
+                        : new SolveNode(n.equations(), n.groupingKeys(), n.tolerance(),
+                                n.maxRounds(), in, n.location());
             }
             case OptimizeNode n -> {
                 RelNode in = f.apply(n.input());

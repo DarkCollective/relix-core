@@ -54,9 +54,12 @@ import com.darkcollective.relix.ast.RelationFunctionCall;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.RenameNode;
 import com.darkcollective.relix.ast.ReservoirSampleNode;
+import com.darkcollective.relix.ast.RollNode;
 import com.darkcollective.relix.ast.SampleNode;
+import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.SessionizeNode;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SortSpecification;
@@ -215,10 +218,10 @@ public final class RelNodeOperands {
                 n.boundSource().ifPresent(onOperand);
                 n.boundTarget().ifPresent(onOperand);
             }
-            case SolveNode n -> {
-                onOperand.accept(n.left());
-                onOperand.accept(n.right());
-            }
+            case SolveNode n -> n.equations().forEach(e -> {
+                onOperand.accept(e.left());
+                onOperand.accept(e.right());
+            });
             case OptimizeNode n -> {
                 onOperand.accept(n.objective());
                 n.constraints().forEach(c -> onOperand.accept(c.expr()));
@@ -238,6 +241,14 @@ public final class RelNodeOperands {
             // `usesSystemState`, which is where a sampling node's own volatility lives.
             case SampleNode ignored -> { }
             case ReservoirSampleNode ignored -> { }
+
+            // SHUFFLE carries only an optional long seed — no expressions. Its
+            // unseeded volatility lives in `usesSystemState`, like the sampling nodes.
+            case ShuffleNode ignored -> { }
+
+            // ROLL carries an optional long seed (no expression) and an optional
+            // per-face weight expression, when it is a weighted (loaded) draw.
+            case RollNode n -> n.weight().ifPresent(onOperand);
         }
     }
 
@@ -261,6 +272,8 @@ public final class RelNodeOperands {
         return switch (node) {
             case SampleNode n          -> n.seed().isEmpty();
             case ReservoirSampleNode n -> n.seed().isEmpty();
+            case ShuffleNode n         -> n.seed().isEmpty();
+            case RollNode n            -> n.seed().isEmpty();
 
             case RelationNode ignored -> false;
             case RelationFunctionCall ignored -> false;
@@ -376,8 +389,18 @@ public final class RelNodeOperands {
             case PivotNode ignored -> node;
             case SampleNode ignored -> node;
             case ReservoirSampleNode ignored -> node;
+            case ShuffleNode ignored -> node;
 
             // ── operators carrying expressions ────────────────────────────────────
+            case RollNode n -> {
+                if (n.weight().isEmpty()) {
+                    yield n;
+                }
+                Operand weight = onOperand.apply(n.weight().get());
+                yield weight == n.weight().get() ? n
+                        : new RollNode(n.seed(), java.util.Optional.of(weight),
+                                n.input(), n.location());
+            }
             case RelationNode n -> {
                 if (n.produceBound().isEmpty()) {
                     yield n;
@@ -482,10 +505,15 @@ public final class RelNodeOperands {
                                 source, target, n.location());
             }
             case SolveNode n -> {
-                Operand left  = onOperand.apply(n.left());
-                Operand right = onOperand.apply(n.right());
-                yield left == n.left() && right == n.right() ? n
-                        : new SolveNode(left, right, n.input(), n.location());
+                List<SolveEquation> equations = mapList(n.equations(), e -> {
+                    Operand left  = onOperand.apply(e.left());
+                    Operand right = onOperand.apply(e.right());
+                    return left == e.left() && right == e.right() ? e
+                            : new SolveEquation(left, right);
+                });
+                yield equations == n.equations() ? n
+                        : new SolveNode(equations, n.groupingKeys(), n.tolerance(),
+                                n.maxRounds(), n.input(), n.location());
             }
             case OptimizeNode n -> {
                 Operand objective = onOperand.apply(n.objective());

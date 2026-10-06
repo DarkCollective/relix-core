@@ -442,9 +442,22 @@ public final class AstLocations {
         }
 
         @Override
+        public RelNode visit(ShuffleNode node) {
+            return new ShuffleNode(node.seed(), node.input().accept(this), SourceLocation.UNKNOWN);
+        }
+
+        @Override
+        public RelNode visit(RollNode node) {
+            return new RollNode(node.seed(), node.weight().map(AstLocations::stripLocations),
+                    node.input().accept(this), SourceLocation.UNKNOWN);
+        }
+
+        @Override
         public RelNode visit(SolveNode node) {
-            return new SolveNode(stripLocations(node.left()), stripLocations(node.right()),
-                    node.input().accept(this));
+            return new SolveNode(node.equations().stream()
+                    .map(e -> AstBuilders.equation(stripLocations(e.left()), stripLocations(e.right())))
+                    .toList(), node.groupingKeys(), node.tolerance(), node.maxRounds(),
+                    node.input().accept(this), SourceLocation.UNKNOWN);
         }
 
         @Override

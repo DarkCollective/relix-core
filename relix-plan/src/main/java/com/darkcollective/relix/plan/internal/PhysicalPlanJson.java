@@ -17,6 +17,7 @@ package com.darkcollective.relix.plan.internal;
 
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -281,8 +282,25 @@ public final class PhysicalPlanJson {
             }
 
             case PhysicalNode.Solve s -> {
-                w.name("left").value(s.left().accept(OPND));
-                w.name("right").value(s.right().accept(OPND));
+                w.name("equations").beginArray();
+                for (SolveEquation e : s.equations()) {
+                    w.beginObject();
+                    w.name("left").value(e.left().accept(OPND));
+                    w.name("right").value(e.right().accept(OPND));
+                    w.endObject();
+                }
+                w.endArray();
+                w.name("groupingKeys").beginArray();
+                for (String key : s.groupingKeys()) {
+                    w.value(key);
+                }
+                w.endArray();
+                if (s.tolerance().isPresent()) {
+                    w.name("tolerance").value(s.tolerance().get().toPlainString());
+                }
+                if (s.maxRounds().isPresent()) {
+                    w.name("maxRounds").value(s.maxRounds().get());
+                }
             }
 
             case PhysicalNode.Optimize o -> {
@@ -363,6 +381,13 @@ public final class PhysicalPlanJson {
 
             case PhysicalNode.ReservoirSample s -> {
                 w.name("count").value(s.count());
+                s.seed().ifPresent(seed -> w.name("seed").value(seed));
+            }
+
+            case PhysicalNode.Shuffle s -> s.seed().ifPresent(seed -> w.name("seed").value(seed));
+
+            case PhysicalNode.Roll s -> {
+                s.weight().ifPresent(weight -> w.name("weight").value(weight.accept(OPND)));
                 s.seed().ifPresent(seed -> w.name("seed").value(seed));
             }
 

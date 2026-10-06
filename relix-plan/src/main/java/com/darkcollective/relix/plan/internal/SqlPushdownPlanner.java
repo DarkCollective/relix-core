@@ -312,9 +312,12 @@ final class SqlPushdownPlanner implements PushdownRenderer {
                 || p.windowApplied) {
             return Optional.empty();
         }
+        // A select item is a value, rendered plainly; a condition inside one — the test of
+        // an IIf — compares as a WHERE clause would.
+        ColumnRenderer items = ColumnRenderer.withComparing(p.renderer, p.comparing, p.ordering);
         List<String> selectList = new ArrayList<>(node.attributes().size());
         for (ProjectedAttribute attr : node.attributes()) {
-            Optional<String> sql = SqlExpressions.operand(attr.expression(), p.renderer, p.dialect, functions);
+            Optional<String> sql = SqlExpressions.operand(attr.expression(), items, p.dialect, functions);
             if (sql.isEmpty()) {
                 return Optional.empty();
             }
@@ -430,7 +433,8 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             // keeps the collation out of SQL that has no use for it.
             ColumnRenderer cols = ORDERING_AGGREGATES.contains(aggregate.operator())
                     ? p.ordering : p.renderer;
-            Optional<String> expr = aggregateSql(aggregate, cols);
+            Optional<String> expr =
+                    aggregateSql(aggregate.operator(), aggregate.argument(), cols, p.dialect);
             if (expr.isEmpty()) {
                 return Optional.empty();
             }
@@ -708,12 +712,11 @@ final class SqlPushdownPlanner implements PushdownRenderer {
      * nested value and {@code ARGMAX}/{@code ARGMIN} are what SQL needs a window
      * function for, so none of the three supplies a spelling and all three fall back to
      * in-engine aggregation.
+     *
+     * <p>Both the argument and the reduction are spelled for the connection's dialect,
+     * and the grouped and window forms both come here, so a function folds inside an
+     * aggregate exactly where it folds outside one.
      */
-    private Optional<String> aggregateSql(AggregateFunction aggregate, ColumnRenderer cols) {
-        return aggregateSql(aggregate.operator(), aggregate.argument(), cols, Dialect.GENERIC);
-    }
-
-    /** As above, for a given dialect — the window form renders the same call. */
     private Optional<String> aggregateSql(AggregateOperator operator, Operand argument,
                                           ColumnRenderer cols, Dialect dialect) {
         Optional<String> rendered = SqlExpressions.operand(argument, cols, dialect, functions);

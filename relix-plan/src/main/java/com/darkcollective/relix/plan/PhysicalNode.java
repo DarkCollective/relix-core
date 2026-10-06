@@ -16,6 +16,7 @@
 package com.darkcollective.relix.plan;
 
 import com.darkcollective.relix.plan.internal.Planner;
+import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.ConsolidationFunction;
@@ -149,6 +150,14 @@ public sealed interface PhysicalNode {
                 PhysicalNode in = f.apply(n.input());
                 yield in == n.input() ? n : new Sort(n.schema(), n.sortSpecs(), in);
             }
+            case Shuffle n -> {
+                PhysicalNode in = f.apply(n.input());
+                yield in == n.input() ? n : new Shuffle(n.schema(), n.seed(), in);
+            }
+            case Roll n -> {
+                PhysicalNode in = f.apply(n.input());
+                yield in == n.input() ? n : new Roll(n.schema(), n.seed(), n.weight(), in);
+            }
             case Aggregate n -> {
                 PhysicalNode in = f.apply(n.input());
                 yield in == n.input() ? n : new Aggregate(n.schema(), n.groupingKeys(), n.aggregates(), n.streaming(), in);
@@ -183,7 +192,8 @@ public sealed interface PhysicalNode {
             }
             case Solve n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Solve(n.schema(), n.left(), n.right(), in);
+                yield in == n.input() ? n : new Solve(n.schema(), n.equations(), n.groupingKeys(),
+                        n.tolerance(), n.maxRounds(), in);
             }
             case Optimize n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -329,7 +339,8 @@ public sealed interface PhysicalNode {
      * @param qualifier    the name the query referenced the relation by, when known
      */
     record Scan(Schema schema, RelationSymbol source,
-                Optional<ProduceBound> produceBound, Optional<String> qualifier) implements PhysicalNode {
+                Optional<ProduceBound> produceBound, Optional<String> qualifier,
+                Optional<HttpScanPushdown> httpPushdown) implements PhysicalNode {
 
         /** Scan without a generator production bound. */
         public Scan(Schema schema, RelationSymbol source) {
@@ -339,6 +350,17 @@ public sealed interface PhysicalNode {
         /** Scan under no particular qualifier. */
         public Scan(Schema schema, RelationSymbol source, Optional<ProduceBound> produceBound) {
             this(schema, source, produceBound, Optional.empty());
+        }
+
+        /** Scan with no HTTP request pushdown folded into it. */
+        public Scan(Schema schema, RelationSymbol source,
+                    Optional<ProduceBound> produceBound, Optional<String> qualifier) {
+            this(schema, source, produceBound, qualifier, Optional.empty());
+        }
+
+        /** {@return a copy of this scan with {@code pushdown} folded into its request} */
+        public Scan withHttpPushdown(HttpScanPushdown pushdown) {
+            return new Scan(schema, source, produceBound, qualifier, Optional.of(pushdown));
         }
 
         @Override public List<PhysicalNode> children() { return List.of(); }
@@ -662,6 +684,40 @@ public sealed interface PhysicalNode {
     }
 
     /**
+     * Random permutation (SHUFFLE): buffers the input and returns every row exactly
+     * once in a uniformly random order (Fisher–Yates).  When {@code seed} is present
+     * the permutation is deterministic.  The output schema equals the input schema;
+     * it delivers no ordering (the default {@link Ordering#none()}).
+     */
+    record Shuffle(Schema schema, java.util.Optional<Long> seed,
+                   PhysicalNode input) implements PhysicalNode {
+        @Override public List<PhysicalNode> children() { return List.of(input); }
+    }
+
+    /**
+     * Endless uniform draw with replacement (ROLL): buffers the finite face set
+     * {@code input} and then emits an <b>unbounded</b> stream of independent uniform
+     * draws from it (a die roll).  When {@code seed} is present the sequence of draws
+     * is deterministic.  The output schema equals the input schema; it delivers no
+     * ordering.  Streaming output over a buffered (necessarily bounded) input — a
+     * plan-time check rejects an unbounded face set.
+     *
+     * <p>When {@code weight} is present each face is drawn with probability proportional
+     * to that non-negative {@code NUMBER} expression over the face's columns (a loaded
+     * die); when absent, every face is equally likely.
+     */
+    record Roll(Schema schema, java.util.Optional<Long> seed,
+                java.util.Optional<Operand> weight, PhysicalNode input)
+            implements PhysicalNode {
+        @Override public List<PhysicalNode> children() { return List.of(input); }
+
+        /** An unweighted (uniform) roll — the pre-weighting shape. */
+        Roll(Schema schema, java.util.Optional<Long> seed, PhysicalNode input) {
+            this(schema, seed, java.util.Optional.empty(), input);
+        }
+    }
+
+    /**
      * Aggregation (γ) — groups by {@code groupingKeys} and reduces each group
      * with {@code aggregates}.  When {@code streaming} is set the planner has proven
      * the input delivers an ordering grouping the rows by the grouping keys, so the executor
@@ -794,12 +850,19 @@ public sealed interface PhysicalNode {
     }
 
     /**
-     * Goal-seek (SOLVE): for each row of {@code input}, fills the single NULL
-     * column participating in the equation {@code left = right} by inverting the
-     * arithmetic.  Rows without exactly one NULL participating column pass through
-     * unchanged.  Output schema equals the input schema.
+     * Goal-seek (SOLVE): for each row of {@code input}, fills the NULL columns
+     * participating in {@code equations} — one equation by inverting its arithmetic,
+     * several linear ones by elimination, anything else by Newton's method.  With
+     * {@code groupingKeys} the input is buffered and the unknowns are fitted across each
+     * group by least squares.  {@code tolerance} and {@code maxRounds} govern the
+     * iteration, empty for the engine's defaults.  Rows that cannot be posed pass
+     * through unchanged.  Output schema equals the input schema.
+     *
+     * <p>The equations are the planned form: every call to a user-defined function
+     * has been expanded into the arithmetic of its body.
      */
-    record Solve(Schema schema, Operand left, Operand right,
+    record Solve(Schema schema, List<SolveEquation> equations, List<String> groupingKeys,
+                 Optional<java.math.BigDecimal> tolerance, Optional<Integer> maxRounds,
                  PhysicalNode input) implements PhysicalNode {
         @Override public List<PhysicalNode> children() { return List.of(input); }
     }

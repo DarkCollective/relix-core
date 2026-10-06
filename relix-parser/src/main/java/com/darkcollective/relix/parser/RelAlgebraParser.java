@@ -532,6 +532,8 @@ public final class RelAlgebraParser {
             case ITERATE  -> parseIterate();
             case FORALL   -> parseUniversal();
             case SAMPLE   -> parseSample();
+            case SHUFFLE  -> parseShuffle();
+            case ROLL     -> parseRoll();
             case SOLVE    -> parseSolve();
             case OPTIMIZE -> parseOptimize();
             case TOP      -> parseTopK();
@@ -1140,7 +1142,7 @@ public final class RelAlgebraParser {
 
     private IterateStop parseIterateStop() {
         if (matchWord("ROUNDS")) {
-            return new IterateStop.Rounds(parseRoundCount(0));
+            return new IterateStop.Rounds(parseRoundCount(0, "ITERATE"));
         }
         if (!matchWord("UNTIL")) {
             throw error(current, "Expected 'ROUNDS n' or 'UNTIL …' after ITERATE (base, step)");
@@ -1172,24 +1174,25 @@ public final class RelAlgebraParser {
     private int parseRoundCap() {
         expect(TokenType.MAX,
                 "Expected 'MAX n ROUNDS' — an ITERATE … UNTIL needs a round cap");
-        int n = parseRoundCount(1);
+        int n = parseRoundCount(1, "ITERATE");
         if (!matchWord("ROUNDS")) {
             throw error(current, "Expected 'ROUNDS' after 'MAX " + n + "'");
         }
         return n;
     }
 
-    private int parseRoundCount(int least) {
+    private int parseRoundCount(int least, String operator) {
         Token tok = expect(TokenType.NUMBER, "Expected a round count");
+        String subject = ("AEIOU".indexOf(operator.charAt(0)) >= 0 ? "An " : "A ") + operator;
         int n;
         try {
             n = Integer.parseInt(tok.lexeme());
         } catch (NumberFormatException e) {
-            throw error(tok, "An ITERATE round count must be a whole number, got '"
+            throw error(tok, subject + " round count must be a whole number, got '"
                     + tok.lexeme() + "'");
         }
         if (n < least) {
-            throw error(tok, "An ITERATE round count must be at least " + least + ", got " + n);
+            throw error(tok, subject + " round count must be at least " + least + ", got " + n);
         }
         return n;
     }
@@ -1273,6 +1276,47 @@ public final class RelAlgebraParser {
         RelNode input = parseParenthesizedRelation("Expected '(' after the sampling probability" +
                 (seed.isPresent() ? " (or after 'SEED <n>')" : ""));
         return new SampleNode(probability, seed, input, loc(opTok));
+    }
+
+    /**
+     * Parses a random-permutation operator: {@code SHUFFLE [SEED <integer>] (R)}.
+     * Keyword-only (no glyph), sharing the {@code SEED} clause with the sampling
+     * operators. The current token is the {@code SHUFFLE} keyword.
+     */
+    private RelNode parseShuffle() {
+        Token opTok = current;
+        expect(TokenType.SHUFFLE, "Expected 'SHUFFLE'");
+        java.util.Optional<Long> seed = parseSeedClause();
+        RelNode input = parseParenthesizedRelation("Expected '(' after 'SHUFFLE'" +
+                (seed.isPresent() ? " (or after 'SEED <n>')" : ""));
+        return new ShuffleNode(seed, input, loc(opTok));
+    }
+
+    /**
+     * Parses an endless-draw operator:
+     * {@code ROLL [BY <weightExpr>] [SEED <integer>] (R)} — a die roll over the faces
+     * {@code R}, uniform by default or weighted by the {@code BY} expression. Keyword-only
+     * (no glyph), sharing the {@code SEED} clause with the sampling operators. The current
+     * token is the {@code ROLL} keyword.
+     *
+     * <p>The weight is a full scalar expression over the face columns. A bare column
+     * weight followed by the face relation's {@code (} is disambiguated from a function
+     * call by the adjacency rule — a call requires the {@code (} to abut the name — so
+     * {@code ROLL BY weight (Loot)} reads {@code weight} as the key, exactly as
+     * {@code τ name (Users)} does.
+     */
+    private RelNode parseRoll() {
+        Token opTok = current;
+        expect(TokenType.ROLL, "Expected 'ROLL'");
+        java.util.Optional<Operand> weight = java.util.Optional.empty();
+        if (match(TokenType.BY)) {
+            weight = java.util.Optional.of(parseOperand());
+        }
+        java.util.Optional<Long> seed = parseSeedClause();
+        RelNode input = parseParenthesizedRelation("Expected '(' after 'ROLL'" +
+                (weight.isPresent() || seed.isPresent()
+                        ? " (or after its 'BY'/'SEED' clause)" : ""));
+        return new RollNode(seed, weight, input, loc(opTok));
     }
 
     /**
@@ -1558,20 +1602,55 @@ public final class RelAlgebraParser {
     }
 
     /**
-     * Parses a goal-seek operator: {@code SOLVE left = right (R)}, e.g.
-     * {@code SOLVE total = principal * rate (Loans)}.  Both sides are arithmetic
-     * operands; the equation is validated (invertible vocabulary, single
-     * occurrence per column) during semantic analysis.  The current token is the
-     * SOLVE keyword.
+     * Parses a goal-seek operator:
+     * {@code SOLVE left = right [PER k, …] [WITHIN ε] [MAX n ROUNDS] (R)}, e.g.
+     * {@code SOLVE total = principal * rate (Loans)}, or a system of equations in
+     * braces, {@code SOLVE &#123; a = b, c = d &#125; (R)}, separated by commas as every
+     * list inside an expression is — {@code ;} ends a statement. The sides are
+     * arithmetic operands; the equations are validated during semantic analysis. A
+     * {@code &#123;} cannot open a struct literal here, a struct never being a number.
+     * The current token is the SOLVE keyword.
      */
     private SolveNode parseSolve() {
         Token opTok = current;
         expect(TokenType.SOLVE, "Expected 'SOLVE'");
+        List<SolveEquation> equations = new ArrayList<>();
+        if (match(TokenType.LBRACE)) {
+            do {
+                equations.add(parseSolveEquation());
+            } while (match(TokenType.COMMA));
+            expect(TokenType.RBRACE, "Expected ',' or '}' after a SOLVE equation");
+        } else {
+            equations.add(parseSolveEquation());
+        }
+        List<String> keys = match(TokenType.PER)
+                ? parseIterateNames("Expected a key column name after 'PER'")
+                : List.of();
+        Optional<java.math.BigDecimal> tolerance = Optional.empty();
+        if (match(TokenType.WITHIN)) {
+            Token tolTok = expect(TokenType.NUMBER, "Expected a tolerance after 'WITHIN'");
+            java.math.BigDecimal tol = new java.math.BigDecimal(tolTok.lexeme());
+            if (tol.signum() <= 0) {
+                throw error(tolTok, "A SOLVE tolerance must be greater than 0, got " + tolTok.lexeme());
+            }
+            tolerance = Optional.of(tol);
+        }
+        Optional<Integer> maxRounds = Optional.empty();
+        if (match(TokenType.MAX)) {
+            int n = parseRoundCount(1, "SOLVE");
+            if (!matchWord("ROUNDS")) {
+                throw error(current, "Expected 'ROUNDS' after 'MAX " + n + "'");
+            }
+            maxRounds = Optional.of(n);
+        }
+        RelNode input = parseParenthesizedRelation("Expected '(' after the SOLVE equation");
+        return new SolveNode(equations, keys, tolerance, maxRounds, input, loc(opTok));
+    }
+
+    private SolveEquation parseSolveEquation() {
         Operand left = parseOperand();
         expect(TokenType.EQUAL, "Expected '=' between the two sides of the SOLVE equation");
-        Operand right = parseOperand();
-        RelNode input = parseParenthesizedRelation("Expected '(' after the SOLVE equation");
-        return new SolveNode(left, right, input, loc(opTok));
+        return new SolveEquation(left, parseOperand());
     }
 
     /**
@@ -2181,25 +2260,54 @@ public final class RelAlgebraParser {
         }
     }
 
+    /**
+     * True when the parenthesis at {@code current} opens a predicate rather than an
+     * arithmetic group: a comparison, logical, membership or LIKE operator appears
+     * inside it before it closes.
+     *
+     * <p>An operator inside a function call's own argument list does not count. The
+     * call parses its arguments itself, and an argument may be a condition, so in
+     * {@code 4 * (a + Iif(b = 1, 1, 0))} the {@code =} belongs to {@code Iif} and the
+     * group around it is arithmetic. A call's parenthesis is the one written directly
+     * against a name, which is the rule {@link #parseOperandFromNameToken} applies.
+     * An operator inside a plain nested group still counts, so {@code ((a > b))} is
+     * a predicate.
+     */
     private boolean isParenthesizedPredicate() {
         int depth = 0;
+        int callDepth = 0;   // how many of the open parentheses belong to a call
+        Deque<Boolean> opened = new ArrayDeque<>();
 
         for (int offset = 0; ; offset++) {
             Token token = peek(offset);
 
             if (token.type() == TokenType.LPAREN) {
+                boolean call = offset > 0 && opensCall(peek(offset - 1), token);
+                opened.push(call);
+                if (call) callDepth++;
                 depth++;
             } else if (token.type() == TokenType.RPAREN) {
+                if (opened.pop()) callDepth--;
                 depth--;
                 if (depth == 0) {
                     return false;
                 }
-            } else if (depth > 0 && (isComparison(token.type()) || isLogicalOperator(token.type()) || token.type() == TokenType.ELEMENT_OF || token.type() == TokenType.NOT_ELEMENT_OF || token.type() == TokenType.LIKE)) {
+            } else if (depth > 0 && callDepth == 0 && (isComparison(token.type()) || isLogicalOperator(token.type()) || token.type() == TokenType.ELEMENT_OF || token.type() == TokenType.NOT_ELEMENT_OF || token.type() == TokenType.LIKE)) {
                 return true;
             } else if (token.type() == TokenType.EOF) {
                 return false;
             }
         }
+    }
+
+    /**
+     * True when {@code paren} is written directly against {@code before}, a name: a
+     * call. An operator keyword is a name too, but one inside the group has already
+     * decided the lookahead before its parenthesis is reached.
+     */
+    private static boolean opensCall(Token before, Token paren) {
+        return isNameToken(before)
+                && before.column() + before.lexeme().length() == paren.column();
     }
 
     // =========================================================================
