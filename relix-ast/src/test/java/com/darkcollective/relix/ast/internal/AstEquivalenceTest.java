@@ -762,4 +762,12 @@ final class AstEquivalenceTest {
                     .as("negation differs").isFalse();
         }
     }
+    @Test
+    @DisplayName("parameters are equivalent by name ignoring case, and to nothing else")
+    void parameters() {
+        assertThat(AstEquivalence.equivalent(param("id"), param("ID"))).isTrue();
+        assertThat(AstEquivalence.equivalent(param("id"), param("key"))).isFalse();
+        assertThat(AstEquivalence.equivalent(param("id"), attr("id"))).isFalse();
+    }
+
 }

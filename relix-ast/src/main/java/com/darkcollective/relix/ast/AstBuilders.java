@@ -108,6 +108,11 @@ public abstract class AstBuilders {
         return new NumberOperand(value);
     }
 
+    /** A bound query parameter, {@code $name}; {@code name} is given without the {@code $}. */
+    public static ParameterOperand param(String name) {
+        return new ParameterOperand(name);
+    }
+
     /** A string literal. */
     public static StringOperand str(String value) {
         return new StringOperand(value);

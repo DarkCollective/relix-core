@@ -359,4 +359,9 @@ final class MongoPushdownPlannerTest {
             assertThat(push(DOCS + "query { λ 5 (λ 3 (Docs)) };")).isEmpty();
         }
     }
+    @Test
+    @DisplayName("a σ over a bound parameter is not pushed: a pipeline has nowhere to bind it")
+    void parameterNotPushed() {
+        assertThat(push(DOCS + "query { σ id = $id (Docs) };")).isEmpty();
+    }
 }

@@ -15,10 +15,15 @@
  */
 package com.darkcollective.relix.processor.exec;
 
+import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.processor.internal.ExecutionContext;
 import com.darkcollective.relix.processor.Row;
+import com.darkcollective.relix.processor.internal.ArrayRow;
+import com.darkcollective.relix.symbol.Schema;
+import com.darkcollective.relix.value.Value;
 
+import java.util.List;
 import java.util.stream.Stream;
 
 /**
@@ -43,6 +48,8 @@ import java.util.stream.Stream;
 public final class PhysicalExecutor {
 
     private static final System.Logger LOG = System.getLogger(PhysicalExecutor.class.getName());
+
+    private static final Row EMPTY_ROW = ArrayRow.of(Schema.empty(), List.of());
 
     /** Child-execution seam handed to the operator-group executors so they can recurse. */
     private final ChildDispatch dispatch = this::execute;
@@ -105,6 +112,16 @@ public final class PhysicalExecutor {
         return ctx.work().meter(run(node, ctx));
     }
 
+    /**
+     * The values a pushed query's placeholders stand for, in order — read through the
+     * evaluator, so an unbound one fails exactly as it does in the engine.
+     */
+    private static List<Value> boundValues(List<String> names, EvalCtx ctx) {
+        return names.stream()
+                .map(name -> ctx.operandEval().evaluate(new ParameterOperand(name), EMPTY_ROW))
+                .toList();
+    }
+
     private Stream<Row> run(PhysicalNode node, EvalCtx ctx) {
         return switch (node) {
             case PhysicalNode.Scan s      -> leaf.executeScan(s, ctx);
@@ -112,7 +129,8 @@ public final class PhysicalExecutor {
             // unsatisfiable is not present in the physical plan at all.
             case PhysicalNode.Empty ignored     -> Stream.empty();
             case PhysicalNode.PushedScan s -> ctx.connector()
-                    .openQuery(s.connectorType(), s.connection(), s.nativeQuery(), s.schema());
+                    .openQuery(s.connectorType(), s.connection(), s.nativeQuery(), s.schema(),
+                            boundValues(s.parameters(), ctx));
             case PhysicalNode.Spool sp    -> spool.executeSpool(sp, ctx);
             case PhysicalNode.Select s    -> execute(s.input(), ctx)
                     .filter(row -> ctx.predicateEval().evaluate(s.predicate(), row));

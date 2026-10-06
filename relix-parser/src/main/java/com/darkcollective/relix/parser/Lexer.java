@@ -345,6 +345,7 @@ public final class Lexer {
             case '[' -> token(TokenType.LBRACKET, startIndex, startLine, startColumn);
             case ']' -> token(TokenType.RBRACKET, startIndex, startLine, startColumn);
             case ':' -> token(TokenType.COLON, startIndex, startLine, startColumn);
+            case '$' -> parameterToken(startIndex, startLine, startColumn);
             default -> {
                 if (isIdentifierStart(c)) {
                     yield identifierToken(startIndex, startLine, startColumn);
@@ -361,6 +362,26 @@ public final class Lexer {
                 );
             }
         };
+    }
+
+    /**
+     * Scans a bound parameter, {@code $name}: the {@code $} and an identifier with no
+     * space between them. The token's literal is the name without the {@code $}. A
+     * {@code $} not followed by an identifier is an error rather than a stray character,
+     * since a parameter is the one thing a {@code $} can begin.
+     */
+    private Token parameterToken(int startIndex, int startLine, int startColumn) {
+        if (isAtEnd() || !isIdentifierStart(peek())) {
+            throw new ParseException(
+                    "Expected a parameter name after '$'",
+                    input,
+                    new Token(TokenType.IDENTIFIER, "$", null, startLine, startColumn));
+        }
+        while (!isAtEnd() && isIdentifierPart(peek())) {
+            advance();
+        }
+        String lexeme = input.substring(startIndex, index);
+        return new Token(TokenType.PARAMETER, lexeme, lexeme.substring(1), startLine, startColumn);
     }
 
     private Token identifierToken(int startIndex, int startLine, int startColumn) {

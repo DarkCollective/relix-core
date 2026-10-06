@@ -523,6 +523,7 @@ factor            ::= "-" factor
                     | primary_operand
 
 primary_operand   ::= literal
+                    | bound_parameter
                     | function_call
                     | column_ref
                     | "(" operand ")"
@@ -541,6 +542,9 @@ argument          ::= operand
                     | predicate
 
 operand_name      ::= name - ( "TRUE" | "FALSE" | "DATE" | "TIME" | "TIMESTAMP" | "DURATION" )
+
+/* $id: a bound parameter, its value supplied when the query runs (PARAMETER). */
+bound_parameter   ::= PARAMETER
 
 literal           ::= STRING
                     | NUMBER
@@ -593,6 +597,9 @@ reserved_word     ::= "TRUE" | "FALSE" | "NULL" | "UNIT" | "DEE" | "EMPTY" | "DU
 
    WORD          a letter or "_", then letters, digits and "_".  Any Unicode
                  letter counts, except the operator glyphs (σ, π, ρ, …).
+
+   PARAMETER     "$" then, with no space between, a letter or "_" and then
+                 letters, digits and "_": $id, $since_2.
 
    DELIMITED_IDENTIFIER
                  "`" any characters except a newline "`", with "``" standing for

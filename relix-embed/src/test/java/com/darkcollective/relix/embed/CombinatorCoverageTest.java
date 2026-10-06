@@ -93,8 +93,10 @@ final class CombinatorCoverageTest {
      * it. {@code asWritten()} is the same shape from the other side — it settles how the
      * relation is executed and touches the tree not at all. The distinction is real rather
      * than bookkeeping — a combinator adds an operator, neither of these adds one.
+     * {@code bind} gives a parameter its value and leaves the tree as it was, which is
+     * the point of it.
      */
-    private static final Set<String> TERMINALS = Set.of("optimized", "asWritten");
+    private static final Set<String> TERMINALS = Set.of("optimized", "asWritten", "bind");
 
     private static Relation base() {
         Relix relix = Relix.open();

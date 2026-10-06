@@ -170,7 +170,10 @@ public final class PhysicalPlanPrinter {
                     + s.produceBound().map(b -> " ⟨produce while "
                             + DisplayLabels.produceBound(b) + "⟩").orElse("")
                     + s.httpPushdown().map(PhysicalPlanPrinter::renderHttpPushdown).orElse("");
-            case PhysicalNode.PushedScan s -> "PushedScan [" + s.connectorType() + "/" + s.connection() + "] " + s.nativeQuery();
+            case PhysicalNode.PushedScan s -> "PushedScan [" + s.connectorType() + "/" + s.connection() + "] " + s.nativeQuery()
+                    + (s.parameters().isEmpty() ? ""
+                            : s.parameters().stream().map(name -> "$" + name)
+                                    .collect(java.util.stream.Collectors.joining(", ", " ← ", "")));
             case PhysicalNode.Spool sp   -> "Spool #" + sp.id();
             case PhysicalNode.Select s   -> "Select";
             case PhysicalNode.Project p  -> "Project";

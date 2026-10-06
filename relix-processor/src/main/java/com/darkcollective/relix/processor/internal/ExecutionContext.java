@@ -30,6 +30,7 @@ import com.darkcollective.relix.semantic.SchemaAnnotations;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.table.SymbolTable;
+import com.darkcollective.relix.value.Value;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -124,6 +125,9 @@ import java.util.Objects;
  *                           and stops the work its sources are waiting on;
  *                           {@link QueryCancellation#NONE} by default. Must not be
  *                           {@code null}
+ * @param parameters         the values of the query's bound parameters ({@code $name}),
+ *                           keyed by name and matched ignoring case; empty by default.
+ *                           Must not be {@code null}
  */
 public record ExecutionContext(
         SymbolTable symbolTable,
@@ -139,7 +143,8 @@ public record ExecutionContext(
         Duration timeout,
         Clock clock,
         FunctionCatalog functions,
-        QueryCancellation cancellation) {
+        QueryCancellation cancellation,
+        Map<String, Value> parameters) {
 
     /** Sentinel value meaning no cap on fixpoint iteration rounds; also the default. */
     public static final int UNLIMITED_FIXPOINT_ROUNDS = Integer.MAX_VALUE;
@@ -187,6 +192,7 @@ public record ExecutionContext(
         Objects.requireNonNull(functions,    "functions");
         Objects.requireNonNull(timeout,      "timeout");
         Objects.requireNonNull(cancellation, "cancellation");
+        Objects.requireNonNull(parameters,   "parameters");
         if (maxFixpointRounds < 1) {
             throw new IllegalArgumentException(
                     "maxFixpointRounds must be >= 1, was: " + maxFixpointRounds);
@@ -205,6 +211,7 @@ public record ExecutionContext(
         statistics  = Map.copyOf(statistics);
         sources     = Map.copyOf(sources);
         connections = Map.copyOf(connections);
+        parameters  = Map.copyOf(parameters);
         // The clock is read ONCE, here, and what the context carries from then on is an
         // instant rather than a source of them.
         //
@@ -300,7 +307,7 @@ public record ExecutionContext(
                 QueryEventListener.NONE, UNLIMITED_FIXPOINT_ROUNDS,
                 DEFAULT_MAX_MATERIALIZED_ROWS, UNLIMITED_PROCESSED_ROWS, UNLIMITED_TIMEOUT,
                 Clock.systemUTC(),
-                installedFunctions(), QueryCancellation.NONE);
+                installedFunctions(), QueryCancellation.NONE, Map.of());
     }
 
     /**
@@ -313,7 +320,7 @@ public record ExecutionContext(
     public ExecutionContext withListener(QueryEventListener listener) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
     }
 
     /**
@@ -329,7 +336,7 @@ public record ExecutionContext(
     public ExecutionContext withMaxFixpointRounds(int maxFixpointRounds) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
     }
 
     /**
@@ -356,7 +363,7 @@ public record ExecutionContext(
     public ExecutionContext withMaxMaterializedRows(int maxMaterializedRows) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
     }
 
     /**
@@ -377,7 +384,7 @@ public record ExecutionContext(
     public ExecutionContext withMaxProcessedRows(long maxProcessedRows) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
     }
 
     /**
@@ -396,7 +403,7 @@ public record ExecutionContext(
         Objects.requireNonNull(timeout, "timeout");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
     }
 
     /**
@@ -420,7 +427,7 @@ public record ExecutionContext(
         Objects.requireNonNull(clock, "clock");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
     }
 
     /**
@@ -439,7 +446,7 @@ public record ExecutionContext(
         Objects.requireNonNull(functions, "functions");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
     }
 
     /**
@@ -452,7 +459,20 @@ public record ExecutionContext(
         Objects.requireNonNull(cancellation, "cancellation");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+    }
+
+    /**
+     * Returns a copy with {@code parameters} as the values the query's bound parameters
+     * ({@code $name}) read, replacing any it had.
+     *
+     * @param parameters each parameter's value, keyed by name; must not be {@code null}
+     * @return a new context
+     */
+    public ExecutionContext withParameters(Map<String, Value> parameters) {
+        return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
+                connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
     }
 
     /**
@@ -485,7 +505,7 @@ public record ExecutionContext(
                 QueryEventListener.NONE, UNLIMITED_FIXPOINT_ROUNDS,
                 DEFAULT_MAX_MATERIALIZED_ROWS, UNLIMITED_PROCESSED_ROWS, UNLIMITED_TIMEOUT,
                 Clock.systemUTC(),
-                model.functions(), QueryCancellation.NONE);
+                model.functions(), QueryCancellation.NONE, Map.of());
     }
 
     /**
@@ -508,7 +528,7 @@ public record ExecutionContext(
                 QueryEventListener.NONE, UNLIMITED_FIXPOINT_ROUNDS,
                 DEFAULT_MAX_MATERIALIZED_ROWS, UNLIMITED_PROCESSED_ROWS, UNLIMITED_TIMEOUT,
                 Clock.systemUTC(),
-                model.functions(), QueryCancellation.NONE);
+                model.functions(), QueryCancellation.NONE, Map.of());
     }
 
     /**

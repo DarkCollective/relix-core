@@ -37,6 +37,7 @@ import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.SourceLocation;
+import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.StructConstruction;
 import com.darkcollective.relix.ast.TimeOperand;
@@ -151,6 +152,8 @@ public final class AstEquivalence {
                     && x.name().equalsIgnoreCase(y.name());
             case NumberOperand x -> b instanceof NumberOperand y && sameNumber(x.value(), y.value());
             case StringOperand x -> b instanceof StringOperand y && x.value().equals(y.value());
+            case ParameterOperand x -> b instanceof ParameterOperand y
+                    && x.name().equalsIgnoreCase(y.name());
             case BooleanOperand x -> b instanceof BooleanOperand y && x.value() == y.value();
             case DateOperand x -> b instanceof DateOperand y && x.value().equals(y.value());
             case TimeOperand x -> b instanceof TimeOperand y && x.value().equals(y.value());

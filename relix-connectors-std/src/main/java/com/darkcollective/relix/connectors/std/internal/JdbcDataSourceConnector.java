@@ -43,6 +43,7 @@ import com.darkcollective.relix.symbol.Schema;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -197,7 +198,7 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
         // Written as the pushdown writes it, so a table read here and the same table read
         // by a pushed query are the same table.
         String sql = "SELECT * FROM " + Dialect.of(connection).table(table.table());
-        return streamQuery(connection, sql, schema, JdbcDataSourceConnector::readByName,
+        return streamQuery(connection, sql, List.of(), schema, JdbcDataSourceConnector::readByName,
                 "JDBC error reading table '" + table.table() + "' on connection '"
                 + table.connection() + "'");
     }
@@ -210,8 +211,55 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
             throw new EvaluationException(
                     "Unknown connection '" + connectionName + "' for pushed-down query");
         }
-        return streamQuery(connection, nativeQuery, schema, JdbcDataSourceConnector::readByIndex,
+        return streamQuery(connection, nativeQuery, List.of(), schema,
+                JdbcDataSourceConnector::readByIndex,
                 "JDBC error running pushed-down query on connection '" + connectionName + "'");
+    }
+
+    /**
+     * Runs a pushed-down query whose placeholders stand for bound parameters, as a
+     * prepared statement: each value is sent beside the SQL rather than written into it,
+     * so no value can change what the statement means.
+     */
+    @Override
+    public Stream<Row> openQuery(String connectorType, String connectionName, String nativeQuery,
+                                 Schema schema, List<Value> parameters) {
+        if (parameters.isEmpty()) {
+            return openQuery(connectionName, nativeQuery, schema);
+        }
+        ConnectionDeclaration connection =
+                model.connections().get(connectionName.toLowerCase(Locale.ROOT));
+        if (connection == null) {
+            throw new EvaluationException(
+                    "Unknown connection '" + connectionName + "' for pushed-down query");
+        }
+        return streamQuery(connection, nativeQuery, parameters, schema,
+                JdbcDataSourceConnector::readByIndex,
+                "JDBC error running pushed-down query on connection '" + connectionName + "'");
+    }
+
+    /**
+     * Sets placeholder {@code index} of {@code statement} to {@code value}, as the type
+     * the engine reads that kind of column back as: a timestamp is the UTC wall clock a
+     * zone-less column holds, or the instant itself where the backend's literal carries
+     * an offset.
+     */
+    private static void bind(PreparedStatement statement, int index, Value value, Dialect dialect)
+            throws SQLException {
+        switch (value) {
+            case NullValue ignored -> statement.setNull(index, java.sql.Types.NULL);
+            case NumberValue n -> statement.setBigDecimal(index, n.value());
+            case StringValue str -> statement.setString(index, str.value());
+            case BooleanValue b -> statement.setBoolean(index, b.value());
+            case DateValue d -> statement.setObject(index, d.value());
+            case TimeValue t -> statement.setObject(index, t.value());
+            case TimestampValue ts -> statement.setObject(index, switch (dialect) {
+                case POSTGRES, DUCKDB -> ts.value().atOffset(java.time.ZoneOffset.UTC);
+                default -> java.time.LocalDateTime.ofInstant(ts.value(), java.time.ZoneOffset.UTC);
+            });
+            default -> throw new EvaluationException("A " + value.type()
+                    + " value cannot be sent to a database as a query parameter");
+        }
     }
 
     /** Reads a row by column name (used for whole-table {@code SELECT *} reads). */
@@ -282,7 +330,8 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
      * one the pool cannot cover — {@code borrow} already tests for the property rather
      * than projecting the config.
      */
-    private Stream<Row> streamQuery(ConnectionDeclaration connection, String sql, Schema schema,
+    private Stream<Row> streamQuery(ConnectionDeclaration connection, String sql,
+                                    List<Value> parameters, Schema schema,
                                     RowReader reader, String context) {
         if (connection.properties().containsKey("url")) {
             requireDriver(connection.config().url());
@@ -293,7 +342,7 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
         QueryCancellation.Registration registration = null;
         try {
             conn = pool.borrow(connection);
-            stmt = conn.createStatement();
+            stmt = parameters.isEmpty() ? conn.createStatement() : conn.prepareStatement(sql);
             stmt.setFetchSize(FETCH_SIZE);
             // Before executing, so a cancellation that arrives while the database is still
             // working reaches the statement rather than waiting for the result.
@@ -308,7 +357,19 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
                 pool.release(connection, conn);
                 cancellation.check();
             }
-            rs = stmt.executeQuery(sql);
+            // On whether there are parameters, not on the statement's class: a driver may
+            // hand back a PreparedStatement from createStatement (DuckDB does), and its
+            // no-argument executeQuery then has no SQL to run.
+            if (!parameters.isEmpty()) {
+                PreparedStatement prepared = (PreparedStatement) stmt;
+                Dialect dialect = Dialect.of(connection);
+                for (int i = 0; i < parameters.size(); i++) {
+                    bind(prepared, i + 1, parameters.get(i), dialect);
+                }
+                rs = prepared.executeQuery();
+            } else {
+                rs = stmt.executeQuery(sql);
+            }
             return resultStream(connection, conn, stmt, rs, schema, reader, context, registration);
         } catch (SQLException e) {
             if (registration != null) {

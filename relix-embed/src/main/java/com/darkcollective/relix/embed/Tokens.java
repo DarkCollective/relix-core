@@ -154,7 +154,8 @@ final class Tokens {
      */
     static TokenKind kind(TokenType type) {
         return switch (type) {
-            case IDENTIFIER -> TokenKind.IDENTIFIER;
+            // A parameter names a value, as a column does.
+            case IDENTIFIER, PARAMETER -> TokenKind.IDENTIFIER;
             case STRING -> TokenKind.STRING;
             case NUMBER -> TokenKind.NUMBER;
 

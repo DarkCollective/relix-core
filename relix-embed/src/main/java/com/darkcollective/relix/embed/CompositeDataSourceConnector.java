@@ -42,6 +42,7 @@ import com.darkcollective.relix.connectors.std.internal.JsonFileDataSourceConnec
 import com.darkcollective.relix.processor.generator.GeneratorRegistry;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.Schema;
+import com.darkcollective.relix.value.Value;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -257,6 +258,23 @@ final class CompositeDataSourceConnector implements DataSourceConnector {
         return connector.openQuery(files.prepare(connector, new ConnectorConfig(declaration.properties()),
                         baseFor(declaration.location())),
                 nativeQuery, schema);
+    }
+
+    /**
+     * A pushed query with bound parameters goes to the JDBC connector, the one that can
+     * send them beside the text; no other backend is handed a query that has any.
+     */
+    @Override
+    public Stream<Row> openQuery(String connectorType, String connection, String nativeQuery,
+                                 Schema schema, List<Value> parameters) {
+        if (parameters.isEmpty()) {
+            return openQuery(connectorType, connection, nativeQuery, schema);
+        }
+        if (connectorType.equals("jdbc")) {
+            return jdbcConnector.openQuery(connectorType, connection, nativeQuery, schema, parameters);
+        }
+        throw new EvaluationException("A " + connectorType + " connection cannot bind query"
+                + " parameters (connection '" + connection + "')");
     }
 
     /** {@return what a relative path in a declaration written at {@code declaredAt} resolves against} */

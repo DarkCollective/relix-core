@@ -2372,6 +2372,11 @@ public final class RelAlgebraParser {
                 advance();
                 yield parseOperandFromNameToken(nameToken);
             }
+            case PARAMETER -> {
+                Token paramTok = current;
+                advance();
+                yield new ParameterOperand(paramTok.literal(), loc(paramTok));
+            }
             case STRING -> {
                 Token strTok = current;
                 String value = current.literal();
