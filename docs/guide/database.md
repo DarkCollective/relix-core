@@ -121,7 +121,7 @@ System.out.println(relix.relation(
 ```
 
 ```
-PushedScan [jdbc/warehouse] SELECT CUSTOMER_ID, SUM(AMOUNT) FROM orders WHERE (STATUS = 'OPEN') GROUP BY CUSTOMER_ID  ~2 rows
+PushedScan [jdbc/warehouse] SELECT CUSTOMER_ID, SUM(AMOUNT) FROM orders WHERE (STATUS = 'OPEN') GROUP BY CUSTOMER_ID  ~1 rows
 ```
 
 The whole query became one `SELECT`. The filter, the grouping and the aggregate were folded

@@ -28,12 +28,19 @@ import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("JdbcCatalogProvider — schema introspection over JDBC (H2)")
 final class JdbcCatalogProviderTest {
@@ -118,8 +125,7 @@ final class JdbcCatalogProviderTest {
             st.execute("INSERT INTO people VALUES (1,'A'),(2,'B'),(3,'C')");
         }
 
-        Optional<RelationStatistics> stats =
-                new JdbcCatalogProvider().tableStatistics(connection(url), "people");
+        Optional<RelationStatistics> stats = exact().tableStatistics(connection(url), "people");
 
         assertThat(stats).isPresent();
         assertThat(stats.get().rowCount()).hasValue(3L);
@@ -128,7 +134,7 @@ final class JdbcCatalogProviderTest {
     }
 
     @Test
-    @DisplayName("statistics report per-column distinct and null counts")
+    @DisplayName("exact statistics report per-column distinct and null counts")
     void statisticsColumnDistinctAndNullCounts() throws SQLException {
         String url = "jdbc:h2:mem:cat_colstats;DB_CLOSE_DELAY=-1";
         try (Connection c = DriverManager.getConnection(url)) {
@@ -138,8 +144,7 @@ final class JdbcCatalogProviderTest {
             st.execute("INSERT INTO people VALUES (1,'E'),(2,'W'),(3,'E'),(4,NULL)");
         }
 
-        Optional<RelationStatistics> stats =
-                new JdbcCatalogProvider().tableStatistics(connection(url), "people");
+        Optional<RelationStatistics> stats = exact().tableStatistics(connection(url), "people");
 
         assertThat(stats).isPresent();
         RelationStatistics s = stats.get();
@@ -155,7 +160,7 @@ final class JdbcCatalogProviderTest {
     }
 
     @Test
-    @DisplayName("statistics are read for a table and column whose names are not plain identifiers")
+    @DisplayName("exact statistics are counted for a table and column whose names are not plain identifiers")
     void statisticsForDelimitedNames() throws SQLException {
         String url = "jdbc:h2:mem:cat_delimited;DB_CLOSE_DELAY=-1";
         try (Connection c = DriverManager.getConnection(url)) {
@@ -164,14 +169,123 @@ final class JdbcCatalogProviderTest {
             st.execute("INSERT INTO \"order-lines\" VALUES (1, 10), (2, 10), (3, NULL)");
         }
 
-        Optional<RelationStatistics> stats =
-                new JdbcCatalogProvider().tableStatistics(connection(url), "order-lines");
+        Optional<RelationStatistics> stats = exact().tableStatistics(connection(url), "order-lines");
 
         assertThat(stats).isPresent();
         assertThat(stats.get().rowCount()).hasValue(3L);
         ColumnStatistics price = columnOf(stats.get(), "unit-price");
         assertThat(price.distinctCount()).hasValue(1L);
         assertThat(price.nullCount()).hasValue(1L);
+    }
+
+    /** A provider that counts, as {@code Relix.Builder.exactStatistics} builds one. */
+    private static JdbcCatalogProvider exact() {
+        return new JdbcCatalogProvider(ConnectionProvider.FROM_URL, Duration.ofSeconds(30));
+    }
+
+    @Test
+    @DisplayName("by default statistics are the database's estimates, and count nothing")
+    void estimatesByDefault() throws SQLException {
+        String url = "jdbc:h2:mem:cat_estimates;DB_CLOSE_DELAY=-1";
+        try (Connection c = DriverManager.getConnection(url)) {
+            var st = c.createStatement();
+            st.execute("CREATE TABLE people (id INT PRIMARY KEY, region VARCHAR(10))");
+            st.execute("INSERT INTO people VALUES (1,'E'),(2,'W'),(3,'E'),(4,NULL)");
+        }
+        List<String> executed = new ArrayList<>();
+        Optional<RelationStatistics> stats = new JdbcCatalogProvider(recording(executed))
+                .tableStatistics(connection(url), "people");
+
+        assertThat(stats).isPresent();
+        // H2 keeps an exact estimate for an in-memory table, and no per-column figures.
+        assertThat(stats.get().rowCount()).hasValue(4L);
+        assertThat(stats.get().columnStatistics()).isEmpty();
+        assertThat(stats.get().keys()).containsExactly(List.of("ID"));
+        assertThat(executed)
+                .as("what was asked of the database: its catalogue, never the table")
+                .isNotEmpty()
+                .noneMatch(sql -> sql.toUpperCase(java.util.Locale.ROOT).contains("FROM PEOPLE")
+                        || sql.toUpperCase(java.util.Locale.ROOT).contains("COUNT("));
+    }
+
+    @Test
+    @DisplayName("a table's statistics are gathered once per provider")
+    void gatheredOnce() throws SQLException {
+        String url = "jdbc:h2:mem:cat_cached;DB_CLOSE_DELAY=-1";
+        try (Connection c = DriverManager.getConnection(url)) {
+            c.createStatement().execute("CREATE TABLE t (x INT)");
+        }
+        AtomicInteger opened = new AtomicInteger();
+        ConnectionProvider counting = connection -> {
+            opened.incrementAndGet();
+            return ConnectionProvider.FROM_URL.connectionFor(connection);
+        };
+        JdbcCatalogProvider provider = new JdbcCatalogProvider(counting, Duration.ofSeconds(30));
+        Optional<RelationStatistics> first = provider.tableStatistics(connection(url), "t");
+        Optional<RelationStatistics> second = provider.tableStatistics(connection(url), "t");
+        assertThat(second).isEqualTo(first);
+        assertThat(opened).hasValue(1);
+    }
+
+    @Test
+    @DisplayName("an exact provider's timeout must be positive")
+    void exactTimeoutPositive() {
+        assertThatThrownBy(() -> new JdbcCatalogProvider(ConnectionProvider.FROM_URL, Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new JdbcCatalogProvider(ConnectionProvider.FROM_URL, Duration.ofSeconds(-1)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("an unreachable database leaves the statistics unknown")
+    void unreachable() {
+        ConnectionProvider failing = connection -> {
+            throw new SQLException("no route to host");
+        };
+        assertThat(new JdbcCatalogProvider(failing).tableStatistics(connection("jdbc:h2:mem:x"), "t"))
+                .isEmpty();
+    }
+
+    /**
+     * Connections over {@code FROM_URL} whose statements and prepared statements record
+     * the SQL they are given.
+     */
+    private static ConnectionProvider recording(List<String> executed) {
+        return connection -> {
+            Connection real = ConnectionProvider.FROM_URL.connectionFor(connection);
+            return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
+                    new Class<?>[]{Connection.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("prepareStatement") && args != null) {
+                            executed.add((String) args[0]);
+                        }
+                        Object result = invoke(real, method, args);
+                        if (result instanceof Statement statement
+                                && method.getName().equals("createStatement")) {
+                            return recordingStatement(statement, executed);
+                        }
+                        return result;
+                    });
+        };
+    }
+
+    private static Statement recordingStatement(Statement real, List<String> executed) {
+        return (Statement) Proxy.newProxyInstance(Statement.class.getClassLoader(),
+                new Class<?>[]{Statement.class}, (proxy, method, args) -> {
+                    if (method.getName().startsWith("execute") && args != null
+                            && args[0] instanceof String sql) {
+                        executed.add(sql);
+                    }
+                    return invoke(real, method, args);
+                });
+    }
+
+    private static Object invoke(Object target, java.lang.reflect.Method method, Object[] args)
+            throws Throwable {
+        try {
+            return method.invoke(target, args);
+        } catch (InvocationTargetException e) {
+            throw e.getCause();
+        }
     }
 
     /** Looks up a column's stats case-insensitively (the catalog stores names in its own case). */

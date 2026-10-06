@@ -21,23 +21,25 @@ Columns:
 - `namespace` (`STRING`) — the namespace the relation was declared in.
 - `materialization` (`STRING`) — how much of the relation has to be held at once to
   produce a row: `"stream"` (none), `"bag"`, `"set"`, `"sort"`.
-- `row_count` (`NUMBER`) — how many rows it has, where that was measured. NULL
-  where it was not.
+- `row_count` (`NUMBER`) — how many rows it has, where that is known: exact for an
+  inline table or a finite generator, the database's own estimate for a database
+  table. NULL where it is not known.
 - `boundedness` (`STRING`) — whether it is finite: `"bounded"`, `"unbounded"`, or
   `"unknown"`.
 
 ## Two questions about size, and only one of them is measured
 
-`row_count` and `boundedness` sound like the same question and are not. A count is
-*observed* — from the rows of an inline table, from a generator that knows its own
-length, from the catalog of an introspected database table. Boundedness is
-*proved*, from what a relation is and what it reads.
+`row_count` and `boundedness` sound like the same question and are not. A size is
+*observed* — counted from the rows of an inline table, known to a generator that knows
+its own length, or estimated by the database a table lives in, which keeps an estimate
+for its own planner. Boundedness is *proved*, from what a relation is and what it
+reads.
 
 That is why the pairs which look inconsistent are the informative ones:
 
 | `boundedness` | `row_count` | What it means |
 |---|---|---|
-| `bounded` | a number | finite, and counted |
+| `bounded` | a number | finite, and its size is known |
 | `bounded` | NULL | finite, but nobody has counted it — a CSV file nothing has read |
 | `unbounded` | NULL | it has no count because it has no end |
 | `unknown` | NULL | nothing here shows it finite either way |
@@ -140,8 +142,11 @@ query {
 ```
 
 # Limitations:
-`row_count` is a count where one was taken, not an estimate; a view never carries
-one. See *Two questions about size* above.
+For a database table, `row_count` is the database's estimate, as current as its last
+statistics run — not a count, since counting would read the whole table every time a
+script naming it was analysed. A database that has never gathered statistics for the
+table gives NULL. For an inline table and a finite generator it is exact. A view never
+carries one. See *Two questions about size* above.
 
 `boundedness` is a lower bound on what is provable, not on what is true. A `FIX`
 whose step computes new values can have an endless extent and still read

@@ -283,8 +283,12 @@ public final class Relix implements AutoCloseable {
             this.catalog = placeholders.catalog(builder.catalog);
             this.ownedCatalog = null;
         } else {
-            ConnectorCatalogProvider built =
-                    new ConnectorCatalogProvider(new JdbcCatalogProvider(dataSources));
+            // The database's own estimates unless the caller asked for counts: an estimate
+            // is a catalogue lookup, and a count reads the table, on every session start.
+            ConnectorCatalogProvider built = new ConnectorCatalogProvider(
+                    builder.exactStatistics == null
+                            ? new JdbcCatalogProvider(dataSources)
+                            : new JdbcCatalogProvider(dataSources, builder.exactStatistics));
             this.catalog = placeholders.catalog(built);
             this.ownedCatalog = built;
         }
@@ -1595,6 +1599,7 @@ public final class Relix implements AutoCloseable {
         private Clock clock = Clock.systemUTC();
         private Path baseDirectory = Path.of("");
         private boolean allowUnresolved;
+        private Duration exactStatistics;
         private int maxFixpointRounds = ExecutionContext.UNLIMITED_FIXPOINT_ROUNDS;
         private int maxMaterializedRows = ExecutionContext.DEFAULT_MAX_MATERIALIZED_ROWS;
         private long maxProcessedRows = ExecutionContext.UNLIMITED_PROCESSED_ROWS;
@@ -1720,6 +1725,39 @@ public final class Relix implements AutoCloseable {
          */
         public Builder catalog(CatalogProvider catalog) {
             this.catalog = Objects.requireNonNull(catalog, "catalog");
+            return this;
+        }
+
+        /**
+         * Counts a database table's rows and columns for its statistics, rather than
+         * reading the database's own estimates.
+         *
+         * <p>A session asks the database what it knows about each table a script
+         * declares: how many rows it holds, and how many distinct and null values each
+         * column has. By default the answer is the database's <em>estimate</em> — the
+         * figures its statistics collector keeps for its own planner, read from a system
+         * catalogue without touching the table — so naming a table costs the same however
+         * large it is. Those figures are what the planner costs a plan with and what
+         * {@code relix.relations} and {@code relix.columns} report, and an estimate is as
+         * current as the database's last statistics run.
+         *
+         * <p>Exact figures read the whole table, with one {@code COUNT(DISTINCT)} per
+         * column, and do so for every table the script declares when it is analysed,
+         * whether a query reads the table or not. Each counting statement is abandoned
+         * after {@code timeout}, leaving that figure unknown. A table's statistics are
+         * gathered once per session in either mode. Has no effect with
+         * {@link #catalog(CatalogProvider)}, which supplies statistics itself.
+         *
+         * @param timeout how long each counting statement may run; must be positive
+         * @return this builder
+         * @since 1.0
+         */
+        public Builder exactStatistics(Duration timeout) {
+            Objects.requireNonNull(timeout, "timeout");
+            if (timeout.isNegative() || timeout.isZero()) {
+                throw new IllegalArgumentException("timeout must be positive, was: " + timeout);
+            }
+            this.exactStatistics = timeout;
             return this;
         }
 
