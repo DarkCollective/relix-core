@@ -16,6 +16,7 @@
 package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.processor.internal.ExecutionContext;
+import com.darkcollective.relix.processor.internal.QueryCancellation;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.EvaluationException;
 
@@ -62,16 +63,19 @@ final class WorkBudget {
 
     /** A budget with no limits, which meters nothing. */
     static final WorkBudget UNLIMITED = new WorkBudget(
-            ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT);
+            ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT,
+            QueryCancellation.NONE);
 
     private final long maxRows;
     private final Duration timeout;
     private final boolean timed;
     private final long deadline;
     private final boolean enforcing;
+    private final QueryCancellation cancellation;
     private long charged;
 
-    private WorkBudget(long maxRows, Duration timeout) {
+    private WorkBudget(long maxRows, Duration timeout, QueryCancellation cancellation) {
+        this.cancellation = cancellation;
         this.maxRows = maxRows;
         this.timeout = timeout;
         this.timed = !timeout.equals(ExecutionContext.UNLIMITED_TIMEOUT);
@@ -89,10 +93,11 @@ final class WorkBudget {
      */
     static WorkBudget startingNow(ExecutionContext ctx) {
         if (ctx.maxProcessedRows() == ExecutionContext.UNLIMITED_PROCESSED_ROWS
-                && ctx.timeout().equals(ExecutionContext.UNLIMITED_TIMEOUT)) {
+                && ctx.timeout().equals(ExecutionContext.UNLIMITED_TIMEOUT)
+                && ctx.cancellation() == QueryCancellation.NONE) {
             return UNLIMITED;
         }
-        return new WorkBudget(ctx.maxProcessedRows(), ctx.timeout());
+        return new WorkBudget(ctx.maxProcessedRows(), ctx.timeout(), ctx.cancellation());
     }
 
     /** {@return how many rows this execution has processed so far} */
@@ -115,7 +120,7 @@ final class WorkBudget {
             // the only place a streaming operator's input rows pass, so without it a
             // filter that never matches spins inside one pull from the root and cannot be
             // cancelled.
-            return Cancellation.interruptible(rows);
+            return Cancellation.interruptible(rows, cancellation);
         }
         Spliterator<Row> source = rows.spliterator();
         Spliterator<Row> metered = new Spliterators.AbstractSpliterator<>(
@@ -151,7 +156,7 @@ final class WorkBudget {
             throw new EvaluationException("query stopped: it ran longer than " + describe(timeout)
                     + ", the limit for one execution");
         }
-        Cancellation.checkNotInterrupted();
+        Cancellation.check(cancellation);
     }
 
     /** A timeout as the refusal names it: whole seconds as seconds, anything else in milliseconds. */

@@ -17,6 +17,7 @@ package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.EvaluationException;
+import com.darkcollective.relix.processor.internal.QueryCancellation;
 
 import java.util.Spliterator;
 import java.util.Spliterators;
@@ -71,27 +72,38 @@ final class Cancellation {
 
     /**
      * Wraps {@code rows} so that each pull first asks whether this thread has been
-     * interrupted, raising if it has.
+     * interrupted or the execution cancelled, raising if either has.
      *
      * <p>Checked per row rather than on a timer, which is what makes it prompt without a
      * clock: every operator in a pull-based engine does its work inside somebody's
      * {@code tryAdvance}, so a row boundary is the one place that is reached often and is
      * always between two units of work rather than inside one.
      *
-     * @param rows the stream to guard; must not be null
-     * @return a stream that stops when the thread is interrupted
+     * @param rows         the stream to guard; must not be null
+     * @param cancellation the execution's signal; must not be null
+     * @return a stream that stops when the thread is interrupted or the execution cancelled
      */
-    static Stream<Row> interruptible(Stream<Row> rows) {
+    static Stream<Row> interruptible(Stream<Row> rows, QueryCancellation cancellation) {
         Spliterator<Row> source = rows.spliterator();
         Spliterator<Row> guarded = new Spliterators.AbstractSpliterator<>(
                 source.estimateSize(), source.characteristics()) {
             @Override
             public boolean tryAdvance(Consumer<? super Row> action) {
-                checkNotInterrupted();
+                check(cancellation);
                 return source.tryAdvance(action);
             }
         };
         return StreamSupport.stream(guarded, false).onClose(rows::close);
+    }
+
+    /**
+     * Raises when this thread has been interrupted or the execution has been cancelled.
+     *
+     * @param cancellation the execution's signal; must not be null
+     */
+    static void check(QueryCancellation cancellation) {
+        checkNotInterrupted();
+        cancellation.check();
     }
 
     /**

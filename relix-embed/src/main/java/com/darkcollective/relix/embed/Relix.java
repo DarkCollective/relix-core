@@ -49,6 +49,7 @@ import com.darkcollective.relix.function.FunctionLibrary;
 import com.darkcollective.relix.lang.ast.ScriptBuilders;
 import com.darkcollective.relix.lang.ast.source.ConnectionTableSourceConfig;
 import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
+import com.darkcollective.relix.processor.internal.QueryCancellation;
 import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.internal.DataSourceConnector;
 import com.darkcollective.relix.processor.internal.ExecutionContext;
@@ -237,6 +238,9 @@ public final class Relix implements AutoCloseable {
      * <p>Concurrent for the reason {@link #closed} is volatile — a relation may be
      * streamed on one thread while another opens its own.
      */
+    /** The executions running now, which {@link #cancel()} stops. */
+    private final Set<QueryCancellation> running = ConcurrentHashMap.newKeySet();
+
     private final Set<StreamHandle> liveStreams =
             Collections.newSetFromMap(new ConcurrentHashMap<>());
 
@@ -1124,6 +1128,30 @@ public final class Relix implements AutoCloseable {
     }
 
     /**
+     * Cancels every query this session is running now, from any thread.
+     *
+     * <p>A query being executed — a stream being read, a {@link Relation#toList()} or
+     * {@link Relation#run()} in progress, a {@link Relation#stream()} still starting — stops
+     * at its next row and fails with a {@link QueryExecutionException} saying it was
+     * cancelled. A statement a database is executing for it is cancelled too
+     * ({@code Statement.cancel()}), which is what interrupting the thread running the query
+     * cannot do: a thread blocked in a JDBC driver does not answer to interruption.
+     *
+     * <p>This is for a program that runs queries on one thread and stops them from another:
+     * a command-line tool's interrupt handler, an interactive session's cancel key. It
+     * affects only queries already running; the session stays open, and a query started
+     * afterwards runs normally. A database that cannot cancel a statement finishes it, and
+     * the query still stops when the statement returns.
+     *
+     * @since 1.0
+     */
+    public void cancel() {
+        for (QueryCancellation query : List.copyOf(running)) {
+            query.cancel();
+        }
+    }
+
+    /**
      * Releases what the session holds. Bound {@link DataSource}s are the caller's, and
      * are not closed.
      *
@@ -1137,6 +1165,9 @@ public final class Relix implements AutoCloseable {
     @Override
     public void close() {
         closed = true;
+        // Anything still running — on another thread, since this one is here — is stopped
+        // rather than left reading through connections the pool is about to close.
+        cancel();
         int abandoned = releaseAbandoned();
         // The pool and the default catalog are the resources the session owns: the pool
         // holds idle JDBC connections opened on its behalf, and the catalog holds the
@@ -1280,16 +1311,17 @@ public final class Relix implements AutoCloseable {
      * see coming; a driver an embedded program needs is a dependency of that program, and
      * an application that wants the fetching behaviour says so where it is visible.
      *
-     * @param model the model whose sources are to be opened
+     * @param model        the model whose sources are to be opened
+     * @param cancellation the execution the connector serves, from {@link #beginQuery()}
      * @return the connector; the caller closes it
      */
-    DataSourceConnector openConnector(SemanticModel model) {
+    DataSourceConnector openConnector(SemanticModel model, QueryCancellation cancellation) {
         requireOpen();
         // A declaration written in a file reads its files from beside it — unless the
         // sandbox is closed, whose base directory is the one place its files may come from.
         return new CompositeDataSourceConnector(model, baseDirectory, sandbox.isOpen(),
                 driverProvisioner, connectorProvisioner,
-                generators, pool, List.copyOf(installedConnectors), files);
+                generators, pool, List.copyOf(installedConnectors), files, cancellation);
     }
 
     /**
@@ -1367,6 +1399,22 @@ public final class Relix implements AutoCloseable {
     }
 
     /** Fails if the session has been closed — its pool is gone, so nothing can run. */
+    /**
+     * Starts tracking one execution, so {@link #cancel()} can reach it.
+     *
+     * @return the execution's cancellation; pass it to {@link #endQuery} when it is over
+     */
+    QueryCancellation beginQuery() {
+        QueryCancellation cancellation = QueryCancellation.create();
+        running.add(cancellation);
+        return cancellation;
+    }
+
+    /** Stops tracking an execution {@link #beginQuery()} started. */
+    void endQuery(QueryCancellation cancellation) {
+        running.remove(cancellation);
+    }
+
     void requireOpen() {
         if (closed) {
             throw new RelixException("this session is closed");
