@@ -130,6 +130,7 @@ public final class AstLocations {
         return switch (operand) {
             case AttributeOperand a -> new AttributeOperand(a.name());
             case StringOperand s -> new StringOperand(s.value());
+            case ParameterOperand p -> AstBuilders.param(p.name());
             case NumberOperand n -> new NumberOperand(n.value());
             case BooleanOperand b -> new BooleanOperand(b.value());
             case DateOperand d -> new DateOperand(d.value());

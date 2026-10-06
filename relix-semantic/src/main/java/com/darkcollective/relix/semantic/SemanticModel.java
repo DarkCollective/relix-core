@@ -16,6 +16,7 @@
 package com.darkcollective.relix.semantic;
 
 import com.darkcollective.relix.semantic.internal.IrReport;
+import com.darkcollective.relix.semantic.internal.QueryParameters;
 import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.function.FunctionCatalog;
@@ -28,6 +29,7 @@ import com.darkcollective.relix.semantic.graph.JoinPathResolver;
 import com.darkcollective.relix.symbol.graph.JoinResolution;
 import com.darkcollective.relix.symbol.graph.Relationship;
 import com.darkcollective.relix.symbol.graph.SchemaGraph;
+import com.darkcollective.relix.symbol.Type;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 
 import java.util.Collection;
@@ -224,6 +226,23 @@ public record SemanticModel(
      */
     public JoinResolution resolveJoins(RelNode expression) {
         return JoinPathResolver.resolve(schemaGraph, symbolTable, expression);
+    }
+
+    /**
+     * The bound parameters ({@code $name}) this script uses, each with the type it is
+     * used as.
+     *
+     * <p>A parameter takes the type of what it is compared with — {@code σ id = $id}
+     * makes {@code $id} the type of {@code id} — and is {@code ANY} where nothing it is
+     * compared with has a known type. Its value is supplied when a query runs, never
+     * written into the script.
+     *
+     * @return each parameter's name to its type — the root queries' parameters first,
+     *         then those only views and functions use; never null, possibly empty
+     * @since 1.0
+     */
+    public Map<String, Type> parameters() {
+        return QueryParameters.of(this);
     }
 
     /**

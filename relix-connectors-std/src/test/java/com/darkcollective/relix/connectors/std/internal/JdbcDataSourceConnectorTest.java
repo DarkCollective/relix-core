@@ -18,7 +18,12 @@ package com.darkcollective.relix.connectors.std.internal;
 import com.darkcollective.relix.lang.ast.source.DatabaseConnectionConfig;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.EvaluationException;
+import com.darkcollective.relix.value.BooleanValue;
 import com.darkcollective.relix.value.DateValue;
+import com.darkcollective.relix.value.DurationValue;
+import com.darkcollective.relix.value.NullValue;
+import com.darkcollective.relix.value.NumberValue;
+import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
@@ -247,6 +252,82 @@ final class JdbcDataSourceConnectorTest {
         assertThat(rows).hasSize(2);
         assertThat(rows.get(0)).hasValue("name", "Bob");
         assertThat(rows.get(1)).hasValue("name", "Carol");
+    }
+
+    @Test
+    @DisplayName("openQuery binds each kind of parameter value as a prepared-statement argument")
+    void openQueryBindsParameters() throws SQLException {
+        String url = "jdbc:h2:mem:conn_params;DB_CLOSE_DELAY=-1";
+        try (Connection c = DriverManager.getConnection(url)) {
+            var st = c.createStatement();
+            st.execute("CREATE TABLE things (id INT, name VARCHAR(50), ok BOOLEAN, d DATE,"
+                    + " t TIME, ts TIMESTAMP)");
+            st.execute("INSERT INTO things VALUES (1, 'o''brien', TRUE, DATE '2026-06-15',"
+                    + " TIME '13:40:00', TIMESTAMP '2026-06-15 13:40:00'), (2, 'x', FALSE, NULL, NULL, NULL)");
+        }
+        var connector = new JdbcDataSourceConnector(modelFor(url, "things", "things"));
+        Schema ids = schema(col("id", ScalarType.NUMBER));
+        String sql = "SELECT id FROM things WHERE id = ? AND name = ? AND ok = ? AND d = ?"
+                + " AND t = ? AND ts = ? ORDER BY id";
+
+        List<Row> rows;
+        try (Stream<Row> s = connector.openQuery("jdbc", "db", sql, ids, List.of(
+                NumberValue.of("1"), new StringValue("o'brien"), BooleanValue.of(true),
+                new DateValue(java.time.LocalDate.parse("2026-06-15")),
+                new TimeValue(java.time.LocalTime.parse("13:40:00")),
+                new TimestampValue(java.time.Instant.parse("2026-06-15T13:40:00Z"))))) {
+            rows = s.toList();
+        }
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()).hasValue("id", "1");
+
+        try (Stream<Row> s = connector.openQuery("jdbc", "db",
+                "SELECT id FROM things WHERE d IS NOT DISTINCT FROM ?", ids,
+                List.of(NullValue.INSTANCE))) {
+            assertThat(s.toList()).hasSize(1);
+        }
+        try (Stream<Row> s = connector.openQuery("jdbc", "db", "SELECT id FROM things", ids,
+                List.of())) {
+            assertThat(s.toList()).hasSize(2);
+        }
+    }
+
+    @Test
+    @DisplayName("a timestamp parameter is sent as an instant where the backend's literal carries an offset")
+    void openQueryBindsAnInstantForDuckDb(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws SQLException {
+        String url = "jdbc:duckdb:" + dir.resolve("params.duckdb");
+        try (Connection c = DriverManager.getConnection(url)) {
+            var st = c.createStatement();
+            st.execute("CREATE TABLE events (id INTEGER, happened TIMESTAMPTZ)");
+            st.execute("INSERT INTO events VALUES (1, TIMESTAMPTZ '2026-06-15 13:40:00+00'),"
+                    + " (2, TIMESTAMPTZ '2026-06-16 13:40:00+00')");
+        }
+        var connector = new JdbcDataSourceConnector(modelFor(url, "events", "events"));
+        try (Stream<Row> s = connector.openQuery("jdbc", "db", "SELECT id FROM events WHERE happened < ?",
+                schema(col("id", ScalarType.NUMBER)),
+                List.of(new TimestampValue(java.time.Instant.parse("2026-06-16T00:00:00Z"))))) {
+            List<Row> rows = s.toList();
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()).hasValue("id", "1");
+        }
+        connector.close();
+    }
+
+    @Test
+    @DisplayName("openQuery refuses a parameter value no database column holds, and an unknown connection")
+    void openQueryRefusesParameters() {
+        var connector = new JdbcDataSourceConnector(
+                modelFor("jdbc:h2:mem:conn_params2;DB_CLOSE_DELAY=-1", "things", "things"));
+        Schema x = schema(col("x", ScalarType.NUMBER));
+        assertThatThrownBy(() -> connector.openQuery("jdbc", "db", "SELECT ? AS x", x,
+                List.of(new DurationValue(java.time.Duration.ofMinutes(5)))))
+                .isInstanceOf(EvaluationException.class)
+                .hasMessageContaining("A DURATION value cannot be sent to a database as a query parameter");
+        assertThatThrownBy(() -> connector.openQuery("jdbc", "missing", "SELECT ? AS x", x,
+                List.of(NumberValue.of("1"))))
+                .isInstanceOf(EvaluationException.class)
+                .hasMessageContaining("Unknown connection 'missing'");
     }
 
     @Test

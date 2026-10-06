@@ -51,6 +51,11 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
     }
 
     @Override
+    public String visit(ParameterOperand node) {
+        return "$" + node.name();
+    }
+
+    @Override
     public String visit(StringOperand node) {
         return "\"" + node.value()
                 .replace("\\", "\\\\")

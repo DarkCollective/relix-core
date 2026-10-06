@@ -18,7 +18,9 @@ package com.darkcollective.relix.processor.internal;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.symbol.Schema;
+import com.darkcollective.relix.value.Value;
 
+import java.util.List;
 import java.util.stream.Stream;
 
 /**
@@ -147,5 +149,29 @@ public interface DataSourceConnector extends AutoCloseable {
      */
     default Stream<Row> openQuery(String connectorType, String connection, String nativeQuery, Schema schema) {
         return openQuery(connection, nativeQuery, schema);
+    }
+
+    /**
+     * Runs a pushed-down native query that carries bound parameters: {@code parameters}
+     * holds one value per placeholder in {@code nativeQuery}, in order, and a connector
+     * sends them beside the text rather than in it. With none it is
+     * {@link #openQuery(String, String, String, Schema)}; a connector that cannot bind
+     * parameters refuses the query rather than inlining them.
+     *
+     * @param connectorType the connection's connector type token
+     * @param connection    the canonical name of the connection to run the query on
+     * @param nativeQuery   the backend-native query text, with placeholders
+     * @param schema        the expected output schema
+     * @param parameters    one value per placeholder, in order
+     * @return a stream of rows; the caller is responsible for closing it
+     * @throws EvaluationException if the query cannot be run
+     */
+    default Stream<Row> openQuery(String connectorType, String connection, String nativeQuery,
+                                  Schema schema, List<Value> parameters) {
+        if (parameters.isEmpty()) {
+            return openQuery(connectorType, connection, nativeQuery, schema);
+        }
+        throw new EvaluationException("This data source cannot bind query parameters"
+                + " (connection '" + connection + "')");
     }
 }

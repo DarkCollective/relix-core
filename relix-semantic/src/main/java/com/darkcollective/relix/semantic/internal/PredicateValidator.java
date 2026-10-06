@@ -33,6 +33,7 @@ import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.NotPredicate;
 import com.darkcollective.relix.ast.NullPredicate;
 import com.darkcollective.relix.ast.NumberOperand;
+import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.OrPredicate;
 import com.darkcollective.relix.ast.PatternPredicate;
@@ -295,6 +296,9 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                     validateOperand(elem);
                 }
             }
+            // A bound parameter names no column: its type is read from where it is used
+            // (QueryParameters) and its value arrives when the query runs.
+            case ParameterOperand ignored -> { }
             case NumberOperand  ignored -> { /* literals need no validation */ }
             case StringOperand  ignored -> { /* literals need no validation */ }
             case BooleanOperand ignored -> { /* literals need no validation */ }

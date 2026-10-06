@@ -28,6 +28,7 @@ import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.Operand;
+import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.StructConstruction;
@@ -62,7 +63,9 @@ import com.darkcollective.relix.symbol.table.SymbolTable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -115,6 +118,12 @@ public final class OperandEvaluator {
      * call: one context serves every row of every query this evaluator runs.
      */
     private final FunctionContext context;
+
+    /**
+     * The values of the query's bound parameters ({@code $name}), keyed by lower-cased
+     * name; empty when the query was given none.
+     */
+    private final Map<String, Value> parameters;
 
     /**
      * Constructs an evaluator without a symbol table, over the installed function
@@ -199,9 +208,42 @@ public final class OperandEvaluator {
      */
     public OperandEvaluator(SymbolTable symbolTable, FunctionCatalog functions,
                             FunctionContext context) {
+        this(symbolTable, functions, context, Map.of());
+    }
+
+    private OperandEvaluator(SymbolTable symbolTable, FunctionCatalog functions,
+                             FunctionContext context, Map<String, Value> parameters) {
         this.symbolTable = symbolTable;
         this.functions = Objects.requireNonNull(functions, "functions");
         this.context = Objects.requireNonNull(context, "context");
+        this.parameters = parameters;
+    }
+
+    /**
+     * This evaluator with {@code values} as the bound parameters a {@code $name} reads.
+     *
+     * @param values each parameter's value, keyed by name, matched ignoring case; must
+     *               not be null
+     * @return an evaluator reading those values; this one is unchanged
+     */
+    public OperandEvaluator withParameters(Map<String, Value> values) {
+        Map<String, Value> byName = new HashMap<>();
+        values.forEach((name, value) -> byName.put(name.toLowerCase(Locale.ROOT),
+                Objects.requireNonNull(value, "value")));
+        return new OperandEvaluator(symbolTable, functions, context, Map.copyOf(byName));
+    }
+
+    /**
+     * The value bound to {@code parameter}.
+     *
+     * @throws EvaluationException naming the parameter when none was bound
+     */
+    private Value parameter(ParameterOperand parameter) {
+        Value value = parameters.get(parameter.name().toLowerCase(Locale.ROOT));
+        if (value == null) {
+            throw new EvaluationException("Parameter $" + parameter.name() + " is not bound");
+        }
+        return value;
     }
 
     /**
@@ -222,6 +264,7 @@ public final class OperandEvaluator {
             case TimestampOperand ts -> new TimestampValue(ts.value());
             case DurationOperand  du -> new DurationValue(du.value());
             case AttributeOperand a -> evaluateAttribute(a, row);
+            case ParameterOperand p -> parameter(p);
             case UnaryOperand   u -> evaluateUnary(u, row);
             case BinaryArithmeticExpression b -> evaluateBinary(b, row);
             case FunctionCall   f -> evaluateFunction(f, row);

@@ -43,6 +43,7 @@ import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.NotPredicate;
 import com.darkcollective.relix.ast.NullPredicate;
 import com.darkcollective.relix.ast.NumberOperand;
+import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.OptimizeConstraint;
 import com.darkcollective.relix.ast.OptimizeNode;
@@ -314,6 +315,8 @@ final class RelationFunctionInliner {
             case ArrayConstruction ac -> new ArrayConstruction(substitute(ac.elements(), b), ac.location());
             case ConditionOperand c -> new ConditionOperand(substitute(c.predicate(), b), c.location());
             case StringOperand s -> s;
+            // `$name` is the query's parameter, never the function's, which is a bare name.
+            case ParameterOperand p -> p;
             case NumberOperand n -> n;
             case BooleanOperand bo -> bo;
             case DateOperand d -> d;

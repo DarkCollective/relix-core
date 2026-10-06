@@ -192,6 +192,53 @@ escape, so a value ending in one would otherwise close the literal that was mean
 contain it. Each backend is asked for its own spelling, and the pushed and in-engine paths
 are held to the same answer over a corpus of values chosen for exactly these characters.
 
+### A parameter in query text
+
+The combinators keep a value out of the text by never making text. A query that *is* text
+— read from a file, written by someone else, kept as a constant — keeps it out another way:
+it names the value with a parameter, `$name`, and the program supplies the value with
+`bind`:
+
+```java
+Relation byStatus = relix.relation("σ status = $status AND amount > $floor (Orders)");
+
+Relation bound = byStatus.bind("status", "OPEN\" ∨ 1 = 1 --").bind("floor", 50);
+
+System.out.println(bound.render());
+System.out.println(byStatus.model().parameters());
+```
+
+```
+σ (status = $status) ∧ (amount > $floor) (Orders)
+{status=STRING, floor=NUMBER}
+```
+
+The bound value is not in the rendered query, and it is never anywhere else either: the
+engine reads it when it evaluates the comparison, and a comparison folded into a database's
+`WHERE` clause is sent with a `?` in its place and the value beside the statement, as a
+JDBC bind parameter. So the hostile string above is one string, compared with `status`,
+and nothing about it can change the query.
+
+A parameter has the type of what it is compared with, which is what
+`model().parameters()` reports, and `bind` refuses a value of another type rather than
+letting the comparison quietly find nothing:
+
+```java
+try {
+    byStatus.bind("floor", "fifty");
+} catch (RelixException e) {
+    System.out.println(e.getMessage());
+}
+```
+
+```
+parameter $floor is compared with a NUMBER, so it cannot be bound to the STRING fifty
+```
+
+Values every query of a session shares go to `Relix.builder().parameters(Map)` instead, and
+a relation's own `bind` takes precedence over them. Running a query with a parameter that
+has no value is refused before anything is read, naming it.
+
 ## The unary operators
 
 Seven operators take one relation and give back one relation, and they carry the names

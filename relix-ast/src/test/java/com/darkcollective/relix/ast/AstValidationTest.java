@@ -582,4 +582,20 @@ final class AstValidationTest extends AstTestSupport {
                     .withMessageContaining("must not be blank");
         }
     }
+    @Nested
+    @DisplayName("ParameterOperand")
+    final class Parameter {
+
+        @Test
+        @DisplayName("is named by an identifier and nothing else")
+        void namedByAnIdentifier() {
+            assertThat(AstBuilders.param("_since_2").name()).isEqualTo("_since_2");
+            assertThat(AstBuilders.param("Ödön").name()).isEqualTo("Ödön");
+            for (String bad : List.of("", "2x", "a-b", "a b", "$a")) {
+                assertThatIllegalArgumentException().isThrownBy(() -> AstBuilders.param(bad))
+                        .withMessageContaining("A parameter name is an identifier");
+            }
+        }
+    }
+
 }

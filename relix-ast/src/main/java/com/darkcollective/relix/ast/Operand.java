@@ -46,7 +46,8 @@ public sealed interface Operand permits
         UnaryOperand,
         StructConstruction,
         ArrayConstruction,
-        ConditionOperand {
+        ConditionOperand,
+        ParameterOperand {
     <R> R accept(OperandVisitor<R> visitor);
 
     /** Returns the source location of the first token of this operand. */

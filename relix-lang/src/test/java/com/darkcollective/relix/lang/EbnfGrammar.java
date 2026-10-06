@@ -50,7 +50,7 @@ import java.util.regex.Pattern;
 final class EbnfGrammar {
 
     /** What a token is, as far as the grammar's terminals can tell. */
-    enum Kind { WORD, DELIMITED, NUMBER, STRING_SQ, STRING_DQ, SYMBOL, MARKDOWN_TABLE, CSV_TABLE, ERROR }
+    enum Kind { WORD, DELIMITED, PARAMETER, NUMBER, STRING_SQ, STRING_DQ, SYMBOL, MARKDOWN_TABLE, CSV_TABLE, ERROR }
 
     /**
      * One token of a script.
@@ -71,6 +71,7 @@ final class EbnfGrammar {
     private static final Map<String, Predicate<Token>> TOKEN_CLASSES = Map.ofEntries(
             Map.entry("WORD", t -> t.kind() == Kind.WORD),
             Map.entry("DELIMITED_IDENTIFIER", t -> t.kind() == Kind.DELIMITED),
+            Map.entry("PARAMETER", t -> t.kind() == Kind.PARAMETER),
             Map.entry("NUMBER", t -> t.kind() == Kind.NUMBER),
             Map.entry("INTEGER", EbnfGrammar::isInteger),
             Map.entry("POSITIVE_INTEGER", t -> isInteger(t) && !t.text().matches("0+")),
@@ -679,6 +680,19 @@ final class EbnfGrammar {
                 }
                 out.add(new Token(Kind.DELIMITED, name.toString(), false, startAt));
                 i = j + 1;
+            } else if (c == '$') {
+                int j = i + 1;
+                if (j >= src.length()
+                        || !(Character.isLetter(src.charAt(j)) || src.charAt(j) == '_')) {
+                    out.add(new Token(Kind.ERROR, "$", false, startAt));
+                    return out;
+                }
+                while (j < src.length()
+                        && (Character.isLetterOrDigit(src.charAt(j)) || src.charAt(j) == '_')) {
+                    j++;
+                }
+                out.add(new Token(Kind.PARAMETER, src.substring(i, j), false, startAt));
+                i = j;
             } else if (Character.isDigit(c)) {
                 int j = i;
                 while (j < src.length() && Character.isDigit(src.charAt(j))) {
