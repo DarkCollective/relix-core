@@ -38,10 +38,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * in the jar is readable, so an example importing an engine package the jar does not
  * export compiles and runs there, and fails for a reader whose program is a module. A
  * mechanical package move once rewrote four pages' imports onto internal classes with
- * every example still green. This reads each example's imports against the jar's
- * exports.
+ * every example still green. This reads each example's imports against the exports of
+ * the published artifacts' descriptors: the engine's, and {@code relix-docs}'s, whose
+ * package the guide's page on the language reference teaches.
  */
-@DisplayName("the guide imports only packages the published jar exports")
+@DisplayName("the guide imports only packages the published artifacts export")
 final class GuideImportsTest {
 
     private static final Pattern JAVA_BLOCK = Pattern.compile("```java\\n(.*?)```", Pattern.DOTALL);
@@ -55,11 +56,15 @@ final class GuideImportsTest {
     void onlyExportedPackages() throws IOException {
         Path root = repoRoot();
         Set<String> exported = new TreeSet<>();
-        Matcher e = EXPORTS.matcher(Files.readString(root.resolve("relix-dist/src/main/java/module-info.java")));
-        while (e.find()) {
-            exported.add(e.group(1));
+        for (String descriptor : List.of("relix-dist/src/main/java/module-info.java",
+                "relix-docs/src/main/java/module-info.java")) {
+            Matcher e = EXPORTS.matcher(Files.readString(root.resolve(descriptor)));
+            while (e.find()) {
+                exported.add(e.group(1));
+            }
         }
-        assertThat(exported).as("the jar's exports").isNotEmpty();
+        assertThat(exported).as("the published artifacts' exports")
+                .contains("com.darkcollective.relix.embed", "com.darkcollective.relix.docs");
 
         List<Path> pages = new ArrayList<>();
         try (Stream<Path> walk = Files.walk(root.resolve("docs/guide"))) {
@@ -84,7 +89,7 @@ final class GuideImportsTest {
             }
         }
         assertThat(violations)
-                .as("a guide example using an engine package the published jar does not export")
+                .as("a guide example using an engine package no published artifact exports")
                 .isEmpty();
     }
 

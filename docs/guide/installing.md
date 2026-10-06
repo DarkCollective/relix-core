@@ -1,16 +1,17 @@
 # Getting the library
 
-Relix is one artifact. Everything the rest of this guide uses — the engine, the
-default function library, the CSV/JSON/HTTP/JDBC connectors, the bundled solver — is
-inside it, so a program that queries a database needs this dependency and a driver,
-and nothing else.
+The engine is one artifact. Almost everything the rest of this guide uses — the
+engine, the default function library, the CSV/JSON/HTTP/JDBC connectors — is inside it,
+so a program that queries a database needs this dependency and a driver, and nothing
+else. Two things are optional and published beside it: the solver, and the language
+reference.
 
 ## The coordinate
 
-The artifact is `com.darkcollective.relix:relix`, on Maven Central. That is one
-coordinate: the twenty-one modules the engine is assembled from are internal to the
-build and are not published separately — the module graph is a claim this build
-enforces about itself, not a set of names a program should depend on.
+The engine is `com.darkcollective.relix:relix`, on Maven Central. The twenty-odd modules
+it is assembled from are internal to the build and are not published separately — the
+module graph is a claim this build enforces about itself, not a set of names a program
+should depend on.
 
 A consuming Gradle build names it:
 
@@ -34,10 +35,37 @@ and a Maven build the same way:
 </dependency>
 ```
 
-`ojalgo` is a runtime dependency of the published POM rather than a merged part of the
+`relix` depends on nothing else.
+
+## The optional artifacts
+
+Three more coordinates are published at the same version as `relix`:
+
+| Artifact | What it adds |
+|---|---|
+| `com.darkcollective.relix:relix-solver-ojalgo` | The solver that `OPTIMIZE` and `COVER EXACT` need, backed by ojalgo |
+| `com.darkcollective.relix:relix-docs` | The language reference and `RelixDocs`, which reads it (see [Building tools](tooling.md)) |
+| `com.darkcollective.relix:relix-all` | No code: a POM naming the engine and both of the above |
+
+Without the solver, a query using `OPTIMIZE` or `COVER EXACT` fails before it reads any
+input, with an error naming the artifact to add; every other operator runs. The solver
+is found at run time, so adding it to the runtime class path or module path is enough —
+nothing compiles against it:
+
+```gradle
+dependencies {
+    implementation 'com.darkcollective.relix:relix:1.0.0-rc2'
+    runtimeOnly 'com.darkcollective.relix:relix-solver-ojalgo:1.0.0-rc2'
+}
+```
+
+`ojalgo` arrives as a dependency of `relix-solver-ojalgo` rather than merged into its
 jar. Shading it would hide it from your dependency report and from whatever scans that
 report for vulnerabilities, which is a worse trade than one visible transitive
 dependency.
+
+Each artifact holds packages no other one does, so any combination of them can share a
+module path.
 
 To work on Relix itself, or to depend on a change that is not released,
 `./gradlew publishToMavenLocal` publishes the same coordinate to your local Maven
@@ -58,9 +86,10 @@ java {
 
 A newer JDK is fine — 21 is the floor, not the ceiling.
 
-The engine ships as a set of JPMS modules and works equally on the class path or the
-module path. On the module path, the module to require is
-`com.darkcollective.relix.embed`.
+The engine works equally on the class path or the module path. On the module path, the
+module to require is `com.darkcollective.relix`, and `com.darkcollective.relix.docs` to
+read the reference. The solver is not required by name: the engine uses its service,
+so the module path resolves it when it is there.
 
 ## A driver is yours to add
 

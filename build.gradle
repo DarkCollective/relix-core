@@ -505,6 +505,7 @@ ext.publicModules = [
         ':relix-parser',
         ':relix-lang',
         ':relix-embed',
+        ':relix-docs',
         ':relix-function-builtin',
         ':relix-connectors-std',
         ':relix-solver-ojalgo',
@@ -605,16 +606,18 @@ configure([project(':relix-dist')]) {
 // ---------------------------------------------------------------------------
 // Publication
 //
-// **One artifact.** A client writes one dependency, `com.darkcollective.relix:relix`,
-// and everything the engine is made of travels inside it.
+// **One engine artifact.** A client writes one dependency, `com.darkcollective.relix:relix`,
+// and everything the engine is made of travels inside it. Beside it are two optional
+// artifacts a client adds by name — `relix-docs` and `relix-solver-ojalgo` — and
+// `relix-all`, a POM naming all three. No class is in more than one of them.
 //
-// The modules are not published individually, and that is the point. Twenty-one
-// coordinates in a repository is nineteen internal ones a client can name, pin and be
+// The modules are not published individually, and that is the point. Twenty-odd
+// coordinates in a repository is twenty internal ones a client can name, pin and be
 // broken by — a published surface far larger than anything we would defend. The module
 // graph is a claim about *this* build, enforced by its own tests; it is not a contract
 // with anyone outside.
 //
-// `relix-dist` assembles it. Nothing else publishes.
+// `relix-dist` assembles and publishes all four. Nothing else publishes.
 // ---------------------------------------------------------------------------
 
 // What goes inside the published jar: the engine, plus the frontend and the providers
@@ -630,12 +633,18 @@ configure([project(':relix-dist')]) {
 // dependency, `relix-embed`'s on CompositeDataSourceConnector, and that class now lives
 // in `relix-embed`. The renderers, the docs registry, env loading and the REPL's
 // highlighter serve `relix-cli` and `relix-repl`, neither of which is published.
+//
+// Two things that used to be inside are now artifacts of their own, because most
+// embedders want neither and both were most of the download: the language reference
+// (`relix-docs`, which the engine never reads) and the ojalgo solver
+// (`relix-solver-ojalgo`, which only OPTIMIZE and COVER EXACT need — 2.6 MB of library
+// for two operators). Each is published beside `relix` by `relix-dist`, and `relix-all`
+// names all three.
 ext.bundledModules = coreModules + [
         ':relix-lang',
         ':relix-parser',
         ':relix-connectors-std',
         ':relix-function-builtin',
-        ':relix-solver-ojalgo',
         ':relix-embed',
 ]
 

@@ -98,7 +98,7 @@ public final class SubsetOptimizer {
      */
     static final String NO_SOLVER =
             "OPTIMIZE needs a mathematical-programming solver and none is installed; "
-            + "add one to the module path (the shipped provider is relix-solver-ojalgo)";
+            + "add com.darkcollective.relix:relix-solver-ojalgo to the class path or module path";
 
     /**
      * Solves the subset-selection problem for one group.

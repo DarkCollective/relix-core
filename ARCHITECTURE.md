@@ -67,10 +67,13 @@ covers connectors and the mathematical-programming solver. The consequence is
 checkable and is the point of the arrangement: every engine module's descriptor
 names nothing but `java.base` and other engine modules.
 
-**One artifact is published.** The modules below are how this build is organised,
-not a set of names a program should depend on. `relix-dist` assembles them into a
-single jar, `com.darkcollective.relix:relix`, and that coordinate is the whole
-published surface.
+**One engine artifact is published.** The modules below are how this build is
+organised, not a set of names a program should depend on. `relix-dist` assembles them
+into a single jar, `com.darkcollective.relix:relix`. Beside it, `relix-dist` publishes
+the two things most programs do not need — the language reference
+(`com.darkcollective.relix:relix-docs`) and the solver
+(`com.darkcollective.relix:relix-solver-ojalgo`) — and `relix-all`, a POM naming all
+three. No package is in more than one of them.
 
 ---
 
@@ -102,6 +105,7 @@ published surface.
 | `relix-parser` | The expression parser — relational algebra in Unicode or ASCII |
 | `relix-lang` | The script parser: a whole `.relix` file, including its imports |
 | `relix-embed` | The embedding API. A session, a relation as a value, a combinator per operator, and the terminals that inspect or run one. This is what a Java program uses |
+| `relix-docs` | The language reference, copied in from `docs/reference`, and `RelixDocs`, which lists and reads it. Depends on nothing; published as its own artifact |
 
 ### Providers
 
@@ -112,14 +116,14 @@ more, which is what makes the arrangement a rule rather than a description.
 |---|---|
 | `relix-function-builtin` | The default function library — the scalar functions and aggregates, one definition each, and the reference pages documenting them |
 | `relix-connectors-std` | The standard connectors: CSV, JSON, HTTP and JDBC, with the driver provisioning JDBC needs |
-| `relix-solver-ojalgo` | The shipped solver. Every reference to the underlying library lives in one class |
+| `relix-solver-ojalgo` | The solver, published as its own artifact. Every reference to the underlying library lives in one class |
 | `relix-mongo-connector` | A MongoDB connector, built as an out-of-tree plugin — the case that proves a third party can write one |
 
 ### Packaging
 
 | Module | What it holds |
 |---|---|
-| `relix-dist` | Assembles the single published artifact from the modules above, and holds the descriptor naming exactly the packages a caller may reach |
+| `relix-dist` | Assembles and publishes the artifacts: the engine jar from the modules above, with the descriptor naming exactly the packages a caller may reach; `relix-docs`; `relix-solver-ojalgo`, with the descriptor it has outside this build; and `relix-all` |
 
 ---
 

@@ -36,6 +36,6 @@ public final class NoSolverInstalledException extends RuntimeException {
      */
     public NoSolverInstalledException(String operator) {
         super(operator + " needs a mathematical-programming solver and none is installed; "
-                + "add one to the module path (the shipped provider is relix-solver-ojalgo)");
+                + "add com.darkcollective.relix:relix-solver-ojalgo to the class path or module path");
     }
 }

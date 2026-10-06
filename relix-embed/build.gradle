@@ -16,20 +16,6 @@ plugins {
 // ProgrammingGuideTest reads docs/guide and compiles what it finds there. Gradle
 // cannot see that input, so without declaring it a guide-only change leaves the guard
 // UP-TO-DATE — passing because it never ran, the one failure mode a guard must not have.
-// The language reference ships in the jar (#1131), so a tool with only the artifact can
-// read it: Relix.referencePages() / referencePage(path). docs/reference stays the source
-// of truth, where its gates run. Function pages are left out, their libraries serving
-// them, and so is the one page about a front end rather than the language.
-processResources {
-    from("${rootProject.projectDir}/docs/reference") {
-        into 'com/darkcollective/relix/embed/reference'
-        include '**/*.md'
-        exclude 'functions/**'
-        exclude 'advanced/repl.md'
-        exclude 'README.md'
-    }
-}
-
 tasks.named('test') {
     inputs.dir("$rootDir/docs/guide").withPropertyName('programmingGuide')
     inputs.dir("$rootDir/docs/problem-solving").withPropertyName('problemSolvingDocs')
@@ -38,6 +24,7 @@ tasks.named('test') {
     inputs.files("$rootDir/tools/export/public/README.md", "$rootDir/README.md").withPropertyName('publicReadme')
     // ReExportSurfaceTest reads the published artifact's exports from its descriptor.
     inputs.file("$rootDir/relix-dist/src/main/java/module-info.java").withPropertyName('publishedDescriptor')
+    inputs.file("$rootDir/relix-docs/src/main/java/module-info.java").withPropertyName('docsDescriptor')
 }
 
 dependencies {
@@ -79,17 +66,19 @@ dependencies {
     implementation project(':relix-solver')
     implementation project(':relix-json')
 
-    // The batteries. Nothing here references either — the engine discovers them with
+    // The battery. Nothing here references it — the engine discovers it with
     // ServiceLoader — but "one dependency" is only true if depending on the facade
-    // installs them, and a module nothing `requires` is left out of the resolved
-    // graph. An embedder who wants to assemble their own stack takes `relix-core`,
-    // which is what that artifact is for.
+    // installs it, and a module nothing `requires` is left out of the resolved graph.
+    // The solver is not one: OPTIMIZE and COVER EXACT are the only operators that need
+    // it, so it is published as relix-solver-ojalgo and an embedder adds it.
     implementation project(':relix-function-builtin')
-    implementation project(':relix-solver-ojalgo')
 
     // H2 backs the bound-DataSource tests: an injected handle has no url, and the only
     // way to prove introspection works through one is to introspect a real database.
     testImplementation 'com.h2database:h2:2.2.224'
+
+    // The programming guide's page on the language reference compiles against it.
+    testImplementation project(':relix-docs')
 
     testImplementation testFixtures(project(':relix-ast'))
     testImplementation testFixtures(project(':relix-lang-ast'))
