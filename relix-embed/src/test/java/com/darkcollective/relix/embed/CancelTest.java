@@ -37,6 +37,7 @@ import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static com.darkcollective.relix.embed.EmbedAssertions.assertThat;
+import static com.darkcollective.relix.embed.EmbedAssertions.assertThatThrownBy;
 
 /**
  * {@link Relix#cancel()} stops a query from another thread, including one waiting on a
@@ -98,14 +99,7 @@ final class CancelTest {
         @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
         @DisplayName("cancels a statement the database is still executing")
         void databaseWork() throws Exception {
-            Counting h2 = h2("cancel_running");
-            try (Connection c = h2.getConnection(); Statement s = c.createStatement()) {
-                // Effectively endless: H2 computes the whole result before executeQuery
-                // returns, so the thread sits inside the driver, where an interrupt is not
-                // read and no stream exists yet for anyone to close.
-                s.execute("CREATE VIEW slow AS SELECT a.x AS x FROM SYSTEM_RANGE(1, 1000000) a, "
-                        + "SYSTEM_RANGE(1, 1000000) b WHERE a.x + b.x < 0");
-            }
+            Counting h2 = slowView("cancel_running");
             // No catalog: analysing a database table otherwise asks the database for its
             // statistics, and counting this view's rows takes as long as reading them.
             try (Relix relix = Relix.builder().jdbc("db", h2).catalog(CatalogProvider.NONE).build()) {
@@ -114,6 +108,23 @@ final class CancelTest {
                 assertThat(failure).isInstanceOf(QueryExecutionException.class)
                         .hasMessageContaining("query cancelled");
                 assertThat(h2.cancels.get()).isPositive();
+            }
+        }
+
+        @Test
+        @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+        @DisplayName("a cancel that arrives before the statement executes stops it executing")
+        void beforeExecution() throws Exception {
+            Counting h2 = slowView("cancel_before");
+            try (Relix relix = Relix.builder().jdbc("db", h2).catalog(CatalogProvider.NONE).build()) {
+                relix.define("source Slow from db { table: \"SLOW\", schema: { x: NUMBER } };");
+                // The window the race lives in, made deterministic: the query has started,
+                // its statement exists, and it has not yet executed. A cancel there reaches
+                // a statement the driver will not cancel, so the query must not execute it.
+                h2.onCreateStatement = relix::cancel;
+                assertThatThrownBy(() -> relix.relation("Slow").toList())
+                        .isInstanceOf(QueryExecutionException.class)
+                        .hasMessageContaining("query cancelled");
             }
         }
 
@@ -165,6 +176,20 @@ final class CancelTest {
         return new Counting("jdbc:h2:mem:" + name + ";DB_CLOSE_DELAY=-1");
     }
 
+    /**
+     * A database with an effectively endless view: H2 computes the whole result before
+     * executeQuery returns, so a thread reading it sits inside the driver, where an
+     * interrupt is not read and no stream exists yet for anyone to close.
+     */
+    private static Counting slowView(String name) throws SQLException {
+        Counting h2 = h2(name);
+        try (Connection c = h2.getConnection(); Statement s = c.createStatement()) {
+            s.execute("CREATE VIEW slow AS SELECT a.x AS x FROM SYSTEM_RANGE(1, 1000000) a, "
+                    + "SYSTEM_RANGE(1, 1000000) b WHERE a.x + b.x < 0");
+        }
+        return h2;
+    }
+
     private static Counting seededWithRows(String name, int rows) throws SQLException {
         Counting h2 = h2(name);
         try (Connection c = h2.getConnection(); Statement s = c.createStatement()) {
@@ -177,6 +202,8 @@ final class CancelTest {
     private static final class Counting implements DataSource {
         private final String url;
         final AtomicInteger cancels = new AtomicInteger();
+        /** Run as each statement is created, before the engine can execute it. */
+        volatile Runnable onCreateStatement = () -> { };
 
         Counting(String url) {
             this.url = url;
@@ -188,9 +215,12 @@ final class CancelTest {
             return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
                     new Class<?>[]{Connection.class}, (proxy, method, args) -> {
                         Object result = invoke(real, method, args);
-                        return result instanceof Statement statement
-                                && method.getName().equals("createStatement")
-                                ? counting(statement) : result;
+                        if (result instanceof Statement statement
+                                && method.getName().equals("createStatement")) {
+                            onCreateStatement.run();
+                            return counting(statement);
+                        }
+                        return result;
                     });
         }
 
