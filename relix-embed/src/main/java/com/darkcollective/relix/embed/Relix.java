@@ -1285,7 +1285,9 @@ public final class Relix implements AutoCloseable {
      */
     DataSourceConnector openConnector(SemanticModel model) {
         requireOpen();
-        return new CompositeDataSourceConnector(model, baseDirectory,
+        // A declaration written in a file reads its files from beside it — unless the
+        // sandbox is closed, whose base directory is the one place its files may come from.
+        return new CompositeDataSourceConnector(model, baseDirectory, sandbox.isOpen(),
                 driverProvisioner, connectorProvisioner,
                 generators, pool, List.copyOf(installedConnectors), files);
     }
@@ -1527,7 +1529,12 @@ public final class Relix implements AutoCloseable {
      * Parses {@code .relix} text into a {@link Script}, naming where it came from.
      *
      * <p>{@code source} is the name a failure and every node's location carry, such as
-     * the file's path, so an error in an imported file points at that file.
+     * the file's path, so an error in an imported file points at that file. When it is an
+     * <em>absolute</em> path, it also places the script: a relative path in one of its
+     * declarations — a {@code csv("…")} or {@code json("…")} source, a file connection's
+     * {@code path} — resolves against that file's directory rather than the session's
+     * base directory, so declarations gathered from several directories each read their
+     * files from beside them.
      *
      * @param text the script; must not be null
      * @param source the name of the text's origin; must not be null
@@ -1720,9 +1727,13 @@ public final class Relix implements AutoCloseable {
          * Sets the directory a source's relative path resolves against.
          *
          * <p>{@code source Orders from csv("./orders.csv")} names a file relative to
-         * something, and in a script that something is the script's own directory. An
-         * embedded session has no script, so it is this — the working directory unless
-         * said otherwise, which is what a program run from its own root expects.
+         * something, and in a script that something is the script's own directory: a
+         * declaration parsed from a file by {@link Relix#parse(String, String)} with the
+         * file's absolute path as its source, or imported, reads from beside that file.
+         * Every other declaration — text given to the session, or a statement built in
+         * Java — has no file, so it is this: the working directory unless said otherwise,
+         * which is what a program run from its own root expects. In a closed
+         * {@link Sandbox} it is this for every declaration.
          *
          * @param directory the base directory; must not be null
          * @return this builder
