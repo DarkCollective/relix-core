@@ -165,10 +165,13 @@ def manualsZip = tasks.register('relixManualsZip', Zip) {
     reproducibleFileOrder = true
 }
 
+// The packages the descriptor exports and nothing else. javadocAll would also document the
+// front ends and every package exported only to another module, so a reader of the API
+// documentation (and the site, which publishes this jar) would see classes no caller can reach.
 def javadocJar = tasks.register('relixJavadocJar', Jar) {
     archiveBaseName = 'relix'
     archiveClassifier = 'javadoc'
-    from rootProject.tasks.named('javadocAll')
+    from rootProject.tasks.named('javadocPublished')
 }
 
 // ---------------------------------------------------------------------------
