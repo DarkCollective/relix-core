@@ -229,6 +229,33 @@ A function's page is not among them: it belongs to the library that offers the f
 and `FunctionCatalog.documentation(docKey)` serves it, so a function library installed
 later is documented the same way the shipped one is.
 
+A tool that shows a page for whatever its user typed wants both kinds in one place, and
+`ReferenceLookup` is that index. Built over a function catalogue, it finds a page by
+glyph, keyword or name, the language's or a function's:
+
+```java
+import com.darkcollective.relix.docs.ReferenceLookup;
+import com.darkcollective.relix.function.FunctionCatalog;
+
+ReferenceLookup docs = ReferenceLookup.of(FunctionCatalog.discover());
+System.out.println(docs.lookup("select").orElseThrow().lines().findFirst().orElseThrow());
+System.out.println(docs.lookup("fix").orElseThrow().lines().findFirst().orElseThrow());
+System.out.println(docs.function("fix").orElseThrow().summary());
+System.out.println(docs.functionsByCategory().keySet());
+```
+
+```
+# Name: Selection (σ / SELECT)
+# Name: General Recursion (FIX)
+Truncate toward zero
+[string, math, datetime, conditional, typecheck, conversion, nested, ordering]
+```
+
+A word finds the first page that claims it: the language's pages first, then any a tool
+adds of its own with `ReferenceLookup.of(functions, pages, markdown)`, then the
+functions'. So `fix` is the recursion operator, and `function("fix")` asks among
+functions only, where it is the `Fix` that truncates a number.
+
 ## Connectors and drivers
 
 A tool that manages plugins asks where they live and which are installed, and a

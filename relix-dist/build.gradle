@@ -178,12 +178,45 @@ def javadocJar = tasks.register('relixJavadocJar', Jar) {
 // ---------------------------------------------------------------------------
 // relix-docs — the language reference and the API that reads it.
 //
-// A real module of its own, with nothing to merge: its jar is its classes, its resources
-// (the pages) and its descriptor, plus the licence files every published jar carries.
+// Its jar is its classes and its resources (the pages), plus the licence files every
+// published jar carries, but not its in-build descriptor: inside this build it requires
+// the function SPI's own module (ReferenceLookup indexes the installed functions'
+// pages), which outside it is part of com.darkcollective.relix. So, as for the solver,
+// the published descriptor is compiled here against the published engine jar.
 // ---------------------------------------------------------------------------
+def docsClasses = layout.buildDirectory.dir('docs/classes')
+
+def mergeDocsClasses = tasks.register('mergeDocsClasses', Sync) {
+    description = 'Gathers the reference\'s classes and pages, without its in-build descriptor.'
+    into docsClasses
+    from(docsProject.sourceSets.main.output) {
+        exclude 'module-info.class'
+    }
+}
+
+def compileDocsModuleInfo = tasks.register('compileDocsModuleInfo', JavaCompile) {
+    dependsOn mergeDocsClasses, tasks.named('jar')
+    source = files('src/docs/java/module-info.java')
+    classpath = files()
+    destinationDirectory = layout.buildDirectory.dir('docs/descriptor')
+    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }
+    def engineJar = tasks.named('jar').flatMap { it.archiveFile }
+    inputs.file(engineJar)
+    def moduleVersion = project.version.toString()
+    doFirst {
+        options.compilerArgs += [
+                '--module-path', files(engineJar).asPath,
+                '--patch-module', "com.darkcollective.relix.docs=${docsClasses.get().asFile}",
+                '--module-version', moduleVersion,
+        ]
+    }
+}
+
 def docsJar = tasks.register('docsJar', Jar) {
     archiveBaseName = 'relix-docs'
-    from docsProject.sourceSets.main.output
+    dependsOn compileDocsModuleInfo
+    from docsClasses
+    from compileDocsModuleInfo.map { it.destinationDirectory }
     from(rootProject.file('LICENSE.txt')) { into 'META-INF' }
     from(rootProject.file('NOTICE')) { into 'META-INF' }
     manifest {
@@ -194,7 +227,10 @@ def docsJar = tasks.register('docsJar', Jar) {
 def docsSourcesJar = tasks.register('docsSourcesJar', Jar) {
     archiveBaseName = 'relix-docs'
     archiveClassifier = 'sources'
-    from docsProject.sourceSets.main.allJava
+    from(docsProject.sourceSets.main.allJava) {
+        exclude 'module-info.java'
+    }
+    from 'src/docs/java'
 }
 
 def docsJavadocJar = tasks.register('docsJavadocJar', Jar) {
@@ -322,7 +358,7 @@ def sameVersion = { String artifact, String scope -> [relixGroup, artifact, proj
 publishing {
     publications {
         // The engine. It depends on nothing: the solver and its library left with
-        // relix-solver-ojalgo, and the pages with relix-docs.
+        // relix-solver-ojalgo, and the pages with relix-docs, which depends on it.
         relix(MavenPublication) {
             artifactId = 'relix'
             artifact tasks.named('jar')
@@ -337,7 +373,8 @@ publishing {
             artifact docsSourcesJar
             artifact docsJavadocJar
             describe(pom, 'relix-docs',
-                    'The Relix language reference, and the API a tool reads it with.', [])
+                    'The Relix language reference, and the API a tool reads it with.',
+                    [sameVersion('relix', 'compile')])
         }
         solver(MavenPublication) {
             artifactId = 'relix-solver-ojalgo'

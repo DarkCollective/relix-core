@@ -14,17 +14,16 @@
  * limitations under the License.
  */
 /**
- * The Relix language reference, published as an artifact of its own
- * ({@code com.darkcollective.relix:relix-docs}).
+ * The published descriptor of {@code com.darkcollective.relix:relix-docs}.
  *
- * <p>The engine never reads the pages, so they are carried here rather than in the
- * engine's artifact, and an application that shows no documentation does not download
- * them. It reads the function SPI, because its index of the reference includes the pages
- * the installed function libraries serve; published, that SPI is part of
- * {@code com.darkcollective.relix}, which the published descriptor requires instead.
+ * <p>Inside this build the reference requires the function SPI's own module; outside it
+ * that package is part of {@code com.darkcollective.relix}. So the descriptor a client's
+ * module path reads is this one, compiled against the published engine rather than
+ * against the build's modules. The engine is required transitively, because
+ * {@code ReferenceLookup.of} takes its {@code FunctionCatalog}.
  */
 module com.darkcollective.relix.docs {
-    requires transitive com.darkcollective.relix.function;   // FunctionCatalog, in ReferenceLookup
+    requires transitive com.darkcollective.relix;
 
     exports com.darkcollective.relix.docs;
 }

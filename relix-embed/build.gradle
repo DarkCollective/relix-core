@@ -24,7 +24,7 @@ tasks.named('test') {
     inputs.files("$rootDir/tools/export/public/README.md", "$rootDir/README.md").withPropertyName('publicReadme')
     // ReExportSurfaceTest reads the published artifact's exports from its descriptor.
     inputs.file("$rootDir/relix-dist/src/main/java/module-info.java").withPropertyName('publishedDescriptor')
-    inputs.file("$rootDir/relix-docs/src/main/java/module-info.java").withPropertyName('docsDescriptor')
+    inputs.file("$rootDir/relix-dist/src/docs/java/module-info.java").withPropertyName('docsDescriptor')
 }
 
 dependencies {

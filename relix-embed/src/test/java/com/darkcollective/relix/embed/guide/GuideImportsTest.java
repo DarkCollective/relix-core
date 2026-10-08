@@ -57,7 +57,7 @@ final class GuideImportsTest {
         Path root = repoRoot();
         Set<String> exported = new TreeSet<>();
         for (String descriptor : List.of("relix-dist/src/main/java/module-info.java",
-                "relix-docs/src/main/java/module-info.java")) {
+                "relix-dist/src/docs/java/module-info.java")) {
             Matcher e = EXPORTS.matcher(Files.readString(root.resolve(descriptor)));
             while (e.find()) {
                 exported.add(e.group(1));
