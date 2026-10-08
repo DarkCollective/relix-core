@@ -2166,6 +2166,10 @@ public final class Relation {
                 // yields a row, a selection over an endless generator, runs for ever.
                 .withMaxProcessedRows(session.maxProcessedRows())
                 .withTimeout(session.timeout())
+                // The session's generators, so the planner's boundedness check sees a
+                // generator the session registered - a Relix.input among them - and
+                // refuses a blocking operator over one that never ends.
+                .withGenerators(session.generators())
                 .withCancellation(cancellation)
                 .withListener(listener);
     }
@@ -2197,7 +2201,8 @@ public final class Relation {
     private ExecutionContext planningContext() {
         // Resolved like an execution's, because the plan depends on the values: a
         // connection's URL is what chooses its SQL dialect.
-        return ExecutionContext.inlineOnly(executionModel()).withClock(session.clock());
+        return ExecutionContext.inlineOnly(executionModel()).withClock(session.clock())
+                .withGenerators(session.generators());
     }
 
     /**
