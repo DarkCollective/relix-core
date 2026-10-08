@@ -32,10 +32,13 @@ query { Orders // every order
 ```
 
 # Technical Description:
-Comments are removed by the lexer, so they are invisible to every phase above it.
-They carry no source position into the tree, appear in no rendering of an
-expression, and cannot be recovered from a parsed script: a view printed back with
-`:source` or by a session's own report comes back without them.
+Comments are removed by the lexer, so they are invisible to every phase above it:
+nothing a comment says changes what a script means. The parser keeps each one beside the
+script it parsed, placed by the statement it was written next to — before it, after its
+`;` on the same line, or inside it — so that a script printed back from a parse comes
+back with its comments: each where it was, before the part of an expression it preceded,
+and as it was written. A session's own report, which prints the declarations the session
+holds rather than any text, has none.
 
 A `--` is a comment marker before it is an operator, which is the one place the two
 forms interact with the rest of the grammar. `- -amount` is arithmetic — negation

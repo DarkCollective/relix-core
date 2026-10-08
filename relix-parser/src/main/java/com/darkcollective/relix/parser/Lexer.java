@@ -15,10 +15,14 @@
  */
 package com.darkcollective.relix.parser;
 
+import com.darkcollective.relix.ast.Comment;
+import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.parser.ParseException;
 import java.io.InputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -192,6 +196,7 @@ public final class Lexer {
     }
 
     private final String input;
+    private final List<Comment> comments = new ArrayList<>();
     private int index;
     private int line;
     private int column;
@@ -520,6 +525,9 @@ public final class Lexer {
     private void skipWhitespace() {
         while (!isAtEnd()) {
             char c = peek();
+            int startIndex = index;
+            int startLine = line;
+            int startColumn = column;
             if (Character.isWhitespace(c)) {
                 advance();
             } else if (c == '-' && peekNext() == '-') {
@@ -528,6 +536,8 @@ public final class Lexer {
                 while (!isAtEnd() && peek() != '\n') {
                     advance();
                 }
+                comments.add(new Comment(input.substring(startIndex, index),
+                        new SourceLocation(SourceLocation.UNKNOWN.filePath(), startLine, startColumn)));
             } else if (c == '/' && peekNext() == '*') {
                 advance();
                 advance();
@@ -538,10 +548,22 @@ public final class Lexer {
                     advance();
                     advance();
                 }
+                comments.add(new Comment(input.substring(startIndex, index),
+                        new SourceLocation(SourceLocation.UNKNOWN.filePath(), startLine, startColumn)));
             } else {
                 break;
             }
         }
+    }
+
+    /**
+     * The comments skipped so far, in the order they were written. Their locations name
+     * no file, which the lexer does not know; a parser that does puts its own path on them.
+     *
+     * @return the comments read past, oldest first
+     */
+    public List<Comment> comments() {
+        return List.copyOf(comments);
     }
 
     private Token token(TokenType type, int startIndex, int startLine, int startColumn) {

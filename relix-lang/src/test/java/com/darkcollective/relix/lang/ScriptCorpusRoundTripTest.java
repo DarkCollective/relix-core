@@ -60,8 +60,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * choice {@code RelNodeCorpusRoundTripTest} makes one level down.
  *
  * <p>Formatting is deliberately not compared. The printer normalises — one statement per
- * line, canonical keyword spelling, comments gone, since a comment is not in the AST.
- * What is promised is that the text reads back as the same script.
+ * line, canonical keyword spelling. What is promised is that the text reads back as the
+ * same script; that comments come back with it is {@code ScriptCommentsTest}'s concern.
  */
 @DisplayName("ScriptCorpus — print → parse over every statement and source kind")
 final class ScriptCorpusRoundTripTest {

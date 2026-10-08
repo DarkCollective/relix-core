@@ -23,6 +23,7 @@ import com.darkcollective.relix.ast.RecursiveRefNode;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelNodeCorpus;
 import com.darkcollective.relix.ast.RelationNode;
+import com.darkcollective.relix.ast.Spelling;
 import com.darkcollective.relix.ast.TraceNode;
 import com.darkcollective.relix.ast.UnnestNode;
 import com.darkcollective.relix.ast.visitor.internal.PrettyPrinter;
@@ -156,6 +157,36 @@ final class RelNodeCorpusRoundTripTest extends ParserTestSupport {
                                 .as("re-printing a re-parsed node should be identical")
                                 .isEqualTo(printed);
                     }));
+        }
+    }
+
+    // =========================================================================
+
+    @Nested
+    @DisplayName("ASCII spelling — parse(print(n, KEYWORDS)) ≡ n")
+    class AsciiSpelling {
+
+        @TestFactory
+        @DisplayName("every kind with surface syntax prints in ASCII and parses back unchanged")
+        Stream<DynamicTest> everyKindRoundTripsInAscii() {
+            return corpus(false)
+                    .filter(n -> n.getClass() != REBINDING)
+                    .map(node -> DynamicTest.dynamicTest(node.getClass().getSimpleName(), () -> {
+                        String printed = node.prettyPrint(Spelling.KEYWORDS);
+                        assertThat(printed.chars().filter(c -> c > 127))
+                                .as("%s should be ASCII", printed).isEmpty();
+                        assertThat(stripLocations(RelAlgebraParser.parse(printed)))
+                                .as("parse(%s) should rebuild the original node", printed)
+                                .isEqualTo(stripLocations(node));
+                    }));
+        }
+
+        @TestFactory
+        @DisplayName("the glyph spelling is what the printer has always written")
+        Stream<DynamicTest> glyphsAreTheDefault() {
+            return corpus(false).map(node -> DynamicTest.dynamicTest(
+                    node.getClass().getSimpleName(),
+                    () -> assertThat(node.prettyPrint(Spelling.GLYPHS)).isEqualTo(print(node))));
         }
     }
 

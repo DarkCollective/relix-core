@@ -51,12 +51,27 @@ import java.util.Optional;
  *                   {@code "default"})
  * @param statements the ordered list of top-level statements; never null,
  *                   may be empty
+ * @param comments   the comments the parsed text carried, placed by the statements
+ *                   they were written next to, for {@link ScriptPrinter} to put back;
+ *                   {@link ScriptComments#NONE} for a script that was not parsed
  */
-public record Script(Optional<String> namespace, List<Statement> statements) {
+public record Script(Optional<String> namespace, List<Statement> statements,
+                     ScriptComments comments) {
 
     public Script {
         Objects.requireNonNull(namespace, "namespace");
         Objects.requireNonNull(statements, "statements");
+        Objects.requireNonNull(comments, "comments");
         statements = List.copyOf(statements);
+    }
+
+    /**
+     * A script with no comments: one built from statements rather than parsed.
+     *
+     * @param namespace  the declared namespace, or empty
+     * @param statements the statements, in order
+     */
+    public Script(Optional<String> namespace, List<Statement> statements) {
+        this(namespace, statements, ScriptComments.NONE);
     }
 }
