@@ -397,8 +397,9 @@ public final class ScriptPrinter {
         StringBuilder sb = new StringBuilder(row.substring(0, row.length() - 1));
         for (var it = trailing.iterator(); it.hasNext(); ) {
             Comment comment = it.next();
-            if (comment.isLineComment() && comment.location().line() == location.line()
-                    && Objects.equals(comment.location().filePath(), location.filePath())) {
+            // A block comment can share a row's line only after the table's ], and written
+            // after the row's last | it would read back as text, not a comment.
+            if (comment.isLineComment() && comment.location().line() == location.line()) {
                 sb.append("  ").append(comment.text());
                 it.remove();
             }

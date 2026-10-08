@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.lang.ast;
 
+import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.lang.ast.source.*;
 import com.darkcollective.relix.lang.ast.table.CsvInlineTable;
 import com.darkcollective.relix.lang.ast.table.InlineTable;
@@ -337,6 +338,18 @@ final class LangAstSourceTest {
                     List.of("id"), List.of(List.of("1")));
             assertThatThrownBy(() -> t.rows().add(List.of("2")))
                     .isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @Test
+        @DisplayName("Takes one row location per row")
+        void rowLocations() {
+            SourceLocation at = new SourceLocation("t.relix", 4, 1);
+            assertThat(new MarkdownInlineTable(List.of("id"), List.of(List.of("1")), List.of(at))
+                    .rowLocations()).containsExactly(at);
+            assertThatThrownBy(() -> new MarkdownInlineTable(
+                    List.of("id"), List.of(List.of("1"), List.of("2")), List.of(at)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("one location per row");
         }
     }
 

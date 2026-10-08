@@ -40,7 +40,7 @@
 #   ProduceBoundTest          ProduceBound
 #   RelationFunctionCallTest  RelationFunctionCall
 #   AggregateFunctionTest     AggregateFunction
-#   LangAstSourceTest         InlineTableBody
+#   LangAstSourceTest         InlineTableBody, MarkdownInlineTable (its row locations)
 #   LangAstScriptTest         ImportStatement, DefStatement
 #   LangAstValidationTest     DefRelationStatement, JsonFileSourceConfig, RelateStatement
 #
@@ -98,7 +98,7 @@
 4	relix-ast/src/test/java/com/darkcollective/relix/ast/RelNodeAssertTest.java
 5	relix-ast/src/test/java/com/darkcollective/relix/ast/TruthRelationNodeTest.java
 3	relix-ast/src/test/java/com/darkcollective/relix/ast/AggregateFunctionTest.java
-3	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstSourceTest.java
+4	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstSourceTest.java
 2	relix-lang/src/test/java/com/darkcollective/relix/lang/ScriptCorpusRoundTripTest.java
 2	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/ScriptCorpusTest.java
 1	relix-processor/src/test/java/com/darkcollective/relix/processor/eval/FunctionCatalogContractTest.java
