@@ -34,6 +34,23 @@ that disagree are an error, since no one value could satisfy both:
 σ id = $key ∨ customer = $key (Orders)   -- ERROR: $key is compared with a NUMBER and a STRING
 ```
 
+A value bound as text — the way a value arrives from a command line, a query string or
+an environment variable — is read as the parameter's type, the way that type's literal
+reads its text. Text that is not of the type is an error naming the parameter, the type
+and the text; it is never read as part of the query:
+
+| Parameter's type | Text it takes |
+|---|---|
+| NUMBER | a decimal number: `42`, `-3.5`, `1e3` |
+| BOOLEAN | `true` or `false`, in any case |
+| DATE, TIME, TIMESTAMP | ISO-8601, as `DATE '…'`, `TIME '…'` and `TIMESTAMP '…'` take it: `2026-03-01`, `13:40:00`, `2026-03-01T09:00:00Z` (UTC when it names no offset) |
+| DURATION | ISO-8601, as `DURATION '…'` takes it: `PT15M` |
+| STRING, or a type it does not have | the text, unchanged: `02139` stays `02139` |
+
+Empty text is not a missing value: bound to a parameter that is not a STRING it is an
+error, not NULL. A value bound as anything other than text must already be of the
+parameter's type.
+
 A parameter is evaluated like a literal: once per query, the same value in every row. A
 query cannot run until every parameter it reaches — its own, and those of the views and
 functions it uses — has a value; running it without one is an error naming the
