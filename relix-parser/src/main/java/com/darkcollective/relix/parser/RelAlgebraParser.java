@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.DateTimeException;
 import java.util.ArrayDeque;
+import java.util.function.Consumer;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
@@ -142,8 +143,28 @@ public final class RelAlgebraParser {
      * @throws IllegalArgumentException if startLine or startColumn is less than 1
      */
     public static RelNode parse(String input, String filePath, int startLine, int startColumn) {
+        return parse(input, filePath, startLine, startColumn, new ArrayList<Comment>()::add);
+    }
+
+    /**
+     * Parses a relational algebra expression as {@link #parse(String, String, int, int)}
+     * does, handing each comment it reads past to {@code comments}, in order — for a
+     * caller that prints the expression back and wants its comments with it.
+     *
+     * @param input       the relational algebra expression to parse
+     * @param filePath    the file path to embed in source locations, the comments' too
+     * @param startLine   the line number to start counting from (1-based)
+     * @param startColumn the column number to start counting from (1-based)
+     * @param comments    receives each comment, once the whole expression has parsed
+     * @return the parsed AST root node
+     * @throws ParseException           if the input contains syntax errors
+     * @throws IllegalArgumentException if startLine or startColumn is less than 1
+     */
+    public static RelNode parse(String input, String filePath, int startLine, int startColumn,
+                                Consumer<Comment> comments) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(filePath, "filePath");
+        Objects.requireNonNull(comments, "comments");
         if (startLine < 1) {
             throw new IllegalArgumentException("startLine must be >= 1");
         }
@@ -153,7 +174,17 @@ public final class RelAlgebraParser {
         RelAlgebraParser parser = new RelAlgebraParser(input, filePath, startLine, startColumn);
         RelNode result = parser.parseExpression(0);
         parser.expect(TokenType.EOF, "Expected end of input");
+        parser.comments(comments);
         return result;
+    }
+
+    /** Hands {@code sink} each comment the lexer read past, with this parser's file path. */
+    private void comments(Consumer<Comment> sink) {
+        for (Comment comment : lexer.comments()) {
+            SourceLocation at = comment.location();
+            sink.accept(new Comment(comment.text(),
+                    new SourceLocation(filePath, at.line(), at.column())));
+        }
     }
 
     /**
@@ -185,20 +216,23 @@ public final class RelAlgebraParser {
     }
 
     /**
-     * Parses a scalar operand expression from the given input string, starting
-     * from the specified source position, with a specific file path embedded in
-     * every node's source location.
+     * Parses a scalar operand expression as {@link #parseOperand(String, int, int)}
+     * does, embedding {@code filePath} in every node's source location and handing each
+     * comment it reads past to {@code comments}, in order.
      *
      * @param input       the operand expression to parse
-     * @param filePath    the file path to embed in source locations
+     * @param filePath    the file path to embed in source locations, the comments' too
      * @param startLine   1-based source line (used for error reporting)
      * @param startColumn 1-based source column (used for error reporting)
+     * @param comments    receives each comment, once the whole operand has parsed
      * @return the parsed operand
      * @throws ParseException if the input contains syntax errors
      */
-    public static Operand parseOperand(String input, String filePath, int startLine, int startColumn) {
+    public static Operand parseOperand(String input, String filePath, int startLine, int startColumn,
+                                       Consumer<Comment> comments) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(filePath, "filePath");
+        Objects.requireNonNull(comments, "comments");
         if (startLine < 1) {
             throw new IllegalArgumentException("startLine must be >= 1");
         }
@@ -208,6 +242,7 @@ public final class RelAlgebraParser {
         RelAlgebraParser parser = new RelAlgebraParser(input, filePath, startLine, startColumn);
         Operand result = parser.parseOperand();
         parser.expect(TokenType.EOF, "Expected end of operand expression");
+        parser.comments(comments);
         return result;
     }
 

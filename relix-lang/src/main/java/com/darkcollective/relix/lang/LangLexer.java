@@ -15,6 +15,11 @@
  */
 package com.darkcollective.relix.lang;
 
+import com.darkcollective.relix.ast.Comment;
+import com.darkcollective.relix.ast.SourceLocation;
+
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -115,6 +120,8 @@ final class LangLexer {
 
     private final String input;
     private final String filePath;
+    /** Every comment skipped so far, outside the raw blocks another parser reads. */
+    private final List<Comment> comments = new ArrayList<>();
     private int pos;   // current character index
     private int line;  // 1-based
     private int col;   // 1-based
@@ -129,6 +136,11 @@ final class LangLexer {
         this.pos      = 0;
         this.line     = 1;
         this.col      = 1;
+    }
+
+    /** Returns the comments skipped so far, oldest first. */
+    List<Comment> comments() {
+        return comments;
     }
 
     /** Returns the full source text (used by raw-block extraction). */
@@ -417,6 +429,10 @@ final class LangLexer {
                 continue;
             }
 
+            int startPos = pos;
+            int startLine = line;
+            int startCol = col;
+
             // Line comment  -- ...
             if (c == '-' && pos + 1 < input.length() && input.charAt(pos + 1) == '-') {
                 advance();
@@ -424,13 +440,13 @@ final class LangLexer {
                 while (pos < input.length() && input.charAt(pos) != '\n') {
                     advance();
                 }
+                comments.add(new Comment(input.substring(startPos, pos),
+                        new SourceLocation(filePath, startLine, startCol)));
                 continue;
             }
 
             // Block comment  /* ... */
             if (c == '/' && pos + 1 < input.length() && input.charAt(pos + 1) == '*') {
-                int startLine = line;
-                int startCol = col;
                 advance(); // skip '/'
                 advance(); // skip '*'
                 boolean closed = false;
@@ -447,6 +463,8 @@ final class LangLexer {
                 if (!closed) {
                     throw new LangParseException("Unterminated block comment", startLine, startCol);
                 }
+                comments.add(new Comment(input.substring(startPos, pos),
+                        new SourceLocation(filePath, startLine, startCol)));
                 continue;
             }
 

@@ -29,6 +29,7 @@ intact. A single expression may mix them freely.
 | `λ` | `LIMIT` | Limit |
 | `δ` | `DISTINCT` | Distinct |
 | `μ` | `UNNEST` | Unnest (array→rows) |
+| `ω` | `WHY` | Why (lineage as data) |
 | `∀` | `FORALL` | Universal quantification (`∀ keys : P (R)`) |
 
 ## Joins
@@ -119,12 +120,13 @@ The choice of spelling is made in the lexer and is gone by the time a tree exist
 validation, optimisation, planning, execution — can distinguish them. Two scripts
 differing only in spelling optimise to the same plan and push down the same query.
 
-Printing goes one way only. A tree rendered back to text — by a session's own
-report, or by the pretty-printer behind it — comes out in the **canonical** form:
-the glyph for an operator that has one, and the canonical keyword for an alias. A
-script written in ASCII and printed back therefore comes back in Unicode, and a
-script written with `INTERSECT` comes back with `∩`. The round trip preserves the
-tree, not the typing.
+A tree rendered back to text — by a session's own report, or by the pretty-printer
+behind it — comes out in a **canonical** form: by default the glyph for an operator
+that has one, and the canonical keyword for an alias. A script written in ASCII and
+printed back therefore comes back in Unicode, and a script written with `INTERSECT`
+comes back with `∩`. A printer asked for the ASCII spelling writes the keyword in this
+table's second column instead — `SELECT`, `INTER` — and nothing else changes. The
+round trip preserves the tree, not the typing.
 
 The ASCII forms are ordinary keywords, which is why a relation or column whose name
 collides with one needs backticks — see the delimited identifier page. The glyphs

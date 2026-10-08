@@ -98,6 +98,7 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
         row("`λ`", "λ 10 (Orders)", "LIMIT 10 (Orders)");
         row("`δ`", "δ (Users)", "DISTINCT (Users)");
         row("`μ`", "μ items (Orders)", "UNNEST items (Orders)");
+        row("`ω`", "ω (Orders)", "WHY (Orders)");
         row("`∀`", "∀ cid : amount > 0 (Orders)", "FORALL cid : amount > 0 (Orders)");
 
         // ── Join operators ───────────────────────────────────────────────────

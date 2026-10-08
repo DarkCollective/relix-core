@@ -46,6 +46,39 @@ try {
 line 1, column 29
 ```
 
+## Printing a script
+
+`ScriptPrinter.print` turns a `Script` back into text that parses to the same script. The
+layout is normalised — one statement per line, the canonical spelling of each keyword — but
+the comments of a parsed script come back where they were, so a formatter can rewrite
+someone's file without losing a word of it. `Spelling.KEYWORDS` writes each operator in
+ASCII, the form to generate code in:
+
+```java
+import com.darkcollective.relix.ast.Spelling;
+import com.darkcollective.relix.lang.ast.ScriptPrinter;
+
+Script commented = Relix.parse("""
+        -- Large orders only.
+        Large := {   σ amount>100 (Orders) };   -- keep these
+        query Large;
+        """);
+System.out.print(ScriptPrinter.print(commented));
+System.out.print(ScriptPrinter.print(commented, Spelling.KEYWORDS));
+```
+
+```
+-- Large orders only.
+Large := { σ amount > 100 (Orders) }; -- keep these
+query Large;
+-- Large orders only.
+Large := { SELECT amount > 100 (Orders) }; -- keep these
+query Large;
+```
+
+A comment inside a statement is printed immediately before the part of the expression it
+preceded. A script built from statements rather than parsed has no comments to print.
+
 A `ScriptLoader` is where parsing usually happens. A session resolves each `import`
 through its loader, and a loader reads the file and parses it, naming the file so a
 failure inside it points there. This one serves files from memory:
