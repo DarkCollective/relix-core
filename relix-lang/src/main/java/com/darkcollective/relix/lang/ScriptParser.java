@@ -867,32 +867,81 @@ public final class ScriptParser {
         List<String> headers = null;
         List<List<String>> rows = new ArrayList<>();
 
-        for (String line : raw.text().split("\\R", -1)) {
-            String trimmed = line.trim();
+        String[] lines = raw.text().split("\\R", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String trimmed = lines[i].trim();
             if (trimmed.isEmpty() || !trimmed.startsWith("|")) {
                 continue;
             }
             List<String> cells = splitPipeCells(trimmed);
-            if (cells.isEmpty()) {
-                continue;
-            }
             // Separator row — all cells are only dashes (e.g. "---")
             if (cells.stream().allMatch(c -> c.matches("-+"))) {
                 continue;
             }
             if (headers == null) {
                 headers = Collections.unmodifiableList(new ArrayList<>(cells));
+                requireColumnNames(headers, "Markdown", raw, lines, i);
             } else {
+                requireWidth(cells, headers, "Markdown", raw, lines, i);
                 rows.add(Collections.unmodifiableList(new ArrayList<>(cells)));
             }
         }
 
-        if (headers == null || headers.isEmpty()) {
+        if (headers == null) {
             throw new LangParseException(
                     "Markdown inline table has no header row",
                     openToken.line(), openToken.column());
         }
         return new MarkdownInlineTable(headers, rows);
+    }
+
+    /**
+     * Refuses a header row that names a column blank, or one column twice (ignoring
+     * case, as columns are matched). Either would otherwise reach analysis as a heading
+     * that cannot exist, and fail there without saying where. A markdown table written
+     * on one line is the usual way to get one: its rows run into the header.
+     */
+    private static void requireColumnNames(List<String> headers, String form,
+                                           LangLexer.RawBlock raw, String[] lines, int line) {
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < headers.size(); i++) {
+            String name = headers.get(i);
+            if (name.isEmpty()) {
+                throw rowError(form + " inline table's column " + (i + 1)
+                        + " has no name; each header cell names a column"
+                        + (form.equals("Markdown")
+                                ? ", and each row of a markdown table goes on a line of its own"
+                                : ""), raw, lines, line);
+            }
+            if (!seen.add(name.toLowerCase(Locale.ROOT))) {
+                throw rowError(form + " inline table names column '" + name + "' twice",
+                        raw, lines, line);
+            }
+        }
+    }
+
+    /**
+     * Refuses a row with more or fewer cells than the header has columns: a cell too many
+     * would be dropped, and one too few read as NULL, neither of which the row says. An
+     * empty cell is how a row writes a missing value.
+     */
+    private static void requireWidth(List<String> cells, List<String> headers, String form,
+                                     LangLexer.RawBlock raw, String[] lines, int line) {
+        if (cells.size() != headers.size()) {
+            throw rowError(form + " inline table row has " + cells.size()
+                    + (cells.size() == 1 ? " cell" : " cells") + ", but its header names "
+                    + headers.size() + (headers.size() == 1 ? " column" : " columns"),
+                    raw, lines, line);
+        }
+    }
+
+    /** An error at the first character of line {@code line} of a raw block. */
+    private static LangParseException rowError(String message, LangLexer.RawBlock raw,
+                                               String[] lines, int line) {
+        String text = lines[line];
+        int indent = text.length() - text.stripLeading().length();
+        int column = (line == 0 ? raw.startCol() : 1) + indent;
+        return new LangParseException(message, raw.startLine() + line, column);
     }
 
     private List<String> splitPipeCells(String line) {
@@ -920,20 +969,23 @@ public final class ScriptParser {
         List<String> headers = null;
         List<List<String>> rows = new ArrayList<>();
 
-        for (String line : raw.text().split("\\R", -1)) {
-            String trimmed = line.trim();
+        String[] lines = raw.text().split("\\R", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String trimmed = lines[i].trim();
             if (trimmed.isEmpty()) {
                 continue;
             }
             List<String> cells = parseCsvLine(trimmed);
             if (headers == null) {
                 headers = Collections.unmodifiableList(new ArrayList<>(cells));
+                requireColumnNames(headers, "CSV", raw, lines, i);
             } else {
+                requireWidth(cells, headers, "CSV", raw, lines, i);
                 rows.add(Collections.unmodifiableList(new ArrayList<>(cells)));
             }
         }
 
-        if (headers == null || headers.isEmpty()) {
+        if (headers == null) {
             throw new LangParseException(
                     "CSV inline table has no header row",
                     openToken.line(), openToken.column());

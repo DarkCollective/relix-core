@@ -28,6 +28,31 @@ numbers (which infers NUMBER). In the csv form, the first non-blank line is the
 header and fields with commas are quoted. Use csv[ ] when values contain commas or
 pipe characters.
 
+The header names every column once: no header cell is empty, and no two name the same
+column, ignoring case as column names are matched. Every row has exactly as many cells as
+the header has columns, and a missing value is written as an empty cell. A markdown table
+puts each row on a line of its own. Text that breaks one of these rules is a syntax
+error at the row that breaks it, rather than a row cut short or filled out:
+
+```relix-invalid
+Items := [ | item | value | |------|-------| | pen | 2 | ];
+```
+
+```relix-invalid
+Items := [
+| item | value |
+|------|-------|
+| pen  | 2     | 3 |
+];
+```
+
+```relix-invalid
+Items := csv[
+  item, item
+  pen, 2
+];
+```
+
 An inline table may declare foreign-key relationships with a trailing
 `references { col -> Target.col }` clause — the inline-table
 counterpart of the `references:` field on source declarations. Each entry

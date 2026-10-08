@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -789,25 +790,77 @@ final class EbnfGrammar {
     }
 
     /** The real parser's rule: the first "|" line whose cells are not all dashes is the header. */
+    /**
+     * The Markdown layout the grammar page states: lines not starting with {@code |} are
+     * ignored, all-dash rows too; the first remaining row is the header, which names
+     * every column once (no empty cell, no name twice ignoring case); and every later
+     * row has as many cells as the header.
+     */
     private static boolean hasMarkdownHeader(String body) {
-        return body.lines().map(String::strip)
+        List<List<String>> rows = body.lines().map(String::strip)
                 .filter(l -> l.startsWith("|"))
-                .anyMatch(l -> {
+                .map(l -> {
                     String inner = l.substring(1);
                     if (inner.endsWith("|")) {
                         inner = inner.substring(0, inner.length() - 1);
                     }
+                    List<String> cells = new ArrayList<>();
                     for (String cell : inner.split("\\|", -1)) {
-                        if (!cell.strip().matches("-+")) {
-                            return true;
-                        }
+                        cells.add(cell.strip());
                     }
-                    return false;
-                });
+                    return cells;
+                })
+                .filter(cells -> !cells.stream().allMatch(c -> c.matches("-+")))
+                .toList();
+        return wellFormed(rows);
     }
 
+    /**
+     * The CSV layout the grammar page states: blank lines are ignored, the first line is
+     * the header, a field may be double-quoted with {@code ""} for a quote, and the
+     * header and row rules are the Markdown layout's.
+     */
     private static boolean hasCsvHeader(String body) {
-        return body.lines().anyMatch(l -> !l.isBlank());
+        List<List<String>> rows = body.lines().filter(l -> !l.isBlank())
+                .map(EbnfGrammar::csvFields).toList();
+        return wellFormed(rows);
+    }
+
+    private static List<String> csvFields(String line) {
+        List<String> fields = new ArrayList<>();
+        StringBuilder field = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '"' && quoted && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                field.append('"');
+                i++;
+            } else if (c == '"') {
+                quoted = !quoted;
+            } else if (c == ',' && !quoted) {
+                fields.add(field.toString().strip());
+                field.setLength(0);
+            } else {
+                field.append(c);
+            }
+        }
+        fields.add(field.toString().strip());
+        return fields;
+    }
+
+    /** A header naming each column once, and rows as wide as it. */
+    private static boolean wellFormed(List<List<String>> rows) {
+        if (rows.isEmpty()) {
+            return false;
+        }
+        List<String> header = rows.getFirst();
+        Set<String> names = new HashSet<>();
+        for (String name : header) {
+            if (name.isEmpty() || !names.add(name.toLowerCase(Locale.ROOT))) {
+                return false;
+            }
+        }
+        return rows.stream().allMatch(row -> row.size() == header.size());
     }
 
     @Override
