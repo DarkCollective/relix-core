@@ -43,5 +43,5 @@ module com.darkcollective.relix.ast {
     exports com.darkcollective.relix.ast;
     exports com.darkcollective.relix.ast.internal to com.darkcollective.relix.connectors.std, com.darkcollective.relix.cost, com.darkcollective.relix.optimizer, com.darkcollective.relix.parser, com.darkcollective.relix.plan, com.darkcollective.relix.processor, com.darkcollective.relix.semantic;
     exports com.darkcollective.relix.ast.visitor;
-    exports com.darkcollective.relix.ast.visitor.internal to com.darkcollective.relix.lang.ast, com.darkcollective.relix.optimizer, com.darkcollective.relix.plan, com.darkcollective.relix.semantic;
+    exports com.darkcollective.relix.ast.visitor.internal to com.darkcollective.relix.embed, com.darkcollective.relix.lang.ast, com.darkcollective.relix.optimizer, com.darkcollective.relix.plan, com.darkcollective.relix.semantic;
 }

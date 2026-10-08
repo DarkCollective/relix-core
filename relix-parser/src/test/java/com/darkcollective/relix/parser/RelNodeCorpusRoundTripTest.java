@@ -218,6 +218,30 @@ final class RelNodeCorpusRoundTripTest extends ParserTestSupport {
             });
         }
 
+        @TestFactory
+        @DisplayName("the source printer spells each optimizer artifact as an expression that parses")
+        Stream<DynamicTest> sourceFormsParse() {
+            PrettyPrinter source = PrettyPrinter.source();
+            // UNNEST OUTER is built by a program, not by the optimizer, so it has no
+            // expression to stand for; every other entry is an optimizer artifact.
+            return corpus(true)
+                    .filter(n -> n.getClass() != UnnestNode.class)
+                    .map(node -> DynamicTest.dynamicTest(node.getClass().getSimpleName(), () -> {
+                        String printed = node.accept(source);
+                        assertThat(printed).doesNotContain("⟨").doesNotContain("∅");
+                        RelAlgebraParser.parse(printed);
+                    }));
+        }
+
+        @TestFactory
+        @DisplayName("for a tree with no optimizer artifact, the source form is the diagnostic one")
+        Stream<DynamicTest> sourceFormAgreesOnParsedTrees() {
+            PrettyPrinter source = PrettyPrinter.source();
+            return corpus(false)
+                    .map(node -> DynamicTest.dynamicTest(node.getClass().getSimpleName(), () ->
+                            assertThat(node.accept(source)).isEqualTo(print(node))));
+        }
+
         @Test
         @DisplayName("the exclusion is the component, not the kind — bare forms round-trip")
         void bareFormsStillRoundTrip() {
