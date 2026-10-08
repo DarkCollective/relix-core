@@ -98,7 +98,8 @@ import java.util.stream.Stream;
  * preceded, after the {@code ;} it followed on the same line, or — for one inside a
  * statement — immediately before the expression it preceded. A comment comes back as it
  * was written, and in the order it was written; the code around it is normalised as
- * ever. A blank line between statements is kept, as one. Inside a statement with no
+ * ever. A blank line between statements is kept, as one. A comment after a row of a
+ * Markdown inline table comes back after that row. Inside a statement with no
  * expression to stand by, a comment is printed just before the {@code ;}, which keeps it
  * inside the statement.
  *
@@ -362,7 +363,7 @@ public final class ScriptPrinter {
         };
     }
 
-    private static String inlineTable(InlineTableBody body) {
+    private String inlineTable(InlineTableBody body) {
         String table = switch (body.table()) {
             case MarkdownInlineTable t -> markdown(t);
             case CsvInlineTable t -> csv(t);
@@ -370,14 +371,39 @@ public final class ScriptPrinter {
         return table + references(body.references(), " references ");
     }
 
-    private static String markdown(MarkdownInlineTable t) {
+    /**
+     * A Markdown table, each comment written after a row back on that row. A comment the
+     * table placed is taken from {@link #trailing}, so it is not written again before the
+     * statement's {@code ;}.
+     */
+    private String markdown(MarkdownInlineTable t) {
         StringBuilder sb = new StringBuilder("[\n");
         sb.append(row(t.headers()));
         StringJoiner rule = new StringJoiner("|", "|", "|");
         t.headers().forEach(h -> rule.add("-".repeat(Math.max(3, h.length() + 2))));
         sb.append(rule).append('\n');
-        t.rows().forEach(r -> sb.append(row(r)));
+        for (int i = 0; i < t.rows().size(); i++) {
+            String row = row(t.rows().get(i));
+            if (i < t.rowLocations().size()) {
+                row = withComments(row, t.rowLocations().get(i));
+            }
+            sb.append(row);
+        }
         return sb.append(']').toString();
+    }
+
+    /** {@code row} with the line comments written on its line, after its last {@code |}. */
+    private String withComments(String row, SourceLocation location) {
+        StringBuilder sb = new StringBuilder(row.substring(0, row.length() - 1));
+        for (var it = trailing.iterator(); it.hasNext(); ) {
+            Comment comment = it.next();
+            if (comment.isLineComment() && comment.location().line() == location.line()
+                    && Objects.equals(comment.location().filePath(), location.filePath())) {
+                sb.append("  ").append(comment.text());
+                it.remove();
+            }
+        }
+        return sb.append('\n').toString();
     }
 
     private static String row(List<String> cells) {

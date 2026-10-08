@@ -150,7 +150,7 @@ final class ScriptCommentsTest {
         }
 
         @Test
-        @DisplayName("at the end of a table's row, before the statement's semicolon")
+        @DisplayName("at the end of a table's row, on that row")
         void tableRow() {
             assertThat(printed("""
                     Goals := [
@@ -159,7 +159,29 @@ final class ScriptCommentsTest {
                     | 1  | 12     |  -- keepers score too
                     ];
                     """))
-                    .contains("] -- keepers score too\n;");
+                    .contains("| 1 | 12 |  -- keepers score too\n];");
+        }
+
+        @Test
+        @DisplayName("at the end of several of a table's rows, each on its own row")
+        void tableRows() {
+            assertThat(printed("""
+                    Goals := [
+                    | id | minute |
+                    |----|--------|
+                    | 1  | 12     |  -- the first
+
+                    | 2  | 30     |
+                    | 3  | 55     |  -- and the third
+                    ];
+                    query { Goals };
+                    """))
+                    .contains("""
+                            | 1 | 12 |  -- the first
+                            | 2 | 30 |
+                            | 3 | 55 |  -- and the third
+                            ];
+                            query""");
         }
 
         @Test

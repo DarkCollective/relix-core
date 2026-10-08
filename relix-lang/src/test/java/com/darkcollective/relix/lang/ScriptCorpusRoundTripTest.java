@@ -98,6 +98,11 @@ final class ScriptCorpusRoundTripTest {
      * value lacking it, and prints identically — so print-stability holds while the
      * component is lost. Comparing the values catches it.
      */
+    /** Whether a list holds locations alone; an empty one may be a list of them. */
+    private static boolean locations(List<?> list) {
+        return list.stream().allMatch(SourceLocation.class::isInstance);
+    }
+
     private static void compare(Object expected, Object actual, String path,
                                 List<String> differences) {
         if (expected instanceof SourceLocation || actual instanceof SourceLocation) {
@@ -118,6 +123,9 @@ final class ScriptCorpusRoundTripTest {
             return;
         }
         if (expected instanceof List<?> e && actual instanceof List<?> a) {
+            if (locations(e) && locations(a)) {
+                return;   // a table's row locations: none built, one per row parsed back
+            }
             if (e.size() != a.size()) {
                 differences.add(path + ": expected " + e.size() + " elements but was " + a.size());
                 return;
