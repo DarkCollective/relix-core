@@ -65,7 +65,7 @@ A bound placed *above* an unbounded generator does not have to be a post-filter.
 optimizer pushes it into the generator, so the enumeration itself stops:
 
 ```java
-System.out.println(relix.relation("σ n ≤ 20 (Primes)").optimized().render());
+System.out.println(relix.relation("σ n ≤ 20 (Primes)").optimized());
 System.out.println(relix.relation("σ n ≤ 20 (Primes)").toList().size() + " primes ≤ 20");
 ```
 
@@ -75,7 +75,9 @@ System.out.println(relix.relation("σ n ≤ 20 (Primes)").toList().size() + " pr
 ```
 
 The relation went from one that never ends to one that does, which is why a collecting
-terminal is willing to read it.
+terminal is willing to read it. A relation's `toString()` shows the stop the optimizer
+added; `render()` leaves it out, because it writes text the language reads back, and the
+`σ` the stop came from is still there.
 
 ## COVER: a test suite that is small on purpose
 

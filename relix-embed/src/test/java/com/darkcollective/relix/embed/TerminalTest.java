@@ -26,6 +26,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -175,6 +177,56 @@ final class TerminalTest {
                 Relation written = relix.relation(STACKED);
 
                 assertThat(written).hasSameRowsAs(written.optimized());
+            }
+        }
+    }
+
+    /**
+     * What the optimizer folds into an operator has no spelling of its own, so
+     * {@code render()} writes the expression it came from (#100).
+     */
+    @Nested
+    @DisplayName("render of an optimised relation parses back, with the same rows")
+    final class RenderOptimised {
+
+        /** A session over an evolution graph, the numbers, and the orders. */
+        private static Relix graphs() {
+            Relix relix = orders();
+            relix.table("Evolves", List.of(
+                    row("species", "pichu", "evolves_into", "pikachu", "cost", 1),
+                    row("species", "pikachu", "evolves_into", "raichu", "cost", 2),
+                    row("species", "eevee", "evolves_into", "jolteon", "cost", 3)));
+            relix.define("source Naturals from generator { name: \"Naturals\" };");
+            return relix;
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @CsvSource(delimiter = '|', value = {
+                "σ species = 'pichu' (CLOSURE species, evolves_into (Evolves))                      | ⟨",
+                "σ species = 'pichu' ∧ evolves_into = 'raichu' (RCLOSURE species, evolves_into (Evolves)) | ⟨",
+                "σ evolves_into = 'raichu' (CLOSURE species ↔ evolves_into (Evolves))              | ⟨",
+                "σ species = 'pichu' (PATH species, evolves_into HOPS 1 TO 3 AS depth (Evolves))  | ⟨",
+                "σ species = 'pichu' (TRACE species, evolves_into VIA cost MINIMIZE AS route (Evolves)) | ⟨",
+                "σ n < 5 (Naturals)                                                                 | ⟨",
+                "σ 1 = 0 (Orders) ⋈ Orders                                                          | ∅"})
+        void parsesBack(String query, String annotation) {
+            try (Relix relix = graphs()) {
+                Relation written = relix.relation(query);
+                Relation optimised = written.optimized();
+
+                assertThat(optimised.toString())
+                        .as("the optimizer should have folded something into the tree")
+                        .contains(annotation);
+                String rendered = optimised.render();
+                assertThat(rendered).doesNotContain("⟨").doesNotContain("∅");
+                Relix.parse("query { " + rendered + " };");
+                Relation reread = relix.relation(rendered);
+                if (query.contains("Naturals")) {
+                    assertThat(reread.stream().map(r -> r.longValue("n")).toList())
+                            .containsExactly(0L, 1L, 2L, 3L, 4L);
+                } else {
+                    assertThat(reread).hasSameRowsAs(written);
+                }
             }
         }
     }
