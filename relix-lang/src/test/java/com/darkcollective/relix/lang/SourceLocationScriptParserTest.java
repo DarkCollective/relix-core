@@ -249,12 +249,12 @@ class SourceLocationScriptParserTest {
         }
 
         @Test
-        @DisplayName("def body parsed with filePath propagation covers parseOperand(String,String,int,int)")
+        @DisplayName("def body parsed with filePath propagation covers parseOperand(String,String,int,int,Consumer)")
         void defBodyParsedWithFilePath() {
             String src = "def sq(n: NUMBER): NUMBER := { n * n };";
             Script s = ScriptParser.parse(src, "math.relix");
             DefStatement def = firstStatement(s);
-            // The body is an Operand produced via parseOperand(String, String, int, int)
+            // The body is an Operand produced via parseOperand(String, String, int, int, Consumer)
             assertThat(def.name()).isEqualTo("sq");
             assertThat(def.returnType()).isEqualTo(com.darkcollective.relix.symbol.ScalarType.NUMBER);
         }

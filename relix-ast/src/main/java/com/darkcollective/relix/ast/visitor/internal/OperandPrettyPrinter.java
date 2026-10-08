@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast.visitor.internal;
 
+import com.darkcollective.relix.ast.Spelling;
 import com.darkcollective.relix.ast.visitor.OperandVisitor;
 import com.darkcollective.relix.ast.*;
 import com.darkcollective.relix.ast.internal.*;
@@ -33,13 +34,26 @@ import com.darkcollective.relix.ast.internal.*;
  */
 public final class OperandPrettyPrinter implements OperandVisitor<String> {
     private final int precedence;
+    private final Spelling spelling;
 
+    /** A printer writing glyphs in the conditions an operand holds. */
     public OperandPrettyPrinter() {
-        this(0);
+        this(0, Spelling.GLYPHS);
     }
 
-    private OperandPrettyPrinter(int precedence) {
+    /**
+     * A printer writing the operators of the conditions an operand holds as
+     * {@code spelling} spells them.
+     *
+     * @param spelling glyphs or ASCII keywords; must not be null
+     */
+    public OperandPrettyPrinter(Spelling spelling) {
+        this(0, java.util.Objects.requireNonNull(spelling, "spelling"));
+    }
+
+    private OperandPrettyPrinter(int precedence, Spelling spelling) {
         this.precedence = precedence;
+        this.spelling = spelling;
     }
 
     @Override
@@ -108,7 +122,7 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
             case DIVIDE -> "/";
         };
 
-        String result = node.left().accept(new OperandPrettyPrinter(opPrecedence)) + " " + operator + " " + node.right().accept(new OperandPrettyPrinter(opPrecedence));
+        String result = node.left().accept(new OperandPrettyPrinter(opPrecedence, spelling)) + " " + operator + " " + node.right().accept(new OperandPrettyPrinter(opPrecedence, spelling));
 
         if (opPrecedence < precedence) {
             result = "(" + result + ")";
@@ -183,6 +197,6 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
         // argument (`IIf((price > 100), …)`), a projected column, and either side of
         // a comparison or null test. The redundant pair inside a function call is
         // the price of one rule instead of a context-sensitive one.
-        return "(" + node.predicate().accept(new PredicatePrettyPrinter()) + ")";
+        return "(" + node.predicate().accept(new PredicatePrettyPrinter(spelling)) + ")";
     }
 }

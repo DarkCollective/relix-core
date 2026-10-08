@@ -150,6 +150,24 @@ public sealed interface RelNode permits
     }
 
     /**
+     * This expression as text the parser reads back, each operator written as
+     * {@code spelling} spells it: {@code σ}/{@code ⋈} for {@link Spelling#GLYPHS},
+     * {@code SELECT}/{@code JOIN} for {@link Spelling#KEYWORDS}.
+     *
+     * <p>For a tree parsed from text the glyph form is {@link #prettyPrint()}. For one
+     * the optimizer rewrote it differs where {@code prettyPrint()} shows what the
+     * optimizer folded into a node, which has no spelling of its own: this writes the
+     * expression it stands for instead, so the text still parses.
+     *
+     * @param spelling glyphs or ASCII keywords; must not be null
+     * @return the expression as {@code .relix} text
+     * @since 1.0
+     */
+    default String prettyPrint(Spelling spelling) {
+        return PrettyPrinter.source(spelling).print(this);
+    }
+
+    /**
      * Returns this node's direct child sub-expressions, in left-to-right order.
      *
      * <p>Leaf nodes ({@link RelationNode}) return an empty list; unary operators

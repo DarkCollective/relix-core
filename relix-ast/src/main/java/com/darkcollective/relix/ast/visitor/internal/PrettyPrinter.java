@@ -20,6 +20,8 @@ import com.darkcollective.relix.ast.*;
 import com.darkcollective.relix.ast.internal.DisplayLabels;
 import com.darkcollective.relix.ast.internal.*;
 
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.darkcollective.relix.ast.TieBreak.FIRST;
@@ -40,8 +42,8 @@ import static com.darkcollective.relix.ast.TieBreak.FIRST;
  * @see com.darkcollective.relix.ast.RelNode#prettyPrint()
  */
 public final class PrettyPrinter implements RelNodeVisitor<String> {
-    private final PredicatePrettyPrinter predicatePrinter = new PredicatePrettyPrinter();
-    private final OperandPrettyPrinter operandPrinter = new OperandPrettyPrinter();
+    private final PredicatePrettyPrinter predicatePrinter;
+    private final OperandPrettyPrinter operandPrinter;
 
     /**
      * Whether the optimizer's own annotations are written as the language spells what
@@ -49,13 +51,23 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
      */
     private final boolean source;
 
+    /** Glyphs or ASCII keywords, for every operator this prints. */
+    private final Spelling spelling;
+
+    /** What is written immediately before each node's own text: nothing, or its comments. */
+    private final Function<RelNode, String> before;
+
     /** A printer of the diagnostic form, which shows the optimizer's annotations as they are. */
     public PrettyPrinter() {
-        this(false);
+        this(false, Spelling.GLYPHS, node -> "");
     }
 
-    private PrettyPrinter(boolean source) {
+    private PrettyPrinter(boolean source, Spelling spelling, Function<RelNode, String> before) {
         this.source = source;
+        this.spelling = Objects.requireNonNull(spelling, "spelling");
+        this.before = Objects.requireNonNull(before, "before");
+        this.predicatePrinter = new PredicatePrettyPrinter(spelling);
+        this.operandPrinter = new OperandPrettyPrinter(spelling);
     }
 
     /**
@@ -77,7 +89,44 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
      * @return a printer of re-parseable text
      */
     public static PrettyPrinter source() {
-        return new PrettyPrinter(true);
+        return source(Spelling.GLYPHS);
+    }
+
+    /**
+     * A printer of re-parseable text, as {@link #source()}, writing each operator as
+     * {@code spelling} spells it.
+     *
+     * @param spelling glyphs or ASCII keywords; must not be null
+     * @return a printer of re-parseable text
+     */
+    public static PrettyPrinter source(Spelling spelling) {
+        return source(spelling, node -> "");
+    }
+
+    /**
+     * A printer of re-parseable text that writes {@code before.apply(n)} immediately before
+     * each node {@code n} — how a script printer puts a comment back beside the
+     * expression it was written beside. What it returns must be text the grammar skips
+     * where an expression may start: whitespace, or a comment ended by a newline when it
+     * is a line comment.
+     *
+     * @param spelling glyphs or ASCII keywords; must not be null
+     * @param before   the text to write before each node, {@code ""} for none; must not
+     *                 be null
+     * @return a printer of re-parseable text
+     */
+    public static PrettyPrinter source(Spelling spelling, Function<RelNode, String> before) {
+        return new PrettyPrinter(true, spelling, before);
+    }
+
+    /**
+     * {@return {@code node} printed, after whatever the caller writes before it}
+     *
+     * <p>The entry point and every recursion go through here, so the text a caller asked
+     * for lands before each node however deep it is.
+     */
+    public String print(RelNode node) {
+        return before.apply(node) + node.accept(this);
     }
 
     /**
@@ -140,9 +189,9 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     @Override
     public String visit(EmptyRelationNode node) {
         if (source) {
-            return "σ 1 = 0 (" + node.heading().accept(this) + ")";
+            return spelling.of("σ") + " 1 = 0 (" + print(node.heading()) + ")";
         }
-        return "∅⟨" + node.heading().accept(this) + "⟩";
+        return "∅⟨" + print(node.heading()) + "⟩";
     }
 
     @Override
@@ -151,16 +200,16 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                 .map(attr -> {
                     String exprStr = attr.expression().accept(operandPrinter);
                     return attr.alias()
-                            .map(alias -> exprStr + " → " + alias)
+                            .map(alias -> exprStr + " " + spelling.of("→") + " " + alias)
                             .orElse(exprStr);
                 })
                 .collect(Collectors.joining(", "));
-        return "π " + attributes + " (" + node.input().accept(this) + ")";
+        return spelling.of("π") + " " + attributes + " (" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(SelectionNode node) {
-        return "σ " + node.predicate().accept(predicatePrinter) + " (" + node.input().accept(this) + ")";
+        return spelling.of("σ") + " " + node.predicate().accept(predicatePrinter) + " (" + print(node.input()) + ")";
     }
 
     @Override
@@ -169,150 +218,150 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String cols;
         if (!node.pairs().isEmpty()) {
             cols = "(" + node.pairs().stream()
-                    .map(p -> p.from() + " → " + p.to())
+                    .map(p -> p.from() + " " + spelling.of("→") + " " + p.to())
                     .collect(Collectors.joining(", ")) + ") ";
         } else if (!node.attributes().isEmpty()) {
             cols = "(" + String.join(", ", node.attributes()) + ") ";
         } else {
             cols = "";
         }
-        return "ρ " + name + cols + "(" + node.input().accept(this) + ")";
+        return spelling.of("ρ") + " " + name + cols + "(" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(NaturalJoinNode node) {
-        return "(" + node.left().accept(this) + ") ⋈ (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("⋈") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(ThetaJoinNode node) {
-        return "(" + node.left().accept(this) + ") ⨝ " + node.condition().accept(predicatePrinter) + " (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("⨝") + " " + node.condition().accept(predicatePrinter) + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(LeftOuterJoinNode node) {
-        return "(" + node.left().accept(this) + ") ⟕ " + node.condition().accept(predicatePrinter) + " (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("⟕") + " " + node.condition().accept(predicatePrinter) + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(RightOuterJoinNode node) {
-        return "(" + node.left().accept(this) + ") ⟖ " + node.condition().accept(predicatePrinter) + " (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("⟖") + " " + node.condition().accept(predicatePrinter) + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(FullOuterJoinNode node) {
-        return "(" + node.left().accept(this) + ") ⟗ " + node.condition().accept(predicatePrinter) + " (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("⟗") + " " + node.condition().accept(predicatePrinter) + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(SemiJoinNode node) {
-        return "(" + node.left().accept(this) + ") ⋉ " + node.condition().accept(predicatePrinter) + " (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("⋉") + " " + node.condition().accept(predicatePrinter) + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(AntiJoinNode node) {
-        return "(" + node.left().accept(this) + ") ▷ " + node.condition().accept(predicatePrinter) + " (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("▷") + " " + node.condition().accept(predicatePrinter) + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(PairwiseUniversalNode node) {
-        return "(" + node.left().accept(this) + ") USEMI " + node.condition().accept(predicatePrinter) + " (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") USEMI " + node.condition().accept(predicatePrinter) + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(AsOfJoinNode node) {
         StringBuilder sb = new StringBuilder();
-        sb.append("(").append(node.left().accept(this)).append(") ASOF");
+        sb.append("(").append(print(node.left())).append(") ASOF");
         if (node.inner()) sb.append(" INNER");
         sb.append(" ").append(node.condition().accept(predicatePrinter));
         node.tolerance().ifPresent(t -> sb.append(" WITHIN ").append(t.accept(operandPrinter)));
         if (node.tieBreak() == FIRST) sb.append(" TIES(FIRST)");
-        sb.append(" (").append(node.right().accept(this)).append(")");
+        sb.append(" (").append(print(node.right())).append(")");
         return sb.toString();
     }
 
     @Override
     public String visit(IntervalJoinNode node) {
-        return "(" + node.left().accept(this) + ") IJOIN " + q(node.relation().name())
+        return "(" + print(node.left()) + ") IJOIN " + q(node.relation().name())
                 // One comma-separated four-tuple, which is what the grammar accepts.
                 // ADR-0014 sketched a "; "-separated pair-of-pairs and this printer
                 // followed the sketch while the grammar shipped the comma, so IJOIN
                 // did not re-parse until ReferenceExampleRoundTripTest caught it.
                 + " (" + node.leftStart() + ", " + node.leftEnd()
                 + ", " + node.rightStart() + ", " + node.rightEnd() + ")"
-                + " (" + node.right().accept(this) + ")";
+                + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(ProductNode node) {
-        return "(" + node.left().accept(this) + ") × (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("×") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(UnionNode node) {
-        return "(" + node.left().accept(this) + ") ∪ (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("∪") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(UnionAllNode node) {
-        return "(" + node.left().accept(this) + ") ⊎ (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("⊎") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(OuterUnionNode node) {
-        return "(" + node.left().accept(this) + ") ⊔ (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("⊔") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(DifferenceNode node) {
-        return "(" + node.left().accept(this) + ") − (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("−") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(IntersectionNode node) {
-        return "(" + node.left().accept(this) + ") ∩ (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("∩") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(DivisionNode node) {
-        return "(" + node.left().accept(this) + ") ÷ (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("÷") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(SymmetricDifferenceNode node) {
-        return "(" + node.left().accept(this) + ") ∆ (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("∆") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(CompositionNode node) {
-        return "(" + node.left().accept(this) + ") ∘ (" + node.right().accept(this) + ")";
+        return "(" + print(node.left()) + ") " + spelling.of("∘") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(UniversalNode node) {
         String keys = node.groupingAttributes().isEmpty()
                 ? "" : String.join(", ", node.groupingAttributes()) + " ";
-        return "∀ " + keys + ": " + node.predicate().accept(predicatePrinter)
-                + " (" + node.input().accept(this) + ")";
+        return spelling.of("∀") + " " + keys + ": " + node.predicate().accept(predicatePrinter)
+                + " (" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(SampleNode node) {
         String seed = node.seed().map(s -> " SEED " + s).orElse("");
-        return "SAMPLE " + node.probability() + seed + " (" + node.input().accept(this) + ")";
+        return "SAMPLE " + node.probability() + seed + " (" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(ReservoirSampleNode node) {
         String seed = node.seed().map(s -> " SEED " + s).orElse("");
-        return "SAMPLE " + node.count() + " ROWS" + seed + " (" + node.input().accept(this) + ")";
+        return "SAMPLE " + node.count() + " ROWS" + seed + " (" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(SolveNode node) {
         return DisplayLabels.solve(node.equations(), node.groupingKeys(), node.tolerance(),
                 node.maxRounds(), node.starts())
-                + " (" + node.input().accept(this) + ")";
+                + " (" + print(node.input()) + ")";
     }
 
     @Override
@@ -325,14 +374,14 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                 .append(node.objective().accept(operandPrinter)).append(") SUBJECT TO ");
         String constraints = node.constraints().stream()
                 .map(c -> "SUM(" + c.expr().accept(operandPrinter) + ") "
-                        + c.op().symbol() + " " + DisplayLabels.bound(c.bound()))
+                        + spelling.of(c.op().symbol()) + " " + DisplayLabels.bound(c.bound()))
                 .collect(Collectors.joining(" AND "));
         sb.append(constraints);
         node.allocation().ifPresent(spec -> sb.append(" -> ").append(spec.columnName()));
         if (!node.groupingKeys().isEmpty()) {
             sb.append(" PER ").append(String.join(", ", node.groupingKeys()));
         }
-        sb.append(" (").append(node.input().accept(this)).append(")");
+        sb.append(" (").append(print(node.input())).append(")");
         return sb.toString();
     }
 
@@ -347,7 +396,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String per = node.groupingAttributes().isEmpty()
                 ? "" : " PER " + String.join(", ", node.groupingAttributes());
         return "TOP " + count + " " + specs + per
-                + " (" + node.input().accept(this) + ")";
+                + " (" + print(node.input()) + ")";
     }
 
     @Override
@@ -367,12 +416,12 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                             + agg.yieldExpr().map(y -> ", " + y.accept(operandPrinter)).orElse("");
                     String funcCall = funcName + "(" + args + ")";
                     return agg.alias()
-                            .map(alias -> funcCall + " → " + alias)
+                            .map(alias -> funcCall + " " + spelling.of("→") + " " + alias)
                             .orElse(funcCall);
                 })
                 .collect(Collectors.joining(", "));
 
-        return "γ " + grouping + aggregates + " (" + node.input().accept(this) + ")";
+        return spelling.of("γ") + " " + grouping + aggregates + " (" + print(node.input()) + ")";
     }
 
     @Override
@@ -380,26 +429,26 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String specs = node.sortSpecs().stream()
                 .map(this::renderSortKey)
                 .collect(Collectors.joining(", "));
-        return "τ " + specs + " (" + node.input().accept(this) + ")";
+        return spelling.of("τ") + " " + specs + " (" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(ShuffleNode node) {
         String seed = node.seed().map(s -> " SEED " + s).orElse("");
-        return "SHUFFLE" + seed + " (" + node.input().accept(this) + ")";
+        return "SHUFFLE" + seed + " (" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(RollNode node) {
         String weight = node.weight().map(w -> " BY " + w.accept(operandPrinter)).orElse("");
         String seed = node.seed().map(s -> " SEED " + s).orElse("");
-        return "ROLL" + weight + seed + " (" + node.input().accept(this) + ")";
+        return "ROLL" + weight + seed + " (" + print(node.input()) + ")";
     }
 
     /** Renders a grouping key as {@code expression [→ alias]}. */
     private String renderGroupingKey(GroupingKey key) {
         String expr = key.expression().accept(operandPrinter);
-        return key.alias().map(a -> expr + " → " + a).orElse(expr);
+        return key.alias().map(a -> expr + " " + spelling.of("→") + " " + a).orElse(expr);
     }
 
     /** Renders a sort key as {@code expression [DESC]}. */
@@ -413,24 +462,24 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String limitSpec = node.offset()
                 .map(off -> off + ", " + node.count())
                 .orElse(String.valueOf(node.count()));
-        return "λ " + limitSpec + " (" + node.input().accept(this) + ")";
+        return spelling.of("λ") + " " + limitSpec + " (" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(DistinctNode node) {
-        return "δ (" + node.input().accept(this) + ")";
+        return spelling.of("δ") + " (" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(WhyNode node) {
-        return "ω (" + node.input().accept(this) + ")";
+        return spelling.of("ω") + " (" + print(node.input()) + ")";
     }
 
     @Override
     public String visit(UnnestNode node) {
-        return "μ " + node.column() + (node.outer() ? " OUTER" : "")
+        return spelling.of("μ") + " " + node.column() + (node.outer() ? " OUTER" : "")
                 + node.ordinalityColumn().map(c -> " WITH ORDINALITY " + c).orElse("")
-                + " (" + node.input().accept(this) + ")";
+                + " (" + print(node.input()) + ")";
     }
 
     @Override
@@ -440,7 +489,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                 + node.toColumn()
                 + boundAnnotation(node.fromColumn(), node.toColumn(),
                         node.boundSource(), node.boundTarget())
-                + " (" + node.input().accept(this) + ")",
+                + " (" + print(node.input()) + ")",
                 node.fromColumn(), node.toColumn(), node.boundSource(), node.boundTarget());
     }
 
@@ -448,8 +497,8 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
      * {@return what stands between a graph operator's two endpoint columns} A comma reads
      * them as a directed edge; {@code ↔} reads the relation both ways.
      */
-    private static String edgeSeparator(boolean undirected) {
-        return undirected ? " ↔ " : ", ";
+    private String edgeSeparator(boolean undirected) {
+        return undirected ? " " + spelling.of("↔") + " " : ", ";
     }
 
 
@@ -491,13 +540,13 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         java.util.List<String> conjuncts = new java.util.ArrayList<>(2);
         boundSource.ifPresent(op -> conjuncts.add(q(fromColumn) + " = " + op.accept(operandPrinter)));
         boundTarget.ifPresent(op -> conjuncts.add(q(toColumn) + " = " + op.accept(operandPrinter)));
-        return "σ " + String.join(" ∧ ", conjuncts) + " (" + printed + ")";
+        return spelling.of("σ") + " " + String.join(" " + spelling.of("∧") + " ", conjuncts) + " (" + printed + ")";
     }
 
     @Override
     public String visit(ClusterNode node) {
         return "CLUSTER " + node.fromColumn() + ", " + node.toColumn()
-                + " AS " + node.labelColumn() + " (" + node.input().accept(this) + ")";
+                + " AS " + node.labelColumn() + " (" + print(node.input()) + ")";
     }
 
     @Override
@@ -507,7 +556,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                 + " AS " + node.depthColumn()
                 + boundAnnotation(node.fromColumn(), node.toColumn(),
                         node.boundSource(), node.boundTarget())
-                + " (" + node.input().accept(this) + ")",
+                + " (" + print(node.input()) + ")",
                 node.fromColumn(), node.toColumn(), node.boundSource(), node.boundTarget());
     }
 
@@ -518,14 +567,14 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                 + " AS " + node.pathColumn()
                 + boundAnnotation(node.fromColumn(), node.toColumn(),
                         node.boundSource(), node.boundTarget())
-                + " (" + node.input().accept(this) + ")",
+                + " (" + print(node.input()) + ")",
                 node.fromColumn(), node.toColumn(), node.boundSource(), node.boundTarget());
     }
 
 
     @Override
     public String visit(CoverNode node) {
-        return (node.exact() ? "COVER EXACT " : "COVER ") + node.strength() + " (" + node.input().accept(this) + ")";
+        return (node.exact() ? "COVER EXACT " : "COVER ") + node.strength() + " (" + print(node.input()) + ")";
     }
 
     @Override
@@ -538,7 +587,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
             sb.append(" PER ").append(String.join(", ", node.groupingKeys()));
         }
         node.maxRows().ifPresent(n -> sb.append(" FOR ").append(n).append(" ROWS"));
-        sb.append(" (").append(node.input().accept(this)).append(")");
+        sb.append(" (").append(print(node.input())).append(")");
         return sb.toString();
     }
 
@@ -556,7 +605,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
             sb.append(" PER ").append(String.join(", ", node.partitionKeys()));
         }
         sb.append(" AS ").append(node.outputColumn())
-          .append(" (").append(node.input().accept(this)).append(")");
+          .append(" (").append(print(node.input())).append(")");
         return sb.toString();
     }
 
@@ -569,7 +618,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
             sb.append(" PER ").append(String.join(", ", node.partitionKeys()));
         }
         sb.append(" AS ").append(node.sessionColumn())
-          .append(" (").append(node.input().accept(this)).append(")");
+          .append(" (").append(print(node.input())).append(")");
         return sb.toString();
     }
 
@@ -584,7 +633,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                     .collect(Collectors.joining(", ")));
         }
         sb.append(" AS ").append(node.childrenColumn())
-          .append(" (").append(node.input().accept(this)).append(")");
+          .append(" (").append(print(node.input())).append(")");
         return sb.toString();
     }
 
@@ -592,7 +641,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     public String visit(UnpivotNode node) {
         return "UNPIVOT (" + String.join(", ", node.columns()) + ")"
                 + " AS (" + node.nameColumn() + ", " + node.valueColumn() + ")"
-                + " (" + node.input().accept(this) + ")";
+                + " (" + print(node.input()) + ")";
     }
 
     @Override
@@ -603,7 +652,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         if (!node.groupKeys().isEmpty()) {
             sb.append(" PER ").append(String.join(", ", node.groupKeys()));
         }
-        sb.append(" (").append(node.input().accept(this)).append(")");
+        sb.append(" (").append(print(node.input())).append(")");
         return sb.toString();
     }
 
@@ -632,14 +681,14 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(FixpointNode node) {
-        return "FIX " + q(node.name()) + " (" + node.base().accept(this)
-                + ", " + node.step().accept(this) + ")";
+        return "FIX " + q(node.name()) + " (" + print(node.base())
+                + ", " + print(node.step()) + ")";
     }
 
     @Override
     public String visit(IterateNode node) {
-        return "ITERATE " + q(node.name()) + " (" + node.base().accept(this)
-                + ", " + node.step().accept(this) + ")" + iterateStop(node.stop());
+        return "ITERATE " + q(node.name()) + " (" + print(node.base())
+                + ", " + print(node.step()) + ")" + iterateStop(node.stop());
     }
 
     private static String iterateStop(IterateStop stop) {
@@ -666,6 +715,6 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String args = node.arguments().stream()
                 .map(arg -> arg.accept(operandPrinter))
                 .collect(java.util.stream.Collectors.joining(", "));
-        return "(" + node.left().accept(this) + ") LATERAL " + node.functionName() + "(" + args + ")";
+        return "(" + print(node.left()) + ") LATERAL " + node.functionName() + "(" + args + ")";
     }
 }

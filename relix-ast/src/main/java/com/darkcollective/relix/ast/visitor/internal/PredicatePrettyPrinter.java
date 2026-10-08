@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast.visitor.internal;
 
+import com.darkcollective.relix.ast.Spelling;
 import com.darkcollective.relix.ast.visitor.PredicateVisitor;
 import com.darkcollective.relix.ast.*;
 import com.darkcollective.relix.ast.internal.*;
@@ -32,37 +33,53 @@ import com.darkcollective.relix.ast.internal.*;
  * <p>Operand formatting is delegated to {@link OperandPrettyPrinter}.
  */
 public final class PredicatePrettyPrinter implements PredicateVisitor<String> {
-    private final OperandPrettyPrinter operandPrinter = new OperandPrettyPrinter();
+    private final Spelling spelling;
+    private final OperandPrettyPrinter operandPrinter;
+
+    /** A printer writing glyphs, {@code ∧} and {@code ≤}. */
+    public PredicatePrettyPrinter() {
+        this(Spelling.GLYPHS);
+    }
+
+    /**
+     * A printer writing each operator as {@code spelling} spells it.
+     *
+     * @param spelling glyphs or ASCII keywords; must not be null
+     */
+    public PredicatePrettyPrinter(Spelling spelling) {
+        this.spelling = java.util.Objects.requireNonNull(spelling, "spelling");
+        this.operandPrinter = new OperandPrettyPrinter(spelling);
+    }
 
     @Override
     public String visit(ComparisonPredicate node) {
-        return node.left().accept(operandPrinter) + " " + node.operator().symbol() + " " + node.right().accept(operandPrinter);
+        return node.left().accept(operandPrinter) + " " + spelling.of(node.operator().symbol()) + " " + node.right().accept(operandPrinter);
     }
 
     @Override
     public String visit(AndPredicate node) {
-        return "(" + node.left().accept(this) + ") ∧ (" + node.right().accept(this) + ")";
+        return "(" + node.left().accept(this) + ") " + spelling.of("∧") + " (" + node.right().accept(this) + ")";
     }
 
     @Override
     public String visit(OrPredicate node) {
-        return "(" + node.left().accept(this) + ") ∨ (" + node.right().accept(this) + ")";
+        return "(" + node.left().accept(this) + ") " + spelling.of("∨") + " (" + node.right().accept(this) + ")";
     }
 
     @Override
     public String visit(NotPredicate node) {
-        return "¬(" + node.predicate().accept(this) + ")";
+        return spelling.of("¬") + "(" + node.predicate().accept(this) + ")";
     }
 
     @Override
     public String visit(NullPredicate node) {
-        String operator = node.isNull() ? "=" : "≠";
-        return node.operand().accept(operandPrinter) + " " + operator + " ⊥";
+        String operator = node.isNull() ? "=" : spelling.of("≠");
+        return node.operand().accept(operandPrinter) + " " + operator + " " + spelling.of("⊥");
     }
 
     @Override
     public String visit(ElementOfPredicate node) {
-        String operator = node.isNegated() ? " ∉ " : " ∈ ";
+        String operator = node.isNegated() ? " " + spelling.of("∉") + " " : " " + spelling.of("∈") + " ";
         return node.element().accept(operandPrinter) + operator + node.setExpression().accept(operandPrinter);
     }
 

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.lang;
 
+import com.darkcollective.relix.ast.Comment;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.SourceLocation;
@@ -58,7 +59,7 @@ import java.util.*;
  * and query statements are extracted as raw text and delegated eagerly to
  * {@link RelAlgebraParser#parse(String, String, int, int)}.
  * Function-body expressions in {@code def} statements are similarly
- * delegated to {@link RelAlgebraParser#parseOperand(String, String, int, int)}.
+ * delegated to {@link RelAlgebraParser#parseOperand(String, String, int, int, java.util.function.Consumer)}.
  *
  * <h2>Raw block extraction invariant</h2>
  * When a delimiter token ({@link LangTokenType#LBRACE} or
@@ -74,6 +75,12 @@ public final class ScriptParser {
     private final LangLexer lexer;
     private final String filePath;
     LangToken current;
+
+    /** The {@code ;} that ended the statement parsed last: where that statement's text ends. */
+    private LangToken lastSemicolon;
+
+    /** The comments read inside braces, by the expression parser rather than this lexer. */
+    private final List<Comment> expressionComments = new ArrayList<>();
 
     private ScriptParser(String source) {
         this(source, "<stdin>");
@@ -173,23 +180,129 @@ public final class ScriptParser {
     private Script parseScript() {
         Optional<String> namespace = Optional.empty();
         List<Statement> statements = new ArrayList<>();
+        Optional<Span> namespaceSpan = Optional.empty();
+        List<Span> spans = new ArrayList<>();
 
         // Optional namespace declaration (must be first)
         if (current.type() == LangTokenType.NAMESPACE) {
+            LangToken start = current;
             namespace = Optional.of(parseNamespaceDecl());
+            namespaceSpan = Optional.of(new Span(start, lastSemicolon));
         }
 
         // Optional env declaration (must come before other statements)
         if (current.type() == LangTokenType.ENV) {
+            LangToken start = current;
             statements.add(parseEnvDecl());
+            spans.add(new Span(start, lastSemicolon));
         }
 
         // Remaining statements
         while (current.type() != LangTokenType.EOF) {
+            LangToken start = current;
             statements.add(parseStatement());
+            spans.add(new Span(start, lastSemicolon));
         }
 
-        return new Script(namespace, Collections.unmodifiableList(statements));
+        return new Script(namespace, Collections.unmodifiableList(statements),
+                placeComments(namespaceSpan, spans));
+    }
+
+    // =========================================================================
+    // Comments
+    // =========================================================================
+
+    /** Where one statement's text runs, from its first token to its {@code ;}. */
+    private record Span(LangToken start, LangToken end) {
+    }
+
+    /** Orders positions as the text does: by line, then by column. */
+    private static int compare(int line, int column, int otherLine, int otherColumn) {
+        return line != otherLine ? Integer.compare(line, otherLine) : Integer.compare(column, otherColumn);
+    }
+
+    private static int compare(Comment comment, LangToken token) {
+        return compare(comment.location().line(), comment.location().column(),
+                token.line(), token.column());
+    }
+
+    /**
+     * Places every comment read — by this parser's lexer, and by the expression parser
+     * inside braces — by the statement it was written next to: inside one when it falls
+     * between its first token and its {@code ;}, after one when it is on the line of its
+     * {@code ;}, and otherwise before the next statement, or in the footer after the last.
+     * The namespace declaration places comments as a statement does.
+     */
+    private ScriptComments placeComments(Optional<Span> namespace, List<Span> spans) {
+        List<Comment> all = new ArrayList<>(lexer.comments());
+        all.addAll(expressionComments);
+        all.sort((a, b) -> compare(a.location().line(), a.location().column(),
+                b.location().line(), b.location().column()));
+
+        List<Comment> header = new ArrayList<>();
+        List<Comment> namespaceInside = new ArrayList<>();
+        List<Comment> namespaceAfter = new ArrayList<>();
+        List<List<Comment>> before = new ArrayList<>();
+        List<List<Comment>> inside = new ArrayList<>();
+        List<List<Comment>> after = new ArrayList<>();
+        for (int i = 0; i < spans.size(); i++) {
+            before.add(new ArrayList<>());
+            inside.add(new ArrayList<>());
+            after.add(new ArrayList<>());
+        }
+        List<Comment> footer = new ArrayList<>();
+
+        for (Comment comment : all) {
+            if (namespace.isPresent()) {
+                Span declaration = namespace.get();
+                if (compare(comment, declaration.start()) < 0) {
+                    header.add(comment);
+                    continue;
+                }
+                if (compare(comment, declaration.end()) < 0) {
+                    namespaceInside.add(comment);
+                    continue;
+                }
+                if (comment.location().line() == declaration.end().line()) {
+                    namespaceAfter.add(comment);
+                    continue;
+                }
+            }
+            int next = 0;
+            while (next < spans.size() && compare(comment, spans.get(next).start()) > 0) {
+                next++;
+            }
+            // `next` is the first statement starting after the comment; the one before it
+            // is the statement the comment is inside, or follows.
+            int previous = next - 1;
+            if (previous >= 0 && compare(comment, spans.get(previous).end()) < 0) {
+                inside.get(previous).add(comment);
+            } else if (previous >= 0
+                    && comment.location().line() == spans.get(previous).end().line()) {
+                after.get(previous).add(comment);
+            } else if (next < spans.size()) {
+                before.get(next).add(comment);
+            } else {
+                footer.add(comment);
+            }
+        }
+
+        List<ScriptComments.StatementComments> placed = new ArrayList<>();
+        int previousEnd = namespace.map(span -> span.end().line()).orElse(0);
+        for (int i = 0; i < spans.size(); i++) {
+            int first = before.get(i).isEmpty()
+                    ? spans.get(i).start().line()
+                    : before.get(i).getFirst().location().line();
+            placed.add(new ScriptComments.StatementComments(
+                    previousEnd > 0 && first > previousEnd + 1,
+                    before.get(i), inside.get(i), after.get(i)));
+            previousEnd = spans.get(i).end().line();
+        }
+        boolean footerSpaced = !footer.isEmpty() && previousEnd > 0
+                && footer.getFirst().location().line() > previousEnd + 1;
+        return new ScriptComments(
+                new ScriptComments.StatementComments(false, header, namespaceInside, namespaceAfter),
+                placed, footer, footerSpaced);
     }
 
     private String parseNamespaceDecl() {
@@ -882,7 +995,8 @@ public final class ScriptParser {
 
     private RelNode delegateToRaParser(LangLexer.RawBlock raw, LangToken openBrace) {
         try {
-            return RelAlgebraParser.parse(raw.text(), filePath, raw.startLine(), raw.startCol());
+            return RelAlgebraParser.parse(raw.text(), filePath, raw.startLine(), raw.startCol(),
+                    expressionComments::add);
         } catch (ParseException e) {
             throw new LangParseException(
                     "Syntax error in RA expression: " + withoutPosition(e),
@@ -892,7 +1006,8 @@ public final class ScriptParser {
 
     private Operand delegateToOperandParser(LangLexer.RawBlock raw, LangToken openBrace) {
         try {
-            return RelAlgebraParser.parseOperand(raw.text(), filePath, raw.startLine(), raw.startCol());
+            return RelAlgebraParser.parseOperand(raw.text(), filePath, raw.startLine(), raw.startCol(),
+                    expressionComments::add);
         } catch (ParseException e) {
             throw new LangParseException(
                     "Syntax error in operand expression: " + withoutPosition(e),
@@ -963,6 +1078,7 @@ public final class ScriptParser {
         if (current.type() != LangTokenType.SEMICOLON) {
             throw new LangParseException("Expected ';' to terminate statement", current);
         }
+        lastSemicolon = current;
         advance();
     }
 

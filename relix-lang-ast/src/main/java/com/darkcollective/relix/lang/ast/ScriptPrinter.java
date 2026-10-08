@@ -15,10 +15,15 @@
  */
 package com.darkcollective.relix.lang.ast;
 
+import com.darkcollective.relix.ast.Comment;
 import com.darkcollective.relix.ast.Operand;
+import com.darkcollective.relix.ast.SourceLocation;
+import com.darkcollective.relix.ast.Spelling;
 import com.darkcollective.relix.ast.visitor.internal.OperandPrettyPrinter;
+import com.darkcollective.relix.ast.visitor.internal.PrettyPrinter;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.lang.ast.source.ColumnBinding;
+import com.darkcollective.relix.lang.ast.source.ColumnDirection;
 import com.darkcollective.relix.lang.ast.source.ApiKeyAuth;
 import com.darkcollective.relix.lang.ast.source.AuthSpec;
 import com.darkcollective.relix.lang.ast.source.BasicAuth;
@@ -51,9 +56,14 @@ import com.darkcollective.relix.symbol.StructType;
 import com.darkcollective.relix.symbol.Type;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.StringJoiner;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 
 /**
@@ -77,28 +87,97 @@ import java.util.stream.Stream;
  *
  * <h2>Formatting is not part of the promise</h2>
  *
- * <p>The output is normalised, not preserved: one statement per line, a canonical
- * spelling of each keyword, and comments dropped — a comment is not in the AST, so no
- * printer can return one. What is promised is that the text parses back to an equal
+ * <p>The output is normalised, not preserved: one statement per line, and a canonical
+ * spelling of each keyword. What is promised is that the text reads back as the same
  * script, never that it matches the text someone originally wrote.
+ *
+ * <h2>Comments</h2>
+ *
+ * <p>A parsed script keeps its comments ({@link Script#comments()}), and printing it puts
+ * each one back by the code it was next to: on its own line before the statement it
+ * preceded, after the {@code ;} it followed on the same line, or — for one inside a
+ * statement — immediately before the expression it preceded. A comment comes back as it
+ * was written, and in the order it was written; the code around it is normalised as
+ * ever. A blank line between statements is kept, as one. Inside a statement with no
+ * expression to stand by, a comment is printed just before the {@code ;}, which keeps it
+ * inside the statement.
+ *
+ * <h2>Spelling</h2>
+ *
+ * <p>Operators are written as glyphs by default ({@code σ}, {@code ⋈}). With
+ * {@link Spelling#KEYWORDS} they are written in ASCII ({@code SELECT}, {@code JOIN}), the
+ * form {@code language/spellings.md} recommends for generated code; either form parses
+ * back to the same script.
  */
 public final class ScriptPrinter {
 
-    private ScriptPrinter() {
+    /** How each operator is written. */
+    private final Spelling spelling;
+
+    /** The statement's own comments, still to be placed by {@link #statement}. */
+    private final List<Comment> inside;
+
+    /** Each node of the statement, and the comments to write immediately before it. */
+    private final Map<RelNode, List<Comment>> placed = new IdentityHashMap<>();
+
+    /** The statement's comments after its last expression starts, written after it. */
+    private final List<Comment> trailing = new ArrayList<>();
+
+    private ScriptPrinter(Spelling spelling, List<Comment> inside) {
+        this.spelling = Objects.requireNonNull(spelling, "spelling");
+        this.inside = inside;
     }
 
     /**
-     * Renders a whole script, namespace first, one statement per line.
+     * Renders a whole script, namespace first, one statement per line, its comments with
+     * it, and every operator as a glyph.
      *
      * @param script the script to render; must not be null
      * @return the {@code .relix} text
      */
     public static String print(Script script) {
+        return print(script, Spelling.GLYPHS);
+    }
+
+    /**
+     * Renders a whole script, namespace first, one statement per line, its comments with
+     * it, and every operator as {@code spelling} spells it.
+     *
+     * @param script   the script to render; must not be null
+     * @param spelling glyphs or ASCII keywords; must not be null
+     * @return the {@code .relix} text
+     * @since 1.0
+     */
+    public static String print(Script script, Spelling spelling) {
+        Objects.requireNonNull(spelling, "spelling");
+        ScriptComments comments = script.comments();
         StringBuilder out = new StringBuilder();
-        script.namespace().ifPresent(ns -> out.append("namespace ").append(ns).append(";\n"));
-        for (Statement statement : script.statements()) {
-            out.append(print(statement)).append('\n');
+        script.namespace().ifPresent(ns -> {
+            ScriptComments.StatementComments around = comments.namespace();
+            around.before().forEach(comment -> out.append(comment.text()).append('\n'));
+            out.append("namespace ").append(ns);
+            if (!around.inside().isEmpty()) {
+                out.append(' ').append(comments(around.inside()));
+            }
+            out.append(';');
+            around.after().forEach(comment -> out.append(' ').append(comment.text()));
+            out.append('\n');
+        });
+        List<Statement> statements = script.statements();
+        for (int i = 0; i < statements.size(); i++) {
+            ScriptComments.StatementComments around = comments.statement(i);
+            if (around.blankLineBefore()) {
+                out.append('\n');
+            }
+            around.before().forEach(comment -> out.append(comment.text()).append('\n'));
+            out.append(new ScriptPrinter(spelling, around.inside()).statement(statements.get(i)));
+            around.after().forEach(comment -> out.append(' ').append(comment.text()));
+            out.append('\n');
         }
+        if (comments.footerSpaced()) {
+            out.append('\n');
+        }
+        comments.footer().forEach(comment -> out.append(comment.text()).append('\n'));
         return out.toString();
     }
 
@@ -109,6 +188,84 @@ public final class ScriptPrinter {
      * @return the {@code .relix} text for that statement
      */
     public static String print(Statement statement) {
+        return print(statement, Spelling.GLYPHS);
+    }
+
+    /**
+     * Renders one statement, including its trailing semicolon, every operator as
+     * {@code spelling} spells it.
+     *
+     * @param statement the statement to render; must not be null
+     * @param spelling  glyphs or ASCII keywords; must not be null
+     * @return the {@code .relix} text for that statement
+     * @since 1.0
+     */
+    public static String print(Statement statement, Spelling spelling) {
+        return new ScriptPrinter(spelling, List.of()).statement(statement);
+    }
+
+    /**
+     * {@code statement}'s text, with its {@link #inside} comments in it: each before the
+     * first node of its expression that starts after the comment, or after the expression
+     * when none does. A statement with no expression has them before its {@code ;}.
+     */
+    private String statement(Statement statement) {
+        List<RelNode> nodes = new ArrayList<>();
+        expressionOf(statement).ifPresent(root -> collect(root, nodes));
+        nodes.sort(Comparator.comparingInt((RelNode n) -> n.location().line())
+                .thenComparingInt(n -> n.location().column()));
+        for (Comment comment : inside) {
+            nodes.stream()
+                    .filter(node -> startsAfter(node.location(), comment.location()))
+                    .findFirst()
+                    .ifPresentOrElse(node -> placed.computeIfAbsent(node, n -> new ArrayList<>()).add(comment),
+                            () -> trailing.add(comment));
+        }
+        String text = dispatch(statement);
+        if (nodes.isEmpty() && !(statement instanceof DefStatement) && !trailing.isEmpty()) {
+            return text.substring(0, text.length() - 1) + " " + comments(trailing) + ";";
+        }
+        return text;
+    }
+
+    /** The relational expression a statement holds, if it holds one. */
+    private static Optional<RelNode> expressionOf(Statement statement) {
+        return switch (statement) {
+            case AssignmentStatement s when s.body() instanceof QueryAssignmentBody b ->
+                    Optional.of(b.expression());
+            case DefRelationStatement s -> Optional.of(s.body());
+            case QueryStatement s when s.target() instanceof ExpressionQueryTarget t ->
+                    Optional.of(t.expression());
+            default -> Optional.empty();
+        };
+    }
+
+    /** Every node of {@code node}'s tree that the parser placed, in no particular order. */
+    private static void collect(RelNode node, List<RelNode> into) {
+        if (node.location().line() > 0) {
+            into.add(node);
+        }
+        node.children().forEach(child -> collect(child, into));
+    }
+
+    private static boolean startsAfter(SourceLocation node, SourceLocation comment) {
+        return node.line() != comment.line() ? node.line() > comment.line()
+                : node.column() > comment.column();
+    }
+
+    /**
+     * Comments as code may follow them: a line comment ends its line, so the next token
+     * starts on the next; a block comment is followed by a space.
+     */
+    private static String comments(List<Comment> comments) {
+        StringBuilder sb = new StringBuilder();
+        for (Comment comment : comments) {
+            sb.append(comment.text()).append(comment.isLineComment() ? "\n" : " ");
+        }
+        return sb.toString();
+    }
+
+    private String dispatch(Statement statement) {
         return switch (statement) {
             case EnvStatement s -> env(s);
             case ImportStatement s -> importStatement(s);
@@ -197,10 +354,10 @@ public final class ScriptPrinter {
                 + (target.max().isPresent() ? Long.toString(target.max().getAsLong()) : "*") + "]";
     }
 
-    private static String assignment(AssignmentStatement s) {
+    private String assignment(AssignmentStatement s) {
         String prefix = (s.exported() ? "" : "private ") + s.name() + " := ";
         return switch (s.body()) {
-            case QueryAssignmentBody b -> prefix + "{ " + expression(b.expression()) + " };";
+            case QueryAssignmentBody b -> prefix + braced(expression(b.expression())) + ";";
             case InlineTableBody b -> prefix + inlineTable(b) + ";";
         };
     }
@@ -238,17 +395,17 @@ public final class ScriptPrinter {
         return sb.append(']').toString();
     }
 
-    private static String def(DefStatement s) {
+    private String def(DefStatement s) {
         return (s.exported() ? "" : "private ")
                 + "def " + s.name() + parameters(s.parameters())
                 + " : " + s.returnType().display()
-                + " := { " + expression(s.body()) + " };";
+                + " := " + braced(expression(s.body())) + ";";
     }
 
-    private static String defRelation(DefRelationStatement s) {
+    private String defRelation(DefRelationStatement s) {
         return (s.exported() ? "" : "private ")
                 + "def " + s.name() + parameters(s.parameters())
-                + " : RELATION := { " + expression(s.body()) + " };";
+                + " : RELATION := " + braced(expression(s.body())) + ";";
     }
 
     /**
@@ -270,10 +427,10 @@ public final class ScriptPrinter {
         return joiner.toString();
     }
 
-    private static String query(QueryStatement s) {
+    private String query(QueryStatement s) {
         return switch (s.target()) {
             case NamedQueryTarget t -> "query " + t.name() + ";";
-            case ExpressionQueryTarget t -> "query { " + expression(t.expression()) + " };";
+            case ExpressionQueryTarget t -> "query " + braced(expression(t.expression())) + ";";
         };
     }
 
@@ -377,7 +534,9 @@ public final class ScriptPrinter {
         }
         StringJoiner joiner = new StringJoiner(", ", "{ ", " }");
         for (ColumnSpec column : columns) {
-            joiner.add(columnName(column.name()) + ": " + type(column.type()) + binding(column));
+            joiner.add(columnName(column.name()) + ": "
+                    + (column.direction() == ColumnDirection.IN ? "in " : "")
+                    + type(column.type()) + binding(column) + modifier(column));
         }
         return entry("schema", joiner.toString());
     }
@@ -414,10 +573,18 @@ public final class ScriptPrinter {
     private static String binding(ColumnSpec column) {
         return column.binding().map(b -> switch (b) {
             case ExtractPathBinding p -> " at " + quote(p.path());
-            case QueryParamBinding p -> " from query(" + quote(p.paramName()) + ")";
-            case PathParamBinding p -> " from path(" + quote(p.paramName()) + ")";
-            case HeaderBinding p -> " from header(" + quote(p.headerName()) + ")";
+            case QueryParamBinding p -> " as query(" + quote(p.paramName()) + ")";
+            case PathParamBinding p -> " as path(" + quote(p.paramName()) + ")";
+            case HeaderBinding p -> " as header(" + quote(p.headerName()) + ")";
         }).orElse("");
+    }
+
+    /** A column's {@code [required]} or {@code [default: "…"]}, when it has one. */
+    private static String modifier(ColumnSpec column) {
+        if (column.required()) {
+            return " [required]";
+        }
+        return column.defaultValue().map(value -> " [default: " + quote(value) + "]").orElse("");
     }
 
     private static String references(List<ColumnReference> references, String prefix) {
@@ -460,7 +627,8 @@ public final class ScriptPrinter {
      */
     private static String properties(Map<String, String> properties) {
         StringJoiner joiner = new StringJoiner(", ", "{ ", " }");
-        properties.forEach((key, value) -> joiner.add(key + ": " + quote(value)));
+        // In key order: the map's own order is no order, and printing must be a fixed point.
+        new TreeMap<>(properties).forEach((key, value) -> joiner.add(key + ": " + quote(value)));
         return joiner.toString();
     }
 
@@ -474,7 +642,7 @@ public final class ScriptPrinter {
      */
     private static String headers(Map<String, String> headers) {
         StringJoiner joiner = new StringJoiner(", ", "{ ", " }");
-        headers.forEach((key, value) -> joiner.add(quote(key) + ": " + quote(value)));
+        new TreeMap<>(headers).forEach((key, value) -> joiner.add(quote(key) + ": " + quote(value)));
         return joiner.toString();
     }
 
@@ -493,12 +661,24 @@ public final class ScriptPrinter {
         return key + ": " + value;
     }
 
-    private static String expression(RelNode node) {
-        return node.prettyPrint();
+    /** The statement's expression, each comment before the node it preceded, the rest after. */
+    private String expression(RelNode node) {
+        String text = PrettyPrinter.source(spelling,
+                n -> comments(placed.getOrDefault(n, List.of()))).print(node);
+        return trailing.isEmpty() ? text : text + " " + comments(trailing);
     }
 
-    private static String expression(Operand operand) {
-        return operand.accept(new OperandPrettyPrinter());
+    /**
+     * {@code inner} between braces, a space inside each — but no space before the closing
+     * brace when {@code inner} ends a line, as it does after a trailing line comment.
+     */
+    private static String braced(String inner) {
+        return "{ " + inner + (inner.endsWith("\n") ? "}" : " }");
+    }
+
+    /** A {@code def}'s body, its comments before it: an operand has no nodes to place them by. */
+    private String expression(Operand operand) {
+        return comments(trailing) + operand.accept(new OperandPrettyPrinter(spelling));
     }
 
     /** Double-quotes a value, escaping embedded quotes and backslashes. */
