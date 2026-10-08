@@ -866,6 +866,7 @@ public final class ScriptParser {
                                                           LangToken openToken) {
         List<String> headers = null;
         List<List<String>> rows = new ArrayList<>();
+        List<SourceLocation> rowLocations = new ArrayList<>();
 
         String[] lines = raw.text().split("\\R", -1);
         for (int i = 0; i < lines.length; i++) {
@@ -893,6 +894,9 @@ public final class ScriptParser {
             } else {
                 requireWidth(cells, headers, "Markdown", raw, lines, i);
                 rows.add(Collections.unmodifiableList(new ArrayList<>(cells)));
+                int indent = lines[i].length() - lines[i].stripLeading().length();
+                rowLocations.add(new SourceLocation(filePath,
+                        raw.startLine() + i, (i == 0 ? raw.startCol() : 1) + indent));
             }
         }
 
@@ -901,7 +905,7 @@ public final class ScriptParser {
                     "Markdown inline table has no header row",
                     openToken.line(), openToken.column());
         }
-        return new MarkdownInlineTable(headers, rows);
+        return new MarkdownInlineTable(headers, rows, rowLocations);
     }
 
     /**
