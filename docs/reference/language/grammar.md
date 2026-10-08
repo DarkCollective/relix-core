@@ -241,6 +241,11 @@ boolean_literal   ::= "true" | "false"
        Blank lines are ignored and the first line is the header. A field may be
        double-quoted, with "" for a quote inside it.
 
+   Either way the header names each column once: no header cell is empty, and no
+   two name the same column, ignoring case. Every other row has exactly as many
+   cells as the header; an empty cell is a missing value. A Markdown table therefore
+   puts each row on a line of its own.
+
    Cells are trimmed. A cell's type is inferred: a column whose every value is a
    number is NUMBER, anything else is STRING. */
 inline_table      ::= MARKDOWN_TABLE

@@ -143,6 +143,71 @@ class ScriptParserInlineTableTest {
             assertThatThrownBy(() -> parse("X := csv[\n\n];"))
                     .isInstanceOf(LangParseException.class);
         }
+
+        @Test
+        @DisplayName("a markdown table on one line is refused where its header runs into its rows")
+        void markdownOnOneLine() {
+            assertThatThrownBy(() -> parse("X := [ | item | value | |------|-------| | a | 6 | ];"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("column 3 has no name")
+                    .hasMessageContaining("each row of a markdown table goes on a line of its own")
+                    .hasMessageContaining("line 1, col 8");
+        }
+
+        @Test
+        @DisplayName("a header cell with no name is refused, in either form")
+        void blankColumnName() {
+            assertThatThrownBy(() -> parse("X := [\n| a |  |\n|---|---|\n| 1 | 2 |\n];"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("Markdown inline table's column 2 has no name")
+                    .hasMessageContaining("line 2, col 1");
+            assertThatThrownBy(() -> parse("X := csv[\n  a,,b\n  1,2,3\n];"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("CSV inline table's column 2 has no name")
+                    .hasMessageNotContaining("markdown")
+                    .hasMessageContaining("line 2, col 3");
+        }
+
+        @Test
+        @DisplayName("a column named twice is refused, ignoring case as columns are matched")
+        void duplicateColumn() {
+            assertThatThrownBy(() -> parse("X := [\n| id | ID |\n|---|---|\n| 1 | 2 |\n];"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("names column 'ID' twice");
+        }
+
+        @Test
+        @DisplayName("a row with a cell too many or too few is refused, rather than cut or padded")
+        void rowWidth() {
+            assertThatThrownBy(() -> parse("X := [\n| a | b |\n|---|---|\n| 1 | 2 | 3 |\n];"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("row has 3 cells, but its header names 2 columns")
+                    .hasMessageContaining("line 4, col 1");
+            assertThatThrownBy(() -> parse("X := [\n| a |\n|---|\n| 1 | 2 |\n];"))
+                    .hasMessageContaining("row has 2 cells, but its header names 1 column");
+            assertThatThrownBy(() -> parse("X := csv[\n  a, b\n  1\n];"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("CSV inline table row has 1 cell, but its header names 2 columns");
+        }
+
+        @Test
+        @DisplayName("an empty cell is how a row writes a missing value")
+        void emptyCellIsAccepted() {
+            Script s = parse("X := [\n| a | b |\n|---|---|\n| 1 |  |\n];");
+            InlineTableBody body = (InlineTableBody) ((AssignmentStatement) firstStatement(s)).body();
+            assertThat(((MarkdownInlineTable) body.table()).rows().getFirst()).containsExactly("1", "");
+        }
+    }
+
+    @Test
+    @DisplayName("a csv table prints its commas and quotes quoted, so it reads back unchanged")
+    void csvPrintsQuoted() {
+        Script s = parse("X := csv[\ncity, note\n\"Austin, TX\", \"say \"\"hi\"\"\"\n];");
+        String printed = ScriptPrinter.print(s);
+
+        assertThat(printed).contains("\"Austin, TX\", \"say \"\"hi\"\"\"");
+        InlineTableBody body = (InlineTableBody) ((AssignmentStatement) firstStatement(parse(printed))).body();
+        assertThat(((CsvInlineTable) body.table()).rows().getFirst()).containsExactly("Austin, TX", "say \"hi\"");
     }
 
     // =========================================================================
