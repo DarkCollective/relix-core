@@ -105,7 +105,7 @@ three. No package is in more than one of them.
 | `relix-parser` | The expression parser — relational algebra in Unicode or ASCII |
 | `relix-lang` | The script parser: a whole `.relix` file, including its imports |
 | `relix-embed` | The embedding API. A session, a relation as a value, a combinator per operator, and the terminals that inspect or run one. This is what a Java program uses |
-| `relix-docs` | The language reference, copied in from `docs/reference`, and `RelixDocs`, which lists and reads it. Depends on nothing; published as its own artifact |
+| `relix-docs` | The language reference, copied in from `docs/reference`; `RelixDocs`, which lists and reads it; and `ReferenceLookup`, one index over it and the pages the installed function libraries serve. Depends on `relix-function`; published as its own artifact, which depends on `relix` |
 
 ### Providers
 

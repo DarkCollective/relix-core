@@ -18,6 +18,7 @@ package consumer;
 import com.darkcollective.relix.embed.Relation;
 import com.darkcollective.relix.embed.Relix;
 import com.darkcollective.relix.embed.Tuple;
+import com.darkcollective.relix.function.FunctionCatalog;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -156,6 +157,19 @@ public final class ConsumerSmoke {
         List<?> pages = (List<?>) docs.getMethod("referencePages").invoke(null);
         if (pages.size() < 50) {
             throw new AssertionError("relix-docs lists only " + pages.size() + " pages");
+        }
+        // The index over the reference and the engine's functions: what proves relix-docs
+        // reads the engine's function catalogue across the published module boundary.
+        Class<?> lookup = Class.forName("com.darkcollective.relix.docs.ReferenceLookup");
+        Object index = lookup.getMethod("of", FunctionCatalog.class)
+                .invoke(null, FunctionCatalog.discover());
+        Optional<?> fix = (Optional<?>) lookup.getMethod("function", String.class)
+                .invoke(index, "fix");
+        Optional<?> fixPage = (Optional<?>) lookup.getMethod("lookup", String.class)
+                .invoke(index, "fix");
+        if (fix.isEmpty() || !((String) fixPage.orElseThrow()).startsWith("# Name: General Recursion")) {
+            throw new AssertionError("ReferenceLookup did not index the shipped functions: "
+                    + fix + ", " + fixPage.map(p -> ((String) p).lines().findFirst()));
         }
     }
 

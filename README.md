@@ -38,8 +38,25 @@ Two optional artifacts sit beside it, at the same version:
 | Artifact | Add it for |
 |---|---|
 | `relix-solver-ojalgo` | `OPTIMIZE` and `COVER EXACT`, which need a solver |
-| `relix-docs` | the language reference, for a tool that shows it to its users |
+| `relix-docs` | the language reference and the installed functions' pages, for a tool that shows them to its users |
 | `relix-all` | everything: the engine and both of the above |
+
+With `relix-docs`, a tool can show the page for whatever its user typed, whether that is
+part of the language or a function an installed library offers:
+
+```java
+import com.darkcollective.relix.docs.ReferenceLookup;
+import com.darkcollective.relix.function.FunctionCatalog;
+
+ReferenceLookup docs = ReferenceLookup.of(FunctionCatalog.discover());
+System.out.println(docs.lookup("σ").orElseThrow().lines().findFirst().orElseThrow());
+System.out.println(docs.lookup("len").orElseThrow().lines().findFirst().orElseThrow());
+```
+
+```
+# Name: Selection (σ / SELECT)
+# Name: Len (string length)
+```
 
 ## A first query
 

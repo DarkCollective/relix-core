@@ -2,7 +2,9 @@
 //
 // The engine never reads the pages: only a tool that shows them does. So they are not in
 // the engine's artifact, where every embedder would download them, but here, beside the
-// small API that lists and reads them. It depends on nothing, not even the engine.
+// small API that lists and reads them. It needs only the function SPI, for the index
+// that joins the language pages to the installed functions' own (ReferenceLookup);
+// published, that is the engine artifact, which carries the SPI.
 //
 // docs/reference stays the source of truth, where its gates run; this is the copy a
 // program with only the artifact can read. Function pages are left out, their libraries
@@ -14,4 +16,9 @@ processResources {
         exclude 'functions/**'
         exclude 'README.md'
     }
+}
+
+dependencies {
+    api project(':relix-function')                       // FunctionCatalog, in ReferenceLookup.of
+    testRuntimeOnly project(':relix-function-builtin')    // the shipped library, for discover()
 }
