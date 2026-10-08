@@ -16,10 +16,13 @@
 package com.darkcollective.relix.embed;
 
 import com.darkcollective.relix.symbol.ScalarType;
+import com.darkcollective.relix.value.StringValue;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -188,10 +191,14 @@ final class ParameterTest {
         @DisplayName("a value of another type than the parameter is compared with")
         void wrongType() {
             try (Relix relix = orders()) {
-                assertThatThrownBy(() -> relix.relation("σ order_id = $id (Orders)").bind("id", "2"))
+                Relation query = relix.relation("σ order_id = $id (Orders)");
+                assertThatThrownBy(() -> query.bind("id", true))
                         .isInstanceOf(RelixException.class)
                         .hasMessageContaining("parameter $id is compared with a NUMBER,"
-                                + " so it cannot be bound to the STRING 2");
+                                + " so it cannot be bound to the BOOLEAN true");
+                // Only a Java String is text: an engine string value is already typed.
+                assertThatThrownBy(() -> query.bind("id", new StringValue("2")))
+                        .hasMessageContaining("cannot be bound to the STRING 2");
             }
         }
 
@@ -220,6 +227,100 @@ final class ParameterTest {
                 assertThatThrownBy(() -> ada.union(grace))
                         .isInstanceOf(RelixException.class)
                         .hasMessageContaining("bind parameter $who to different values, ada and grace");
+            }
+        }
+    }
+
+    /** Text bound to a parameter of another type is read as that type's literal (#101). */
+    @Nested
+    @DisplayName("text is read as the parameter's type")
+    final class FromText {
+
+        /** The one-row relation {@code query} selects with {@code text} bound to {@code $p}. */
+        private static Relation bound(Relix relix, String query, String text) {
+            return relix.relation(query).bind("p", text);
+        }
+
+        @ParameterizedTest(name = "{1} as {0}")
+        @CsvSource(delimiter = '|', value = {
+                "σ order_id = $p (Orders)                                      | 2       | 1",
+                "σ order_id > $p (Orders)                                      | -3.5    | 3",
+                "σ order_id < $p (Orders)                                      | 1e3     | 3",
+                "σ TRUE = $p (Orders)                                          | True    | 3",
+                "σ TRUE = $p (Orders)                                          | false   | 0",
+                "σ DATE '2026-02-01' < $p (Orders)                             | 2026-03-01 | 3",
+                "σ TIME '12:00:00' < $p (Orders)                               | 13:40:00 | 3",
+                "σ TIMESTAMP '2026-01-01T00:00:00Z' < $p (Orders)              | 2026-01-01T01:00:00+00:30 | 3",
+                "σ TIMESTAMP '2026-01-01T00:00:00Z' < $p (Orders)              | 2026-01-01T00:00:00 | 0",
+                "σ DURATION 'PT10M' < $p (Orders)                              | PT15M   | 3",
+                "σ customer = $p (Orders)                                      | ada     | 2"})
+        @DisplayName("text that is a literal of the type is that value")
+        void converts(String query, String text, int rows) {
+            try (Relix relix = orders()) {
+                EmbedAssertions.assertThat(bound(relix, query, text)).hasRowCount(rows);
+            }
+        }
+
+        @Test
+        @DisplayName("a STRING parameter takes the text unchanged, leading zeros and all")
+        void stringIsUnchanged() {
+            try (Relix relix = orders()) {
+                relix.table("Zips", List.of(Map.of("zip", "02139")));
+                EmbedAssertions.assertThat(relix.relation("σ zip = $p (Zips)").bind("p", "02139"))
+                        .hasRowCount(1);
+            }
+        }
+
+        @Test
+        @DisplayName("an ANY parameter takes the text unchanged")
+        void anyIsUnchanged() {
+            try (Relix relix = orders()) {
+                EmbedAssertions.assertThat(relix.relation("π order_id, $p → tag (Orders)")
+                                .bind("p", "42")).tuples()
+                        .extracting(t -> t.get("tag").type())
+                        .containsOnly(ScalarType.STRING);
+            }
+        }
+
+        @ParameterizedTest(name = "''{1}'' as {2}")
+        @CsvSource(delimiter = '|', emptyValue = "", value = {
+                "σ order_id = $p (Orders)                         | abc      | NUMBER",
+                "σ order_id = $p (Orders)                         | ''       | NUMBER",
+                "σ order_id = $p (Orders)                         | 2' OR '1'='1 | NUMBER",
+                "σ order_id = $p (Orders)                         | ' 2'     | NUMBER",
+                "σ TRUE = $p (Orders)                             | yes      | BOOLEAN",
+                "σ DATE '2026-02-01' < $p (Orders)                | 03/01/2026 | DATE",
+                "σ TIME '12:00:00' < $p (Orders)                  | noon     | TIME",
+                "σ TIMESTAMP '2026-01-01T00:00:00Z' < $p (Orders) | 2026-01-01 | TIMESTAMP",
+                "σ DURATION 'PT10M' < $p (Orders)                 | 15 minutes | DURATION"})
+        @DisplayName("text that is not a literal of the type is refused, naming it")
+        void refuses(String query, String text, String type) {
+            try (Relix relix = orders()) {
+                assertThatThrownBy(() -> bound(relix, query, text))
+                        .isInstanceOf(RelixException.class)
+                        .hasMessage("parameter $p is compared with a " + type
+                                + ", so it cannot be bound to the text '" + text + "'");
+            }
+        }
+
+        @Test
+        @DisplayName("text bound to a parameter compared with an array is not read as one")
+        void arrayIsNotText() {
+            try (Relix relix = orders()) {
+                Relation grouped = relix.relation(
+                        "σ ids = $p (γ customer, COLLECT(order_id) → ids (Orders))");
+                assertThatThrownBy(() -> grouped.bind("p", "a"))
+                        .isInstanceOf(RelixException.class)
+                        .hasMessageContaining("cannot be bound to the STRING a");
+            }
+        }
+
+        @Test
+        @DisplayName("a session's text values are read the same way")
+        void sessionValues() {
+            try (Relix relix = Relix.builder().parameters(Map.of("id", "2")).build()) {
+                relix.define(ORDERS);
+                ids(relix.relation("σ order_id = $id (Orders)")).containsExactly("2");
             }
         }
     }
@@ -284,6 +385,19 @@ final class ParameterTest {
                 EmbedAssertions.assertThat(query).explains().contains("WHERE", "= ?", "← $id")
                         .doesNotContain("$id)");
                 names(query.bind("id", 2)).containsExactly("o'brien");
+            }
+        }
+
+        @Test
+        @DisplayName("text bound to a NUMBER parameter is sent as a number, behind a ?")
+        void textIsSentAsItsType() {
+            try (Relix relix = database()) {
+                Relation query = relix.relation("σ id = $id (Customers)");
+
+                EmbedAssertions.assertThat(query.bind("id", "2")).explains().contains("= ?");
+                names(query.bind("id", "2")).containsExactly("o'brien");
+                names(relix.relation("σ joined < $at (Customers)")
+                        .bind("at", "2026-01-15T00:00:00Z")).containsExactly("ada");
             }
         }
 
