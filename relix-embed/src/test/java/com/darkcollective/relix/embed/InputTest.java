@@ -22,6 +22,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -252,6 +254,34 @@ final class InputTest {
                 }
                 assertThatThrownBy(() -> relix.relation("feed").toList())
                         .isInstanceOf(UnboundedRelationException.class);
+            }
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"τ n (feed)", "γ COUNT(*) -> c (feed)"})
+        @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+        @DisplayName("refuses a blocking operator over it when the stream is opened")
+        void blockingRefused(String query) {
+            try (Relix relix = Relix.open()) {
+                relix.input("feed", Input.of(InputFormat.NDJSON, endless()).sample(1).unbounded());
+                assertThatThrownBy(() -> relix.relation(query).stream())
+                        .isInstanceOf(UnboundedRelationException.class)
+                        .hasMessageContaining("unbounded");
+            }
+        }
+
+        /** δ emits a row the first time it sees it, so it streams like σ and π. */
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"π n (feed)", "δ (feed)"})
+        @Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+        @DisplayName("streams a non-blocking operator over it as rows arrive")
+        void streamingOperatorStreams(String query) {
+            try (Relix relix = Relix.open()) {
+                relix.input("feed", Input.of(InputFormat.NDJSON, endless()).sample(1).unbounded());
+                try (Stream<Tuple> rows = relix.relation(query).stream()) {
+                    assertThat(rows.limit(2).map(r -> r.longValue("n")).toList())
+                            .containsExactly(0L, 1L);
+                }
             }
         }
 
