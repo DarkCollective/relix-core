@@ -800,6 +800,10 @@ final class EbnfGrammar {
         List<List<String>> rows = body.lines().map(String::strip)
                 .filter(l -> l.startsWith("|"))
                 .map(l -> {
+                    int last = l.lastIndexOf('|');
+                    if (l.substring(last + 1).strip().startsWith("--")) {
+                        l = l.substring(0, last + 1);
+                    }
                     String inner = l.substring(1);
                     if (inner.endsWith("|")) {
                         inner = inner.substring(0, inner.length() - 1);

@@ -191,6 +191,15 @@ class ScriptParserInlineTableTest {
         }
 
         @Test
+        @DisplayName("a markdown row may end with a comment after its last pipe")
+        void trailingComment() {
+            Script s = parse("X := [\n| a | b |\n|---|---|\n| 1 | 2 |  -- the first\n| 3 | 4 |\n];");
+            InlineTableBody body = (InlineTableBody) ((AssignmentStatement) firstStatement(s)).body();
+            assertThat(((MarkdownInlineTable) body.table()).rows())
+                    .containsExactly(java.util.List.of("1", "2"), java.util.List.of("3", "4"));
+        }
+
+        @Test
         @DisplayName("an empty cell is how a row writes a missing value")
         void emptyCellIsAccepted() {
             Script s = parse("X := [\n| a | b |\n|---|---|\n| 1 |  |\n];");
