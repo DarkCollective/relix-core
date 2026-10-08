@@ -388,11 +388,25 @@ public final class ScriptPrinter {
 
     private static String csv(CsvInlineTable t) {
         StringBuilder sb = new StringBuilder("csv[\n");
-        sb.append("  ").append(String.join(", ", t.headers())).append('\n');
+        sb.append("  ").append(csvLine(t.headers())).append('\n');
         for (List<String> r : t.rows()) {
-            sb.append("  ").append(String.join(", ", r)).append('\n');
+            sb.append("  ").append(csvLine(r)).append('\n');
         }
         return sb.append(']').toString();
+    }
+
+    /**
+     * One CSV line, a field quoted when it holds a comma or a quote — the reason a table
+     * is written as csv[ ] at all — with an embedded quote doubled, as the reader takes it.
+     */
+    private static String csvLine(List<String> fields) {
+        StringJoiner line = new StringJoiner(", ");
+        for (String field : fields) {
+            line.add(field.contains(",") || field.contains("\"")
+                    ? '"' + field.replace("\"", "\"\"") + '"'
+                    : field);
+        }
+        return line.toString();
     }
 
     private String def(DefStatement s) {

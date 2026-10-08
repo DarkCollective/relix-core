@@ -55,7 +55,7 @@
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/MathFunctions.java
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/TypeCheckFunctions.java
 9	relix-lang/src/main/java/com/darkcollective/relix/lang/LangLexer.java
-9	relix-lang/src/main/java/com/darkcollective/relix/lang/ScriptParser.java
+7	relix-lang/src/main/java/com/darkcollective/relix/lang/ScriptParser.java
 4	relix-lang/src/main/java/com/darkcollective/relix/lang/SourceConfigParser.java
 1	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/internal/ConjunctBounds.java
 2	relix-optimizer/src/main/java/com/darkcollective/relix/optimizer/internal/JoinRulesPass.java
