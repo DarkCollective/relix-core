@@ -1,5 +1,5 @@
 plugins {
-    id 'me.champeau.gradle.japicmp' version '0.4.3' apply false
+    id 'me.champeau.gradle.japicmp' version '0.4.6' apply false
 }
 
 // Root build.gradle — shared configuration for all subprojects.
@@ -14,7 +14,7 @@ plugins {
     // Mutation testing, applied to every subproject below. `apply false` because the
     // root has no sources of its own — and because the plugins DSL cannot carry a
     // version inside a `subprojects {}` block.
-    id 'info.solidsoft.pitest' version '1.15.0' apply false
+    id 'info.solidsoft.pitest' version '1.19.0' apply false
 }
 
 repositories {
@@ -134,9 +134,13 @@ subprojects {
         }
     }
     tasks.named('compileJava') {
+        // Read at configuration time: a task action may not reach `project` (an
+        // error from Gradle 10, and incompatible with the configuration cache).
+        def moduleInfo = file("$projectDir/src/main/java/module-info.java")
+        def moduleVersion = project.version.toString()
         doFirst {
-            if (file("$projectDir/src/main/java/module-info.java").exists()) {
-                options.compilerArgs += ['--module-version', project.version.toString()]
+            if (moduleInfo.exists()) {
+                options.compilerArgs += ['--module-version', moduleVersion]
             }
         }
     }

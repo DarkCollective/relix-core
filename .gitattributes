@@ -1,0 +1,16 @@
+# Normalise line endings in the repository; check out with the platform's own.
+* text=auto
+
+# Scripts that must keep their line endings whatever the platform.
+gradlew        text eol=lf
+*.sh           text eol=lf
+*.bat          text eol=crlf
+*.cmd          text eol=crlf
+*.ps1          text eol=crlf
+
+# Binary files.
+*.jar          binary
+*.png          binary
+*.ico          binary
+*.zip          binary
+*.gz           binary
