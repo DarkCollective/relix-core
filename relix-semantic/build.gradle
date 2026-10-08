@@ -97,8 +97,9 @@ processResources {
     // this task UP-TO-DATE and the stamp stale — the resource still names the version
     // the tree happened to be built at first. That is invisible everywhere except in
     // what `relix.version` reports, which is the one thing it exists to answer.
-    inputs.property('relixVersion', project.version)
+    def relixVersion = project.version
+    inputs.property('relixVersion', relixVersion)
     filesMatching('**/version.properties') {
-        expand(version: project.version)
+        expand(version: relixVersion)
     }
 }
