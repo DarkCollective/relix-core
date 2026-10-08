@@ -93,10 +93,11 @@ def compileModuleInfo = tasks.register('compileModuleInfo', JavaCompile) {
     classpath = files()
     destinationDirectory = layout.buildDirectory.dir('merged/descriptor')
     javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }
+    def moduleVersion = project.version.toString()
     doFirst {
         options.compilerArgs += [
                 '--patch-module', "com.darkcollective.relix=${mergedClasses.get().asFile}",
-                '--module-version', project.version.toString(),
+                '--module-version', moduleVersion,
         ]
     }
 }
@@ -114,7 +115,7 @@ compileJava {
 // published artifact (#1132), so the jar is the only thing it offers.
 ['apiElements', 'runtimeElements'].each { name ->
     configurations.named(name) {
-        outgoing.variants.removeAll(outgoing.variants.findAll { it.name in ['classes', 'resources'] })
+        outgoing.variants.removeAll(outgoing.variants.matching { it.name in ['classes', 'resources'] }.toList())
     }
 }
 
@@ -229,11 +230,12 @@ def compileSolverModuleInfo = tasks.register('compileSolverModuleInfo', JavaComp
     def engineJar = tasks.named('jar').flatMap { it.archiveFile }
     inputs.file(engineJar)
     inputs.files(configurations.ojalgo)
+    def moduleVersion = project.version.toString()
     doFirst {
         options.compilerArgs += [
                 '--module-path', files(engineJar, configurations.ojalgo).asPath,
                 '--patch-module', "com.darkcollective.relix.solver.ojalgo=${solverClasses.get().asFile}",
-                '--module-version', project.version.toString(),
+                '--module-version', moduleVersion,
         ]
     }
 }
@@ -419,7 +421,7 @@ def validatePom = tasks.register('validatePom') {
     doLast {
         pomFiles.each { pomFileProvider ->
             def pomFile = pomFileProvider.get()
-            def pom = new XmlSlurper().parse(pomFile)
+            def pom = new groovy.xml.XmlSlurper().parse(pomFile)
             // Each entry is a required element and the evidence that it is filled in — a
             // present-but-empty `<developers/>` satisfies Central's schema and not its
             // validator, so the check is for content rather than for the tag.
@@ -538,7 +540,8 @@ def consumerRuns = consumerVariants.collect { variant ->
     def write = tasks.register("writeConsumer${variant.name.capitalize()}") {
         description = "Generates the standalone '${variant.name}' consumer of the published artifacts."
         inputs.dir('src/consumerSmoke/java')
-        inputs.property('version', project.version)
+        def version = project.version
+        inputs.property('version', version)
         inputs.property('variant', variant.toString())
         outputs.dir(root)
         doLast {
@@ -548,7 +551,7 @@ def consumerRuns = consumerVariants.collect { variant ->
             sources.mkdirs()
             new File(dir, 'settings.gradle').text = "rootProject.name = 'relix-consumer-${variant.name}'\n"
             def dependencyLines = variant.deps
-                    .collect { "    implementation 'com.darkcollective.relix:${it}:${project.version}'" }
+                    .collect { "    implementation 'com.darkcollective.relix:${it}:${version}'" }
                     .join('\n')
             def launch = variant.modular
                     ? "application {\n    mainModule = 'relix.consumer'\n    mainClass = 'consumer.ConsumerSmoke'\n}"
