@@ -163,6 +163,18 @@ final class ScriptCommentsTest {
         }
 
         @Test
+        @DisplayName("a block comment after a table's ], on its last row's line, before the semicolon")
+        void blockCommentAfterTable() {
+            assertThat(printed("""
+                    Goals := [
+                    | id | minute |
+                    |----|--------|
+                    | 1  | 12     |] /* one so far */;
+                    """))
+                    .contains("| 1 | 12 |\n] /* one so far */ ;");
+        }
+
+        @Test
         @DisplayName("at the end of several of a table's rows, each on its own row")
         void tableRows() {
             assertThat(printed("""
