@@ -150,6 +150,19 @@ final class ScriptCommentsTest {
         }
 
         @Test
+        @DisplayName("at the end of a table's row, before the statement's semicolon")
+        void tableRow() {
+            assertThat(printed("""
+                    Goals := [
+                    | id | minute |
+                    |----|--------|
+                    | 1  | 12     |  -- keepers score too
+                    ];
+                    """))
+                    .contains("] -- keepers score too\n;");
+        }
+
+        @Test
         @DisplayName("inside a def, before its body")
         void def() {
             assertThat(printed("""

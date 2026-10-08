@@ -31,7 +31,8 @@ pipe characters.
 The header names every column once: no header cell is empty, and no two name the same
 column, ignoring case as column names are matched. Every row has exactly as many cells as
 the header has columns, and a missing value is written as an empty cell. A markdown table
-puts each row on a line of its own. Text that breaks one of these rules is a syntax
+puts each row on a line of its own, and a row may end with a `--` comment after its last
+`|`. Text that breaks one of these rules is a syntax
 error at the row that breaks it, rather than a row cut short or filled out:
 
 ```relix-invalid
