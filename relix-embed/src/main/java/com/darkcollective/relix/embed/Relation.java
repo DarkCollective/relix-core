@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.embed;
 
+import com.darkcollective.relix.ast.visitor.internal.PrettyPrinter;
 import com.darkcollective.relix.ast.AllenRelation;
 import com.darkcollective.relix.ast.AstBuilders;
 import java.util.function.UnaryOperator;
@@ -1299,12 +1300,22 @@ public final class Relation {
      * Formatting is normalised rather than preserved, and a literal's spelling may be too
      * — {@code 5.0} renders as it was parsed, not as it was typed.
      *
+     * <p>That holds for an {@link #optimized()} relation too. What the optimizer folds
+     * into an operator is written as the expression it came from: a {@code CLOSURE},
+     * {@code PATH} or {@code TRACE} seeded at an endpoint as the selection over it, a
+     * relation proved empty as {@code σ 1 = 0} over the expression whose heading it
+     * keeps, and a generator's production stop not at all, since the selection it came
+     * from stays above it.
+     *
      * @return the expression as {@code .relix} text
      * @since 1.0
      */
     public String render() {
-        return node.prettyPrint();
+        return node.accept(SOURCE);
     }
+
+    /** Prints a tree as text the parser reads back, optimizer annotations included. */
+    private static final PrettyPrinter SOURCE = PrettyPrinter.source();
 
     /**
      * This relation's expression tree as JSON, for a program rather than a reader.

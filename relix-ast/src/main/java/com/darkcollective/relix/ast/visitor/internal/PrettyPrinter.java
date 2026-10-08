@@ -44,6 +44,43 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     private final OperandPrettyPrinter operandPrinter = new OperandPrettyPrinter();
 
     /**
+     * Whether the optimizer's own annotations are written as the language spells what
+     * they mean, rather than as the diagnostic {@code ⟨…⟩} form. See {@link #source()}.
+     */
+    private final boolean source;
+
+    /** A printer of the diagnostic form, which shows the optimizer's annotations as they are. */
+    public PrettyPrinter() {
+        this(false);
+    }
+
+    private PrettyPrinter(boolean source) {
+        this.source = source;
+    }
+
+    /**
+     * A printer whose every output parses back, as a relation that returns the same rows.
+     *
+     * <p>The diagnostic form prints what the optimizer folded into a node — a closure's
+     * seed, a generator's production stop, a relation it proved empty — as an annotation
+     * no lexer reads, because those are not the language's to write. This printer spells
+     * each one as the expression it stands for instead:
+     * <ul>
+     *   <li>a {@code CLOSURE}, {@code PATH} or {@code TRACE} seeded at an endpoint is the
+     *       selection that seed was folded from, {@code σ from = c (CLOSURE from, to (E))};</li>
+     *   <li>a generator's {@code ⟨produce while …⟩} is left out, because the pass that adds
+     *       it keeps the selection above the generator;</li>
+     *   <li>{@code ∅⟨E⟩} is {@code σ 1 = 0 (E)}: no rows, and the heading of {@code E}.</li>
+     * </ul>
+     * A tree parsed from source carries none of them, so for one the two forms agree.
+     *
+     * @return a printer of re-parseable text
+     */
+    public static PrettyPrinter source() {
+        return new PrettyPrinter(true);
+    }
+
+    /**
      * Backtick-delimits a name that collides with a reserved word (or is not
      * identifier-shaped) so the printed tree parses back unchanged; a no-op for
      * ordinary names.
@@ -65,6 +102,9 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(RelationNode node) {
+        if (source) {
+            return q(node.name());
+        }
         return node.produceBound()
                 .map(b -> q(node.name()) + " ⟨produce while " + b.column() + " "
                         + b.operator().symbol() + " "
@@ -99,6 +139,9 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
      */
     @Override
     public String visit(EmptyRelationNode node) {
+        if (source) {
+            return "σ 1 = 0 (" + node.heading().accept(this) + ")";
+        }
         return "∅⟨" + node.heading().accept(this) + "⟩";
     }
 
@@ -393,11 +436,12 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     @Override
     public String visit(ClosureNode node) {
         String keyword = node.reflexive() ? "RCLOSURE" : "CLOSURE";
-        return keyword + " " + node.fromColumn() + edgeSeparator(node.undirected())
+        return seeded(keyword + " " + node.fromColumn() + edgeSeparator(node.undirected())
                 + node.toColumn()
                 + boundAnnotation(node.fromColumn(), node.toColumn(),
                         node.boundSource(), node.boundTarget())
-                + " (" + node.input().accept(this) + ")";
+                + " (" + node.input().accept(this) + ")",
+                node.fromColumn(), node.toColumn(), node.boundSource(), node.boundTarget());
     }
 
     /**
@@ -417,7 +461,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     private String boundAnnotation(String fromColumn, String toColumn,
                                    java.util.Optional<Operand> boundSource,
                                    java.util.Optional<Operand> boundTarget) {
-        if (boundSource.isEmpty() && boundTarget.isEmpty()) {
+        if (source || boundSource.isEmpty() && boundTarget.isEmpty()) {
             return "";
         }
         StringBuilder sb = new StringBuilder(" ⟨");
@@ -432,6 +476,24 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         return sb.append('⟩').toString();
     }
 
+    /**
+     * {@return a graph operator's text, under the selection its endpoint bounds were
+     * folded from when printing source} Each bound is an equality between an endpoint
+     * column and a literal (CLOSURE-001, PATH-001, TRACE-001), and selecting it from the
+     * unseeded operator's output gives exactly the seeded operator's rows.
+     */
+    private String seeded(String printed, String fromColumn, String toColumn,
+                          java.util.Optional<Operand> boundSource,
+                          java.util.Optional<Operand> boundTarget) {
+        if (!source || boundSource.isEmpty() && boundTarget.isEmpty()) {
+            return printed;
+        }
+        java.util.List<String> conjuncts = new java.util.ArrayList<>(2);
+        boundSource.ifPresent(op -> conjuncts.add(q(fromColumn) + " = " + op.accept(operandPrinter)));
+        boundTarget.ifPresent(op -> conjuncts.add(q(toColumn) + " = " + op.accept(operandPrinter)));
+        return "σ " + String.join(" ∧ ", conjuncts) + " (" + printed + ")";
+    }
+
     @Override
     public String visit(ClusterNode node) {
         return "CLUSTER " + node.fromColumn() + ", " + node.toColumn()
@@ -440,22 +502,24 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(PathNode node) {
-        return "PATH " + node.fromColumn() + edgeSeparator(node.undirected()) + node.toColumn()
+        return seeded("PATH " + node.fromColumn() + edgeSeparator(node.undirected()) + node.toColumn()
                 + " HOPS " + node.minHops() + " TO " + node.maxHops()
                 + " AS " + node.depthColumn()
                 + boundAnnotation(node.fromColumn(), node.toColumn(),
                         node.boundSource(), node.boundTarget())
-                + " (" + node.input().accept(this) + ")";
+                + " (" + node.input().accept(this) + ")",
+                node.fromColumn(), node.toColumn(), node.boundSource(), node.boundTarget());
     }
 
     @Override
     public String visit(TraceNode node) {
-        return "TRACE " + node.fromColumn() + edgeSeparator(node.undirected()) + node.toColumn()
+        return seeded("TRACE " + node.fromColumn() + edgeSeparator(node.undirected()) + node.toColumn()
                 + " VIA " + node.weightColumn() + " " + node.sense()
                 + " AS " + node.pathColumn()
                 + boundAnnotation(node.fromColumn(), node.toColumn(),
                         node.boundSource(), node.boundTarget())
-                + " (" + node.input().accept(this) + ")";
+                + " (" + node.input().accept(this) + ")",
+                node.fromColumn(), node.toColumn(), node.boundSource(), node.boundTarget());
     }
 
 
