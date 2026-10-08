@@ -72,7 +72,8 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
                     (n, s) -> null, null, ExecutionContext.UNLIMITED_FIXPOINT_ROUNDS,
                     ExecutionContext.UNLIMITED_MATERIALIZED_ROWS,
-                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(), FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of()))
+                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(), FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of(),
+                    new com.darkcollective.relix.processor.generator.GeneratorRegistry()))
                     .isInstanceOf(NullPointerException.class);
         }
 
@@ -163,12 +164,34 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     (n, s) -> null, QueryEventListener.NONE,
                     ExecutionContext.UNLIMITED_FIXPOINT_ROUNDS,
                     ExecutionContext.UNLIMITED_MATERIALIZED_ROWS,
-                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, null, FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of()))
+                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, null, FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of(),
+                    new com.darkcollective.relix.processor.generator.GeneratorRegistry()))
                     .isInstanceOf(NullPointerException.class);
         }
     }
 
     // ── withFunctions() ────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("withGenerators()")
+    class WithGenerators {
+
+        @Test
+        @DisplayName("swaps the registry, shares every other field, and refuses null")
+        void swapsTheRegistry() {
+            var base = new ExecutionContext(new InMemorySymbolTable(),
+                    SchemaAnnotations.empty(), (n, s) -> null);
+            var registry = new com.darkcollective.relix.processor.generator.GeneratorRegistry();
+            var swapped = base.withGenerators(registry);
+
+            assertThat(swapped.generators()).isSameAs(registry);
+            assertThat(base.generators()).isNotSameAs(registry);
+            assertThat(swapped.symbolTable()).isSameAs(base.symbolTable());
+            assertThat(swapped.clock()).isEqualTo(base.clock());
+            assertThatThrownBy(() -> base.withGenerators(null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+    }
 
     @Nested
     @DisplayName("withFunctions()")
@@ -382,7 +405,8 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
                     (n, s) -> null, QueryEventListener.NONE, 0,
                     ExecutionContext.UNLIMITED_MATERIALIZED_ROWS, ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(),
-                    FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of()))
+                    FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of(),
+                    new com.darkcollective.relix.processor.generator.GeneratorRegistry()))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("maxFixpointRounds");
         }
@@ -395,7 +419,8 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
                     (n, s) -> null, QueryEventListener.NONE, -1,
                     ExecutionContext.UNLIMITED_MATERIALIZED_ROWS, ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(),
-                    FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of()))
+                    FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of(),
+                    new com.darkcollective.relix.processor.generator.GeneratorRegistry()))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -468,7 +493,8 @@ final class ExecutionContextTest extends ProcessorTestSupport {
                     java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
                     (n, s) -> null, QueryEventListener.NONE,
                     ExecutionContext.UNLIMITED_FIXPOINT_ROUNDS, 0,
-                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(), FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of()))
+                    ExecutionContext.UNLIMITED_PROCESSED_ROWS, ExecutionContext.UNLIMITED_TIMEOUT, java.time.Clock.systemUTC(), FunctionCatalog.empty(), QueryCancellation.NONE, java.util.Map.of(),
+                    new com.darkcollective.relix.processor.generator.GeneratorRegistry()))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("maxMaterializedRows");
         }

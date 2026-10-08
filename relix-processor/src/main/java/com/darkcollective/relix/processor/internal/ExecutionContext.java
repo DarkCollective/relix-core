@@ -128,6 +128,10 @@ import java.util.Objects;
  * @param parameters         the values of the query's bound parameters ({@code $name}),
  *                           keyed by name and matched ignoring case; empty by default.
  *                           Must not be {@code null}
+ * @param generators         the generators a {@code generator} source names, which say
+ *                           whether it ends: the built-in ones by default, and a
+ *                           session's own registry when it has registered more (a
+ *                           {@code Relix.input} among them). Must not be {@code null}
  */
 public record ExecutionContext(
         SymbolTable symbolTable,
@@ -144,7 +148,8 @@ public record ExecutionContext(
         Clock clock,
         FunctionCatalog functions,
         QueryCancellation cancellation,
-        Map<String, Value> parameters) {
+        Map<String, Value> parameters,
+        GeneratorRegistry generators) {
 
     /** Sentinel value meaning no cap on fixpoint iteration rounds; also the default. */
     public static final int UNLIMITED_FIXPOINT_ROUNDS = Integer.MAX_VALUE;
@@ -193,6 +198,7 @@ public record ExecutionContext(
         Objects.requireNonNull(timeout,      "timeout");
         Objects.requireNonNull(cancellation, "cancellation");
         Objects.requireNonNull(parameters,   "parameters");
+        Objects.requireNonNull(generators,   "generators");
         if (maxFixpointRounds < 1) {
             throw new IllegalArgumentException(
                     "maxFixpointRounds must be >= 1, was: " + maxFixpointRounds);
@@ -230,8 +236,8 @@ public record ExecutionContext(
         clock = Clock.fixed(clock.instant(), clock.getZone());
     }
 
-    /** Built-in generators — used to derive per-leaf boundedness (ADR-0008). */
-    private static final GeneratorRegistry GENERATORS = new GeneratorRegistry();
+    /** The built-in generators: a context made without a session's registry gets these. */
+    private static final GeneratorRegistry BUILT_IN_GENERATORS = new GeneratorRegistry();
 
     /**
      * The ambient state a function implementation may read while it runs — today the
@@ -275,14 +281,15 @@ public record ExecutionContext(
 
     /**
      * The per-leaf {@link BoundednessSource} for this context — a generator source
-     * reports its declared boundedness, every other leaf is bounded. Used
+     * reports the boundedness {@link #generators()} declares for it, every other leaf is
+     * bounded. Used
      * by the planner's materialisation-safety check and join build-side rule. Derived
      * from {@link #sources()}, so it needs no extra construction or threading.
      *
      * @return the boundedness source for the relations in this context
      */
     public BoundednessSource boundedness() {
-        return new GeneratorBoundednessSource(sources, GENERATORS);
+        return new GeneratorBoundednessSource(sources, generators);
     }
 
     /**
@@ -307,7 +314,7 @@ public record ExecutionContext(
                 QueryEventListener.NONE, UNLIMITED_FIXPOINT_ROUNDS,
                 DEFAULT_MAX_MATERIALIZED_ROWS, UNLIMITED_PROCESSED_ROWS, UNLIMITED_TIMEOUT,
                 Clock.systemUTC(),
-                installedFunctions(), QueryCancellation.NONE, Map.of());
+                installedFunctions(), QueryCancellation.NONE, Map.of(), BUILT_IN_GENERATORS);
     }
 
     /**
@@ -320,7 +327,7 @@ public record ExecutionContext(
     public ExecutionContext withListener(QueryEventListener listener) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
     }
 
     /**
@@ -336,7 +343,7 @@ public record ExecutionContext(
     public ExecutionContext withMaxFixpointRounds(int maxFixpointRounds) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
     }
 
     /**
@@ -363,7 +370,7 @@ public record ExecutionContext(
     public ExecutionContext withMaxMaterializedRows(int maxMaterializedRows) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
     }
 
     /**
@@ -384,7 +391,7 @@ public record ExecutionContext(
     public ExecutionContext withMaxProcessedRows(long maxProcessedRows) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
     }
 
     /**
@@ -403,7 +410,7 @@ public record ExecutionContext(
         Objects.requireNonNull(timeout, "timeout");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
     }
 
     /**
@@ -427,7 +434,7 @@ public record ExecutionContext(
         Objects.requireNonNull(clock, "clock");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
     }
 
     /**
@@ -446,7 +453,7 @@ public record ExecutionContext(
         Objects.requireNonNull(functions, "functions");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
     }
 
     /**
@@ -459,7 +466,7 @@ public record ExecutionContext(
         Objects.requireNonNull(cancellation, "cancellation");
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
     }
 
     /**
@@ -472,7 +479,24 @@ public record ExecutionContext(
     public ExecutionContext withParameters(Map<String, Value> parameters) {
         return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
                 connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
-                maxProcessedRows, timeout, clock, functions, cancellation, parameters);
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
+    }
+
+    /**
+     * Returns a copy whose generator sources are looked up in {@code generators}, so
+     * that one the caller registered — an endless stream among them — is planned as
+     * the boundedness it declares rather than as bounded.  All other fields are shared
+     * unchanged.
+     *
+     * @param generators the registry the context's generator sources are named in;
+     *                   must not be {@code null}
+     * @return a new context
+     */
+    public ExecutionContext withGenerators(GeneratorRegistry generators) {
+        Objects.requireNonNull(generators, "generators");
+        return new ExecutionContext(symbolTable, nodeSchemas, statistics, sources,
+                connections, connector, listener, maxFixpointRounds, maxMaterializedRows,
+                maxProcessedRows, timeout, clock, functions, cancellation, parameters, generators);
     }
 
     /**
@@ -505,7 +529,7 @@ public record ExecutionContext(
                 QueryEventListener.NONE, UNLIMITED_FIXPOINT_ROUNDS,
                 DEFAULT_MAX_MATERIALIZED_ROWS, UNLIMITED_PROCESSED_ROWS, UNLIMITED_TIMEOUT,
                 Clock.systemUTC(),
-                model.functions(), QueryCancellation.NONE, Map.of());
+                model.functions(), QueryCancellation.NONE, Map.of(), BUILT_IN_GENERATORS);
     }
 
     /**
@@ -528,7 +552,7 @@ public record ExecutionContext(
                 QueryEventListener.NONE, UNLIMITED_FIXPOINT_ROUNDS,
                 DEFAULT_MAX_MATERIALIZED_ROWS, UNLIMITED_PROCESSED_ROWS, UNLIMITED_TIMEOUT,
                 Clock.systemUTC(),
-                model.functions(), QueryCancellation.NONE, Map.of());
+                model.functions(), QueryCancellation.NONE, Map.of(), BUILT_IN_GENERATORS);
     }
 
     /**
