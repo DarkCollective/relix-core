@@ -221,9 +221,13 @@ and nothing about it can change the query.
 
 A parameter has the type of what it is compared with, which is what
 `model().parameters()` reports, and `bind` refuses a value of another type rather than
-letting the comparison quietly find nothing:
+letting the comparison quietly find nothing. A `String` is the exception, because values
+often arrive as text — a command line, a query string, an environment variable — from a
+caller that cannot see the parameter's type. Text bound to a parameter of another type is
+read as that type's literal would read it, and refused, naming the text, when it is not one:
 
 ```java
+Relation fifty = byStatus.bind("floor", "50");   // the NUMBER 50
 try {
     byStatus.bind("floor", "fifty");
 } catch (RelixException e) {
@@ -232,7 +236,7 @@ try {
 ```
 
 ```
-parameter $floor is compared with a NUMBER, so it cannot be bound to the STRING fifty
+parameter $floor is compared with a NUMBER, so it cannot be bound to the text 'fifty'
 ```
 
 Values every query of a session shares go to `Relix.builder().parameters(Map)` instead, and

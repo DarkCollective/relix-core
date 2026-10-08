@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.embed;
 
+import com.darkcollective.relix.ast.internal.TemporalLiterals;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Type;
 import com.darkcollective.relix.value.BooleanValue;
@@ -29,6 +30,7 @@ import com.darkcollective.relix.value.Value;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -51,6 +53,12 @@ final class ParameterValues {
     /**
      * {@code value} as an engine value, refused when it is not of {@code type}.
      *
+     * <p>A {@link String} bound to a parameter of another type is text to be read as
+     * that type, the way the type's literal reads it: values that arrive as text — a
+     * command line, a query string, an environment variable — need not be typed by a
+     * caller that cannot see what analysis made the parameter. Every other value must
+     * already be of the type.
+     *
      * @param name  the parameter, without its {@code $}, for a diagnostic
      * @param value a number, string, boolean, date, time, instant (or offset or zoned
      *              date-time), duration, an engine {@link Value}, or null
@@ -60,12 +68,50 @@ final class ParameterValues {
      *         parameter can hold, or not of {@code type}
      */
     static Value of(String name, Object value, Type type) {
+        if (value instanceof String text && type instanceof ScalarType scalar) {
+            return fromText(name, text, scalar);
+        }
         Value converted = convert(name, value);
         if (!converted.isNull() && type != ScalarType.ANY && !type.equals(converted.type())) {
             throw new RelixException("parameter $" + name + " is compared with a " + type
-                    + ", so it cannot be bound to the " + converted.type() + " " + value);
+                    + ", so it cannot be bound to the " + converted.type() + " "
+                    + converted.asDisplayString());
         }
         return converted;
+    }
+
+    /**
+     * {@code text} read as a {@code type} literal's payload: a decimal number, {@code true}
+     * or {@code false} in any case, or the ISO-8601 form a temporal literal takes. A
+     * STRING or ANY parameter takes the text as it is.
+     *
+     * <p>What is read is a value, never script text, so text that is not of the type is
+     * refused rather than becoming part of the query — and an empty one too, since no
+     * text is not the same as NULL.
+     */
+    private static Value fromText(String name, String text, ScalarType type) {
+        try {
+            Value value = switch (type) {
+                case NUMBER -> new NumberValue(new BigDecimal(text));
+                case BOOLEAN -> switch (text.toLowerCase(Locale.ROOT)) {
+                    case "true" -> BooleanValue.of(true);
+                    case "false" -> BooleanValue.of(false);
+                    default -> null;
+                };
+                case DATE -> new DateValue(TemporalLiterals.parseDate(text));
+                case TIME -> new TimeValue(TemporalLiterals.parseTime(text));
+                case TIMESTAMP -> new TimestampValue(TemporalLiterals.parseTimestamp(text));
+                case DURATION -> new DurationValue(TemporalLiterals.parseDuration(text));
+                case STRING, ANY -> new StringValue(text);
+            };
+            if (value != null) {
+                return value;
+            }
+        } catch (NumberFormatException | DateTimeException notOfTheType) {
+            // reported below, as text that is not of the type
+        }
+        throw new RelixException("parameter $" + name + " is compared with a " + type
+                + ", so it cannot be bound to the text '" + text + "'");
     }
 
     private static Value convert(String name, Object value) {
