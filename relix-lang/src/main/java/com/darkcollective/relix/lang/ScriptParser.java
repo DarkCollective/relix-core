@@ -873,6 +873,15 @@ public final class ScriptParser {
             if (trimmed.isEmpty() || !trimmed.startsWith("|")) {
                 continue;
             }
+            String comment = trailingComment(trimmed);
+            if (!comment.isEmpty()) {
+                // Kept with the script's other comments, for a printer to put back.
+                String text = lines[i];
+                int at = text.lastIndexOf(comment);
+                expressionComments.add(new Comment(comment, new SourceLocation(filePath,
+                        raw.startLine() + i, (i == 0 ? raw.startCol() : 1) + at)));
+                trimmed = trimmed.substring(0, trimmed.length() - comment.length()).strip();
+            }
             List<String> cells = splitPipeCells(trimmed);
             // Separator row — all cells are only dashes (e.g. "---")
             if (cells.stream().allMatch(c -> c.matches("-+"))) {
@@ -942,6 +951,16 @@ public final class ScriptParser {
         int indent = text.length() - text.stripLeading().length();
         int column = (line == 0 ? raw.startCol() : 1) + indent;
         return new LangParseException(message, raw.startLine() + line, column);
+    }
+
+    /**
+     * The {@code --} comment after a Markdown row's last {@code |}, or {@code ""}: a
+     * table's lines are raw text, so no lexer has taken the comment out, and it is not a
+     * cell.
+     */
+    private static String trailingComment(String line) {
+        String tail = line.substring(line.lastIndexOf('|') + 1).strip();
+        return tail.startsWith("--") ? tail : "";
     }
 
     private List<String> splitPipeCells(String line) {

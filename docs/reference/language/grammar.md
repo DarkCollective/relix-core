@@ -232,7 +232,8 @@ boolean_literal   ::= "true" | "false"
                      | Paris  | FR      |
                  ];
        A line that does not start with "|" is ignored, a row whose cells are all
-       dashes is ignored, and the first remaining row is the header.
+       dashes is ignored, and the first remaining row is the header. A row may end
+       with a -- comment after its last "|".
 
      CSV:        Cities := csv[
                      city,country
