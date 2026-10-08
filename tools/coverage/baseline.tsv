@@ -54,7 +54,6 @@
 2	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/DateTimeFunctions.java
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/MathFunctions.java
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/TypeCheckFunctions.java
-2	relix-function/src/main/java/com/darkcollective/relix/function/FunctionCatalog.java
 9	relix-lang/src/main/java/com/darkcollective/relix/lang/LangLexer.java
 9	relix-lang/src/main/java/com/darkcollective/relix/lang/ScriptParser.java
 4	relix-lang/src/main/java/com/darkcollective/relix/lang/SourceConfigParser.java
