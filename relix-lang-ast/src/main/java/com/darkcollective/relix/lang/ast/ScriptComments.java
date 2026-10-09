@@ -75,10 +75,14 @@ public record ScriptComments(StatementComments namespace, List<StatementComments
      * @param inside          comments between the statement's first token and its
      *                        {@code ;}, such as a comment inside its algebra
      * @param after           comments after its {@code ;}, on the same line
+     * @param blankLineAfter  one entry per comment in {@code before}: whether a blank line
+     *                        followed it, before the next comment or the statement; empty
+     *                        when nothing is known, as for a script that was built
      * @since 1.0
      */
     public record StatementComments(boolean blankLineBefore, List<Comment> before,
-                                    List<Comment> inside, List<Comment> after) {
+                                    List<Comment> inside, List<Comment> after,
+                                    List<Boolean> blankLineAfter) {
 
         /** No comments, and no blank line. */
         public static final StatementComments NONE =
@@ -93,6 +97,37 @@ public record ScriptComments(StatementComments namespace, List<StatementComments
             before = List.copyOf(Objects.requireNonNull(before, "before"));
             inside = List.copyOf(Objects.requireNonNull(inside, "inside"));
             after = List.copyOf(Objects.requireNonNull(after, "after"));
+            blankLineAfter = List.copyOf(Objects.requireNonNull(blankLineAfter, "blankLineAfter"));
+            if (!blankLineAfter.isEmpty() && blankLineAfter.size() != before.size()) {
+                throw new IllegalArgumentException(
+                        "blankLineAfter must have one entry per comment before, or none");
+            }
+        }
+
+        /**
+         * The comments placed by one statement, with nothing known of the blank lines
+         * among the comments before it.
+         *
+         * @param blankLineBefore whether a blank line came before the statement and its comments
+         * @param before          comments on the lines before the statement
+         * @param inside          comments between its first token and its {@code ;}
+         * @param after           comments after its {@code ;}, on the same line
+         * @since 1.0
+         */
+        public StatementComments(boolean blankLineBefore, List<Comment> before,
+                                 List<Comment> inside, List<Comment> after) {
+            this(blankLineBefore, before, inside, after, List.of());
+        }
+
+        /**
+         * Whether a blank line followed one of the comments before the statement.
+         *
+         * @param index the comment's position in {@link #before()}
+         * @return {@code true} when one did; {@code false} when not, or when nothing is known
+         * @since 1.0
+         */
+        public boolean blankLineAfter(int index) {
+            return index < blankLineAfter.size() && blankLineAfter.get(index);
         }
     }
 }
