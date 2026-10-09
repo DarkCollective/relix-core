@@ -43,6 +43,7 @@
 #   LangAstSourceTest         InlineTableBody, MarkdownInlineTable (its row locations)
 #   LangAstScriptTest         ImportStatement, DefStatement
 #   LangAstValidationTest     DefRelationStatement, JsonFileSourceConfig, RelateStatement
+#   ScriptCommentsTest        ScriptComments.StatementComments (its blank-line entries)
 #
 # Three more stay for reasons of their own:
 #
@@ -99,6 +100,7 @@
 5	relix-ast/src/test/java/com/darkcollective/relix/ast/TruthRelationNodeTest.java
 3	relix-ast/src/test/java/com/darkcollective/relix/ast/AggregateFunctionTest.java
 4	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstSourceTest.java
+2	relix-lang/src/test/java/com/darkcollective/relix/lang/ScriptCommentsTest.java
 2	relix-lang/src/test/java/com/darkcollective/relix/lang/ScriptCorpusRoundTripTest.java
 2	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/ScriptCorpusTest.java
 1	relix-processor/src/test/java/com/darkcollective/relix/processor/eval/FunctionCatalogContractTest.java

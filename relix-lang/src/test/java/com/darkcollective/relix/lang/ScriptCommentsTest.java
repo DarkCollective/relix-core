@@ -16,6 +16,7 @@
 package com.darkcollective.relix.lang;
 
 import com.darkcollective.relix.ast.Comment;
+import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.ast.Spelling;
 import com.darkcollective.relix.lang.ast.Script;
 import com.darkcollective.relix.lang.ast.ScriptBuilders;
@@ -32,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** A parsed script printed back keeps its comments, and can be spelled in ASCII. */
 @DisplayName("ScriptPrinter — comments kept, and the ASCII spelling")
@@ -132,6 +134,49 @@ final class ScriptCommentsTest {
             assertThat(parsed.comments().statement(2)).isEqualTo(ScriptComments.StatementComments.NONE);
             assertThat(ScriptPrinter.print(parsed))
                     .contains("B := { σ x = 1 (/* inside */ R) };");
+        }
+
+        @Test
+        @DisplayName("a blank line between a comment and the statement or namespace after it is kept")
+        void blankLineAfterComment() {
+            for (String text : List.of(
+                    "-- header\n\nnamespace demo;\n-- about N\n\nquery N;\n",
+                    "-- about N\n\nquery N;\n",
+                    "query A;\n-- about N\n\nquery N;\n",
+                    "query A;\n\n-- about N\n\nquery N;\n",
+                    "query A;\n\n-- about N\nquery N;\n")) {
+                assertThat(printed(text)).as(text).isEqualTo(text);
+            }
+        }
+
+        @Test
+        @DisplayName("a blank line between groups of comments above a statement is kept, several as one")
+        void blankLinesBetweenComments() {
+            assertThat(printed("-- the file\n\n\n-- about N\n-- and more\n\nquery N;\n"))
+                    .isEqualTo("-- the file\n\n-- about N\n-- and more\n\nquery N;\n");
+        }
+
+        @Test
+        @DisplayName("a blank line after a block comment is counted from the line it ends on")
+        void blankLineAfterBlockComment() {
+            String touching = "/* about\n   N */\nquery N;\n";
+            String apart = "/* about\n   N */\n\nquery N;\n";
+
+            assertThat(printed(touching)).isEqualTo(touching);
+            assertThat(printed(apart)).isEqualTo(apart);
+        }
+
+        @Test
+        @DisplayName("are recorded with one blank-line entry per comment before, or none")
+        void blankLineAfterEntries() {
+            Comment comment = new Comment("-- about N", new SourceLocation("t.relix", 1, 1));
+            var unknown = new ScriptComments.StatementComments(false, List.of(comment), List.of(), List.of());
+
+            assertThat(unknown.blankLineAfter(0)).as("nothing known is no blank line").isFalse();
+            assertThatThrownBy(() -> new ScriptComments.StatementComments(
+                    false, List.of(comment), List.of(), List.of(), List.of(true, false)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("one entry per comment");
         }
 
         @Test

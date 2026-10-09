@@ -295,14 +295,34 @@ public final class ScriptParser {
                     : before.get(i).getFirst().location().line();
             placed.add(new ScriptComments.StatementComments(
                     previousEnd > 0 && first > previousEnd + 1,
-                    before.get(i), inside.get(i), after.get(i)));
+                    before.get(i), inside.get(i), after.get(i),
+                    blankLinesAfter(before.get(i), spans.get(i).start().line())));
             previousEnd = spans.get(i).end().line();
         }
         boolean footerSpaced = !footer.isEmpty() && previousEnd > 0
                 && footer.getFirst().location().line() > previousEnd + 1;
         return new ScriptComments(
-                new ScriptComments.StatementComments(false, header, namespaceInside, namespaceAfter),
+                new ScriptComments.StatementComments(false, header, namespaceInside, namespaceAfter,
+                        blankLinesAfter(header, namespace.map(span -> span.start().line()).orElse(0))),
                 placed, footer, footerSpaced);
+    }
+
+    /**
+     * For each comment above some code, whether a blank line followed it: whether the next
+     * comment, or the code once there is none, starts more than a line after it ends.
+     *
+     * @param comments the comments, in order
+     * @param code     the line the code they stand above starts on
+     */
+    private static List<Boolean> blankLinesAfter(List<Comment> comments, int code) {
+        List<Boolean> blank = new ArrayList<>();
+        for (int i = 0; i < comments.size(); i++) {
+            Comment comment = comments.get(i);
+            int end = comment.location().line() + (int) comment.text().lines().count() - 1;
+            int next = i + 1 < comments.size() ? comments.get(i + 1).location().line() : code;
+            blank.add(next > end + 1);
+        }
+        return blank;
     }
 
     private String parseNamespaceDecl() {

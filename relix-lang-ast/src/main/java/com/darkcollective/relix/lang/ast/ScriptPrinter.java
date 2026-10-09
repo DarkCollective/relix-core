@@ -155,7 +155,7 @@ public final class ScriptPrinter {
         StringBuilder out = new StringBuilder();
         script.namespace().ifPresent(ns -> {
             ScriptComments.StatementComments around = comments.namespace();
-            around.before().forEach(comment -> out.append(comment.text()).append('\n'));
+            before(out, around);
             out.append("namespace ").append(ns);
             if (!around.inside().isEmpty()) {
                 out.append(' ').append(comments(around.inside()));
@@ -170,7 +170,7 @@ public final class ScriptPrinter {
             if (around.blankLineBefore()) {
                 out.append('\n');
             }
-            around.before().forEach(comment -> out.append(comment.text()).append('\n'));
+            before(out, around);
             out.append(new ScriptPrinter(spelling, around.inside()).statement(statements.get(i)));
             around.after().forEach(comment -> out.append(' ').append(comment.text()));
             out.append('\n');
@@ -180,6 +180,17 @@ public final class ScriptPrinter {
         }
         comments.footer().forEach(comment -> out.append(comment.text()).append('\n'));
         return out.toString();
+    }
+
+    /** The comments before a statement, each on its own line, a blank line kept after any that had one. */
+    private static void before(StringBuilder out, ScriptComments.StatementComments around) {
+        List<Comment> before = around.before();
+        for (int i = 0; i < before.size(); i++) {
+            out.append(before.get(i).text()).append('\n');
+            if (around.blankLineAfter(i)) {
+                out.append('\n');
+            }
+        }
     }
 
     /**
