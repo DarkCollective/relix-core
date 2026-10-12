@@ -241,6 +241,11 @@ public sealed interface PhysicalNode {
                 yield (lv == n.left() && rv == n.right()) ? n
                         : new IntervalJoin(n.schema(), n.relation(), n.leftStartIdx(), n.leftEndIdx(), n.rightStartIdx(), n.rightEndIdx(), n.merge(), lv, rv);
             }
+            case SimilarityJoin n -> {
+                PhysicalNode lv = f.apply(n.left()), rv = f.apply(n.right());
+                yield (lv == n.left() && rv == n.right()) ? n
+                        : new SimilarityJoin(n.schema(), n.condition(), n.buildSide(), n.leftRelations(), n.rightRelations(), n.function(), n.leftColumn(), n.rightColumn(), n.bound(), n.threshold(), lv, rv);
+            }
             case SetOp n -> {
                 PhysicalNode lv = f.apply(n.left()), rv = f.apply(n.right());
                 yield (lv == n.left() && rv == n.right()) ? n
@@ -1061,6 +1066,73 @@ public sealed interface PhysicalNode {
                             PhysicalNode left, PhysicalNode right) {
             this(schema, relation, leftStartIdx, leftEndIdx, rightStartIdx, rightEndIdx, false, left, right);
         }
+        @Override public List<PhysicalNode> children() { return List.of(left, right); }
+    }
+
+    /**
+     * Similarity join — an inner theta join whose condition bounds a two-argument
+     * function's result by a constant, {@code F(left.x, right.y) >= t}, executed by
+     * indexing one input under the keys the function's
+     * {@link com.darkcollective.relix.function.Blocking} gives and probing it with the
+     * other, rather than calling {@code F} on every pair.
+     *
+     * <p>It is the nested-loop {@link Join} it replaces — {@link #join()} rebuilds it —
+     * plus what the index needs. The join's whole condition confirms every candidate
+     * pair, so the blocking only ever removes pairs that could not pass, and its build
+     * side is the input that is indexed. An executor that cannot obtain the blocking — a
+     * function catalogue without the function — runs {@link #join()} instead, and answers
+     * the same.
+     *
+     * @param condition      the join's whole condition, which confirms each pair
+     * @param buildSide      the input that is indexed
+     * @param leftRelations  relation names reachable on the left side
+     * @param rightRelations relation names reachable on the right side
+     * @param function       the name of the function whose call the condition bounds
+     * @param leftColumn     the column of the left input passed to the call
+     * @param rightColumn    the column of the right input passed to the call
+     * @param bound          how the call's result is compared with {@code threshold},
+     *                       with the call read on the left
+     * @param threshold      the constant the result is compared with
+     */
+    record SimilarityJoin(Schema schema, Predicate condition, BuildSide buildSide,
+                          Set<String> leftRelations, Set<String> rightRelations,
+                          String function, int leftColumn, int rightColumn,
+                          com.darkcollective.relix.function.Blocking.Bound bound,
+                          java.math.BigDecimal threshold,
+                          PhysicalNode left, PhysicalNode right) implements PhysicalNode {
+        public SimilarityJoin {
+            java.util.Objects.requireNonNull(condition, "condition");
+            java.util.Objects.requireNonNull(function, "function");
+            java.util.Objects.requireNonNull(bound, "bound");
+            java.util.Objects.requireNonNull(threshold, "threshold");
+            leftRelations = Set.copyOf(leftRelations);
+            rightRelations = Set.copyOf(rightRelations);
+        }
+
+        /**
+         * The similarity join that replaces a nested-loop inner join.
+         *
+         * @param join the join, whose condition, build side and inputs it keeps
+         * @return the similarity join
+         * @throws IllegalArgumentException if {@code join} has no condition
+         */
+        public static SimilarityJoin of(Join join, String function, int leftColumn,
+                                        int rightColumn,
+                                        com.darkcollective.relix.function.Blocking.Bound bound,
+                                        java.math.BigDecimal threshold) {
+            return new SimilarityJoin(join.schema(), join.condition().orElseThrow(
+                    () -> new IllegalArgumentException("a similarity join needs a condition")),
+                    join.buildSide(), join.leftRelations(), join.rightRelations(), function,
+                    leftColumn, rightColumn, bound, threshold, join.left(), join.right());
+        }
+
+        /** The nested-loop inner join this replaces, over the same inputs. */
+        public Join join() {
+            return new Join(schema, JoinKind.INNER, JoinAlgorithm.NESTED_LOOP, buildSide,
+                    Optional.of(condition), JoinKeys.none(), leftRelations, rightRelations,
+                    left, right);
+        }
+
         @Override public List<PhysicalNode> children() { return List.of(left, right); }
     }
 

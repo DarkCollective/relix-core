@@ -707,6 +707,14 @@ public final class Planner {
                     join.kind() + " join: " + join.algorithm() + ", build=" + join.buildSide()));
             emitNestedLoopWarning(join);
         }
+        if (physical instanceof PhysicalNode.SimilarityJoin similarity) {
+            listener.onEvent(QueryEvent.of(QueryEvent.Stage.PLAN, "JOIN-SIMILARITY",
+                    "INNER join: indexing the "
+                    + similarity.buildSide() + " input by " + similarity.function()
+                    + "'s blocking for " + similarity.bound() + " "
+                    + similarity.threshold().toPlainString()
+                    + ", and confirming each candidate pair with the condition"));
+        }
         if (physical instanceof PhysicalNode.Trace tr
                 && tr.algorithm() == TraceAlgorithm.DIJKSTRA) {
             listener.onEvent(QueryEvent.of(QueryEvent.Stage.PLAN, "TRACE",
@@ -1114,9 +1122,14 @@ public final class Planner {
         } else {
             algorithm = keys.isEmpty() ? JoinAlgorithm.NESTED_LOOP : JoinAlgorithm.HASH;
         }
-        return new PhysicalNode.Join(schemaOf(logical), kind, algorithm,
+        PhysicalNode.Join join = new PhysicalNode.Join(schemaOf(logical), kind, algorithm,
                 buildSide(kind, leftLogical, rightLogical, algorithm), Optional.of(condition), keys,
                 leftRelations, rightRelations, left, right);
+        // A nested loop on a bounded similarity score can index one side instead
+        // (DarkCollective/relix#1156); the join stays inside it to confirm each pair.
+        return SimilarityJoinPlanning.plan(join, functions)
+                .<PhysicalNode>map(similarity -> similarity)
+                .orElse(join);
     }
 
     /**

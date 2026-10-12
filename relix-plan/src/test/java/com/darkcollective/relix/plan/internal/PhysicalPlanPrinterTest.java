@@ -163,6 +163,30 @@ final class PhysicalPlanPrinterTest {
     }
 
     @Test
+    @DisplayName("a similarity join names its function, comparison, columns and build side")
+    void similarityJoinLabel() {
+        PhysicalNode.Join join = new PhysicalNode.Join(SCHEMA, PhysicalNode.JoinKind.INNER,
+                PhysicalNode.JoinAlgorithm.NESTED_LOOP, PhysicalNode.BuildSide.RIGHT,
+                java.util.Optional.of(com.darkcollective.relix.plan.PhysicalNodeCorpus.CONDITION), PhysicalNode.JoinKeys.none(),
+                java.util.Set.of(), java.util.Set.of(),
+                sqlScan("SELECT x FROM people"), sqlScan("SELECT x FROM aliases"));
+        for (var bound : com.darkcollective.relix.function.Blocking.Bound.values()) {
+            String symbol = switch (bound) {
+                case AT_LEAST -> ">=";
+                case ABOVE -> ">";
+                case AT_MOST -> "<=";
+                case BELOW -> "<";
+            };
+            PhysicalNode plan = PhysicalNode.SimilarityJoin.of(join, "EditSimilarity", 1, 0,
+                    bound, new java.math.BigDecimal("0.8"));
+            assertThat(PhysicalPlanPrinter.explain(plan)).isEqualTo(
+                    "SimilarityJoin EditSimilarity " + symbol + " 0.8 [1;0] build=RIGHT\n"
+                    + "├─ PushedScan [jdbc/db] SELECT x FROM people\n"
+                    + "└─ PushedScan [jdbc/db] SELECT x FROM aliases\n");
+        }
+    }
+
+    @Test
     @DisplayName("a closure shows its from/to columns")
     void closureLabel() {
         PhysicalNode plan = new PhysicalNode.Closure(

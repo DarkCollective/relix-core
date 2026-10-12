@@ -248,6 +248,16 @@ public final class PhysicalPlanJson {
                 w.name("algorithm").value(lower(j.algorithm().name()));
                 w.name("build").value(lower(j.buildSide().name()));
             }
+            case PhysicalNode.SimilarityJoin j -> {
+                w.name("kind").value("inner");
+                w.name("algorithm").value("similarity");
+                w.name("build").value(lower(j.buildSide().name()));
+                w.name("function").value(j.function());
+                w.name("bound").value(lower(j.bound().name()));
+                w.name("threshold").value(j.threshold().toPlainString());
+                w.name("leftColumn").value(j.leftColumn());
+                w.name("rightColumn").value(j.rightColumn());
+            }
             case PhysicalNode.AsOfJoin a -> {
                 w.name("direction").value(a.backward() ? "backward" : "forward");
                 w.name("strict").value(a.strict());
