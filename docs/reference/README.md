@@ -191,6 +191,13 @@ argument).
 [Asc](functions/string/asc.md),
 [Replace](functions/string/replace.md)
 
+**Similarity** —
+[Levenshtein](functions/similarity/levenshtein.md),
+[EditSimilarity](functions/similarity/editsimilarity.md),
+[JaroWinkler](functions/similarity/jarowinkler.md),
+[Trigram](functions/similarity/trigram.md),
+[Soundex](functions/similarity/soundex.md)
+
 **Math** —
 [Abs](functions/math/abs.md),
 [Int](functions/math/int.md),

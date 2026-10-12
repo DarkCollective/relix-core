@@ -95,7 +95,7 @@
 1	relix-semantic/src/main/java/com/darkcollective/relix/semantic/graph/JoinPathResolver.java
 2	relix-semantic/src/main/java/com/darkcollective/relix/semantic/internal/CatalogBuilder.java
 1	relix-semantic/src/main/java/com/darkcollective/relix/semantic/internal/IrReport.java
-8	relix-semantic/src/main/java/com/darkcollective/relix/semantic/internal/RelAlgebraValidator.java
+7	relix-semantic/src/main/java/com/darkcollective/relix/semantic/internal/RelAlgebraValidator.java
 5	relix-semantic/src/main/java/com/darkcollective/relix/semantic/internal/SchemaGraphBuilder.java
 1	relix-semantic/src/main/java/com/darkcollective/relix/semantic/internal/SchemaInferenceVisitor.java
 2	relix-semantic/src/main/java/com/darkcollective/relix/semantic/internal/SymbolCollector.java
