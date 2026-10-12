@@ -29,8 +29,8 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * The functions relix ships with: the scalars — string, numeric, temporal, conditional,
- * type-check, conversion and nested-data — and the eight aggregates.
+ * The functions relix ships with: the scalars — string, similarity, numeric, temporal,
+ * conditional, type-check, conversion and nested-data — and the eight aggregates.
  *
  * <p>It is an ordinary {@link FunctionLibrary}, discovered the same way any other is and
  * built out of the same published seam. Nothing about it is privileged: a library that
@@ -109,6 +109,7 @@ public final class BuiltinFunctionLibrary implements FunctionLibrary {
     private static List<ScalarFunction> scalars() {
         List<ScalarFunction> all = new ArrayList<>();
         all.addAll(StringFunctions.all());
+        all.addAll(SimilarityFunctions.all());
         all.addAll(MathFunctions.all());
         all.addAll(DateTimeFunctions.all());
         all.addAll(ConditionalFunctions.all());

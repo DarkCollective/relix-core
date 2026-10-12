@@ -281,7 +281,7 @@ System.out.println(docs.functionsByCategory().keySet());
 # Name: Selection (σ / SELECT)
 # Name: General Recursion (FIX)
 Truncate toward zero
-[string, math, datetime, conditional, typecheck, conversion, nested, ordering]
+[string, similarity, math, datetime, conditional, typecheck, conversion, nested, ordering]
 ```
 
 A word finds the first page that claims it: the language's pages first, then any a tool

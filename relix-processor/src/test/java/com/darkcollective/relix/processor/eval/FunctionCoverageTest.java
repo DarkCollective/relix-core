@@ -87,6 +87,12 @@ final class FunctionCoverageTest {
             exact("chr",     "Chr(65)",                            "A"),
             num  ("asc",     "Asc(\"A\")",                         "65"),
             exact("replace", "Replace(\"a-b-c\", \"-\", \"+\")",   "a+b+c"),
+            // ── Similarity ──────────────────────────────────────────────────────
+            num  ("levenshtein",    "Levenshtein(\"kitten\", \"sitting\")",   "3"),
+            num  ("editsimilarity", "EditSimilarity(\"abcd\", \"abxd\")",     "0.75"),
+            num  ("jarowinkler",    "JaroWinkler(\"smith\", \"smith\")",      "1"),
+            num  ("trigram",        "Trigram(\"a\", \"ab\")",                 "0.25"),
+            exact("soundex",        "Soundex(\"Robert\")",                    "R163"),
             // ── Math ────────────────────────────────────────────────────────────
             num  ("abs",     "Abs(-7)",                            "7"),
             num  ("int",     "Int(-2.5)",                          "-3"),   // floor
