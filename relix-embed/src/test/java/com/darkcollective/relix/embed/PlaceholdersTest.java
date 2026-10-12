@@ -151,6 +151,25 @@ final class PlaceholdersTest {
                 assertThat(FakeRegisteredConnector.lastOpen).isNull();
             }
         }
+
+        @Test
+        @DisplayName("of several with no answer, the first as written is named, on every run")
+        void firstUnresolvable() {
+            String several = """
+                    connection store from %s {
+                        p9: "${MISSING_9}", p3: "${MISSING_3}", p7: "${MISSING_7}", p1: "${MISSING_1}",
+                        p5: "${MISSING_5}", p8: "${MISSING_8}", p2: "${MISSING_2}", p6: "${MISSING_6}"
+                    };
+                    source Items from store { table: "items", schema: { v: STRING } };
+                    """.formatted(FakeRegisteredConnector.TYPE);
+            try (Relix relix = session(new Vault())) {
+                relix.define(several);
+                assertThatThrownBy(() -> relix.relation("Items").toList())
+                        .isInstanceOf(RelixException.class)
+                        .hasMessage("placeholder ${MISSING_9} in connection 'store' has no value: "
+                                + "the session's placeholder resolver returned none");
+            }
+        }
     }
 
     @Nested
@@ -370,6 +389,26 @@ final class PlaceholdersTest {
                         .isInstanceOf(RelixException.class)
                         .hasMessageContaining("'orders'")
                         .hasMessageContaining("header 'Authorization'");
+            }
+        }
+
+        @Test
+        @DisplayName("of several headers with no answer, the first as written is named, on every run")
+        void firstUnresolvableHeader() {
+            try (Relix relix = Relix.builder().placeholders(new Vault()).build()) {
+                relix.define("""
+                        source Orders from http {
+                            url: "%s",
+                            headers: {
+                                "X-9": "${MISSING_9}", "X-3": "${MISSING_3}", "X-7": "${MISSING_7}",
+                                "X-1": "${MISSING_1}", "X-5": "${MISSING_5}", "X-8": "${MISSING_8}"
+                            }
+                        };
+                        """.formatted(url()));
+                assertThatThrownBy(() -> relix.relation("Orders").toList())
+                        .isInstanceOf(RelixException.class)
+                        .hasMessage("placeholder ${MISSING_9} in source 'Orders' has no value: "
+                                + "the session's placeholder resolver returned none");
             }
         }
     }

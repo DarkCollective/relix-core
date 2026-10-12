@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.lang.ast.source;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -89,7 +91,12 @@ public record HttpSourceConfig(
         Objects.requireNonNull(columns, "columns");
         Objects.requireNonNull(body, "body");
         Objects.requireNonNull(auth, "auth");
-        headers = Map.copyOf(headers);
+        // In declaration order, not Map.copyOf's per-JVM order: headers are sent, printed
+        // and resolved in that order, so a missing placeholder is named the same way on
+        // every run.
+        var ordered = new LinkedHashMap<String, String>();
+        headers.forEach((k, v) -> ordered.put(Objects.requireNonNull(k), Objects.requireNonNull(v)));
+        headers = Collections.unmodifiableSequencedMap(ordered);
         columns = List.copyOf(columns);
     }
 

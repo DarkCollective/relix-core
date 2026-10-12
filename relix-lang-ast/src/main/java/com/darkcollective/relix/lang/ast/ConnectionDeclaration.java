@@ -18,6 +18,7 @@ package com.darkcollective.relix.lang.ast;
 import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.lang.ast.source.DatabaseConnectionConfig;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -64,7 +65,13 @@ public record ConnectionDeclaration(
             throw new IllegalArgumentException("connection type must not be blank");
         }
         connectorType = connectorType.toLowerCase(Locale.ROOT);
-        properties = Map.copyOf(Objects.requireNonNull(properties, "properties"));
+        Objects.requireNonNull(properties, "properties");
+        // In declaration order, not Map.copyOf's per-JVM order, so whatever walks the
+        // properties - the placeholder resolver naming the first with no value - does so
+        // the same way on every run.
+        var ordered = new LinkedHashMap<String, String>();
+        properties.forEach((k, v) -> ordered.put(Objects.requireNonNull(k), Objects.requireNonNull(v)));
+        properties = Collections.unmodifiableSequencedMap(ordered);
         Objects.requireNonNull(location, "location");
     }
 
