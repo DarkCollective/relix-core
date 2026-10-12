@@ -24,11 +24,14 @@ import com.darkcollective.relix.lang.ast.source.ColumnReference;
 import com.darkcollective.relix.lang.ast.source.ConnectionTableSourceConfig;
 import com.darkcollective.relix.lang.ast.source.DatabaseConnectionConfig;
 import com.darkcollective.relix.lang.ast.source.GeneratorSourceConfig;
+import com.darkcollective.relix.lang.ast.source.HttpMethod;
+import com.darkcollective.relix.lang.ast.source.HttpSourceConfig;
 import com.darkcollective.relix.lang.ast.source.JsonFileSourceConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Argument validation on the statement and source-config records of the language AST.
@@ -97,6 +101,58 @@ final class LangAstValidationTest {
             var config = new DatabaseConnectionConfig("jdbc:postgresql://db/app",
                     Optional.of("app"), Optional.of("secret"), Optional.of("postgres"));
             assertThat(new ConnectionDeclaration("warehouse", config).config()).isEqualTo(config);
+        }
+    }
+
+    /**
+     * A map a declaration holds keeps the order it was written in. {@code Map.copyOf}
+     * iterates in an order randomised per JVM, so the resolver named a different missing
+     * placeholder of the same declaration from one run to the next (#110).
+     */
+    @Nested
+    @DisplayName("Declared maps keep their order")
+    class DeclaredOrder {
+
+        /** Enough entries that an unordered copy would almost never keep them in order. */
+        private static Map<String, String> declared() {
+            Map<String, String> map = new LinkedHashMap<>();
+            for (int i = 19; i >= 0; i--) {
+                map.put("k" + i, "${V" + i + "}");
+            }
+            return map;
+        }
+
+        @Test
+        @DisplayName("A connection's properties")
+        void connectionProperties() {
+            var c = ScriptBuilders.connection("store", "jdbc", declared());
+            assertThat(c.properties().keySet()).containsExactlyElementsOf(declared().keySet());
+            assertThatThrownBy(() -> c.properties().put("x", "y"))
+                    .isInstanceOf(UnsupportedOperationException.class);
+        }
+
+        @Test
+        @DisplayName("An HTTP source's headers")
+        void httpHeaders() {
+            var http = new HttpSourceConfig("https://x", HttpMethod.GET, declared(), Optional.empty(),
+                    Optional.empty(), List.of(), Optional.empty(), Optional.empty());
+            assertThat(http.headers().keySet()).containsExactlyElementsOf(declared().keySet());
+        }
+
+        @Test
+        @DisplayName("A generator's arguments")
+        void generatorArgs() {
+            var generator = new GeneratorSourceConfig("Range", declared());
+            assertThat(generator.args().keySet()).containsExactlyElementsOf(declared().keySet());
+        }
+
+        @Test
+        @DisplayName("A null key or value is still refused")
+        void refusesNull() {
+            Map<String, String> withNull = new LinkedHashMap<>();
+            withNull.put("k", null);
+            assertThatNullPointerException()
+                    .isThrownBy(() -> new GeneratorSourceConfig("Range", withNull));
         }
     }
 

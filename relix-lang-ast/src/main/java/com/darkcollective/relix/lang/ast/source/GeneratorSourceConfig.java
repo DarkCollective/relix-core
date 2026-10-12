@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.lang.ast.source;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -42,6 +44,11 @@ public record GeneratorSourceConfig(
         if (generatorName.isBlank()) {
             throw new IllegalArgumentException("generator name must not be blank");
         }
-        args = Map.copyOf(Objects.requireNonNull(args, "args"));
+        Objects.requireNonNull(args, "args");
+        // In declaration order, not Map.copyOf's per-JVM order, as for a connection's
+        // properties.
+        var ordered = new LinkedHashMap<String, String>();
+        args.forEach((k, v) -> ordered.put(Objects.requireNonNull(k), Objects.requireNonNull(v)));
+        args = Collections.unmodifiableSequencedMap(ordered);
     }
 }
