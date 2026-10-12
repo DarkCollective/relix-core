@@ -241,6 +241,10 @@ public final class PhysicalPlanPrinter {
                     + (v.conjuncts().isEmpty() ? "" : ", " + v.conjuncts().size() + " conjuncts") + "]";
             case PhysicalNode.Join j     -> "Join " + j.kind() + "/" + j.algorithm()
                     + " build=" + j.buildSide();
+            case PhysicalNode.SimilarityJoin j -> "SimilarityJoin " + j.function() + " "
+                    + symbol(j.bound()) + " " + j.threshold().toPlainString()
+                    + " [" + j.leftColumn() + ";" + j.rightColumn() + "]"
+                    + " build=" + j.buildSide();
             case PhysicalNode.AsOfJoin a -> "AsOfJoin " + (a.backward() ? "backward" : "forward")
                     + (a.strict() ? "/strict" : "")
                     + (a.inner() ? "/inner" : "")
@@ -282,4 +286,14 @@ public final class PhysicalPlanPrinter {
     }
 
 
+
+    /** The comparison a similarity join's bound stands for, as the script wrote it. */
+    private static String symbol(com.darkcollective.relix.function.Blocking.Bound bound) {
+        return switch (bound) {
+            case AT_LEAST -> ">=";
+            case ABOVE -> ">";
+            case AT_MOST -> "<=";
+            case BELOW -> "<";
+        };
+    }
 }

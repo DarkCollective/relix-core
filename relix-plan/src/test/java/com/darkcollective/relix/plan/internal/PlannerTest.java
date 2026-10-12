@@ -29,6 +29,8 @@ import com.darkcollective.relix.plan.PhysicalNode.JoinKind;
 import com.darkcollective.relix.plan.PhysicalNode.SetKind;
 import com.darkcollective.relix.events.QueryEvent;
 import com.darkcollective.relix.events.QueryEventListener;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.RelationStatistics;
@@ -2722,6 +2724,137 @@ final class PlannerTest {
             PhysicalNode plan = planPushed(h2 +
                     "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };");
             assertThat(plan).isNode(PhysicalNode.AsOfJoin.class);
+        }
+    }
+
+    // ── Similarity join (DarkCollective/relix#1156) ───────────────────────────
+
+    @Nested
+    @DisplayName("Similarity join")
+    class SimilarityJoin {
+
+        private static final String PEOPLE =
+                "People  := [| id | name |\n       | 1 | \"Ann\" |];\n" +
+                "Aliases := [| aid | alias |\n       | 1 | \"Anne\" |];\n";
+
+        private final java.util.List<com.darkcollective.relix.events.QueryEvent> events =
+                new java.util.ArrayList<>();
+
+        private PhysicalNode plan(String condition) {
+            SemanticModel m = model(PEOPLE + "query { People ⨝ " + condition + " Aliases };");
+            RelNode logical = ((ExpressionQueryTarget) m.rootQueries().get(0).target()).expression();
+            return new Planner(m.symbolTable(), m.nodeSchemas(), m.statistics(), m.sources(),
+                    m.connections(), events::add, BoundednessSource.ALL_BOUNDED, m.functions())
+                    .plan(logical);
+        }
+
+        @Test
+        @DisplayName("a bounded similarity score plans as a SimilarityJoin around the nested loop")
+        void plansAroundTheNestedLoop() {
+            PhysicalNode.SimilarityJoin s = assertThat(plan("EditSimilarity(People.name, Aliases.alias) >= 0.8"))
+                    .asNode(PhysicalNode.SimilarityJoin.class);
+            assertThat(s.function()).isEqualTo("EditSimilarity");
+            assertThat(s.leftColumn()).isEqualTo(1);
+            assertThat(s.rightColumn()).isEqualTo(1);
+            assertThat(s.bound()).isEqualTo(com.darkcollective.relix.function.Blocking.Bound.AT_LEAST);
+            assertThat(s.threshold()).isEqualByComparingTo("0.8");
+            assertThat(s.join().algorithm()).isEqualTo(JoinAlgorithm.NESTED_LOOP);
+            assertThat(s.schema()).isEqualTo(s.join().schema());
+            org.assertj.core.api.Assertions.assertThat(events)
+                    .anyMatch(e -> e.code().equals("JOIN-SIMILARITY"))
+                    .noneMatch(e -> e.code().equals("JOIN-NESTED-LOOP"));
+        }
+
+        @Test
+        @DisplayName("the arguments may name either input first")
+        void argumentOrder() {
+            PhysicalNode.SimilarityJoin s = assertThat(plan("EditSimilarity(Aliases.alias, People.name) >= 0.8"))
+                    .asNode(PhysicalNode.SimilarityJoin.class);
+            assertThat(s.leftColumn()).isEqualTo(1);
+            assertThat(s.rightColumn()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("a mirrored comparison is read with the call on the left")
+        void mirrored() {
+            assertThat(plan("0.8 <= EditSimilarity(People.name, Aliases.alias)"))
+                    .asNode(PhysicalNode.SimilarityJoin.class);
+            PhysicalNode.SimilarityJoin s = assertThat(plan("2 > Levenshtein(People.name, Aliases.alias)"))
+                    .asNode(PhysicalNode.SimilarityJoin.class);
+            assertThat(s.bound()).isEqualTo(com.darkcollective.relix.function.Blocking.Bound.BELOW);
+            s = assertThat(plan("1 >= Levenshtein(People.name, Aliases.alias)"))
+                    .asNode(PhysicalNode.SimilarityJoin.class);
+            assertThat(s.bound()).isEqualTo(com.darkcollective.relix.function.Blocking.Bound.AT_MOST);
+            s = assertThat(plan("0.5 < Trigram(People.name, Aliases.alias)"))
+                    .asNode(PhysicalNode.SimilarityJoin.class);
+            assertThat(s.bound()).isEqualTo(com.darkcollective.relix.function.Blocking.Bound.ABOVE);
+            s = assertThat(plan("0.9 <= JaroWinkler(People.name, Aliases.alias)"))
+                    .asNode(PhysicalNode.SimilarityJoin.class);
+            assertThat(s.bound()).isEqualTo(com.darkcollective.relix.function.Blocking.Bound.AT_LEAST);
+        }
+
+        @Test
+        @DisplayName("an equality uses whichever bound it implies that the function can index")
+        void equality() {
+            PhysicalNode.SimilarityJoin s = assertThat(plan("Levenshtein(People.name, Aliases.alias) = 1"))
+                    .asNode(PhysicalNode.SimilarityJoin.class);
+            assertThat(s.bound()).isEqualTo(com.darkcollective.relix.function.Blocking.Bound.AT_MOST);
+        }
+
+        @Test
+        @DisplayName("the first qualifying conjunct is used, and the condition is kept whole")
+        void conjunction() {
+            PhysicalNode.SimilarityJoin s = assertThat(plan(
+                    "People.id < Aliases.aid ∧ Trigram(People.name, Aliases.alias) >= 0.5"
+                    + " ∧ EditSimilarity(People.name, Aliases.alias) >= 0.8"))
+                    .asNode(PhysicalNode.SimilarityJoin.class);
+            assertThat(s.function()).isEqualTo("Trigram");
+            assertThat(s.join().condition()).isPresent();
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {
+                "EditSimilarity(People.name, Aliases.alias) >= 0",
+                "EditSimilarity(People.name, Aliases.alias) ≠ 0.8",
+                "EditSimilarity(People.name, Aliases.alias) <= 0.8",
+                "EditSimilarity(People.name, People.name) >= 0.8",
+                "EditSimilarity(People.name, \"Ann\") >= 0.8",
+                "EditSimilarity(People.name, Aliases.alias) >= People.id",
+                "Len(People.name) >= 3",
+                "EditSimilarity(People.name, Aliases.alias) >= 0.8 ∨ People.id = Aliases.aid",
+                "1 = 1 ∧ People.id < Aliases.aid"})
+        @DisplayName("anything else stays a nested loop")
+        void notRecognised(String condition) {
+            assertThat(plan(condition)).isNode(PhysicalNode.Join.class);
+        }
+
+        @Test
+        @DisplayName("an equi-key is a hash join, which is better than any blocking")
+        void hashWins() {
+            PhysicalNode.Join join = assertThat(plan(
+                    "People.id = Aliases.aid ∧ EditSimilarity(People.name, Aliases.alias) >= 0.8"))
+                    .asNode(PhysicalNode.Join.class);
+            assertThat(join.algorithm()).isNotEqualTo(JoinAlgorithm.NESTED_LOOP);
+        }
+
+        @Test
+        @DisplayName("an outer join keeps its nested loop: every row must survive")
+        void outerJoin() {
+            SemanticModel m = model(PEOPLE
+                    + "query { People ⟕ EditSimilarity(People.name, Aliases.alias) >= 0.8 Aliases };");
+            RelNode logical = ((ExpressionQueryTarget) m.rootQueries().get(0).target()).expression();
+            PhysicalNode plan = new Planner(m.symbolTable(), m.nodeSchemas(), m.statistics(),
+                    m.sources(), m.connections(), QueryEventListener.NONE,
+                    BoundednessSource.ALL_BOUNDED, m.functions()).plan(logical);
+            assertThat(plan).isNode(PhysicalNode.Join.class);
+        }
+
+        @Test
+        @DisplayName("without the function in the catalogue, the planner cannot ask, and does not")
+        void emptyCatalogue() {
+            assertThat(planFirstQuery(PEOPLE
+                    + "query { People ⨝ EditSimilarity(People.name, Aliases.alias) >= 0.8 Aliases };"))
+                    .isNode(PhysicalNode.Join.class);
         }
     }
 

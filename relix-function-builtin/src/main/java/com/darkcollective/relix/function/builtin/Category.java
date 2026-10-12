@@ -17,6 +17,7 @@ package com.darkcollective.relix.function.builtin;
 
 import com.darkcollective.relix.function.Argument;
 import com.darkcollective.relix.function.Arity;
+import com.darkcollective.relix.function.Blocking;
 import com.darkcollective.relix.function.FunctionContext;
 import com.darkcollective.relix.function.FunctionSignature;
 import com.darkcollective.relix.function.LazyScalarFunction;
@@ -28,6 +29,7 @@ import com.darkcollective.relix.symbol.ParameterDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.value.Value;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -62,6 +64,12 @@ final class Category {
     @FunctionalInterface
     interface Contextual {
         Value apply(FunctionContext context, List<Value> arguments);
+    }
+
+    /** Which comparisons of a function's result it can offer a {@link Blocking} for. */
+    @FunctionalInterface
+    interface Blockings {
+        Optional<Blocking> offer(Blocking.Bound bound, BigDecimal threshold);
     }
 
     /** A special form, which decides which of its arguments to evaluate. */
@@ -171,6 +179,17 @@ final class Category {
                 (context, arguments) -> body.apply(arguments));
     }
 
+    /**
+     * A function of fixed arity, evaluated in-engine only, that can tell a join which
+     * pairs a comparison of its result could accept.
+     */
+    ScalarFunction fn(String name, ScalarType returns, Set<FunctionProperty> properties,
+                      List<ParameterDefinition> parameters, Values body, Blockings blockings) {
+        return new Blocked(signature(name, returns, properties, parameters,
+                Arity.exactly(parameters.size())),
+                (context, arguments) -> body.apply(arguments), blockings);
+    }
+
     /** A function that reads the ambient context — the clock, today — evaluated in-engine only. */
     ScalarFunction contextual(String name, ScalarType returns, Set<FunctionProperty> properties,
                               List<ParameterDefinition> parameters, Contextual body) {
@@ -260,6 +279,22 @@ final class Category {
         @Override
         public Value invoke(FunctionContext context, List<Value> arguments) {
             return body.apply(context, arguments);
+        }
+    }
+
+    /** An ordinary function that also offers a join a way to skip most pairs. */
+    private record Blocked(FunctionSignature signature, Contextual body,
+                           Blockings blockings) implements StrictScalarFunction {
+
+        @Override
+        public Value invoke(FunctionContext context, List<Value> arguments) {
+            return body.apply(context, arguments);
+        }
+
+        @Override
+        public Optional<Blocking> blocking(Blocking.Bound bound, BigDecimal threshold) {
+            return blockings.offer(Objects.requireNonNull(bound, "bound"),
+                    Objects.requireNonNull(threshold, "threshold"));
         }
     }
 

@@ -222,6 +222,13 @@ public final class PhysicalNodeCorpus {
                         LEFT, RIGHT),
                 new PhysicalNode.IntervalJoin(SCHEMA, AllenRelation.OVERLAPS,
                         0, 0, 0, 0, true, LEFT, RIGHT),
+                PhysicalNode.SimilarityJoin.of(new PhysicalNode.Join(SCHEMA,
+                        PhysicalNode.JoinKind.INNER, PhysicalNode.JoinAlgorithm.NESTED_LOOP,
+                        PhysicalNode.BuildSide.RIGHT, Optional.of(CONDITION),
+                        PhysicalNode.JoinKeys.none(), Set.of("L"), Set.of("R"), LEFT, RIGHT),
+                        "EditSimilarity", 0, 0,
+                        com.darkcollective.relix.function.Blocking.Bound.AT_LEAST,
+                        new java.math.BigDecimal("0.8")),
                 new PhysicalNode.LateralJoin(SCHEMA, "generate_series", List.of(ONE),
                         args -> RIGHT, true, LEFT),
 

@@ -38,7 +38,9 @@ different score for text with capitals or several words.
 # Limitations:
 Short strings have few trigrams, so one changed character moves the score a long way.
 JaroWinkler or EditSimilarity is usually better for short names and codes. A high score
-is evidence of resemblance, not of identity.
+is evidence of resemblance, not of identity. A join on `Trigram(R.x, S.y) >= t`, with
+columns from each side, compares only the pairs that share one of a few trigrams of
+each string (see [record linkage](../../advanced/record-linkage.md)).
 
 # Alternatives:
 EditSimilarity for an edit-based score; JaroWinkler for short names; Soundex for an

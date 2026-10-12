@@ -37,7 +37,9 @@ Not pushed down. It is computed in the engine.
 # Limitations:
 It is meant for short strings. On long text that shares a prefix, such as two addresses
 on the same street, the prefix adjustment can make unrelated values score highly. A high
-score is evidence of resemblance, not of identity.
+score is evidence of resemblance, not of identity. A join on `JaroWinkler(R.x, S.y) >= t`
+skips pairs whose lengths are too far apart to reach t, which prunes noticeably only
+for t above about 0.82 (see [record linkage](../../advanced/record-linkage.md)).
 
 # Alternatives:
 EditSimilarity for a length-scaled edit distance; Trigram for longer text; Soundex for
