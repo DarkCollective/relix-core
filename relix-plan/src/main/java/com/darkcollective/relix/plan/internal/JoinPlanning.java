@@ -99,7 +99,7 @@ final class JoinPlanning {
         }
     }
 
-    private record Side(boolean left, int index) {
+    record Side(boolean left, int index) {
     }
 
     /**
@@ -176,7 +176,7 @@ final class JoinPlanning {
         };
     }
 
-    private static Side sideOf(String name,
+    static Side sideOf(String name,
                                com.darkcollective.relix.symbol.Schema left,
                                com.darkcollective.relix.symbol.Schema right,
                                Set<String> leftRel, Set<String> rightRel) {

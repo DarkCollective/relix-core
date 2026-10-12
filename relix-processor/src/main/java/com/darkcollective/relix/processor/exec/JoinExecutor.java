@@ -17,6 +17,8 @@ package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.ast.AllenRelation;
 import com.darkcollective.relix.ast.Predicate;
+import com.darkcollective.relix.events.QueryEvent;
+import com.darkcollective.relix.function.Blocking;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.EvaluationException;
@@ -34,8 +36,10 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -754,6 +758,56 @@ final class JoinExecutor {
                 join.condition().orElseThrow(() -> new EvaluationException("join is missing its condition")),
                 join.left().schema(), join.right().schema(),
                 join.leftRelations(), join.rightRelations(), evalSchema);
+    }
+
+    /**
+     * Executes a similarity join: indexes the build side under the function's blocking
+     * keys, and for each row of the other side confirms only the rows its keys find.
+     *
+     * <p>The candidates are confirmed by the join's whole condition, so the answer is the
+     * nested loop's, pair for pair; with the right input indexed it comes out in the
+     * nested loop's order too. Without the blocking — run against a catalogue that does
+     * not offer it — the wrapped join runs as planned before this strategy existed.
+     *
+     * <p>When the probe side is exhausted, an {@code EXECUTE/JOIN-SIMILARITY} event
+     * reports how many pairs were confirmed out of how many a nested loop would have
+     * compared.
+     */
+    Stream<Row> executeSimilarityJoin(PhysicalNode.SimilarityJoin node, EvalCtx ctx) {
+        PhysicalNode.Join join = node.join();
+        Optional<Blocking> blocking = ctx.operandEval().functions().scalar(node.function())
+                .flatMap(fn -> fn.blocking(node.bound(), node.threshold()));
+        if (blocking.isEmpty()) {
+            return executeJoin(join, ctx);
+        }
+        JoinMatcher matcher = matcher(join, join.schema(), ctx);
+        boolean indexRight = join.buildSide() == PhysicalNode.BuildSide.RIGHT;
+        List<Row> indexed = dispatch.materialize(indexRight ? join.right() : join.left(), ctx, join);
+        SimilarityIndex index = SimilarityIndex.build(indexed,
+                indexRight ? node.rightColumn() : node.leftColumn(), blocking.get());
+        int probeColumn = indexRight ? node.leftColumn() : node.rightColumn();
+        AtomicLong probes = new AtomicLong();
+        AtomicLong compared = new AtomicLong();
+        Stream<Row> pairs = dispatch.execute(indexRight ? join.left() : join.right(), ctx)
+                .flatMap(probe -> {
+                    probes.incrementAndGet();
+                    int[] candidates = index.candidates(probe.get(probeColumn));
+                    compared.addAndGet(candidates.length);
+                    return Arrays.stream(candidates).mapToObj(indexed::get)
+                            .filter(row -> indexRight ? matcher.matches(probe, row)
+                                    : matcher.matches(row, probe))
+                            .map(row -> indexRight ? joined(join, probe, row)
+                                    : joined(join, row, probe));
+                });
+        // Runs only once the pairs are exhausted: concat is lazy and in order.
+        Stream<Row> report = Stream.<Row>of((Row) null).filter(unused -> {
+            long all = probes.get() * indexed.size();
+            ctx.listener().onEvent(QueryEvent.of(QueryEvent.Stage.EXECUTE, "JOIN-SIMILARITY",
+                    node.function() + " blocking: compared " + compared.get() + " of "
+                    + all + " pair" + (all == 1 ? "" : "s")));
+            return false;
+        });
+        return Stream.concat(pairs, report);
     }
 
     /**

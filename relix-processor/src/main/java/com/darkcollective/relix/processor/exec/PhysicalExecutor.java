@@ -164,6 +164,7 @@ public final class PhysicalExecutor {
             case PhysicalNode.Join j      -> joins.executeJoin(j, ctx);
             case PhysicalNode.AsOfJoin a  -> joins.executeAsOfJoin(a, ctx);
             case PhysicalNode.IntervalJoin j -> joins.executeIntervalJoin(j, ctx);
+            case PhysicalNode.SimilarityJoin j -> joins.executeSimilarityJoin(j, ctx);
             case PhysicalNode.LateralJoin l -> lateral.executeLateral(l, ctx);
             case PhysicalNode.SetOp s     -> setOps.executeSetOp(s, ctx);
             case PhysicalNode.Division d  -> setOps.executeDivision(d, ctx);

@@ -17,7 +17,9 @@ package com.darkcollective.relix.function;
 
 import com.darkcollective.relix.symbol.ScalarType;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * One scalar function a library supplies: its {@linkplain FunctionSignature form} plus
@@ -85,5 +87,24 @@ public sealed interface ScalarFunction permits StrictScalarFunction, LazyScalarF
      */
     default PushdownSpelling pushdown() {
         return PushdownSpelling.NONE;
+    }
+
+    /**
+     * How to find, among many values, the few that a call compared against a constant
+     * could accept — so that a join on {@code F(left.x, right.y) >= t} need not call
+     * {@code F} on every pair.
+     *
+     * <p>Defaults to empty, which leaves such a join to compare every pair. A
+     * two-argument similarity function overrides it to offer a {@link Blocking} for the
+     * comparisons it can bound; the {@link Blocking} contract says what the offer
+     * promises.
+     *
+     * @param bound     how the call's result is compared with the threshold, read with
+     *                  the call on the left: {@code F(a, b) bound threshold}
+     * @param threshold the constant the result is compared with
+     * @return a blocking for that comparison, or empty when there is none
+     */
+    default Optional<Blocking> blocking(Blocking.Bound bound, BigDecimal threshold) {
+        return Optional.empty();
     }
 }

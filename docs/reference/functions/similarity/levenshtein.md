@@ -45,9 +45,11 @@ engine.
 
 # Limitations:
 Each call compares every character of one string against every character of the
-other, so it takes time proportional to the product of their lengths. In a join, every
-pair of rows is scored. A small distance means the strings look alike. It does not mean
-they name the same thing.
+other, so it takes time proportional to the product of their lengths. A join on
+`Levenshtein(R.x, S.y) <= k`, with columns from each side, compares only the pairs whose
+lengths differ by at most k; any other use is scored pair by pair (see
+[record linkage](../../advanced/record-linkage.md)). A small distance means the strings
+look alike. It does not mean they name the same thing.
 
 # Alternatives:
 EditSimilarity for the same measure on a 0–1 scale; JaroWinkler for short names;

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.function.builtin;
 
+import com.darkcollective.relix.function.Blocking;
 import com.darkcollective.relix.function.ScalarFunction;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.NumberValue;
@@ -22,8 +23,12 @@ import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.Value;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static com.darkcollective.relix.function.builtin.Arguments.string;
@@ -54,6 +59,30 @@ import static com.darkcollective.relix.symbol.ScalarType.STRING;
  * and splits words where {@code Trigram} does neither. MySQL's {@code SOUNDEX} does not
  * stop at four characters. Declining is always correct: the rows come back and the engine
  * scores them.
+ *
+ * <h2>Which of these a join can index</h2>
+ * A theta join on {@code EditSimilarity}, {@code JaroWinkler} or {@code Trigram} at
+ * least a constant, or {@code Levenshtein} at most one, is offered a {@link Blocking}, so
+ * the planner can skip the pairs that cannot pass:
+ *
+ * <ul>
+ *   <li><b>Length.</b> Every edit-based score is capped by how different the two lengths
+ *       are. {@code EditSimilarity(a, b)} is at most {@code min / max} of the lengths;
+ *       {@code Levenshtein(a, b)} is at least their difference; and a Jaro score is at
+ *       most {@code (min / max + 2) / 3}, which Winkler's bonus can raise to no more
+ *       than {@code 0.6 · jaro + 0.4}. A value is indexed under its length and probes
+ *       the lengths that could reach the threshold.</li>
+ *   <li><b>Prefix.</b> Two trigram sets whose Jaccard similarity is at least {@code t}
+ *       share at least {@code ⌈t·|A|⌉} trigrams of A, so under any fixed order of
+ *       trigrams the first {@code |A| − ⌈t·|A|⌉ + 1} of each must meet. A value is
+ *       indexed, and probes, under that prefix.</li>
+ * </ul>
+ *
+ * <p>A NULL value has no keys, since a call with a NULL argument is NULL and the pair is
+ * never kept. Each bound is computed with a little slack below the threshold, since the scores
+ * are computed in floating point and a bound that is too tight would lose a pair. A
+ * threshold at which a filter would keep nearly everything — a length ratio under 0.1,
+ * an edit distance over 100 — is offered nothing, and the join compares every pair.
  */
 final class SimilarityFunctions {
 
@@ -76,22 +105,30 @@ final class SimilarityFunctions {
                 SIMILARITY.fn("Levenshtein", NUMBER, PURE_DETERMINISTIC,
                         List.of(p("a", STRING), p("b", STRING)),
                         args -> pair(args, "Levenshtein",
-                                (a, b) -> number(levenshtein(a, b)))),
+                                (a, b) -> number(levenshtein(a, b))),
+                        SimilarityFunctions::levenshteinBlocking),
 
                 SIMILARITY.fn("EditSimilarity", NUMBER, PURE_DETERMINISTIC,
                         List.of(p("a", STRING), p("b", STRING)),
                         args -> pair(args, "EditSimilarity",
-                                (a, b) -> number(editSimilarity(a, b)))),
+                                (a, b) -> number(editSimilarity(a, b))),
+                        (bound, threshold) -> atLeast(bound, threshold)
+                                .flatMap(t -> byLengthRatio(t, "EditSimilarity"))),
 
                 SIMILARITY.fn("JaroWinkler", NUMBER, PURE_DETERMINISTIC,
                         List.of(p("a", STRING), p("b", STRING)),
                         args -> pair(args, "JaroWinkler",
-                                (a, b) -> number(jaroWinkler(a, b)))),
+                                (a, b) -> number(jaroWinkler(a, b))),
+                        (bound, threshold) -> atLeast(bound, threshold)
+                                .flatMap(t -> byLengthRatio(jaroWinklerLengthRatio(t),
+                                        "JaroWinkler"))),
 
                 SIMILARITY.fn("Trigram", NUMBER, PURE_DETERMINISTIC,
                         List.of(p("a", STRING), p("b", STRING)),
                         args -> pair(args, "Trigram",
-                                (a, b) -> number(trigram(a, b)))),
+                                (a, b) -> number(trigram(a, b))),
+                        (bound, threshold) -> atLeast(bound, threshold)
+                                .flatMap(SimilarityFunctions::trigramPrefix)),
 
                 SIMILARITY.fn("Soundex", STRING, PURE_DETERMINISTIC, List.of(p("s", STRING)),
                         args -> args.get(0).isNull() ? NullValue.INSTANCE
@@ -290,6 +327,160 @@ final class SimilarityFunctions {
             case 'R' -> '6';
             default -> '0';
         };
+    }
+
+    // ── blockings ──────────────────────────────────────────────────────────
+
+    /** Slack under every threshold, for scores computed in floating point. */
+    private static final double SLACK = 1e-9;
+
+    /** A length ratio below this would keep nearly every pair, so none is offered. */
+    private static final double LEAST_USEFUL_RATIO = 0.1;
+
+    /** An edit distance above this would keep nearly every pair, so none is offered. */
+    private static final int MOST_USEFUL_DISTANCE = 100;
+
+    /** The key of the empty trigram set, which only the empty string has. */
+    private static final String NO_TRIGRAMS = "";
+
+    /** Any fixed order of trigrams serves the prefix filter; this one spreads them. */
+    private static final Comparator<String> TRIGRAM_ORDER =
+            Comparator.comparingInt(String::hashCode).thenComparing(Comparator.naturalOrder());
+
+    /**
+     * The threshold of a lower bound on a score, or empty for an upper bound. Strict and
+     * non-strict are filtered alike: a filter may be loose, never tight.
+     */
+    private static Optional<Double> atLeast(Blocking.Bound bound, BigDecimal threshold) {
+        return switch (bound) {
+            case AT_LEAST, ABOVE -> Optional.of(threshold.doubleValue());
+            case AT_MOST, BELOW -> Optional.empty();
+        };
+    }
+
+    /** Levenshtein at most k: the two lengths differ by at most k. */
+    private static Optional<Blocking> levenshteinBlocking(Blocking.Bound bound,
+                                                          BigDecimal threshold) {
+        double limit = threshold.doubleValue();
+        long distance = switch (bound) {
+            case AT_MOST -> (long) Math.floor(limit);
+            case BELOW -> (long) Math.ceil(limit) - 1;
+            case AT_LEAST, ABOVE -> Long.MAX_VALUE;
+        };
+        if (distance > MOST_USEFUL_DISTANCE) {
+            return Optional.empty();
+        }
+        int k = (int) distance;
+        return Optional.of(new LengthBlocking("Levenshtein") {
+            @Override
+            List<Integer> lengths(int length) {
+                List<Integer> keys = new ArrayList<>();
+                for (int other = Math.max(0, length - k); other <= length + k; other++) {
+                    keys.add(other);
+                }
+                return keys;
+            }
+        });
+    }
+
+    /**
+     * A score capped by {@code min / max} of the two lengths, at least {@code ratio}: the
+     * shorter is at least {@code ratio} of the longer, and two empty strings pair.
+     */
+    private static Optional<Blocking> byLengthRatio(double ratio, String function) {
+        double r = ratio - SLACK;
+        if (r < LEAST_USEFUL_RATIO) {
+            return Optional.empty();
+        }
+        return Optional.of(new LengthBlocking(function) {
+            @Override
+            List<Integer> lengths(int length) {
+                if (length == 0) {
+                    return List.of(0);
+                }
+                List<Integer> keys = new ArrayList<>();
+                long longest = (long) Math.floor(length / r);
+                for (long other = (long) Math.ceil(length * r);
+                     other <= Math.min(longest, Integer.MAX_VALUE); other++) {
+                    keys.add((int) other);
+                }
+                return keys;
+            }
+        });
+    }
+
+    /**
+     * The length ratio below which Jaro–Winkler cannot reach {@code t}. Jaro is at most
+     * {@code (r + 2) / 3} for a length ratio r; from 0.7 Winkler's bonus can lift a Jaro
+     * score j to {@code 0.6·j + 0.4} and no higher.
+     */
+    static double jaroWinklerLengthRatio(double t) {
+        if (t <= WINKLER_THRESHOLD) {
+            // Below the bonus, (r + 2) / 3 >= t; a ratio of 0.1 already reaches 0.7.
+            return 3 * t - 2;
+        }
+        return Math.max(3 * WINKLER_THRESHOLD - 2, 5 * t - 4);
+    }
+
+    /** Trigram similarity at least t: the prefixes of the two trigram sets meet. */
+    private static Optional<Blocking> trigramPrefix(double t) {
+        double r = t - SLACK;
+        if (r <= 0) {
+            return Optional.empty();
+        }
+        return Optional.of(new Blocking() {
+            @Override
+            public Collection<?> indexKeys(Value value) {
+                return prefix(value);
+            }
+
+            @Override
+            public Collection<?> probeKeys(Value value) {
+                return prefix(value);
+            }
+
+            private List<String> prefix(Value value) {
+                if (value.isNull()) {
+                    return List.of();
+                }
+                List<String> grams = new ArrayList<>(
+                        trigrams(string(value, "Trigram").codePoints().toArray()));
+                if (grams.isEmpty()) {
+                    return List.of(NO_TRIGRAMS);
+                }
+                grams.sort(TRIGRAM_ORDER);
+                int size = grams.size() - (int) Math.ceil(r * grams.size()) + 1;
+                return grams.subList(0, Math.max(0, Math.min(size, grams.size())));
+            }
+        });
+    }
+
+    /** A blocking that files a string under its length in code points. */
+    private abstract static class LengthBlocking implements Blocking {
+
+        private final String function;
+
+        LengthBlocking(String function) {
+            this.function = function;
+        }
+
+        /** The lengths a string of this length could pair with. */
+        abstract List<Integer> lengths(int length);
+
+        @Override
+        public Collection<?> indexKeys(Value value) {
+            return value.isNull() ? List.of() : List.of(length(value));
+        }
+
+        @Override
+        public Collection<?> probeKeys(Value value) {
+            return value.isNull() ? List.of() : lengths(length(value));
+        }
+
+        private int length(Value value) {
+            String s = string(value, function);
+            return s.codePointCount(0, s.length());
+        }
     }
 
     private static NumberValue number(double n) {

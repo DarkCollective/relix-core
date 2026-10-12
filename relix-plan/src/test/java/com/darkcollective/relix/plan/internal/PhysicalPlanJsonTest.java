@@ -200,6 +200,27 @@ final class PhysicalPlanJsonTest {
         }
 
         @Test
+        void similarityJoinCarriesFunctionBoundAndColumns() {
+            var join = new PhysicalNode.Join(SCHEMA, PhysicalNode.JoinKind.INNER,
+                    PhysicalNode.JoinAlgorithm.NESTED_LOOP, PhysicalNode.BuildSide.LEFT,
+                    java.util.Optional.of(com.darkcollective.relix.plan.PhysicalNodeCorpus.CONDITION), PhysicalNode.JoinKeys.none(),
+                    java.util.Set.of(), java.util.Set.of(), leaf(), leaf());
+            var similarity = PhysicalNode.SimilarityJoin.of(join, "Trigram", 2, 3,
+                    com.darkcollective.relix.function.Blocking.Bound.ABOVE,
+                    new java.math.BigDecimal("0.50"));
+            assertThat(PhysicalPlanJson.toJson(similarity))
+                    .contains("\"op\":\"SimilarityJoin\"")
+                    .contains("\"kind\":\"inner\"")
+                    .contains("\"algorithm\":\"similarity\"")
+                    .contains("\"build\":\"left\"")
+                    .contains("\"function\":\"Trigram\"")
+                    .contains("\"bound\":\"above\"")
+                    .contains("\"threshold\":\"0.50\"")
+                    .contains("\"leftColumn\":2")
+                    .contains("\"rightColumn\":3");
+        }
+
+        @Test
         void setOpCarriesKind() {
             var setOp = new PhysicalNode.SetOp(SCHEMA, SetKind.UNION_ALL, leaf(), leaf());
             assertThat(PhysicalPlanJson.toJson(setOp))

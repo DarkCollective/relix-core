@@ -21,6 +21,12 @@ comparison/logical operators. It keeps both sides' columns (no implicit
 projection). The planner picks join algorithm (hash/merge) and build side via the
 cost model; same-connection equi-joins push down to a SQL JOIN … ON.
 
+A condition with no equality between the two sides is a nested loop, comparing every
+pair, with one exception: a condition bounding a similarity score of a column from
+each side, such as `EditSimilarity(R.name, S.name) >= 0.8`, indexes one side and
+compares only the pairs that could pass. `explain` shows it as `SimilarityJoin`; see
+[record linkage](../advanced/record-linkage.md).
+
 # Qualified column references above a join:
 When both sides expose a column of the same name, the joined relation keeps both.
 A **relation-qualified** reference — `Relation.column` — resolves to the exact
