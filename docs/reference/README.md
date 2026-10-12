@@ -270,6 +270,7 @@ includes a fully worked example.
 | [Top-K per group](advanced/top.md) | `TOP … PER` — the N highest rows in each group |
 | [Transitive closure](advanced/closure.md) | `CLOSURE` / `RCLOSURE` — reachability over a binary relation |
 | [Connected components](advanced/cluster.md) | `CLUSTER … AS` — label each node with its undirected component id |
+| [Record linkage](advanced/record-linkage.md) | similarity join → `TOP 1 … PER` → `CLUSTER` — find the rows that probably describe the same thing |
 | [Bounded path reachability](advanced/path.md) | `PATH … HOPS m TO n AS` — pairs reachable within a hop window, with shortest distance |
 | [Optimal-path extraction](advanced/trace.md) | `TRACE … VIA … MINIMIZE\|MAXIMIZE AS` — cheapest/longest path with route array |
 | [General recursion](advanced/fix.md) | `FIX` — least-fixpoint recursion (WITH RECURSIVE) |
