@@ -50,3 +50,9 @@ parse from a string column.
 # Notes:
 TIMESTAMP − TIMESTAMP gives a DURATION; this pairing powers AS-OF joins and
 sessionization over event time.
+
+An inline-table, CSV or JSON column of ISO-8601 cells is typed STRING, and arithmetic
+reads such a cell as the temporal it holds, just as a comparison does: over two
+timestamp cells, `ts - prev_ts` is the DURATION between them, and `ts + DURATION 'PT5M'`
+a TIMESTAMP. `+` between two STRINGs still concatenates. A STRING operand that no
+temporal reading makes legal, such as `ts * ts` or `ts + 1`, is reported at analysis.

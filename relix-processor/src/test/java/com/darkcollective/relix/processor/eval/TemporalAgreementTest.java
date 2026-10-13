@@ -22,7 +22,6 @@ import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.symbol.ScalarType;
-import com.darkcollective.relix.value.Value;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -55,10 +54,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>This is the same shape as {@code ComparisonAgreementTest}: state the property, not
  * the fix. Whatever the table says, both layers have to read the same one.
  *
- * <p><b>STRING is deliberately not in the matrix.</b> The evaluator coerces an ISO-8601
- * string to the temporal kind its partner suggests — the inline-table idiom — while
- * inference is strict about it. That divergence is intended and is covered by
- * {@code TemporalArithmeticExecutionTest.StringCoercion}.
+ * <p><b>STRING is not in the matrix</b>, because its verdict depends on the cell rather
+ * than the type: the evaluator reads an ISO-8601 string as the temporal it denotes, and
+ * inference accepts a STRING operand when some such reading is legal (#118). The property
+ * that survives is one-sided, and {@link #stringCellsAgree()} states it: whatever a STRING
+ * cell computes, analysis accepted, with a type the value has.
  */
 @DisplayName("Temporal arithmetic agrees between inference and evaluation")
 final class TemporalAgreementTest extends ProcessorTestSupport {
@@ -112,14 +112,7 @@ final class TemporalAgreementTest extends ProcessorTestSupport {
 
     /** The type of the value {@code a <op> b} actually evaluates to, or empty if it raises. */
     private static Optional<ScalarType> evaluated(Kind left, Kind right, ArithmeticOperator op) {
-        Row row = row(schema(col("dummy", ScalarType.NUMBER)), num(0));
-        try {
-            Value v = new OperandEvaluator().evaluate(
-                    arith(left.literal(), op, right.literal()), row);
-            return Optional.of(v.type());
-        } catch (RuntimeException raised) {
-            return Optional.empty();
-        }
+        return evaluated(left.literal(), op, right.literal());
     }
 
     @Test
@@ -157,6 +150,55 @@ final class TemporalAgreementTest extends ProcessorTestSupport {
                             .contains(computed.get());
                 }
             }
+        }
+    }
+
+    /** A STRING cell holding each temporal kind, and one holding none. */
+    private static final List<String> CELLS = List.of(
+            "2026-06-15T12:00:00Z", "2026-06-15", "09:00", "PT2H", "text");
+
+    @Test
+    @DisplayName("a STRING cell that computes was accepted, with the type it computes")
+    void stringCellsAgree() {
+        Kind string = new Kind(ScalarType.STRING, "STRING", AstBuilders.str(""));
+        List<Kind> partners = new java.util.ArrayList<>(KINDS);
+        partners.add(string);
+        for (ArithmeticOperator op : ArithmeticOperator.values()) {
+            for (Kind partner : partners) {
+                for (boolean stringOnLeft : List.of(true, false)) {
+                    Kind left = stringOnLeft ? string : partner;
+                    Kind right = stringOnLeft ? partner : string;
+                    boolean accepted = analysisAccepts(left, right, op);
+                    Optional<ScalarType> inferred = inferredType(left, right, op);
+                    for (String cell : CELLS) {
+                        for (String other : partner == string ? CELLS : List.of(cell)) {
+                            Operand l = stringOnLeft ? AstBuilders.str(cell)
+                                    : partner == string ? AstBuilders.str(other) : partner.literal();
+                            Operand r = stringOnLeft
+                                    ? (partner == string ? AstBuilders.str(other) : partner.literal())
+                                    : AstBuilders.str(cell);
+                            Optional<ScalarType> computed = evaluated(l, op, r);
+                            if (computed.isEmpty()) continue;
+                            String pair = left.type() + " " + op + " " + right.type()
+                                    + " over " + l + ", " + r;
+                            assertThat(accepted).as("%s computes, so analysis must accept it", pair)
+                                    .isTrue();
+                            if (inferred.isPresent() && inferred.get() != ScalarType.ANY) {
+                                assertThat(inferred).as("%s", pair).contains(computed.get());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static Optional<ScalarType> evaluated(Operand left, ArithmeticOperator op, Operand right) {
+        Row row = row(schema(col("dummy", ScalarType.NUMBER)), num(0));
+        try {
+            return Optional.of(new OperandEvaluator().evaluate(arith(left, op, right), row).type());
+        } catch (RuntimeException raised) {
+            return Optional.empty();
         }
     }
 

@@ -75,7 +75,7 @@
 17	relix-plan/src/main/java/com/darkcollective/relix/plan/internal/SqlPushdownPlanner.java
 1	relix-plan/src/main/java/com/darkcollective/relix/plan/internal/StableCalls.java
 3	relix-processor/src/main/java/com/darkcollective/relix/processor/connector/ConnectorProvisioner.java
-3	relix-processor/src/main/java/com/darkcollective/relix/processor/eval/OperandEvaluator.java
+2	relix-processor/src/main/java/com/darkcollective/relix/processor/eval/OperandEvaluator.java
 4	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/CoverExecutor.java
 3	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/DownsampleExecutor.java
 2	relix-processor/src/main/java/com/darkcollective/relix/processor/exec/JoinExecutor.java
