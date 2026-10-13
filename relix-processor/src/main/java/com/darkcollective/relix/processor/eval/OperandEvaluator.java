@@ -29,6 +29,7 @@ import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.ParameterOperand;
+import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.StructConstruction;
@@ -319,6 +320,8 @@ public final class OperandEvaluator {
     private Value evaluateUnary(UnaryOperand unary, Row row) {
         Value v = evaluate(unary.operand(), row);
         if (v.isNull()) return NullValue.INSTANCE;
+        // An untyped ISO-8601 cell is read as the temporal it denotes, as in comparison.
+        v = TemporalValueArithmetic.coerceToAnyTemporal(v);
         // Unary minus negates a DURATION span (ADR-0013); otherwise requires NUMBER.
         if (v instanceof DurationValue d) {
             return TemporalValueArithmetic.unaryMinus(d);
@@ -334,6 +337,13 @@ public final class OperandEvaluator {
         Value left  = evaluate(expr.left(),  row);
         Value right = evaluate(expr.right(), row);
         if (left.isNull() || right.isNull()) return NullValue.INSTANCE;
+        // An untyped ISO-8601 cell is read as the temporal it denotes, as in comparison,
+        // so `ts - prev_ts` over an inline column is the DURATION between them. Only
+        // STRING + STRING is left alone: that is concatenation.
+        if (!isConcatenation(left, expr.operator(), right)) {
+            left  = TemporalValueArithmetic.coerceString(left, right);
+            right = TemporalValueArithmetic.coerceString(right, left);
+        }
         // Temporal arithmetic (TIMESTAMP − TIMESTAMP → DURATION, ts ± DURATION, …, ADR-0013).
         if (TemporalValueArithmetic.involvesTemporal(left, right)) {
             return TemporalValueArithmetic.binary(left, expr.operator(), right);
@@ -344,6 +354,11 @@ public final class OperandEvaluator {
             case MULTIPLY -> multiply(left, right);
             case DIVIDE   -> divide(left, right);
         };
+    }
+
+    private static boolean isConcatenation(Value left, ArithmeticOperator op, Value right) {
+        return op == ArithmeticOperator.PLUS
+                && left instanceof StringValue && right instanceof StringValue;
     }
 
     private Value add(Value left, Value right) {
