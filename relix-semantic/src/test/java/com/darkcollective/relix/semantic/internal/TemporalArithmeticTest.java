@@ -488,6 +488,38 @@ final class TemporalArithmeticTest {
             assertThat(analysisOf("π IIf(a + b > 0, 1, 0) → r (T)")).as("condition").hasErrors();
         }
 
+        /**
+         * A comparison inside a function's arguments is the same comparison: a π's
+         * condition operand once typed it BOOLEAN without asking whether its sides may
+         * be compared, so {@code σ a > b} was refused and {@code π IIf(a > b, 1, 0)}
+         * analysed clean (#119).
+         */
+        @Test
+        @DisplayName("a comparison inside a function argument reports what σ reports")
+        void comparisonInsideAnArgument() {
+            String mixed = """
+                    source T from database { url: "${DB}", table: "t",
+                        schema: { a: TIMESTAMP, b: DATE } };
+                    """;
+            String finding = "cannot compare TIMESTAMP with DATE";
+            for (String query : List.of(
+                    "σ a > b (T)",
+                    "π IIf(a > b, 1, 0) → f (T)",
+                    "π Abs(IIf(NOT (a = b), 1, 0)) → f (T)",
+                    "τ IIf(a > b, 1, 0) (T)",
+                    "γ SUM(IIf(a > b, 1, 0)) → n (T)")) {
+                assertThat(analyze(mixed + "query { " + query + " };"))
+                        .as("%s", query)
+                        .hasErrorContaining(finding);
+            }
+            assertThat(analyze(mixed + "query { π IIf(a > b, 1, 0) → f (T) };").errors())
+                    .filteredOn(e -> e.message().contains(finding))
+                    .hasSize(1)
+                    .allSatisfy(e -> assertThat(e.line()).isPositive());
+            assertThat(analysisOf("π IIf(a > b, 1, 0) → f (T)"))
+                    .as("two TIMESTAMPs compare").hasNoErrors();
+        }
+
         @Test
         @DisplayName("the projection error carries a real source position, not 0:0")
         void positioned() {
