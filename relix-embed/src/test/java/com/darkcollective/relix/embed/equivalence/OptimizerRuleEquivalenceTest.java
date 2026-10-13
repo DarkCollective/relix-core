@@ -257,6 +257,21 @@ final class OptimizerRuleEquivalenceTest {
         }
 
         @Test
+        @DisplayName("PROJ-001 does not drop a π that lists every column in another order (#116)")
+        void fullWidthReorderKept() {
+            assertNotFiredButEqual(ORDERS + "query { π amount, region, cust (Orders) };\n",
+                    OptimizationCode.PROJ_001);
+        }
+
+        @Test
+        @DisplayName("PROJ-001 does not drop a full-width reorder over an aggregate (#116)")
+        void fullWidthReorderOverAggregateKept() {
+            assertNotFiredButEqual(ORDERS
+                    + "query { π region, n, total (γ region, SUM(amount) → total, COUNT(*) → n (Orders)) };\n",
+                    OptimizationCode.PROJ_001);
+        }
+
+        @Test
         @DisplayName("PROJ-002 — consecutive π merged to the outer one's columns")
         void consecutiveMerged() {
             assertEquivalent(ORDERS + "query { π cust (π cust, amount (Orders)) };\n",
