@@ -284,9 +284,12 @@ final class ProjectionPass {
 
     /**
      * Returns {@code true} when {@code p} is a no-op: every projected
-     * attribute is a plain, unaliased column reference, and together the
-     * references cover exactly the same columns as the input schema (by name,
-     * case-insensitively, regardless of order).
+     * attribute is a plain, unaliased column reference, and the i-th reference
+     * names the i-th input column (by name, case-insensitively).
+     *
+     * <p>Order matters: a projection listing every input column in a different
+     * order reorders the result's columns, which is observable, so it is not
+     * redundant (#116).
      *
      * <p>Returns {@code false} when the input schema is not annotated.
      */
@@ -298,22 +301,20 @@ final class ProjectionPass {
         List<ProjectedAttribute> attrs = p.attributes();
         if (attrs.size() != inputSchema.width()) return false;
 
-        // Build the set of input column names
-        var remaining = new HashSet<String>();
-        inputSchema.columns().forEach(c -> remaining.add(c.name().toLowerCase(Locale.ROOT)));
-
-        for (ProjectedAttribute pa : attrs) {
+        for (int i = 0; i < attrs.size(); i++) {
+            ProjectedAttribute pa = attrs.get(i);
             // Must be a plain column reference with no alias (or alias == column name)
             if (!(pa.expression() instanceof AttributeOperand ao)) return false;
-            String colName = PredicateAttributeCollector
-                    .columnPart(ao.name()).toLowerCase(Locale.ROOT);
+            String colName = PredicateAttributeCollector.columnPart(ao.name());
             if (pa.alias().isPresent()
                     && !pa.alias().get().equalsIgnoreCase(colName)) {
                 return false; // alias renames the column
             }
-            if (!remaining.remove(colName)) return false; // not in input or duplicate
+            if (!colName.equalsIgnoreCase(inputSchema.columns().get(i).name())) {
+                return false; // not the input column at this position
+            }
         }
-        return remaining.isEmpty(); // all input columns covered
+        return true;
     }
 
 }

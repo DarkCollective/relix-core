@@ -153,6 +153,28 @@ final class OptimizerEquivalence {
         return sb.toString();
     }
 
+    /**
+     * The node's result columns, by name and in order.
+     *
+     * <p>Rows are compared as positional cells, so a rewrite that permutes the columns
+     * <em>and</em> happens to leave every row's cells in the same order would pass a
+     * row-only comparison. A result's column order is observable — it is what
+     * {@code stream()}, {@code toList()} and every renderer emit — so the equivalence
+     * assertions compare it too (#116).
+     */
+    static List<String> columns(RelNode node, SemanticModel m) {
+        SchemaAnnotations merged = SchemaInference.annotate(m.symbolTable(), node, m.nodeSchemas(), m.functions());
+        return merged.get(node).orElseThrow().columns().stream()
+                .map(c -> c.name())
+                .toList();
+    }
+
+    private static void assertSameColumns(OptimizationResult r, SemanticModel m, String what) {
+        assertThat(columns(r.optimized(), m))
+                .as("%s must preserve the result's columns, in order", what)
+                .containsExactlyElementsOf(columns(r.original(), m));
+    }
+
     static boolean fired(OptimizationResult r, OptimizationCode code) {
         return r.applied().stream().anyMatch(t -> t.code() == code);
     }
@@ -167,6 +189,7 @@ final class OptimizerEquivalence {
         assertThat(run(r.optimized(), m))
                 .as("%s must preserve the answer", code.code())
                 .containsExactlyInAnyOrderElementsOf(run(r.original(), m));
+        assertSameColumns(r, m, code.code());
     }
 
     /**
@@ -184,6 +207,7 @@ final class OptimizerEquivalence {
         assertThat(run(r.optimized(), m))
                 .as("%s must preserve the answer, in order", code.code())
                 .containsExactlyElementsOf(run(r.original(), m));
+        assertSameColumns(r, m, code.code());
     }
 
     /**
@@ -236,5 +260,6 @@ final class OptimizerEquivalence {
         assertThat(fired(r, code)).isFalse();
         assertThat(run(r.optimized(), m))
                 .containsExactlyInAnyOrderElementsOf(run(r.original(), m));
+        assertSameColumns(r, m, code.code());
     }
 }
