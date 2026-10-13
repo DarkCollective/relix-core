@@ -105,16 +105,35 @@ final class ProjectionPassTest {
         }
 
         @Test
-        @DisplayName("column order does not matter — different ordering is still redundant")
-        void differentOrderRedundant() {
+        @DisplayName("not redundant when every column is listed in a different order (#116)")
+        void differentOrderNotRedundant() {
             var base = rel("R");
             var proj = project(
                     List.of(simple(attr("b")), simple(attr("a"))), base);
 
             RelNode result = applyProjection(proj, annotate(base, schema("a", "b")));
 
-            assertThat(result).isSameAs(base);
-            assertThat(ctx).fired(OptimizationCode.PROJ_001, 1);
+            assertThat(result).isSameAs(proj);
+            assertThat(ctx).didNotFire(OptimizationCode.PROJ_001);
+        }
+
+        @Test
+        @DisplayName("a full-width reorder left by a PROJ-002 merge is kept (#116)")
+        void reorderAfterMergeNotRedundant() {
+            var base  = rel("R");
+            var inner = project(List.of(simple(attr("b")), simple(attr("a"))), base);
+            var outer = project(List.of(simple(attr("b")), simple(attr("a"))), inner);
+
+            RelNode result = applyProjection(outer, annotate(base, schema("a", "b")));
+
+            assertThat(result).isNode(ProjectionNode.class);
+            var merged = (ProjectionNode) result;
+            assertThat(merged.input()).isSameAs(base);
+            assertThat(merged.attributes())
+                    .extracting(pa -> ((AttributeOperand) pa.expression()).name())
+                    .containsExactly("b", "a");
+            assertThat(ctx).fired(OptimizationCode.PROJ_002, 1);
+            assertThat(ctx).didNotFire(OptimizationCode.PROJ_001);
         }
 
         @Test
@@ -122,7 +141,7 @@ final class ProjectionPassTest {
         void caseInsensitiveMatch() {
             var base = rel("R");
             var proj = project(
-                    List.of(simple(attr("Name")), simple(attr("ID"))), base);
+                    List.of(simple(attr("ID")), simple(attr("Name"))), base);
 
             RelNode result = applyProjection(proj, annotate(base, schema("id", "name")));
 
