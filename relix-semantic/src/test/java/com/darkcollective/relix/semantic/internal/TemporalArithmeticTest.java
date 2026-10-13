@@ -93,11 +93,11 @@ final class TemporalArithmeticTest {
         @Test void unknownPlusUnknownIsNumber() { assertThat(binary(ANY, PLUS, ANY)).isEqualTo(NUMBER); }
 
         @Test
-        @DisplayName("only + concatenates: every other operator over strings stays NUMBER")
-        void otherOperatorsStayNumeric() {
-            assertThat(binary(STRING, MINUS, STRING)).isEqualTo(NUMBER);
-            assertThat(binary(STRING, MULTIPLY, STRING)).isEqualTo(NUMBER);
-            assertThat(binary(STRING, DIVIDE, STRING)).isEqualTo(NUMBER);
+        @DisplayName("only + concatenates, and only a STRING with a STRING or an unknown")
+        void onlyPlusConcatenates() {
+            assertThat(binary(STRING, MINUS, STRING)).isNotEqualTo(STRING);
+            assertThat(binary(STRING, MULTIPLY, ANY)).isNotEqualTo(STRING);
+            assertThat(binaryError(STRING, PLUS, NUMBER)).contains("cannot add NUMBER to STRING");
         }
 
         @Test
@@ -124,6 +124,84 @@ final class TemporalArithmeticTest {
                     ];
                     query { FIX R (T, π s + "a" → s (σ Len(s) < 3 (R))) };
                     """)).hasNoErrors();
+        }
+    }
+
+    /**
+     * Any other STRING operand is an untyped cell, read as the temporal it holds — the
+     * reading the executor gives it, and the one comparison already allows (#118).
+     */
+    @Nested
+    @DisplayName("a STRING operand is read as the temporal it holds")
+    class UntypedString {
+        @Test
+        @DisplayName("STRING − STRING is legal, but could be a DURATION or a TIMESTAMP")
+        void stringMinusString() {
+            assertThat(binary(STRING, MINUS, STRING)).isEqualTo(ANY);
+        }
+
+        @Test
+        @DisplayName("a STRING beside a temporal takes the reading that makes it legal")
+        void besideATemporal() {
+            assertThat(binary(STRING, PLUS, DURATION)).isEqualTo(ANY);
+            assertThat(binary(TIMESTAMP, MINUS, STRING)).isEqualTo(ANY);
+        }
+
+        @Test
+        @DisplayName("when every legal reading agrees, the expression has that type")
+        void agreedReading() {
+            // Only a DURATION can be scaled, so the string must hold one.
+            assertThat(binary(STRING, MULTIPLY, NUMBER)).isEqualTo(DURATION);
+            assertThat(binary(NUMBER, MULTIPLY, STRING)).isEqualTo(DURATION);
+            assertThat(binary(STRING, DIVIDE, NUMBER)).isEqualTo(DURATION);
+            // Only a DURATION divides by one, and the ratio is a NUMBER.
+            assertThat(binary(STRING, DIVIDE, DURATION)).isEqualTo(NUMBER);
+        }
+
+        @Test
+        @DisplayName("an unknown partner leaves it undecided")
+        void unknownPartner() {
+            assertThat(binary(STRING, MINUS, ANY)).isEqualTo(ANY);
+            assertThat(binary(ANY, DIVIDE, STRING)).isEqualTo(ANY);
+        }
+
+        @Test
+        @DisplayName("a combination no reading makes legal is an error")
+        void noLegalReading() {
+            assertThat(binaryError(STRING, MULTIPLY, TIMESTAMP))
+                    .contains("cannot multiply STRING by TIMESTAMP")
+                    .contains("arithmetic needs NUMBER or a temporal type");
+            assertThat(binaryError(NUMBER, DIVIDE, STRING)).contains("cannot divide NUMBER by STRING");
+            assertThat(binaryError(STRING, MINUS, NUMBER)).contains("cannot subtract NUMBER from STRING");
+            assertThat(binaryError(BOOLEAN, PLUS, STRING)).contains("cannot add STRING to BOOLEAN");
+        }
+
+        @Test
+        @DisplayName("negating a STRING reads it as a DURATION")
+        void negation() {
+            assertThat(TemporalArithmetic.unary(STRING).type()).isEqualTo(DURATION);
+        }
+
+        @Test
+        @DisplayName("the gap between two inline timestamp cells analyses, and compares with a DURATION")
+        void throughAnalysis() {
+            String inline = """
+                    C := [
+                    | user | ts                   |
+                    |------|----------------------|
+                    | ann  | 2026-03-01T09:00:00Z |
+                    | ann  | 2026-03-01T09:40:00Z |
+                    ];
+                    P := { WINDOW LAG(ts) SORT ts ASC PER user AS prev_ts (C) };
+                    """;
+            assertThat(analyze(inline + "query { PROJECT user, ts - prev_ts -> gap (P) };"))
+                    .hasNoErrors();
+            assertThat(analyze(inline + "query { SELECT ts - prev_ts > DURATION 'PT30M' (P) };"))
+                    .hasNoErrors();
+            assertThat(analyze(inline + "query { PROJECT ts + DURATION 'PT5M' -> later (C) };"))
+                    .hasNoErrors();
+            assertThat(analyze(inline + "query { PROJECT ts * ts -> nonsense (C) };"))
+                    .hasErrorContaining("cannot multiply STRING by STRING");
         }
     }
 
@@ -261,6 +339,17 @@ final class TemporalArithmeticTest {
             assertThat(TemporalArithmetic.binary(struct, PLUS, TIMESTAMP).type()).isEqualTo(ANY);
             assertThat(TemporalArithmetic.binary(TIMESTAMP, MINUS, array).isError()).isFalse();
             assertThat(TemporalArithmetic.binary(TIMESTAMP, MINUS, array).type()).isEqualTo(ANY);
+        }
+
+        @Test
+        @DisplayName("beside a STRING, it may concatenate, and is otherwise undecided")
+        void besideAString() {
+            Type struct = struct(new StructType.Field("at", TIMESTAMP));
+            Type array = array(TIMESTAMP);
+
+            assertThat(TemporalArithmetic.binary(STRING, PLUS, struct).type()).isEqualTo(STRING);
+            assertThat(TemporalArithmetic.binary(struct, MINUS, STRING).type()).isEqualTo(ANY);
+            assertThat(TemporalArithmetic.binary(STRING, MULTIPLY, array).type()).isEqualTo(ANY);
         }
     }
 

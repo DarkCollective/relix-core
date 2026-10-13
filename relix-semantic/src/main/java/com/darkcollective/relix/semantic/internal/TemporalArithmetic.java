@@ -19,6 +19,8 @@ import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Type;
 
+import java.util.List;
+
 /**
  * The typed temporal arithmetic and comparison algebra (ADR-0013 slice 3).
  *
@@ -46,6 +48,15 @@ import com.darkcollective.relix.symbol.Type;
  *
  * <p>Arithmetic with no temporal operand is {@code NUMBER}, except {@code +} with a
  * {@code STRING} operand, which concatenates and is {@code STRING}.
+ *
+ * <p>Any other {@code STRING} operand is read as the temporal value it holds, the way
+ * {@link #comparisonError comparison} reads one: inline-table, CSV and JSON columns type
+ * every non-numeric cell {@code STRING}, and the executor parses an ISO-8601 cell into
+ * the {@code DATE}, {@code TIME}, {@code TIMESTAMP} or {@code DURATION} it denotes before
+ * doing arithmetic on it. Such an expression is legal when some reading of each
+ * {@code STRING} operand makes it legal, and its type is the one every legal reading
+ * agrees on — {@code ANY} when they disagree. A combination no reading rescues, such as
+ * {@code STRING × TIMESTAMP} or {@code STRING + NUMBER}, is an error.
  */
 final class TemporalArithmetic {
 
@@ -86,11 +97,19 @@ final class TemporalArithmetic {
         ScalarType l = scalar(left);
         ScalarType r = scalar(right);
 
-        // No temporal type involved → ordinary arithmetic, which is numeric except
-        // that + concatenates strings. The evaluator concatenates only STRING + STRING,
-        // so a STRING operand makes STRING the one result + can produce.
+        // + concatenates strings. The evaluator concatenates only STRING + STRING, so a
+        // STRING beside another STRING, or beside an operand of unknown type, makes STRING
+        // the one result + can produce.
+        if (isConcatenation(l, op, r)) {
+            return Result.ok(ScalarType.STRING);
+        }
+        // Any other STRING operand is an untyped cell, read as the temporal it holds.
+        if (l == ScalarType.STRING || r == ScalarType.STRING) {
+            return untyped(l, op, r);
+        }
+        // No temporal type involved → ordinary numeric arithmetic.
         if (!isTemporal(l) && !isTemporal(r)) {
-            return Result.ok(isConcatenation(l, op, r) ? ScalarType.STRING : ScalarType.NUMBER);
+            return Result.ok(ScalarType.NUMBER);
         }
         // A temporal type combined with an unknown operand (ANY or a non-scalar
         // struct/array) cannot be decided statically — stay lenient, no error.
@@ -102,15 +121,58 @@ final class TemporalArithmetic {
         return result != null ? Result.ok(result) : Result.error(binaryMessage(op, l, r));
     }
 
-    /** {@code true} if {@code left <op> right} is {@code +} with a {@code STRING} operand. */
+    /**
+     * {@code true} if {@code left <op> right} is {@code +} over a {@code STRING} and an
+     * operand that may be one — another {@code STRING}, or one of unknown type.
+     */
     private static boolean isConcatenation(ScalarType l, ArithmeticOperator op, ScalarType r) {
         return op == ArithmeticOperator.PLUS
-                && (l == ScalarType.STRING || r == ScalarType.STRING);
+                && ((l == ScalarType.STRING && mayBeString(r))
+                        || (r == ScalarType.STRING && mayBeString(l)));
     }
+
+    private static boolean mayBeString(ScalarType t) {
+        return t == null || t == ScalarType.ANY || t == ScalarType.STRING;
+    }
+
+    /**
+     * Types arithmetic with a {@code STRING} operand that is not a concatenation, by
+     * trying each temporal the string could hold. Legal when some reading is; typed by
+     * the result every legal reading shares, else {@code ANY}.
+     */
+    private static Result untyped(ScalarType l, ArithmeticOperator op, ScalarType r) {
+        // The other operand is unknown: nothing can be decided statically.
+        if (l == null || r == null || l == ScalarType.ANY || r == ScalarType.ANY) {
+            return Result.ok(ScalarType.ANY);
+        }
+        ScalarType agreed = null;
+        boolean legal = false;
+        for (ScalarType lt : readings(l)) {
+            for (ScalarType rt : readings(r)) {
+                ScalarType result = lookup(op, lt, rt);
+                if (result == null) continue;
+                agreed = !legal || result == agreed ? result : ScalarType.ANY;
+                legal = true;
+            }
+        }
+        return legal ? Result.ok(agreed) : Result.error(untypedMessage(op, l, r));
+    }
+
+    /** The types {@code t} may stand for at run time: a STRING is any of the temporals. */
+    private static List<ScalarType> readings(ScalarType t) {
+        return t == ScalarType.STRING ? TEMPORALS : List.of(t);
+    }
+
+    private static final List<ScalarType> TEMPORALS = List.of(
+            ScalarType.TIMESTAMP, ScalarType.DATE, ScalarType.TIME, ScalarType.DURATION);
 
     /** Types a unary-minus expression {@code −operand}. */
     static Result unary(Type operand) {
         ScalarType t = scalar(operand);
+        // An untyped cell negates only as the DURATION it may hold.
+        if (t == ScalarType.STRING) {
+            return Result.ok(ScalarType.DURATION);
+        }
         if (!isTemporal(t)) {
             // Numeric (or lenient unknown) negation — unchanged behaviour.
             return Result.ok(ScalarType.NUMBER);
@@ -209,13 +271,22 @@ final class TemporalArithmetic {
     }
 
     private static String binaryMessage(ArithmeticOperator op, ScalarType l, ScalarType r) {
-        String detail = switch (op) {
+        return cannot(op, l, r) + "; see ADR-0013 for the legal temporal arithmetic combinations";
+    }
+
+    private static String untypedMessage(ArithmeticOperator op, ScalarType l, ScalarType r) {
+        return cannot(op, l, r) + "; arithmetic needs NUMBER or a temporal type, and a STRING is read"
+                + " as the DATE, TIME, TIMESTAMP or DURATION it holds, none of which is legal"
+                + " here (+ concatenates only STRING with STRING)";
+    }
+
+    private static String cannot(ArithmeticOperator op, ScalarType l, ScalarType r) {
+        return switch (op) {
             case PLUS     -> "cannot add " + r.name() + " to " + l.name();
             case MINUS    -> "cannot subtract " + r.name() + " from " + l.name();
             case MULTIPLY -> "cannot multiply " + l.name() + " by " + r.name();
             case DIVIDE   -> "cannot divide " + l.name() + " by " + r.name();
         };
-        return detail + "; see ADR-0013 for the legal temporal arithmetic combinations";
     }
 
     private static ScalarType scalar(Type t) {

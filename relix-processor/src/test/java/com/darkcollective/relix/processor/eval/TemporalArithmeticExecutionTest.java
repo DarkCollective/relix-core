@@ -165,6 +165,40 @@ final class TemporalArithmeticExecutionTest extends com.darkcollective.relix.pro
                     .isEqualTo(new TimestampValue(Instant.parse("2026-06-15T12:00:00Z")));
         }
 
+        /** Two STRING cells, the shape an inline table and LAG produce (#118). */
+        private Value evalOnTwoStrings(String a, ArithmeticOperator op, String b) {
+            Row strings = row(schema(col("a", ScalarType.STRING), col("b", ScalarType.STRING)),
+                    str(a), str(b));
+            return eval.evaluate(arith(attr("a"), op, attr("b")), strings);
+        }
+
+        @Test void isoTimestampStringMinusIsoTimestampStringYieldsDuration() {
+            assertThat(evalOnTwoStrings("2026-03-01T09:40:00Z", ArithmeticOperator.MINUS, "2026-03-01T09:00:00Z"))
+                    .isEqualTo(new DurationValue(Duration.ofMinutes(40)));
+        }
+
+        @Test void isoDurationStringTimesNumberYieldsDuration() {
+            Row d = row(schema(col("d", ScalarType.STRING)), str("PT10M"));
+            assertThat(eval.evaluate(arith(attr("d"), ArithmeticOperator.MULTIPLY, AstBuilders.num("3")), d))
+                    .isEqualTo(new DurationValue(Duration.ofMinutes(30)));
+        }
+
+        @Test void isoDurationStringNegates() {
+            Row d = row(schema(col("d", ScalarType.STRING)), str("PT10M"));
+            assertThat(eval.evaluate(AstBuilders.unary(attr("d")), d))
+                    .isEqualTo(new DurationValue(Duration.ofMinutes(-10)));
+        }
+
+        @Test void stringPlusStringStillConcatenates() {
+            assertThat(evalOnTwoStrings("2026-03-01", ArithmeticOperator.PLUS, "T09:00:00Z"))
+                    .isEqualTo(str("2026-03-01T09:00:00Z"));
+        }
+
+        @Test void nonTemporalStringsStillThrow() {
+            assertThatThrownBy(() -> evalOnTwoStrings("ann", ArithmeticOperator.MINUS, "bob"))
+                    .isInstanceOf(EvaluationException.class);
+        }
+
         @Test void nonTemporalStringStillThrows() {
             assertThatThrownBy(() -> evalOnStringRow("not-a-date", ArithmeticOperator.PLUS, duration("PT1H")))
                     .isInstanceOf(EvaluationException.class);
