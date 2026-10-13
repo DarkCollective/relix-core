@@ -2081,7 +2081,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      * Compound operands are traversed by the walker; literals need no validation.
      */
     private void validateProjectedOperand(Operand expr, Schema inputSchema) {
-        validateTemporalArithmetic(expr, inputSchema);
+        validateTemporalRules(expr, inputSchema);
         validateOperandColumns(expr, inputSchema, "Projection π: ", "Projection π: attribute");
     }
 
@@ -2148,30 +2148,32 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     /**
      * Reports an illegal temporal-arithmetic combination anywhere inside {@code expr}
      * (ADR-0013) — {@code TIMESTAMP + TIMESTAMP}, {@code NUMBER ÷ DURATION} and the rest
-     * of the pairs the type rule has no case for.
+     * of the pairs the type rule has no case for — and an illegal temporal comparison,
+     * such as a {@code TIMESTAMP} against a {@code DATE}, in a condition written as an
+     * operand (an {@code IIf}'s test).
      *
-     * <p>σ, τ and γ reach the same check through {@code PredicateValidator}, which walks
-     * an operand for its own reasons and asks the rule on the way past. A projection does
+     * <p>σ, τ and γ reach the same checks through {@code PredicateValidator}, which walks
+     * an operand for its own reasons and asks the rules on the way past. A projection does
      * not go through that validator — it has its own attribute walk, so that it can report
-     * with the source position of the offending reference — and the temporal question was
-     * simply never asked on this path. Inference then returned its lenient {@code ANY} and
-     * the query analysed clean, leaving the evaluator to raise once rows were already
-     * flowing.
+     * with the source position of the offending reference — and each temporal question
+     * was at first simply never asked on this path. Inference then returned its lenient
+     * {@code ANY}, or a comparison its {@code BOOLEAN}, and the query analysed clean,
+     * leaving the evaluator to raise once rows were already flowing.
      *
      * <p>Children are checked before the node itself, so the innermost illegal combination
      * is the one reported rather than a cascade from it.
      */
-    private void validateTemporalArithmetic(Operand expr, Schema inputSchema) {
+    private void validateTemporalRules(Operand expr, Schema inputSchema) {
         OperandTypeInferrer inferrer = new OperandTypeInferrer(symbolTable, functions);
-        validateTemporalArithmetic(expr, inputSchema, inferrer);
+        validateTemporalRules(expr, inputSchema, inferrer);
     }
 
-    private void validateTemporalArithmetic(Operand expr, Schema schema,
+    private void validateTemporalRules(Operand expr, Schema schema,
                                             OperandTypeInferrer inferrer) {
         switch (expr) {
             case BinaryArithmeticExpression arith -> {
-                validateTemporalArithmetic(arith.left(), schema, inferrer);
-                validateTemporalArithmetic(arith.right(), schema, inferrer);
+                validateTemporalRules(arith.left(), schema, inferrer);
+                validateTemporalRules(arith.right(), schema, inferrer);
                 TemporalArithmetic.Result r = TemporalArithmetic.binary(
                         inferrer.infer(arith.left(), schema), arith.operator(),
                         inferrer.infer(arith.right(), schema));
@@ -2180,7 +2182,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 }
             }
             case UnaryOperand unary -> {
-                validateTemporalArithmetic(unary.operand(), schema, inferrer);
+                validateTemporalRules(unary.operand(), schema, inferrer);
                 TemporalArithmetic.Result r =
                         TemporalArithmetic.unary(inferrer.infer(unary.operand(), schema));
                 if (r.isError()) {
@@ -2189,24 +2191,24 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             }
             case FunctionCall fn -> {
                 for (Operand arg : fn.arguments()) {
-                    validateTemporalArithmetic(arg, schema, inferrer);
+                    validateTemporalRules(arg, schema, inferrer);
                 }
             }
             case ConditionOperand cond ->
-                    validateTemporalArithmetic(cond.predicate(), schema, inferrer);
+                    validateTemporalRules(cond.predicate(), schema, inferrer);
             case SetLiteralOperand set -> {
                 for (Operand elem : set.elements()) {
-                    validateTemporalArithmetic(elem, schema, inferrer);
+                    validateTemporalRules(elem, schema, inferrer);
                 }
             }
             case StructConstruction struct -> {
                 for (StructConstruction.Field field : struct.fields()) {
-                    validateTemporalArithmetic(field.value(), schema, inferrer);
+                    validateTemporalRules(field.value(), schema, inferrer);
                 }
             }
             case ArrayConstruction array -> {
                 for (Operand elem : array.elements()) {
-                    validateTemporalArithmetic(elem, schema, inferrer);
+                    validateTemporalRules(elem, schema, inferrer);
                 }
             }
             default -> {
@@ -2216,35 +2218,42 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     }
 
     /**
-     * The predicate half of {@link #validateTemporalArithmetic(Operand, Schema,
+     * The predicate half of {@link #validateTemporalRules(Operand, Schema,
      * OperandTypeInferrer)} — a boolean written in operand position, as an
      * {@code IIf}'s test is. Exhaustive over the sealed hierarchy, so a new predicate
-     * form cannot silently stop being checked.
+     * form cannot silently stop being checked. A comparison here answers to the same
+     * rule as one in a selection, so {@code π IIf(a > b, 1, 0)} and {@code σ a > b}
+     * report the same finding.
      */
-    private void validateTemporalArithmetic(Predicate p, Schema schema,
+    private void validateTemporalRules(Predicate p, Schema schema,
                                             OperandTypeInferrer inferrer) {
         switch (p) {
             case ComparisonPredicate c -> {
-                validateTemporalArithmetic(c.left(), schema, inferrer);
-                validateTemporalArithmetic(c.right(), schema, inferrer);
+                validateTemporalRules(c.left(), schema, inferrer);
+                validateTemporalRules(c.right(), schema, inferrer);
+                String cmpError = TemporalArithmetic.comparisonError(
+                        inferrer.infer(c.left(), schema), inferrer.infer(c.right(), schema));
+                if (cmpError != null) {
+                    error(c.location(), "Projection π: " + cmpError);
+                }
             }
             case AndPredicate a -> {
-                validateTemporalArithmetic(a.left(), schema, inferrer);
-                validateTemporalArithmetic(a.right(), schema, inferrer);
+                validateTemporalRules(a.left(), schema, inferrer);
+                validateTemporalRules(a.right(), schema, inferrer);
             }
             case OrPredicate o -> {
-                validateTemporalArithmetic(o.left(), schema, inferrer);
-                validateTemporalArithmetic(o.right(), schema, inferrer);
+                validateTemporalRules(o.left(), schema, inferrer);
+                validateTemporalRules(o.right(), schema, inferrer);
             }
-            case NotPredicate n -> validateTemporalArithmetic(n.predicate(), schema, inferrer);
-            case NullPredicate n -> validateTemporalArithmetic(n.operand(), schema, inferrer);
+            case NotPredicate n -> validateTemporalRules(n.predicate(), schema, inferrer);
+            case NullPredicate n -> validateTemporalRules(n.operand(), schema, inferrer);
             case ElementOfPredicate e -> {
-                validateTemporalArithmetic(e.element(), schema, inferrer);
-                validateTemporalArithmetic(e.setExpression(), schema, inferrer);
+                validateTemporalRules(e.element(), schema, inferrer);
+                validateTemporalRules(e.setExpression(), schema, inferrer);
             }
             case PatternPredicate pp -> {
-                validateTemporalArithmetic(pp.operand(), schema, inferrer);
-                validateTemporalArithmetic(pp.pattern(), schema, inferrer);
+                validateTemporalRules(pp.operand(), schema, inferrer);
+                validateTemporalRules(pp.pattern(), schema, inferrer);
             }
         }
     }
