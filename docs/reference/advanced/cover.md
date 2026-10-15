@@ -2,6 +2,7 @@
 
 # Syntax:
 COVER <strength-t> (Relation)
+-- returns a subset of the input rows, schema unchanged
 
 COVER 2 (Substrate × Temperature × Coating)   -- all-pairs (pairwise) coverage
 COVER 3 (Candidates)                            -- all-triples coverage

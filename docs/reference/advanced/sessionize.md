@@ -2,6 +2,7 @@
 
 # Syntax:
 SESSIONIZE <orderColumn> GAP <threshold> [PER <key> [, <key> …]] AS <session> (R)
+-- returns every input row plus the NUMBER column <session>
 
 SESSIONIZE ts GAP DURATION 'PT30M' PER user_id AS session (Events)
 

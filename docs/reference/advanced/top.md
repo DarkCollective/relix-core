@@ -3,6 +3,7 @@
 # Syntax:
 TOP <count> <sort-specs> [PER <keys>] (Relation)
 TOP <offset>, <count> <sort-specs> [PER <keys>] (Relation)
+-- returns the kept input rows, schema unchanged
 
 TOP 3 amount DESC PER customer_id (Orders)
 TOP 5, 3 amount DESC PER customer_id (Orders)   -- skip 5, take 3 per group

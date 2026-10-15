@@ -88,8 +88,23 @@ final class EbnfGrammar {
         return t.kind() == Kind.NUMBER && t.text().indexOf('.') < 0;
     }
 
+    /** An expression-layer STRING: either quote, and only the escapes the page lists. */
     private static boolean isString(Token t) {
-        return t.kind() == Kind.STRING_SQ || t.kind() == Kind.STRING_DQ;
+        return (t.kind() == Kind.STRING_SQ || t.kind() == Kind.STRING_DQ) && hasStringEscapes(t);
+    }
+
+    /** Whether every backslash in a string token starts one of {@code \\ \" \' \n \t}. */
+    private static boolean hasStringEscapes(Token t) {
+        String body = t.text().substring(1, t.text().length() - 1);
+        for (int i = 0; i < body.length(); i++) {
+            if (body.charAt(i) == '\\') {
+                if (i + 1 >= body.length() || "\\\"'nt".indexOf(body.charAt(i + 1)) < 0) {
+                    return false;
+                }
+                i++;
+            }
+        }
+        return true;
     }
 
     /** Whether a string token, quotes and all, holds nothing but whitespace between them. */
