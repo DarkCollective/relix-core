@@ -2160,10 +2160,15 @@ public final class RelAlgebraParser {
         TokenType t = current.type();
         if (isComparison(t)) return true;
         if (t == TokenType.ELEMENT_OF || t == TokenType.NOT_ELEMENT_OF
-                || t == TokenType.LIKE || t == TokenType.IS) return true;
+                || t == TokenType.LIKE || t == TokenType.IS || isWord(current, "BETWEEN")) return true;
         return t == TokenType.NOT
                 && (peek(1).type() == TokenType.ELEMENT_OF
-                    || peek(1).type() == TokenType.LIKE);
+                    || peek(1).type() == TokenType.LIKE || isWord(peek(1), "BETWEEN"));
+    }
+
+    /** True when {@code token} is the unreserved word {@code word}, in any case. */
+    private boolean isWord(Token token, String word) {
+        return isNameToken(token) && token.lexeme().equalsIgnoreCase(word);
     }
 
     private Predicate parsePredicate() {
@@ -2255,12 +2260,18 @@ public final class RelAlgebraParser {
             return new ElementOfPredicate(left, setExpr, true, loc(notTok));
         }
 
+        // SQL's x [NOT] BETWEEN lo AND hi, read as the two comparisons it means
+        if (isWord(current, "BETWEEN")
+                || current.type() == TokenType.NOT && isWord(peek(1), "BETWEEN")) {
+            return parseBetween(left);
+        }
+
         // Check for LIKE / NOT LIKE
         if (current.type() == TokenType.LIKE) {
             Token opTok = current;
             advance();
             Operand pattern = parseOperand();
-            return new PatternPredicate(left, pattern, false, loc(opTok));
+            return new PatternPredicate(left, pattern, false, parseLikeEscape(), loc(opTok));
         }
 
         if (current.type() == TokenType.NOT && peek(1).type() == TokenType.LIKE) {
@@ -2268,7 +2279,7 @@ public final class RelAlgebraParser {
             advance(); // consume NOT
             advance(); // consume LIKE
             Operand pattern = parseOperand();
-            return new PatternPredicate(left, pattern, true, loc(notTok));
+            return new PatternPredicate(left, pattern, true, parseLikeEscape(), loc(notTok));
         }
 
         // Check for null predicate (attribute = ⊥ or attribute ≠ ⊥)
@@ -2290,7 +2301,14 @@ public final class RelAlgebraParser {
                 advance(); // consume NOT
                 isNull = false;
             }
-            expect(TokenType.NULL, "Expected 'NULL' after 'IS'");
+            if (current.type() == TokenType.DISTINCT && isWord(peek(1), "FROM")) {
+                advance(); // consume DISTINCT
+                advance(); // consume FROM
+                Operand right = parseOperand();
+                return isNull ? distinctFrom(left, right, loc(opTok))
+                        : notDistinctFrom(left, right, loc(opTok));
+            }
+            expect(TokenType.NULL, "Expected 'NULL' or 'DISTINCT FROM' after 'IS'");
             return new NullPredicate(left, isNull, loc(opTok));
         }
 
@@ -2336,6 +2354,76 @@ public final class RelAlgebraParser {
                 + " PROJECT a, b * 2 -> c (R)", lexer.input(), current);
     }
 
+    /**
+     * Parses {@code [NOT] BETWEEN lo AND hi} after its subject, as the comparisons it
+     * stands for: {@code x >= lo ∧ x <= hi}, and for {@code NOT BETWEEN}
+     * {@code x < lo ∨ x > hi}. Both bounds are inclusive and the subject is read
+     * twice, which is SQL's definition.
+     */
+    private Predicate parseBetween(Operand subject) {
+        Token opTok = current;
+        boolean negated = match(TokenType.NOT);
+        advance(); // consume BETWEEN
+        Operand low = parseOperand();
+        expect(TokenType.AND, "Expected 'AND' between the two bounds of BETWEEN");
+        Operand high = parseOperand();
+        SourceLocation at = loc(opTok);
+        if (negated) {
+            return new OrPredicate(
+                    new ComparisonPredicate(subject, ComparisonOperator.LESS, low, at),
+                    new ComparisonPredicate(subject, ComparisonOperator.GREATER, high, at), at);
+        }
+        return new AndPredicate(
+                new ComparisonPredicate(subject, ComparisonOperator.GREATER_EQUAL, low, at),
+                new ComparisonPredicate(subject, ComparisonOperator.LESS_EQUAL, high, at), at);
+    }
+
+    /**
+     * Parses the optional {@code ESCAPE 'c'} after a LIKE pattern: one character, written
+     * as a string literal.
+     */
+    private Optional<String> parseLikeEscape() {
+        if (!isWord(current, "ESCAPE")) {
+            return Optional.empty();
+        }
+        advance(); // consume ESCAPE
+        Token escape = current;
+        if (escape.type() != TokenType.STRING || escape.literal().length() != 1) {
+            throw ParseException.at("ESCAPE takes one character, written as a string:"
+                    + " name LIKE '50!%' ESCAPE '!'", lexer.input(), escape);
+        }
+        advance();
+        return Optional.of(escape.literal());
+    }
+
+    /**
+     * {@code a IS DISTINCT FROM b}: true when exactly one is NULL, or neither is and
+     * they differ. Unlike {@code a ≠ b} it is never UNKNOWN, so it is written out in
+     * null tests, which are never UNKNOWN either:
+     * {@code (a ≠ b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b ≠ ⊥) ∨ (a ≠ ⊥ ∧ b = ⊥)}.
+     */
+    private static Predicate distinctFrom(Operand a, Operand b, SourceLocation at) {
+        Predicate differ = new AndPredicate(new AndPredicate(
+                new ComparisonPredicate(a, ComparisonOperator.NOT_EQUAL, b, at),
+                new NullPredicate(a, false, at), at), new NullPredicate(b, false, at), at);
+        Predicate onlyA = new AndPredicate(new NullPredicate(a, true, at), new NullPredicate(b, false, at), at);
+        Predicate onlyB = new AndPredicate(new NullPredicate(a, false, at), new NullPredicate(b, true, at), at);
+        return new OrPredicate(new OrPredicate(differ, onlyA, at), onlyB, at);
+    }
+
+    /**
+     * {@code a IS NOT DISTINCT FROM b}, null-safe equality: true when both are NULL, or
+     * neither is and they are equal, and never UNKNOWN:
+     * {@code (a = b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b = ⊥)}.
+     */
+    private static Predicate notDistinctFrom(Operand a, Operand b, SourceLocation at) {
+        Predicate equal = new AndPredicate(new AndPredicate(
+                new ComparisonPredicate(a, ComparisonOperator.EQUAL, b, at),
+                new NullPredicate(a, false, at), at), new NullPredicate(b, false, at), at);
+        Predicate bothNull = new AndPredicate(new NullPredicate(a, true, at), new NullPredicate(b, true, at), at);
+        return new OrPredicate(equal, bothNull, at);
+    }
+
     private Operand parseSetExpression() {
         if (current.type() == TokenType.LBRACE) {
             Token lbraceTok = current;
@@ -2361,7 +2449,7 @@ public final class RelAlgebraParser {
 
     /**
      * True when the parenthesis at {@code current} opens a predicate rather than an
-     * arithmetic group: a comparison, logical, membership or LIKE operator appears
+     * arithmetic group: a comparison, logical, membership, LIKE or IS operator appears
      * inside it before it closes.
      *
      * <p>An operator inside a function call's own argument list does not count. The
@@ -2391,7 +2479,8 @@ public final class RelAlgebraParser {
                 if (depth == 0) {
                     return false;
                 }
-            } else if (depth > 0 && callDepth == 0 && (isComparison(token.type()) || isLogicalOperator(token.type()) || token.type() == TokenType.ELEMENT_OF || token.type() == TokenType.NOT_ELEMENT_OF || token.type() == TokenType.LIKE)) {
+            } else if (depth > 0 && callDepth == 0 && (isComparison(token.type()) || isLogicalOperator(token.type()) || token.type() == TokenType.ELEMENT_OF || token.type() == TokenType.NOT_ELEMENT_OF || token.type() == TokenType.LIKE
+                    || token.type() == TokenType.IS)) {
                 return true;
             } else if (token.type() == TokenType.EOF) {
                 return false;

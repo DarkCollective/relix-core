@@ -178,6 +178,7 @@ final class AstBuilderCoverageTest {
             .of(String.class, i -> "c" + i)
             .of(String[].class, i -> new String[]{"c" + i})
             .of(boolean.class, i -> i % 2 == 0)
+            .of(char.class, i -> (char) ('!' + i))
             .of(int.class, i -> i + 1)
             .of(long.class, i -> (long) (i + 1))
             .of(Long.class, i -> (long) (i + 1))

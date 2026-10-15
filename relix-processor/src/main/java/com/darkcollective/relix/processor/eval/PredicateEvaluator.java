@@ -35,6 +35,7 @@ import com.darkcollective.relix.value.Value;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Evaluates a {@link Predicate} against a {@link Row}, returning a boolean result.
@@ -194,12 +195,16 @@ public final class PredicateEvaluator {
             throw new EvaluationException(
                     "LIKE pattern must be a string; got " + patternVal.type());
         }
-        Truth matches = Truth.of(likeMatch(sv.value(), pv.value()));
+        Truth matches = Truth.of(likeMatch(sv.value(), pv.value(), pred.escape()));
         return pred.negated() ? matches.not() : matches;
     }
 
-    private static boolean likeMatch(String text, String pattern) {
-        return text.matches(LikePatterns.toRegex(pattern));
+    private static boolean likeMatch(String text, String pattern, Optional<String> escape) {
+        try {
+            return text.matches(LikePatterns.toRegex(pattern, escape));
+        } catch (IllegalArgumentException e) {
+            throw new EvaluationException(e.getMessage() + ": \"" + pattern + "\"");
+        }
     }
 
     /**

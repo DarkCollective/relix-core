@@ -287,6 +287,95 @@ final class PredicateParserTest extends ParserTestSupport {
                 select(elementOf(attr("status"), set()), rel("Users")));
     }
 
+    // ==================== SQL predicate spellings ====================
+
+    @Test
+    public void parsesSqlNotEqualAsNotEqual() {
+        assertParsesTo("σ status <> 'open' (Orders)",
+                select(cmp(attr("status"), ComparisonOperator.NOT_EQUAL, str("open")), rel("Orders")));
+    }
+
+    @Test
+    public void parsesBetweenAsTwoComparisons() {
+        assertParsesTo("σ amount BETWEEN 10 AND 100 (Orders)",
+                select(and(cmp(attr("amount"), ComparisonOperator.GREATER_EQUAL, num("10")),
+                           cmp(attr("amount"), ComparisonOperator.LESS_EQUAL, num("100"))),
+                        rel("Orders")));
+        assertParsesTo("σ amount NOT BETWEEN 10 AND 100 (Orders)",
+                select(or(cmp(attr("amount"), ComparisonOperator.LESS, num("10")),
+                          cmp(attr("amount"), ComparisonOperator.GREATER, num("100"))),
+                        rel("Orders")));
+    }
+
+    @Test
+    public void betweenOwnsItsAnd() {
+        assertParsesTo("σ a between 1 and 5 AND b = 2 (R)",
+                select(and(and(cmp(attr("a"), ComparisonOperator.GREATER_EQUAL, num("1")),
+                               cmp(attr("a"), ComparisonOperator.LESS_EQUAL, num("5"))),
+                           cmp(attr("b"), ComparisonOperator.EQUAL, num("2"))),
+                        rel("R")));
+    }
+
+    @Test
+    public void betweenIsAWordElsewhere() {
+        assertParsesTo("σ between = 1 (R)",
+                select(cmp(attr("between"), ComparisonOperator.EQUAL, num("1")), rel("R")));
+    }
+
+    @Test
+    public void parsesIsDistinctFromAsNullSafeTests() {
+        Predicate both = and(and(cmp(attr("a"), ComparisonOperator.NOT_EQUAL, attr("b")),
+                nullPred(attr("a"), false)), nullPred(attr("b"), false));
+        Predicate onlyA = and(nullPred(attr("a"), true), nullPred(attr("b"), false));
+        Predicate onlyB = and(nullPred(attr("a"), false), nullPred(attr("b"), true));
+        assertParsesTo("σ a IS DISTINCT FROM b (R)",
+                select(or(or(both, onlyA), onlyB), rel("R")));
+
+        Predicate equal = and(and(cmp(attr("a"), ComparisonOperator.EQUAL, attr("b")),
+                nullPred(attr("a"), false)), nullPred(attr("b"), false));
+        assertParsesTo("σ a IS NOT DISTINCT FROM b (R)",
+                select(or(equal, and(nullPred(attr("a"), true), nullPred(attr("b"), true))), rel("R")));
+    }
+
+    @Test
+    public void parsesLikeEscape() {
+        assertParsesTo("σ label LIKE '%0!%%' ESCAPE '!' (D)",
+                select(like(attr("label"), str("%0!%%"), false, '!'), rel("D")));
+        assertParsesTo("σ label NOT LIKE \"a\\\\_%\" ESCAPE \"\\\\\" (D)",
+                select(like(attr("label"), str("a\\_%"), true, '\\'), rel("D")));
+    }
+
+    @Test
+    public void rejectsMalformedSqlSpellings() {
+        assertParseError("σ a BETWEEN 1 (R)")
+                .hasMessageContaining("Expected 'AND' between the two bounds of BETWEEN");
+        assertParseError("σ a LIKE 'x' ESCAPE '!!' (R)")
+                .hasMessageContaining("ESCAPE takes one character, written as a string");
+        assertParseError("σ a LIKE 'x' ESCAPE c (R)")
+                .hasMessageContaining("ESCAPE takes one character");
+        assertParseError("σ a IS DISTINCT b (R)")
+                .hasMessageContaining("Expected 'NULL' or 'DISTINCT FROM' after 'IS'");
+        assertParseError("σ a < > b (R)");
+    }
+
+    @Test
+    public void parenthesisedNullTestIsACondition() {
+        assertParsesTo("σ ¬(a IS NULL) (R)", select(not(nullPred(attr("a"), true)), rel("R")));
+    }
+
+    @Test
+    public void negatedTestsInAFunctionArgument() {
+        assertParsesTo("π IIf(a NOT IN {1}, 1, 0) → x (R)",
+                RelAlgebraParser.parse("π IIf(a ∉ {1}, 1, 0) → x (R)"));
+        AstAssertions.assertThat(parse("π IIf(a NOT LIKE 'b%', 1, 0) → x (R)")).isNode(ProjectionNode.class);
+    }
+
+    @Test
+    public void betweenInAFunctionArgument() {
+        assertParsesTo("π IIf(a NOT BETWEEN 1 AND 2, 1, 0) → x (R)",
+                RelAlgebraParser.parse("π IIf(a < 1 ∨ a > 2, 1, 0) → x (R)"));
+    }
+
     // ==================== PatternPredicate (LIKE) Tests ====================
 
     @Test

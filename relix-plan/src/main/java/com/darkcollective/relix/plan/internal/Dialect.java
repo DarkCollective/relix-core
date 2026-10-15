@@ -28,6 +28,8 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import com.darkcollective.relix.ast.internal.LikePatterns;
+
 import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.regex.Pattern;
@@ -343,23 +345,39 @@ public enum Dialect {
      * @param subject the rendered expression being matched; must not be null
      * @param pattern the rendered pattern, used where the dialect reads {@code LIKE}
      *                as the engine does; must not be null
+     * <p>An {@code ESCAPE} character is passed on as SQL's own {@code ESCAPE} clause
+     * where the dialect reads the pattern as the engine does. Where the pattern is
+     * translated, the escapes are resolved in the translation instead, and a literal
+     * pattern that ends with its escape character declines, so the engine reports it.
+     *
+     * @param subject the rendered expression being matched; must not be null
+     * @param pattern the rendered pattern, used where the dialect reads {@code LIKE}
+     *                as the engine does; must not be null
      * @param literal the pattern's text when it is a string literal, else empty
+     * @param escape  the escape character, or empty for none
      * @param negated whether this is {@code NOT LIKE}
      * @return the predicate, parenthesised; or empty when this dialect declines it
      */
     public Optional<String> like(String subject, String pattern, Optional<String> literal,
-                                 boolean negated) {
-        return switch (this) {
-            case GENERIC, POSTGRES, MYSQL, DUCKDB, DB2 -> Optional.of(
-                    "(" + subject + (negated ? " NOT LIKE " : " LIKE ") + pattern + ")");
-            case SQLITE -> literal.map(text -> "(" + subject
-                    + (negated ? " NOT GLOB " : " GLOB ") + stringLiteral(glob(text)) + ")");
-            // T-SQL's LIKE also reads [ as the start of a character class, so a literal
-            // pattern has each one bracketed, and one that is not a literal cannot be.
-            case SQLSERVER -> literal.map(text -> "(" + subject
-                    + (negated ? " NOT LIKE " : " LIKE ")
-                    + stringLiteral(text.replace("[", "[[]")) + ")");
-        };
+                                 Optional<String> escape, boolean negated) {
+        String like = negated ? " NOT LIKE " : " LIKE ";
+        try {
+            return switch (this) {
+                case GENERIC, POSTGRES, MYSQL, DUCKDB, DB2 -> Optional.of("(" + subject + like
+                        + pattern + escape.map(e -> " ESCAPE " + stringLiteral(e)).orElse("") + ")");
+                case SQLITE -> literal.map(text -> "(" + subject
+                        + (negated ? " NOT GLOB " : " GLOB ") + stringLiteral(glob(text, escape)) + ")");
+                // T-SQL's LIKE also reads [ as the start of a character class, so a literal
+                // pattern has each one bracketed, and one that is not a literal cannot be.
+                // An escaped % or _ is bracketed the same way, which needs no ESCAPE clause.
+                case SQLSERVER -> literal.map(text -> "(" + subject + like
+                        + stringLiteral(LikePatterns.translate(text, escape, "%", "_",
+                                c -> c == '[' || c == '%' || c == '_' ? "[" + c + "]" : String.valueOf(c)))
+                        + ")");
+            };
+        } catch (IllegalArgumentException malformed) {
+            return Optional.empty();
+        }
     }
 
     /**
@@ -380,18 +398,9 @@ public enum Dialect {
     }
 
     /** A {@code LIKE} pattern rewritten as the {@code GLOB} pattern matching the same strings. */
-    private static String glob(String like) {
-        StringBuilder glob = new StringBuilder(like.length());
-        for (int i = 0; i < like.length(); i++) {
-            char c = like.charAt(i);
-            switch (c) {
-                case '%' -> glob.append('*');
-                case '_' -> glob.append('?');
-                case '*', '?', '[' -> glob.append('[').append(c).append(']');
-                default -> glob.append(c);
-            }
-        }
-        return glob.toString();
+    private static String glob(String like, Optional<String> escape) {
+        return LikePatterns.translate(like, escape, "*", "?",
+                c -> c == '*' || c == '?' || c == '[' ? "[" + c + "]" : String.valueOf(c));
     }
 
     /**

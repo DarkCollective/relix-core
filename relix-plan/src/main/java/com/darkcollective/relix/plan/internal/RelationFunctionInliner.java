@@ -292,7 +292,7 @@ final class RelationFunctionInliner {
                     e.isNegated(), e.location());
             case PatternPredicate pp -> new PatternPredicate(
                     substituteOperand(pp.operand(), b), substituteOperand(pp.pattern(), b),
-                    pp.negated(), pp.location());
+                    pp.negated(), pp.escape(), pp.location());
         };
     }
 

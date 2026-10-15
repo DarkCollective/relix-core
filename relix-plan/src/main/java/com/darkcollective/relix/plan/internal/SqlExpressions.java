@@ -375,7 +375,7 @@ public final class SqlExpressions {
         // literal pattern with GLOB instead, and needs the pattern's text to translate.
         Optional<String> literal = p.pattern() instanceof StringOperand s
                 ? Optional.of(s.value()) : Optional.empty();
-        return dialect.like(lhs.get(), rhs.get(), literal, p.negated());
+        return dialect.like(lhs.get(), rhs.get(), literal, p.escape(), p.negated());
     }
 
     private static Optional<String> setLiteral(SetLiteralOperand set, ColumnRenderer cols, Dialect dialect,

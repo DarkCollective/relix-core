@@ -1,7 +1,7 @@
 # Name: Comparison Operators (= ≠ < ≤ > ≥)
 
 # Syntax:
-attr = value      attr != value   (or  attr ≠ value)
+attr = value      attr != value   (or  attr ≠ value, attr <> value)
 attr < value      attr > value
 attr <= value     attr >= value   (or  attr ≤ / ≥ value)
 
@@ -19,8 +19,8 @@ Comparisons form ComparisonPredicates over two operands. = and ≠ test equality
 < ≤ > ≥ require ordered types and work on numbers, strings (lexicographic), and
 temporal types (one temporal type on both sides, or a temporal against a
 text cell holding its ISO-8601 form). A comparison involving a NULL evaluates to
-UNKNOWN (three-valued logic), so the row is dropped by σ. ASCII forms: != for ≠,
-<= for ≤, >= for ≥.
+UNKNOWN (three-valued logic), so the row is dropped by σ. ASCII forms: != and
+SQL's <> for ≠, <= for ≤, >= for ≥.
 
 # Examples:
 Numeric thresholds:
@@ -57,10 +57,11 @@ UNKNOWN (row excluded); test for NULL explicitly with = NULL / = ⊥.
 
 # Alternatives:
 For "is this missing" use the NULL test (= ⊥ / = NULL). For set membership use
-IN (∈).
+IN (∈). For a range, BETWEEN. For an equality under which NULL equals NULL,
+IS NOT DISTINCT FROM.
 
 # See Also:
-[select](../operators/select.md), [and](and.md), [or](or.md), [not](not.md), [is-null](is-null.md), [in](in.md)
+[select](../operators/select.md), [and](and.md), [or](or.md), [not](not.md), [is-null](is-null.md), [in](in.md), [between](between.md), [is-distinct-from](is-distinct-from.md)
 
 # Notes:
 String comparison is lexicographic; temporal comparison is chronological. Which

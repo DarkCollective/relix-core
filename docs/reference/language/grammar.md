@@ -508,11 +508,13 @@ primary_predicate ::= "(" predicate ")"
 condition_tail    ::= comparison_op operand
                     | ( "∈" | "IN" ) set_expr
                     | ( "∉" | ( "¬" | "NOT" ) "IN" ) set_expr
-                    | ( ( "¬" | "NOT" ) )? "LIKE" operand
-                    | ( "=" | "≠" | "!=" ) null_word            /* a null test */
+                    | ( ( "¬" | "NOT" ) )? "LIKE" operand ( "ESCAPE" STRING )?
+                    | ( ( "¬" | "NOT" ) )? "BETWEEN" operand ( "∧" | "AND" ) operand
+                    | ( "=" | "≠" | "!=" | "<>" ) null_word     /* a null test */
                     | "IS" ( ( "¬" | "NOT" ) )? null_word        /* a null test */
+                    | "IS" ( ( "¬" | "NOT" ) )? "DISTINCT" "FROM" operand
 
-comparison_op     ::= "=" | "≠" | "!=" | "<" | "≤" | "<=" | ">" | "≥" | ">="
+comparison_op     ::= "=" | "≠" | "!=" | "<>" | "<" | "≤" | "<=" | ">" | "≥" | ">="
 null_word         ::= "⊥" | "NULL"
 
 /* x IN {1, 2, 3}: a set is written in braces, never in parentheses.
@@ -664,7 +666,16 @@ are easy to miss in the rules above.
   Anywhere else, the word `null` names a column.
 - **A CSV source declares a `schema` or its `columns`, not both.** `csv_field`
   allows either; giving the two in one source is an error.
-- **`<>` is not an operator.** Write `!=` or `≠`.
+- **`<>`, `!=` and `≠` are one operator.** `<>` is two characters with nothing
+  between them; `< >` is not an operator.
+- **`BETWEEN` includes both bounds.** `x BETWEEN lo AND hi` is `x >= lo ∧ x <= hi`,
+  and the `AND` there belongs to `BETWEEN`: `x BETWEEN 1 AND 5 AND y = 2` tests two
+  things. `NOT BETWEEN` is `x < lo ∨ x > hi`.
+- **`IS DISTINCT FROM` is never UNKNOWN.** `a IS NOT DISTINCT FROM b` is true when
+  both are NULL, where `a = b` is UNKNOWN.
+- **A LIKE escape is one character.** `ESCAPE '!'` makes the character after each
+  `!` literal, so `'50!%'` matches `50%`. `BETWEEN`, `DISTINCT FROM` and `ESCAPE`
+  are matched by their text rather than reserved, so they remain usable as names.
 - **Two minus signs.** The ASCII hyphen `-` subtracts numbers. The Unicode minus `−`
   (U+2212) is set difference, whose ASCII spellings are `DIFF`, `MINUS` and
   `EXCEPT`.
@@ -743,10 +754,16 @@ Parentheses do not make a set:
 query { σ status IN ('open', 'held') (Orders) };
 ```
 
-SQL's `<>` is not an operator:
+SQL's `<>` is the same operator as `!=` and `≠`:
+
+```relix
+query { σ status <> 'open' (Orders) };
+```
+
+`BETWEEN` needs both bounds:
 
 ```relix-invalid
-query { σ status <> 'open' (Orders) };
+query { σ amount BETWEEN 10 (Orders) };
 ```
 
 A null test, in each of its spellings:

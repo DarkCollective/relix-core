@@ -174,10 +174,10 @@ final class GrammarReferenceTest {
         @Test
         @DisplayName("a grammar accepting a rejected form is caught by the relix-invalid examples")
         void overAcceptanceIsNoticed() {
-            EbnfGrammar broken = mutate("comparison_op     ::= \"=\"",
-                    "comparison_op     ::= \"<\" \">\" | \"=\"");
+            EbnfGrammar broken = mutate("set_expr          ::= \"{\"",
+                    "set_expr          ::= \"(\" operand ( \",\" operand )* \")\" | \"{\"");
             assertThat(disagreements(broken, documentedExamples()))
-                    .anyMatch(d -> d.contains("<>"));
+                    .anyMatch(d -> d.contains("IN ('open', 'held')"));
         }
 
         @Test
@@ -219,6 +219,14 @@ final class GrammarReferenceTest {
             "query { σ id = $ (R) };",
             // comparisons, and what is not one
             "query { σ status <> 'open' (Orders) };",
+            "query { σ status < > 'open' (Orders) };",
+            "query { σ a BETWEEN 1 AND 5 ∧ b NOT BETWEEN c AND d + 1 (R) };",
+            "query { σ a between 1 and 5 (R) };",
+            "query { σ a BETWEEN 1 (R) };",
+            "query { σ a IS DISTINCT FROM b ∨ c IS NOT DISTINCT FROM NULL (R) };",
+            "query { σ a IS DISTINCT b (R) };",
+            "query { σ name LIKE '50!%' ESCAPE '!' ∧ code NOT LIKE \"a\\\\_%\" ESCAPE \"\\\\\" (R) };",
+            "query { π IIf(a BETWEEN 1 AND 2, 'in', 'out') → band (R) };",
             "query { σ a != 1 ∧ b ≠ 2 ∧ c <= 3 ∧ d ≥ 4 (R) };",
             "query { σ x < -1 (R) };",
             "query { σ a - -1 > 2 (R) };",
