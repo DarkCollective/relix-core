@@ -16,8 +16,13 @@
 package com.darkcollective.relix.cost;
 
 import com.darkcollective.relix.ast.Ordering;
+import com.darkcollective.relix.ast.ProjectionNode;
 import com.darkcollective.relix.ast.RelNode;
+import com.darkcollective.relix.ast.RenameNode;
 import com.darkcollective.relix.ast.SortNode;
+import com.darkcollective.relix.ast.internal.OrderingMaps;
+
+import java.util.Optional;
 
 /**
  * Derives the {@link Ordering} a {@link RelNode} sub-tree is guaranteed to deliver,
@@ -31,14 +36,16 @@ import com.darkcollective.relix.ast.SortNode;
  *       ordering through: {@code σ} (selection filters but keeps order), {@code λ}
  *       (limit/offset takes an ordered prefix), and a relation-only {@code ρ}
  *       (renames the relation, not its columns).</li>
+ *   <li><strong>Rename</strong> — {@code π} and a pair-form {@code ρ} keep their
+ *       input's row order but change its column names, so they deliver the longest
+ *       prefix of the input's ordering whose keys survive, under their output names
+ *       ({@link OrderingMaps}). A projected expression needs an alias to be named
+ *       here; the physical plan, which has the schema, names it either way.</li>
  *   <li><strong>Clear</strong> — every other operator delivers {@link Ordering#none()}
- *       conservatively (it may reorder, regroup, or — for a column-renaming
- *       {@code ρ} — invalidate the ordering's column names). Under-claiming order is
+ *       conservatively (it may reorder or regroup, and a positional {@code ρ} names
+ *       columns by a position this tree does not know). Under-claiming order is
  *       always safe: it only ever <em>keeps</em> a sort that could have been removed.</li>
  * </ul>
- *
- * <p>This is the conservative C1 set; richer propagation (key-preserving {@code π},
- * merge-join output order, sort-capable sources) arrives with the merge operators.
  */
 public final class OrderDeriver {
 
@@ -67,6 +74,18 @@ public final class OrderDeriver {
         // OperatorSemantics.preservesInputOrder covers σ, λ, and relation-only ρ.
         if (OperatorSemantics.preservesInputOrder(node)) {
             return deriveAt(node.children().get(0), depth + 1);
+        }
+        if (node instanceof ProjectionNode p) {
+            return OrderingMaps.throughProjection(deriveAt(p.input(), depth + 1), p.attributes(),
+                    i -> OrderingMaps.nameOf(p.attributes().get(i)));
+        }
+        if (node instanceof RenameNode r && r.attributes().isEmpty()) {
+            return OrderingMaps.renamed(deriveAt(r.input(), depth + 1), column -> Optional.of(
+                    r.pairs().stream()
+                            .filter(pair -> pair.from().equalsIgnoreCase(column))
+                            .map(RenameNode.RenamePair::to)
+                            .findFirst()
+                            .orElse(column)));
         }
         return Ordering.none();
     }

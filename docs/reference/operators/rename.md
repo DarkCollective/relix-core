@@ -46,9 +46,11 @@ source is renamed twice, or when a target name collides with another surviving
 or renamed column.
 
 Rename is a streaming, order-preserving operator; a relation-only rename is
-transparent to the optimizer and to ordering derivation. Any column-renaming form
-(positional or pairs) invalidates the input's delivered ordering column names, so
-it is not treated as order-preserving.
+transparent to the optimizer and to ordering derivation. A column-renaming form
+delivers its input's ordering with each key renamed, so `ρ (price → cost)` over a
+`τ price DESC` delivers `cost DESC`. The renamed ordering stops at the first key that
+is an expression rather than a column, since the columns it reads may have been
+renamed under it.
 
 Rename also **re-anchors column provenance**: after `ρ S (…)` every output
 column's relation qualifier becomes `S`, so a later qualified reference
