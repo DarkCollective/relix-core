@@ -116,6 +116,16 @@ final class SqlPushdownPlannerTest {
         }
 
         @Test
+        @DisplayName("σ over an integer above 2^53 writes every digit (#124)")
+        void largeIntegerLiteral() {
+            assertThat(scanOf(push(ORDERS
+                    + "query { σ id = 9007199254740993 ∨ id = 9223372036854775807 (Orders) };"))
+                    .nativeQuery())
+                    .isEqualTo("SELECT id, amount FROM orders "
+                            + "WHERE ((id = 9007199254740993) OR (id = 9223372036854775807))");
+        }
+
+        @Test
         @DisplayName("σ folds into WHERE")
         void selectionToWhere() {
             assertThat(scanOf(push(ORDERS + "query { σ amount > 0 (Orders) };")).nativeQuery())
