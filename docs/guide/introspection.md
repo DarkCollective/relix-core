@@ -191,7 +191,7 @@ relix.relation("γ category, COUNT(*) → n (relix.functions)")
 (category=nested, n=1)
 (category=ordering, n=2)
 (category=similarity, n=5)
-(category=string, n=24)
+(category=string, n=32)
 (category=typecheck, n=2)
 ```
 
