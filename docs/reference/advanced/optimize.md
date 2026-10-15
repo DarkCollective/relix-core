@@ -28,7 +28,9 @@ or more SUM(expr) ≤|≥|= bound constraints; output = the chosen input rows (s
 = input — a windowed filter). ALLOCATE mode is an LP: each row gets a continuous
 variable in [lo, hi]; all rows are returned with an appended allocation column
 (-> col). PER is optional (absent = whole relation). Solved by the installed
-mathematical-programming solver (ojAlgo ships with Relix): a group the solver
+mathematical-programming solver (ojAlgo ships with Relix). Tied optima are
+settled by rule: the fewest rows, then the earliest in input order, so the
+result does not depend on the solver's search. A group the solver
 proves infeasible is logged and skipped, while a search that stops without
 deciding raises an error rather than quietly contributing no rows. [bag]; never
 pushes down.
@@ -81,19 +83,23 @@ query { Roadmap };
 ```
 
 ```
- feature       value  cost
- ────────────  ─────  ────
- SearchRevamp     60    10
- Dashboards      120    30
- DarkMode         40     5
-(3 rows)
+ feature     value  cost
+ ──────────  ─────  ────
+ MobileSync    100    20
+ Dashboards    120    30
+(2 rows)
 ```
 
-Two different subsets reach 220 here: the three above at a cost of 45, and
-`MobileSync + Dashboards` at exactly 50. Both are optimal, and the solver returns
-one of them — when an objective ties, which winner you get is the solver's
-choice, not something the query specifies. Add a tie-breaker to the objective
-(`MAXIMIZE SUM(value) - SUM(cost)`, say) if you need one particular answer.
+Two different subsets reach 220 here: the two above at exactly 50, and
+`SearchRevamp + Dashboards + DarkMode` at a cost of 45. Both are optimal. When
+an objective ties, OPTIMIZE settles it by a fixed rule rather than by whichever
+the solver happens to meet first: it returns the optimum with the **fewest
+rows**, and among those the one whose rows come **earliest in the input**. So
+the answer is the same on every run, and every read of a view like `Roadmap`
+within a script sees the same rows. The rule is a tie-breaker, not a preference
+the query states: add one to the objective (`MAXIMIZE SUM(value * 1000 - cost)`,
+say, for the cheaper of the tied subsets) when a particular optimum is the one
+you mean.
 
 Add `PER` to solve an independent knapsack for each group — one statement, one
 problem per team, each against its own budget:
@@ -171,7 +177,10 @@ query { OPTIMIZE MAXIMIZE SUM(value) (Candidates) };
 
  Constraint operators are ≤, ≥, or =.
 Infeasible groups produce no rows (MIP) / are skipped (LP). It materialises and
-never pushes down. Objective and constraints are linear in SUM form.
+never pushes down. Objective and constraints are linear in SUM form. Proving an
+optimum unique costs one more solve per group; settling a tie costs up to one
+more per row, so a large group with many tied optima solves several times.
+ALLOCATE's continuous ties are the solver's choice.
 
 # Alternatives:
 SOLVE for inverting a single equation (no choice/constraints). γ with MAX/MIN for
