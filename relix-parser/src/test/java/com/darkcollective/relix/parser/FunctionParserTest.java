@@ -256,4 +256,28 @@ final class FunctionParserTest extends ParserTestSupport {
                         AstBuilders.rel("R")));
         assertParseError("π POSITION('@' IN email → x (R)").hasMessageContaining("Expected ')' after POSITION");
     }
+
+    // ==================== AT TIME ZONE and DATEDIFF (#139) ====================
+
+    @org.junit.jupiter.api.Test
+    public void atTimeZoneIsTimezoneAndBindsBeforeArithmetic() {
+        assertParsesTo("π ts AT TIME ZONE 'Europe/London' → l (R)",
+                parse("π TIMEZONE('Europe/London', ts) → l (R)"));
+        assertParsesTo("π ts at time zone 'UTC' + d → l (R)", parse("π TIMEZONE('UTC', ts) + d → l (R)"));
+        assertParsesTo("π ts AT TIME ZONE 'A' AT TIME ZONE z → l (R)",
+                parse("π TIMEZONE(z, TIMEZONE('A', ts)) → l (R)"));
+        // AT not followed by TIME ZONE is a name, as it was.
+        assertParseError("π ts AT 'x' → l (R)");
+        assertParseError("π ts AT TIME 'x' → l (R)");
+    }
+
+    @org.junit.jupiter.api.Test
+    public void dateDiffReadsABareUnitAsItsName() {
+        assertParsesTo("π DATEDIFF(Month, a, b) → m (R)", parse("π DATEDIFF('month', a, b) → m (R)"));
+        assertParsesTo("π DATEDIFF('day', a, b) → m (R)",
+                AstBuilders.project(java.util.List.of(AstBuilders.projected(
+                        AstBuilders.func("DATEDIFF", AstBuilders.str("day"), AstBuilders.attr("a"), AstBuilders.attr("b")),
+                        "m")), AstBuilders.rel("R")));
+        assertParseError("π DATEDIFF(month, a, b → m (R)").hasMessageContaining("Expected ')' after function arguments");
+    }
 }

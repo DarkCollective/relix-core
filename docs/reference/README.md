@@ -171,6 +171,7 @@ Writing constant values, including the first-class temporal types.
 |------|--------------|
 | [String, number and boolean literals](literals/scalar-literals.md) | `"text"` or `'text'`, `42`, `3.25`, `1e6`, `TRUE` / `FALSE` |
 | [CAST](language/cast.md) | `CAST(x AS type)` — convert a value to NUMBER, STRING, BOOLEAN, DATE, TIME or TIMESTAMP |
+| [AT TIME ZONE](language/at-time-zone.md) | `ts AT TIME ZONE 'Europe/London'` — the wall-clock time in a zone |
 | [EXTRACT](language/extract.md) | `EXTRACT(field FROM d)` — a field of a date or time, day of week and ISO week among them |
 | [Arithmetic and concatenation](language/arithmetic.md) | `+ - * /`, SQL's `%` and `\|\|` |
 | [DATE literal](literals/date-literal.md) | `DATE '2026-01-31'` |
@@ -271,7 +272,11 @@ argument).
 [WEEK](functions/datetime/week.md),
 [ISOYEAR](functions/datetime/isoyear.md),
 [QUARTER](functions/datetime/quarter.md),
-[EPOCH](functions/datetime/epoch.md)
+[EPOCH](functions/datetime/epoch.md),
+[TIMEZONE](functions/datetime/timezone.md),
+[MAKE_DATE](functions/datetime/make_date.md),
+[LAST_DAY](functions/datetime/last_day.md),
+[DATEDIFF](functions/datetime/datediff.md)
 
 **Conditional** —
 [IIf](functions/conditional/iif.md),
@@ -293,7 +298,9 @@ argument).
 [CStr](functions/conversion/cstr.md),
 [CInt](functions/conversion/cint.md),
 [CDbl](functions/conversion/cdbl.md),
-[CBool](functions/conversion/cbool.md)
+[CBool](functions/conversion/cbool.md),
+[TO_CHAR](functions/conversion/to_char.md),
+[FORMAT](functions/conversion/format.md)
 
 **Nested data** —
 [Entries](functions/nested/entries.md)

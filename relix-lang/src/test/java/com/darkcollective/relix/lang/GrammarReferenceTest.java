@@ -240,6 +240,11 @@ final class GrammarReferenceTest {
             "query { π 2e → a (R) };",
             "query { λ 1e3 (R) };",
             "Bad := \"a\"\"b\";",
+            // AT TIME ZONE and DATEDIFF's unit
+            "query { π ts AT TIME ZONE 'Europe/London' AT TIME ZONE z → a, -ts at time zone 'UTC' + d → b (R) };",
+            "query { π DATEDIFF(month, a, b) → m, DATEDIFF('day', a, b) → d, DATEDIFF(x) → e (R) };",
+            "query { π ts AT TIME 'UTC' → a (R) };",
+            "query { π ts AT TIME ZONE → a (R) };",
             // regular-expression matches
             "query { σ s ~ '^a' ∧ t ~* 'b' ∨ u !~ 'c' ∨ v !~* 'd' (R) };",
             "query { σ s MATCHES 'a' ∧ t NOT MATCHES 'b' ∧ matches = 1 (R) };",
