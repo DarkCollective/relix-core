@@ -360,7 +360,14 @@ final class ReferenceIndex {
             // ── Predicates ───────────────────────────────────────────────────
             e("predicates/comparison.md", "predicate", "Comparison",  "=",
               "Row comparisons: =, !=, <, >, ≤, ≥",
-              "comparison", "=", "!=", "≠", "<", ">", "≤", "≥"),
+              "comparison", "=", "!=", "≠", "<>", "<", ">", "≤", "≥"),
+            e("predicates/between.md",    "predicate", "BETWEEN",     "BETWEEN",
+              "Range test, both ends included",
+              "between", "not between", "range"),
+            e("predicates/is-distinct-from.md", "predicate", "IS DISTINCT FROM", "IS DISTINCT FROM",
+              "Null-safe comparison: NULL equals NULL",
+              "is-distinct-from", "is distinct from", "is not distinct from",
+              "distinct from", "null-safe", "<=>"),
             e("predicates/and.md",        "predicate", "AND",         "∧",
               "Logical conjunction",
               "and", "∧"),
@@ -378,7 +385,7 @@ final class ReferenceIndex {
               "is-null", "is null", "isnull", "null"),
             e("predicates/like.md",       "predicate", "LIKE",        "LIKE",
               "Pattern matching with wildcards",
-              "like"),
+              "like", "like escape"),
 
             // ── Language constructs ──────────────────────────────────────────
             e("language/assignment.md",     "language", "Assignment",    ":=",

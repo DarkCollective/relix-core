@@ -41,6 +41,48 @@ final class LikePatternsTest {
     }
 
     @Nested
+    @DisplayName("an escape character")
+    class Escapes {
+
+        private boolean matches(String value, String pattern, String escape) {
+            return Pattern.matches(LikePatterns.toRegex(pattern, java.util.Optional.of(escape)), value);
+        }
+
+        @Test
+        @DisplayName("makes the % or _ after it literal")
+        void escapedWildcards() {
+            assertThat(matches("10% off", "%0!%%", "!")).isTrue();
+            assertThat(matches("100 points", "%0!%%", "!")).isFalse();
+            assertThat(matches("save_20", "save!_%", "!")).isTrue();
+            assertThat(matches("save 20", "save!_%", "!")).isFalse();
+        }
+
+        @Test
+        @DisplayName("escapes itself, and makes an ordinary character match itself, as PostgreSQL does")
+        void escapedOrdinary() {
+            assertThat(matches("a!b", "a!!b", "!")).isTrue();
+            assertThat(matches("ab", "!a!b", "!")).isTrue();
+            assertThat(matches("a.b", "a\\.b", "\\")).isTrue();
+            assertThat(matches("axb", "a\\.b", "\\")).isFalse();
+        }
+
+        @Test
+        @DisplayName("refuses a pattern that ends with the escape")
+        void trailingEscape() {
+            org.assertj.core.api.Assertions.assertThatIllegalArgumentException()
+                    .isThrownBy(() -> LikePatterns.toRegex("50!", java.util.Optional.of("!")))
+                    .withMessage("LIKE pattern must not end with the escape character");
+        }
+
+        @Test
+        @DisplayName("without one, a backslash is an ordinary character")
+        void noEscape() {
+            assertThat(LikePatternsTest.matches("a\\%", "a\\%")).isTrue();
+            assertThat(LikePatternsTest.matches("a\\b", "a\\%")).isTrue();
+        }
+    }
+
+    @Nested
     @DisplayName("wildcards")
     class Wildcards {
 

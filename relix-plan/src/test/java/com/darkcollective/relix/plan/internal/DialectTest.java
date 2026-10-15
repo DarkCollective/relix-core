@@ -142,9 +142,9 @@ final class DialectTest {
         @Test
         @DisplayName("a LIKE pattern's [ is bracketed, and a computed pattern declines")
         void like() {
-            assertThat(Dialect.SQLSERVER.like("x", "N'[a%'", Optional.of("[a%"), false))
+            assertThat(Dialect.SQLSERVER.like("x", "N'[a%'", Optional.of("[a%"), Optional.empty(), false))
                     .contains("(x LIKE N'[[]a%')");
-            assertThat(Dialect.SQLSERVER.like("x", "y", Optional.empty(), true)).isEmpty();
+            assertThat(Dialect.SQLSERVER.like("x", "y", Optional.empty(), Optional.empty(), true)).isEmpty();
         }
     }
 
@@ -157,9 +157,9 @@ final class DialectTest {
         void likeAsWritten() {
             for (Dialect d : new Dialect[] {Dialect.GENERIC, Dialect.POSTGRES, Dialect.MYSQL,
                     Dialect.DUCKDB, Dialect.DB2}) {
-                assertThat(d.like("x", "'A%'", Optional.of("A%"), false)).as("%s", d)
+                assertThat(d.like("x", "'A%'", Optional.of("A%"), Optional.empty(), false)).as("%s", d)
                         .contains("(x LIKE 'A%')");
-                assertThat(d.like("x", "y", Optional.empty(), true)).as("%s", d)
+                assertThat(d.like("x", "y", Optional.empty(), Optional.empty(), true)).as("%s", d)
                         .contains("(x NOT LIKE y)");
             }
         }
@@ -167,23 +167,50 @@ final class DialectTest {
         @Test
         @DisplayName("SQLite matches a literal pattern with GLOB, its wildcards translated")
         void sqliteGlob() {
-            assertThat(Dialect.SQLITE.like("x", "'AB-%'", Optional.of("AB-%"), false))
+            assertThat(Dialect.SQLITE.like("x", "'AB-%'", Optional.of("AB-%"), Optional.empty(), false))
                     .contains("(x GLOB 'AB-*')");
-            assertThat(Dialect.SQLITE.like("x", "'a_b'", Optional.of("a_b"), true))
+            assertThat(Dialect.SQLITE.like("x", "'a_b'", Optional.of("a_b"), Optional.empty(), true))
                     .contains("(x NOT GLOB 'a?b')");
         }
 
         @Test
         @DisplayName("GLOB's own metacharacters are bracketed so they match themselves")
         void sqliteGlobEscapes() {
-            assertThat(Dialect.SQLITE.like("x", "p", Optional.of("*?[]%'"), false))
+            assertThat(Dialect.SQLITE.like("x", "p", Optional.of("*?[]%'"), Optional.empty(), false))
                     .contains("(x GLOB '[*][?][[]]*''')");
+        }
+
+        @Test
+        @DisplayName("an ESCAPE is passed on where LIKE is sent as written, in the dialect's own string")
+        void escapeClause() {
+            for (Dialect d : new Dialect[] {Dialect.GENERIC, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.DB2}) {
+                assertThat(d.like("x", "'50!%'", Optional.of("50!%"), Optional.of("!"), false))
+                        .as("%s", d).contains("(x LIKE '50!%' ESCAPE '!')");
+            }
+            assertThat(Dialect.MYSQL.like("x", "y", Optional.empty(), Optional.of("\\"), true))
+                    .contains("(x NOT LIKE y ESCAPE '\\\\')");
+        }
+
+        @Test
+        @DisplayName("where the pattern is rewritten, its escapes are resolved in the rewrite")
+        void escapeResolved() {
+            assertThat(Dialect.SQLITE.like("x", "p", Optional.of("50!%_!_"), Optional.of("!"), false))
+                    .contains("(x GLOB '50%?_')");
+            assertThat(Dialect.SQLSERVER.like("x", "p", Optional.of("50!%_!_["), Optional.of("!"), false))
+                    .contains("(x LIKE N'50[%]_[_][[]')");
+        }
+
+        @Test
+        @DisplayName("a rewritten literal ending with its escape declines, so the engine reports it")
+        void trailingEscapeDeclines() {
+            assertThat(Dialect.SQLITE.like("x", "p", Optional.of("50!"), Optional.of("!"), false)).isEmpty();
+            assertThat(Dialect.SQLSERVER.like("x", "p", Optional.of("50!"), Optional.of("!"), false)).isEmpty();
         }
 
         @Test
         @DisplayName("SQLite declines a pattern that is not a literal, having nothing to translate")
         void sqliteDeclinesAComputedPattern() {
-            assertThat(Dialect.SQLITE.like("x", "y", Optional.empty(), false)).isEmpty();
+            assertThat(Dialect.SQLITE.like("x", "y", Optional.empty(), Optional.empty(), false)).isEmpty();
         }
     }
 

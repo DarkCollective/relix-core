@@ -287,6 +287,10 @@ public final class Lexer {
                 if (match('=')) {
                     yield token(TokenType.LESS_EQUAL, startIndex, startLine, startColumn);
                 }
+                // SQL's not-equal, the same operator as != and ≠.
+                if (match('>')) {
+                    yield token(TokenType.NOT_EQUAL, startIndex, startLine, startColumn);
+                }
                 // Both characters are checked before either is consumed: `x < -1` is a
                 // comparison against a negative literal, so eating the '-' on the strength
                 // of seeing it would misread that as the start of an undirected edge.

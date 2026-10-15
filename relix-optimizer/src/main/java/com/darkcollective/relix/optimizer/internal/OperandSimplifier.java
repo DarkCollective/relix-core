@@ -202,7 +202,7 @@ final class OperandSimplifier {
                 Operand newOperand = simplify(p.operand());
                 Operand newPattern = simplify(p.pattern());
                 yield (newOperand != p.operand() || newPattern != p.pattern())
-                        ? new PatternPredicate(newOperand, newPattern, p.negated(), p.location())
+                        ? new PatternPredicate(newOperand, newPattern, p.negated(), p.escape(), p.location())
                         : p;
             }
             case AndPredicate a -> {

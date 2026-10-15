@@ -218,6 +218,14 @@ final class MongoExpressionsTest {
         }
 
         @Test
+        @DisplayName("LIKE … ESCAPE makes the escaped % literal, and a trailing escape stays in the engine")
+        void likeEscape() {
+            assertThat(match(AstBuilders.like(attr("label"), str("%0!%%"), false, '!')))
+                    .hasValue("{\"label\": {\"$regex\": \"^.*0%.*$\"}}");
+            assertThat(match(AstBuilders.like(attr("label"), str("50!"), false, '!'))).isEmpty();
+        }
+
+        @Test
         @DisplayName("LIKE prefix% → $regex ^prefix.*$")
         void likePrefix() {
             assertThat(match(like(attr("name"), str("Alice%"))))

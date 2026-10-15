@@ -86,7 +86,9 @@ public final class PredicatePrettyPrinter implements PredicateVisitor<String> {
     @Override
     public String visit(PatternPredicate node) {
         String operator = node.negated() ? " NOT LIKE " : " LIKE ";
-        return node.operand().accept(operandPrinter) + operator + node.pattern().accept(operandPrinter);
+        return node.operand().accept(operandPrinter) + operator + node.pattern().accept(operandPrinter)
+                + node.escape().map(e -> " ESCAPE " + new StringOperand(e).accept(operandPrinter))
+                        .orElse("");
     }
 
 }

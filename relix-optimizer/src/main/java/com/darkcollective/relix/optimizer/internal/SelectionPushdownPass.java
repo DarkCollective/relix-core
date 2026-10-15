@@ -753,7 +753,7 @@ public final class SelectionPushdownPass {
                 Operand newOperand = rewriteAttrNames(p.operand(), mapping);
                 Operand newPattern = rewriteAttrNames(p.pattern(), mapping);
                 yield (newOperand != p.operand() || newPattern != p.pattern())
-                        ? new PatternPredicate(newOperand, newPattern, p.negated(), p.location()) : p;
+                        ? new PatternPredicate(newOperand, newPattern, p.negated(), p.escape(), p.location()) : p;
             }
         };
     }

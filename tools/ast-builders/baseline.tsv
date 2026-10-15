@@ -75,7 +75,7 @@
 58	relix-ast/src/test/java/com/darkcollective/relix/ast/AstNodeRelationTest.java
 1	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/internal/ExpressionSimplificationPassTest.java
 50	relix-ast/src/test/java/com/darkcollective/relix/ast/AstValidationTest.java
-44	relix-ast/src/test/java/com/darkcollective/relix/ast/AstPredicateOperandTest.java
+48	relix-ast/src/test/java/com/darkcollective/relix/ast/AstPredicateOperandTest.java
 33	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstScriptTest.java
 27	relix-ast/src/test/java/com/darkcollective/relix/ast/CoverNodeTest.java
 23	relix-ast/src/test/java/com/darkcollective/relix/ast/FixpointNodeTest.java

@@ -119,6 +119,24 @@ final class AstPredicateOperandTest extends AstTestSupport {
         }
 
         @Test
+        @DisplayName("PatternPredicate takes an escape of exactly one character, and none by default")
+        void patternPredicateEscape() {
+            assertThat(new PatternPredicate(attr("x"), str("50!%"), false).escape()).isEmpty();
+            assertThat(new PatternPredicate(attr("x"), str("50!%"), false, Optional.of("!"),
+                    SourceLocation.UNKNOWN).escape()).contains("!");
+            assertThatThrownBy(() -> new PatternPredicate(attr("x"), str("y"), false,
+                    Optional.of("!!"), SourceLocation.UNKNOWN))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("a LIKE escape is one character; got \"!!\"");
+            assertThatThrownBy(() -> new PatternPredicate(attr("x"), str("y"), false,
+                    Optional.of(""), SourceLocation.UNKNOWN))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThat(like(attr("x"), str("a"), false, '!'))
+                    .as("the escape is part of the value")
+                    .isNotEqualTo(like(attr("x"), str("a"), false, '#'));
+        }
+
+        @Test
         @DisplayName("Accepts valid and predicate")
         void acceptsValidPredicate() {
             AndPredicate pred = new AndPredicate(

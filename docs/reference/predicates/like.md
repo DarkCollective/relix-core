@@ -4,6 +4,7 @@
 attr LIKE "pattern"
 attr NOT LIKE "pattern"
 attr LIKE <string expression>     -- the pattern can also be a column or expression
+attr LIKE "pattern" ESCAPE "c"    -- c makes the character after it literal
 
 σ name LIKE "A%" (Customers)
 σ email NOT LIKE "%@example.com" (Users)
@@ -20,7 +21,11 @@ may be any string expression.
 Wildcards: `%` translates to `.*` (any run of characters) and `_` to `.` (any
 single character); all other regex metacharacters in the pattern are escaped, so the
 pattern is treated as a literal substring except for `%` and `_`. Matching is
-case-sensitive and anchored (the whole value must match). NULL on either side makes
+case-sensitive and anchored (the whole value must match). With `ESCAPE "c"`, the
+character after each `c` matches only itself, so `"50!%"` with `ESCAPE "!"` is the
+literal `50%`; an escape before an ordinary character makes it match itself too,
+and a pattern that ends with its escape character is an error when it runs. The
+escape is one character, written as a string literal. NULL on either side makes
 the predicate UNKNOWN, and a selection keeps only rows that are true — so a NULL
 value is dropped by `LIKE` and by `NOT LIKE` alike, rather than falling through to
 the negative side.
@@ -43,6 +48,9 @@ Exclude internal test accounts:
 
 Combine with other predicates:
   σ name LIKE "Smith%" ∧ active = true (Customers)
+
+A literal percent sign, escaped:
+  σ label LIKE "%!%%" ESCAPE "!" (Discounts)
 
 
 # Worked Example:
@@ -118,16 +126,42 @@ query { π family, sku (σ sku LIKE pattern (Products × Rules)) };
 (4 rows)
 ```
 
+A `%` or `_` that should match itself is escaped. Without `ESCAPE`, `"%0%"`
+matches every label holding a zero; with it, `"%0!%%"` matches only a zero followed
+by a percent sign:
+
+```relix
+Discounts := [
+| label        |
+|--------------|
+| 10% off      |
+| 100 points   |
+| save_20      |
+| save 20      |
+];
+
+query { σ label LIKE "%0!%%" ESCAPE "!" (Discounts) };
+```
+
+```
+ label
+ ───────
+ 10% off
+(1 row)
+```
+
+`_` is escaped the same way: `"save!_%"` matches `save_20` and not `save 20`.
+
 # Limitations:
 A pattern that is not a string literal is not pushed down to MongoDB, so that
 predicate runs in the engine. SQL sources receive it as written. Matching is case-sensitive; use UCase() or LCase() on both sides for
 case-insensitive matching:
   σ UCase(name) LIKE "ALICE%" (Users)
 
-The only special characters are `%` (any run) and `_` (any one character);
-there is no escape character for a literal `%` or `_` in the pattern. If you
-need to match a literal `%` or `_`, use the Replace() function to pre-process
-the value, or anchor with comparison operators instead.
+The only special characters are `%` (any run) and `_` (any one character), and
+without `ESCAPE` no character escapes, so a backslash matches a backslash. The
+escape character is a string literal one character long; `ESCAPE "!!"` is refused
+as the script is read, and a column cannot supply it.
 
 # Alternatives:
 For an exact match, use the equality comparison `= "value"`. For membership in a
@@ -144,7 +178,10 @@ collation. There a literal pattern is rewritten as the case-sensitive `GLOB`, `%
 becoming `*` and `_` becoming `?` (`code LIKE 'AB-%'` is sent as `code GLOB 'AB-*'`),
 and a pattern that is not a literal runs in the engine. SQL Server's `LIKE` reads `[`
 as the start of a character class, so a literal pattern is sent with each `[` written
-`[[]`, and a pattern that is not a literal runs in the engine there too.
+`[[]`, and a pattern that is not a literal runs in the engine there too. An `ESCAPE`
+is sent as SQL's own `ESCAPE` clause; on SQLite and SQL Server, where the pattern is
+rewritten, the escapes are resolved in the rewrite instead (an escaped `%` is sent to
+SQL Server as `[%]`).
 For MongoDB connections the pattern is converted to an anchored regular expression
 and pushed as a `$regex` / `$not $regex` aggregation filter — the negated form
 paired with a null check, since `$not` alone also matches a document that has no

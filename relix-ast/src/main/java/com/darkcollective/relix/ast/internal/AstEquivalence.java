@@ -223,6 +223,7 @@ public final class AstEquivalence {
                     && equivalent(x.setExpression(), y.setExpression());
             case PatternPredicate x -> b instanceof PatternPredicate y
                     && x.negated() == y.negated()
+                    && x.escape().equals(y.escape())
                     && equivalent(x.operand(), y.operand())
                     && equivalent(x.pattern(), y.pattern());
         };

@@ -483,7 +483,7 @@ final class RelixSessionTest {
         @Test
         @DisplayName("a syntax error in an imported file is a diagnostic placed in that file")
         void validateReportsImportedParseFailure() {
-            ScriptLoader loader = path -> Relix.parse("Orders := { SELECT a <> 1 (X) };", path);
+            ScriptLoader loader = path -> Relix.parse("Orders := { SELECT a >> 1 (X) };", path);
             try (Relix relix = Relix.builder().scriptLoader(loader).build()) {
                 List<Diagnostic> found = relix.validate("import \"lib.relix\";\nquery { Orders };");
 

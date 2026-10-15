@@ -65,7 +65,7 @@ intact. A single expression may mix them freely.
 | `∧` | `AND` | Logical and |
 | `∨` | `OR` | Logical or |
 | `¬` | `NOT` | Logical not |
-| `≠` | `!=` | Not equal |
+| `≠` | `!=`, `<>` | Not equal |
 | `≤` | `<=` | Less or equal |
 | `≥` | `>=` | Greater or equal |
 
@@ -100,6 +100,10 @@ parse to the identical tree; the canonical form is what gets printed back.
 | `INTERSECT` | `INTER` / `∩` | IntersectionNode |
 | `MINUS`, `EXCEPT` | `DIFF` / `−` | DifferenceNode |
 | `x IS NULL` / `x IS NOT NULL` | `x = NULL` / `x ≠ NULL` (`⊥`) | Null predicate |
+| `x BETWEEN a AND b` | `x >= a ∧ x <= b` | two comparisons |
+| `x NOT BETWEEN a AND b` | `x < a ∨ x > b` | two comparisons |
+| `a IS DISTINCT FROM b` | `(a ≠ b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b ≠ ⊥) ∨ (a ≠ ⊥ ∧ b = ⊥)` | null tests and a comparison |
+| `a IS NOT DISTINCT FROM b` | `(a = b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b = ⊥)` | null tests and a comparison |
 | `ORDER`, `ORDER BY` | `SORT` / `τ` | SortNode |
 | `GROUP BY` | `GROUP` / `γ` | AggregationNode |
 | `LJOIN` / `RJOIN` / `FJOIN` | `\|><` / `><\|` / `\|><\|` | outer joins |
