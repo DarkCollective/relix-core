@@ -452,7 +452,7 @@ public final class RelNodeOperands {
                     Operand arg   = onOperand.apply(a.argument());
                     Optional<Operand> yieldExpr = mapOptional(a.yieldExpr(), onOperand);
                     return arg == a.argument() && yieldExpr == a.yieldExpr() ? a
-                            : new AggregateFunction(a.operator(), arg, yieldExpr, a.alias());
+                            : new AggregateFunction(a.operator(), arg, yieldExpr, a.alias(), a.distinct());
                 });
                 yield keys == n.groupingKeys() && aggs == n.aggregates() ? n
                         : new AggregationNode(keys, aggs, n.input(), n.location());

@@ -309,6 +309,12 @@ public abstract class AstBuilders {
                 Optional.empty());
     }
 
+    /** An aliased distinct aggregate, e.g. {@code COUNT(DISTINCT session) → sessions}. */
+    public static AggregateFunction distinctAgg(AggregateOperator operator, Operand argument,
+                                                String alias) {
+        return new AggregateFunction(operator, argument, Optional.empty(), Optional.of(alias), true);
+    }
+
     /** An aliased two-argument aggregate, e.g. {@code ARGMAX(rank, name) → top}. */
     public static AggregateFunction argAgg(AggregateOperator operator, Operand argument,
                                            Operand yieldExpr, String alias) {

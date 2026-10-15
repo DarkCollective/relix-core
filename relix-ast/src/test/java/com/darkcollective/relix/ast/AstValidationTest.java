@@ -315,6 +315,21 @@ final class AstValidationTest extends AstTestSupport {
     }
 
     @Nested
+    @DisplayName("AggregateFunction")
+    final class Aggregates {
+
+        @Test
+        @DisplayName("A ranking aggregate has no distinct form")
+        void rejectsDistinctRanking() {
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> new AggregateFunction(AggregateOperator.ARGMAX,
+                            new AttributeOperand("a"), java.util.Optional.of(new AttributeOperand("b")),
+                            java.util.Optional.empty(), true))
+                    .withMessage("ARGMAX ranks rows and has no distinct form");
+        }
+    }
+
+    @Nested
     @DisplayName("GroupingKey")
     final class Grouping {
 

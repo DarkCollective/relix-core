@@ -41,7 +41,12 @@ import java.util.Optional;
  *   <li>Derived aggregate: {@code SUM(price * qty)}, {@code MIN(Abs(delta))}</li>
  *   <li>Aliased aggregate: {@code SUM(salary) → total_salary}</li>
  *   <li>Argmax: {@code ARGMAX(amount, order_id) → biggest_order}</li>
+ *   <li>Distinct: {@code COUNT(DISTINCT session) → sessions}</li>
  * </ul>
+ *
+ * <p>A {@linkplain #distinct() distinct} aggregate reads each distinct value of its
+ * argument once per group, as SQL's {@code COUNT(DISTINCT x)} does. It is not
+ * decomposable: a distinct count is not the sum of partial distinct counts.
  *
  * @param operator  the aggregate operator
  * @param argument  the expression the operator reads (the ranking expression for
@@ -49,12 +54,14 @@ import java.util.Optional;
  * @param yieldExpr for ARGMAX/ARGMIN, the expression whose value is returned at the
  *                  extremal row; empty for every other operator
  * @param alias     the optional output column name
+ * @param distinct  whether the aggregate reads each distinct argument value once
  */
 public record AggregateFunction(
         AggregateOperator operator,
         Operand argument,
         Optional<Operand> yieldExpr,
-        Optional<String> alias
+        Optional<String> alias,
+        boolean distinct
 ) {
     public AggregateFunction {
         Objects.requireNonNull(operator, "operator");
@@ -66,7 +73,21 @@ public record AggregateFunction(
                 throw new IllegalArgumentException("alias cannot be blank");
             }
         });
+        if (distinct && yieldExpr.isPresent()) {
+            throw new IllegalArgumentException(
+                    operator + " ranks rows and has no distinct form");
+        }
     }
+
+    /**
+     * An aggregate over every value of its argument, as written without
+     * {@code DISTINCT}.
+     */
+    public AggregateFunction(AggregateOperator operator, Operand argument,
+                             Optional<Operand> yieldExpr, Optional<String> alias) {
+        this(operator, argument, yieldExpr, alias, false);
+    }
+
 
     // ── String-based factories (wrap a column name as an AttributeOperand) ──────
 

@@ -342,6 +342,22 @@ final class OptimizerRuleEquivalenceTest {
         }
 
         @Test
+        @DisplayName("DIST-002 — δ below a DISTINCT aggregate drops: the aggregate already reads each value once")
+        void distinctBelowDistinctAggregate() {
+            assertEquivalent(ORDERS
+                    + "query { γ region, COUNT(DISTINCT amount) → n, SUM(DISTINCT amount) → s (δ (Orders)) };\n",
+                    OptimizationCode.DIST_002);
+        }
+
+        @Test
+        @DisplayName("NEST-001 — μ over COLLECT(DISTINCT x) is not the projection it would be without DISTINCT")
+        void collectDistinctIsNoRoundTrip() {
+            assertNotFiredButEqual(ORDERS
+                    + "query { UNNEST amounts (γ cust, COLLECT(DISTINCT amount) → amounts (Orders)) };\n",
+                    OptimizationCode.NEST_001);
+        }
+
+        @Test
         @DisplayName("PROD-001 — R × UNIT is R, heading and all")
         void productAgainstUnit() {
             assertEquivalent(ORDERS + "query { (Orders) × UNIT };\n",

@@ -31,9 +31,11 @@ import com.darkcollective.relix.symbol.Type;
 import static com.darkcollective.relix.processor.exec.ExecSupport.keys;
 import static com.darkcollective.relix.processor.exec.ExecSupport.rowComparator;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -254,6 +256,8 @@ final class AggregateExecutor {
 
         boolean skipNulls = reduction.signature().skipsNulls();
         Accumulator accumulator = reduction.accumulator(eval.functionContext());
+        // DISTINCT: each value once, under the engine's equality (1 and 1.0 are one value).
+        Set<List<Value>> seen = agg.distinct() ? new HashSet<>() : null;
         for (Row row : rows) {
             List<Value> values = new ArrayList<>(arguments.size());
             boolean absent = false;
@@ -263,6 +267,9 @@ final class AggregateExecutor {
                 values.add(value);
             }
             if (skipNulls && absent) {
+                continue;
+            }
+            if (seen != null && !seen.add(ExecSupport.canonicalKey(values, List.of()))) {
                 continue;
             }
             accumulator.accumulate(values);
