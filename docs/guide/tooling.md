@@ -79,6 +79,30 @@ query Large;
 A comment inside a statement is printed immediately before the part of the expression it
 preceded. A script built from statements rather than parsed has no comments to print.
 
+A piece of an expression prints the same way. `Operand.prettyPrint` writes a scalar
+expression as text that parses back to an equal one, and `SortSpecification.render`
+writes a sort key the way a `τ` reads it, so a tool can show what a result is sorted by
+even when the key is an expression rather than a column:
+
+```java
+import com.darkcollective.relix.ast.SortNode;
+import com.darkcollective.relix.ast.SortSpecification;
+import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
+import com.darkcollective.relix.lang.ast.QueryStatement;
+
+Script sorted = Relix.parse("query { τ price * qty DESC, name (Orders) };");
+QueryStatement query = (QueryStatement) sorted.statements().get(0);
+SortNode sort = (SortNode) ((ExpressionQueryTarget) query.target()).expression();
+for (SortSpecification key : sort.sortSpecs()) {
+    System.out.println(key.render() + "  (column: " + key.columnName().orElse("none") + ")");
+}
+```
+
+```
+price * qty DESC  (column: none)
+name  (column: name)
+```
+
 A `ScriptLoader` is where parsing usually happens. A session resolves each `import`
 through its loader, and a loader reads the file and parses it, naming the file so a
 failure inside it points there. This one serves files from memory:
