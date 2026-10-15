@@ -426,6 +426,12 @@ public final class SymbolCollector {
                     && !inline.references().isEmpty()) {
                 inlineReferences.put(asgn.name(), inline.references());
             }
+            if (asgn.body() instanceof InlineTableBody inline) {
+                SourceLocation loc = asgn.location();
+                for (String message : InlineCellChecks.warnings(asgn.name(), inline.table())) {
+                    errors.add(SemanticError.warning(filePath, loc.line(), loc.column(), message));
+                }
+            }
         }
     }
 

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.processor.exec;
 
+import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
@@ -92,8 +93,14 @@ final class SessionizeExecutor {
         List<Row> output = new ArrayList<>();
         for (var entry : indexed.groups().entrySet()) {
             List<Row> partition = new ArrayList<>(entry.getValue());
-            partition.sort(comparator);
-            assignSessions(node, partition, inputSchema, outputSchema, gapSchema, boundaryExpr, eval, output);
+            try {
+                partition.sort(comparator);
+                assignSessions(node, partition, inputSchema, outputSchema, gapSchema, boundaryExpr, eval, output);
+            } catch (EvaluationException e) {
+                // Every value compared here is read from the order column, so name it:
+                // the bare failure names two types and a cell, but not where the cell is.
+                throw new EvaluationException("SESSIONIZE by " + node.orderColumn() + ": " + e.getMessage(), e);
+            }
         }
         return BagRelation.of(outputSchema, output).stream();
     }

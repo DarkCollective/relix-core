@@ -18,7 +18,9 @@ package com.darkcollective.relix.processor.eval;
 import com.darkcollective.relix.processor.EvaluationException;
 
 import com.darkcollective.relix.ast.AndPredicate;
+import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.ComparisonPredicate;
+import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.ElementOfPredicate;
 import com.darkcollective.relix.ast.internal.LikePatterns;
 import com.darkcollective.relix.ast.NotPredicate;
@@ -168,10 +170,10 @@ public final class PredicateEvaluator {
         return Truth.of(switch (pred.operator()) {
             case EQUAL         ->  valuesEqual(left, right);
             case NOT_EQUAL     -> !valuesEqual(left, right);
-            case LESS          -> compareOrdered(left, right) <  0;
-            case LESS_EQUAL    -> compareOrdered(left, right) <= 0;
-            case GREATER       -> compareOrdered(left, right) >  0;
-            case GREATER_EQUAL -> compareOrdered(left, right) >= 0;
+            case LESS          -> compareOrdered(pred, left, right) <  0;
+            case LESS_EQUAL    -> compareOrdered(pred, left, right) <= 0;
+            case GREATER       -> compareOrdered(pred, left, right) >  0;
+            case GREATER_EQUAL -> compareOrdered(pred, left, right) >= 0;
         });
     }
 
@@ -263,7 +265,12 @@ public final class PredicateEvaluator {
         return ValueComparator.equal(left, right);
     }
 
-    private static int compareOrdered(Value left, Value right) {
-        return ValueComparator.compareNonNull(left, right);
+    private static int compareOrdered(ComparisonPredicate pred, Value left, Value right) {
+        return ValueComparator.compareNonNull(left, right, columnOf(pred.left()), columnOf(pred.right()));
+    }
+
+    /** The column an operand reads, for a failure to name; null for anything else. */
+    private static String columnOf(Operand operand) {
+        return operand instanceof AttributeOperand a ? a.name() : null;
     }
 }
