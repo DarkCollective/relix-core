@@ -16,6 +16,7 @@
 package com.darkcollective.relix.ast;
 
 import com.darkcollective.relix.ast.visitor.OperandVisitor;
+import com.darkcollective.relix.ast.visitor.internal.OperandPrettyPrinter;
 
 /**
  * Root sealed interface for scalar value expressions used in projections and
@@ -52,4 +53,33 @@ public sealed interface Operand permits
 
     /** Returns the source location of the first token of this operand. */
     SourceLocation location();
+
+    /**
+     * This operand as Relix text, writing the operators of any condition it holds as
+     * glyphs. The same as {@link #prettyPrint(Spelling) prettyPrint(Spelling.GLYPHS)}.
+     *
+     * @return the operand as {@code .relix} text; never null
+     * @since 1.0
+     */
+    default String prettyPrint() {
+        return prettyPrint(Spelling.GLYPHS);
+    }
+
+    /**
+     * This operand as Relix text that parses back to an equal operand, source
+     * locations aside: {@code price * qty}, {@code UCase(name)}, {@code "it\"s"}.
+     * Parentheses appear only where precedence needs them, and a column whose name
+     * is a reserved word is written in backticks.
+     *
+     * <p>{@code spelling} chooses how the operators of a condition the operand holds
+     * are written, as {@link RelNode#prettyPrint(Spelling)} does: {@code IIf(a ≥ 1, x, y)}
+     * for {@link Spelling#GLYPHS}, {@code IIf(a >= 1, x, y)} for {@link Spelling#KEYWORDS}.
+     *
+     * @param spelling glyphs or ASCII keywords; must not be null
+     * @return the operand as {@code .relix} text; never null
+     * @since 1.0
+     */
+    default String prettyPrint(Spelling spelling) {
+        return accept(new OperandPrettyPrinter(spelling));
+    }
 }

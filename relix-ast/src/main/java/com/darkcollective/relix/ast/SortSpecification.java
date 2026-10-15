@@ -63,6 +63,35 @@ public record SortSpecification(Operand expression, SortDirection direction) {
     }
 
     /**
+     * This sort key as Relix text, as a {@code τ} writes it: the expression, then
+     * {@code DESC} for a descending key. The same as
+     * {@link #render(Spelling) render(Spelling.GLYPHS)}.
+     *
+     * @return the key as {@code .relix} text, such as {@code price * qty DESC}; never null
+     * @since 1.0
+     */
+    public String render() {
+        return render(Spelling.GLYPHS);
+    }
+
+    /**
+     * This sort key as Relix text, as a {@code τ} writes it: the expression as
+     * {@link Operand#prettyPrint(Spelling)} renders it, then {@code DESC} for a
+     * descending key. An ascending key is written without a direction, which is
+     * what a {@code τ} reads as ascending, so {@code SORT <key> (T)} parses back to
+     * an equal key.
+     *
+     * @param spelling glyphs or ASCII keywords for a condition the expression holds;
+     *                 must not be null
+     * @return the key as {@code .relix} text, such as {@code price * qty DESC}; never null
+     * @since 1.0
+     */
+    public String render(Spelling spelling) {
+        String expr = expression.prettyPrint(spelling);
+        return direction == SortDirection.DESC ? expr + " DESC" : expr;
+    }
+
+    /**
      * The effective {@link NullPlacement} for this sort key.  Returns the
      * SQL-standard default: {@link NullPlacement#NULLS_LAST} for
      * {@link SortDirection#ASC} and {@link NullPlacement#NULLS_FIRST} for

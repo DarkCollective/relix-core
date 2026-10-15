@@ -122,7 +122,12 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
             case DIVIDE -> "/";
         };
 
-        String result = node.left().accept(new OperandPrettyPrinter(opPrecedence, spelling)) + " " + operator + " " + node.right().accept(new OperandPrettyPrinter(opPrecedence, spelling));
+        // The operators associate to the left, so a right operand of the same
+        // precedence is parenthesised: a - (b - c) is not a - b - c, and keeping the
+        // pair for + and * too means the text parses back to the same tree.
+        String result = node.left().accept(new OperandPrettyPrinter(opPrecedence, spelling))
+                + " " + operator + " "
+                + node.right().accept(new OperandPrettyPrinter(opPrecedence + 1, spelling));
 
         if (opPrecedence < precedence) {
             result = "(" + result + ")";
@@ -157,8 +162,9 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
     @Override
     public String visit(UnaryOperand node) {
         String inner = node.operand().accept(this);
-        // Parenthesise binary expressions to make precedence unambiguous: -(a + b)
-        if (node.operand() instanceof BinaryArithmeticExpression) {
+        // Parenthesise binary expressions to make precedence unambiguous: -(a + b).
+        // A nested minus is parenthesised too, since -- opens a comment: -(-a).
+        if (node.operand() instanceof BinaryArithmeticExpression || inner.startsWith("-")) {
             return "-(" + inner + ")";
         }
         return "-" + inner;
