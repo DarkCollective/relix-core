@@ -1029,6 +1029,41 @@ final class SqlPushdownPlannerTest {
     }
 
     @Nested
+    @DisplayName("NULLS FIRST / LAST and WITH TIES (#133)")
+    class NullsAndTies {
+
+        private static String scores(String url) {
+            return "connection db from database { url: \"" + url + "\" };\n"
+                    + "source S from db { table: \"s\", schema: { id: NUMBER, score: NUMBER } };\n";
+        }
+
+        private Optional<String> sql(String url, String query) {
+            return push(scores(url) + "query { " + query + " };").map(PhysicalNode.PushedScan::nativeQuery);
+        }
+
+        @Test
+        @DisplayName("a key's placement is stated in the ORDER BY")
+        void placement() {
+            assertThat(sql("jdbc:postgresql://h/db", "τ score DESC NULLS FIRST, id (S)"))
+                    .contains("SELECT \"id\", \"score\" FROM \"s\" "
+                            + "ORDER BY \"score\" DESC NULLS FIRST, \"id\" ASC NULLS LAST");
+            assertThat(sql("jdbc:mysql://h/db", "τ score NULLS FIRST (S)"))
+                    .contains("SELECT `id`, `score` FROM `s` ORDER BY (`score` IS NULL) DESC, `score` ASC");
+        }
+
+        @Test
+        @DisplayName("WITH TIES is PostgreSQL's FETCH … WITH TIES, and runs in the engine elsewhere")
+        void ties() {
+            assertThat(sql("jdbc:postgresql://h/db", "λ 1, 3 WITH TIES (τ score DESC (S))"))
+                    .contains("SELECT \"id\", \"score\" FROM \"s\" ORDER BY \"score\" DESC NULLS LAST "
+                            + "OFFSET 1 ROWS FETCH FIRST 3 ROWS WITH TIES");
+            assertThat(sql("jdbc:mysql://h/db", "λ 3 WITH TIES (τ score DESC (S))")).isEmpty();
+            // Without ties the same λ still folds as a LIMIT.
+            assertThat(sql("jdbc:mysql://h/db", "λ 3 (τ score DESC (S))")).isPresent();
+        }
+    }
+
+    @Nested
     @DisplayName("+ is addition or joining, and is sent as whichever it is (#132)")
     class Concatenation {
 

@@ -602,7 +602,8 @@ public final class IrReport {
                     o.constraints(), o.groupingKeys(), o.allocation());
 
             case TopKNode t -> "TOP "
-                    + t.offset().map(o -> o + ", ").orElse("") + t.count() + " "
+                    + t.offset().map(o -> o + ", ").orElse("") + t.count()
+                    + (t.withTies() ? " WITH TIES " : " ")
                     + t.sortSpecs().stream()
                         .map(DisplayLabels::sortKey)
                         .collect(Collectors.joining(", "))
@@ -668,7 +669,9 @@ public final class IrReport {
                     + (tn.orderSpecs().isEmpty() ? ""
                             : " ORDER " + tn.orderSpecs().stream()
                                     .map(s -> s.expression().accept(OPND)
-                                            + (s.direction() == SortDirection.DESC ? " DESC" : ""))
+                                            + (s.direction() == SortDirection.DESC ? " DESC" : "")
+                                            + (s.nulls() == com.darkcollective.relix.ast.NullPlacement.NULLS_FIRST
+                                                    ? " NULLS FIRST" : ""))
                                     .collect(java.util.stream.Collectors.joining(", ")))
                     + " AS " + tn.childrenColumn();
 

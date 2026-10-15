@@ -289,6 +289,11 @@ public abstract class AstBuilders {
         return new SortSpecification(expression, direction);
     }
 
+    /** A sort key on an arbitrary expression, with its NULLs placed first or last. */
+    public static SortSpecification sortKey(Operand expression, SortDirection direction, NullPlacement nulls) {
+        return new SortSpecification(expression, direction, nulls);
+    }
+
     /** An unaliased aggregate over a bare column, e.g. {@code SUM(amount)}. */
     public static AggregateFunction agg(AggregateOperator operator, String attribute) {
         return AggregateFunction.simple(operator, attribute);
@@ -753,6 +758,13 @@ public abstract class AstBuilders {
     public static TopKNode topK(List<String> groupingAttributes, List<SortSpecification> sortSpecs,
                                 Optional<Long> offset, long count, RelNode input) {
         return new TopKNode(groupingAttributes, sortSpecs, offset, count, input,
+                SourceLocation.UNKNOWN);
+    }
+
+    /** {@code TOP … WITH TIES} — the first {@code count} rows of each partition, and every row tied with the last. */
+    public static TopKNode topKWithTies(List<String> groupingAttributes, List<SortSpecification> sortSpecs,
+                                        Optional<Long> offset, long count, RelNode input) {
+        return new TopKNode(groupingAttributes, sortSpecs, offset, count, true, input,
                 SourceLocation.UNKNOWN);
     }
 

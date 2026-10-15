@@ -32,6 +32,7 @@ import com.darkcollective.relix.ast.RankingFunction;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.SelectionNode;
+import com.darkcollective.relix.ast.NullPlacement;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.GroupingKey;
@@ -812,8 +813,8 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             if (col.isEmpty()) {
                 return Optional.empty();
             }
-            orderExprs.addAll(p.dialect.orderByTerms(
-                    col.get(), spec.direction() == SortDirection.DESC));
+            orderExprs.addAll(p.dialect.orderByTerms(col.get(), spec.direction() == SortDirection.DESC,
+                    spec.nulls() == NullPlacement.NULLS_FIRST));
         }
         String overClause = p.dialect.windowOverClause(partitionCols, orderExprs, node.frame());
         String windowExpr = fnSql.get() + overClause + " AS " + p.dialect.quote(node.outputColumn());
@@ -962,8 +963,8 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             if (col.isEmpty()) {
                 return false;
             }
-            orderBy.addAll(p.dialect.orderByTerms(
-                    col.get(), spec.direction() == SortDirection.DESC));
+            orderBy.addAll(p.dialect.orderByTerms(col.get(), spec.direction() == SortDirection.DESC,
+                    spec.nulls() == NullPlacement.NULLS_FIRST));
         }
         p.orderBy = orderBy;
         p.deliveredKeys = keys;
@@ -1016,11 +1017,17 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         Pushed p = input.get();
         // Same constraint as sort(): ORDER BY must precede LIMIT and be folded onto
         // base+WHERE, so every ordering key is a real table column.
+        // WITH TIES needs a clause of its own, and where the dialect has none the ties
+        // are found in the engine.
+        if (node.withTies() && p.dialect.limitWithTies(node.count(), 0).isEmpty()) {
+            return Optional.empty();
+        }
         if (p.projectionApplied || p.sortApplied || p.limitApplied
                 || namesAWindowAlias(p, node.groupingAttributes(), node.sortSpecs())
                 || !foldOrderBy(p, node.sortSpecs())) {
             return Optional.empty();
         }
+        p.withTies = node.withTies();
         p.limit = node.count();
         p.offset = node.offset().orElse(0L);
         p.limitApplied = true;
@@ -1611,6 +1618,7 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         final java.util.Set<String> windowAliases = new java.util.HashSet<>();
         long limit = -1;
         long offset = 0;
+        boolean withTies = false;         // the limit keeps the rows tied with its last (TOP … WITH TIES)
         Schema schema;
 
         // Set only while this is a bare base scan (enables join folding).
@@ -1653,7 +1661,8 @@ final class SqlPushdownPlanner implements PushdownRenderer {
                 sql.append(" ORDER BY ").append(String.join(", ", orderBy));
             }
             if (limitApplied) {
-                sql.append(' ').append(dialect.limit(limit, offset));
+                sql.append(' ').append(withTies ? dialect.limitWithTies(limit, offset).orElseThrow()
+                        : dialect.limit(limit, offset));
             }
             return sql.toString();
         }

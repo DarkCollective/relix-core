@@ -16,17 +16,14 @@
 package com.darkcollective.relix.ast;
 
 /**
- * Controls where {@code NULL} values appear when a column is used as a sort key.
+ * Where {@code NULL} values land when a column is used as a sort key.
  *
- * <p>SQL specifies two placements: {@link #NULLS_FIRST} places all {@code NULL}
- * values before any non-{@code NULL} value; {@link #NULLS_LAST} places them after.
- * The SQL standard defaults are {@link #NULLS_LAST} for {@link SortDirection#ASC}
- * and {@link #NULLS_FIRST} for {@link SortDirection#DESC}.  These defaults apply
- * when no explicit placement is specified — see {@link SortSpecification#nullPlacement()}.
- *
- * <p>Used by the merge-join comparator to ensure both merge
- * inputs are compared with the same {@code NULL} ordering, and by the sort executor
- * to honour explicit {@code NULLS FIRST}/{@code NULLS LAST} clauses (Phase C4+).
+ * <p>{@link #NULLS_FIRST} places every {@code NULL} before any non-{@code NULL} value;
+ * {@link #NULLS_LAST} places them after. A sort key holds the placement in the output,
+ * whichever way the key runs ({@link SortSpecification#nulls()}); Relix's default is
+ * {@link #NULLS_LAST} in both directions, and SQL's {@code NULLS FIRST} and
+ * {@code NULLS LAST} choose. {@link SortSpecification#nullPlacement()} gives the same
+ * placement as it reads before a descending key is reversed.
  */
 public enum NullPlacement {
 

@@ -20,23 +20,39 @@ import java.util.Optional;
 
 /**
  * A single sort key: the {@link Operand} expression to order by, the direction
- * ({@link SortDirection#ASC} / {@link SortDirection#DESC}), and the implicit
- * {@code NULL} placement.
+ * ({@link SortDirection#ASC} / {@link SortDirection#DESC}), and where its
+ * {@code NULL}s go.
  *
  * <p>The expression is a full scalar expression, not merely a column reference,
  * so a relation may be ordered by a derived value — e.g.
  * {@code τ to_timestamp(logged) DESC (RawLogs)}.  The common case
  * {@code τ name (Users)} is simply an ordering by a bare {@link AttributeOperand}.
  *
- * <p>Null placement is not a surface-syntax option — the parser does not accept
- * {@code NULLS FIRST}/{@code NULLS LAST}, so a specification carries no explicit
- * placement; {@link #nullPlacement()} gives the SQL-standard default that matches
- * the direction.
+ * <p>{@code nulls} is where a missing value lands in the output, whichever way the key
+ * runs: {@link NullPlacement#NULLS_LAST}, the default, puts NULLs after every value
+ * ascending and descending alike, and {@link NullPlacement#NULLS_FIRST} before them.
+ * SQL's {@code NULLS FIRST} and {@code NULLS LAST} set it; a key written without either
+ * holds {@code NULLS_LAST}, so writing the default out builds an equal key.
+ *
+ * @param expression the value to order by; never null
+ * @param direction  ascending or descending; never null
+ * @param nulls      where NULLs land in the output; never null
  */
-public record SortSpecification(Operand expression, SortDirection direction) {
+public record SortSpecification(Operand expression, SortDirection direction, NullPlacement nulls) {
     public SortSpecification {
         Objects.requireNonNull(expression, "expression");
         Objects.requireNonNull(direction, "direction");
+        Objects.requireNonNull(nulls, "nulls");
+    }
+
+    /**
+     * A sort key with NULLs last, the default placement.
+     *
+     * @param expression the value to order by; never null
+     * @param direction  ascending or descending; never null
+     */
+    public SortSpecification(Operand expression, SortDirection direction) {
+        this(expression, direction, NullPlacement.NULLS_LAST);
     }
 
     /**
@@ -64,7 +80,8 @@ public record SortSpecification(Operand expression, SortDirection direction) {
 
     /**
      * This sort key as Relix text, as a {@code τ} writes it: the expression, then
-     * {@code DESC} for a descending key. The same as
+     * {@code DESC} for a descending key and {@code NULLS FIRST} for one that puts its
+     * NULLs first. The same as
      * {@link #render(Spelling) render(Spelling.GLYPHS)}.
      *
      * @return the key as {@code .relix} text, such as {@code price * qty DESC}; never null
@@ -77,7 +94,7 @@ public record SortSpecification(Operand expression, SortDirection direction) {
     /**
      * This sort key as Relix text, as a {@code τ} writes it: the expression as
      * {@link Operand#prettyPrint(Spelling)} renders it, then {@code DESC} for a
-     * descending key. An ascending key is written without a direction, which is
+     * descending key and {@code NULLS FIRST} for one that puts its NULLs first. An ascending key is written without a direction, which is
      * what a {@code τ} reads as ascending, so {@code SORT <key> (T)} parses back to
      * an equal key.
      *
@@ -88,22 +105,37 @@ public record SortSpecification(Operand expression, SortDirection direction) {
      */
     public String render(Spelling spelling) {
         String expr = expression.prettyPrint(spelling);
-        return direction == SortDirection.DESC ? expr + " DESC" : expr;
+        String key = direction == SortDirection.DESC ? expr + " DESC" : expr;
+        return nulls == NullPlacement.NULLS_FIRST ? key + " NULLS FIRST" : key;
     }
 
     /**
-     * The effective {@link NullPlacement} for this sort key.  Returns the
-     * SQL-standard default: {@link NullPlacement#NULLS_LAST} for
-     * {@link SortDirection#ASC} and {@link NullPlacement#NULLS_FIRST} for
-     * {@link SortDirection#DESC}.
+     * This key with {@code expression} in place of its own, keeping its direction and
+     * NULL placement.
      *
-     * <p>This matches the existing sort-executor behaviour, and is used by the
-     * merge-join comparator to guarantee consistent
-     * {@code NULL} ordering on both merge inputs.
+     * @param expression the value to order by; never null
+     * @return the key
+     * @since 1.0
+     */
+    public SortSpecification withExpression(Operand expression) {
+        return new SortSpecification(expression, direction, nulls);
+    }
+
+    /**
+     * Where NULLs go in this key's <em>ascending</em> comparator, the one a descending
+     * key reverses: {@link #nulls()} for an ascending key, and the other placement for a
+     * descending one, so that reversing it lands NULLs where {@link #nulls()} says.
      *
-     * @return the effective null placement; never null
+     * <p>A comparator built from it and then reversed for {@link SortDirection#DESC}
+     * orders exactly as this key does; the sort executor and the merge-join comparator
+     * both build theirs that way.
+     *
+     * @return the placement before the direction is applied; never null
      */
     public NullPlacement nullPlacement() {
-        return direction == SortDirection.ASC ? NullPlacement.NULLS_LAST : NullPlacement.NULLS_FIRST;
+        if (direction == SortDirection.ASC) {
+            return nulls;
+        }
+        return nulls == NullPlacement.NULLS_LAST ? NullPlacement.NULLS_FIRST : NullPlacement.NULLS_LAST;
     }
 }

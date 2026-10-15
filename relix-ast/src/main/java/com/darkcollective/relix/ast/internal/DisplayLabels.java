@@ -24,6 +24,7 @@ import com.darkcollective.relix.ast.ProduceBound;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveStart;
+import com.darkcollective.relix.ast.NullPlacement;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -84,7 +85,7 @@ public final class DisplayLabels {
 
     /**
      * Renders a sort key as {@code expr↑} (ascending) or {@code expr↓}
-     * (descending).
+     * (descending), followed by {@code NULLS FIRST} for a key that puts its NULLs first.
      *
      * @param spec the sort specification; must not be null
      * @return the rendered sort key
@@ -92,7 +93,8 @@ public final class DisplayLabels {
     public static String sortKey(SortSpecification spec) {
         Objects.requireNonNull(spec, "spec");
         return spec.expression().accept(OPND)
-                + (spec.direction() == SortDirection.DESC ? "↓" : "↑");
+                + (spec.direction() == SortDirection.DESC ? "↓" : "↑")
+                + (spec.nulls() == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : "");
     }
 
     /** Renders a comma-separated list of sort keys. */

@@ -395,7 +395,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                 .collect(Collectors.joining(", "));
         String per = node.groupingAttributes().isEmpty()
                 ? "" : " PER " + String.join(", ", node.groupingAttributes());
-        return "TOP " + count + " " + specs + per
+        return "TOP " + count + (node.withTies() ? " WITH TIES " : " ") + specs + per
                 + " (" + print(node.input()) + ")";
     }
 
@@ -451,10 +451,11 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         return key.alias().map(a -> expr + " " + spelling.of("→") + " " + a).orElse(expr);
     }
 
-    /** Renders a sort key as {@code expression [DESC]}. */
+    /** Renders a sort key as {@code expression [DESC] [NULLS FIRST]}. */
     private String renderSortKey(SortSpecification spec) {
         return spec.expression().accept(operandPrinter)
-                + (spec.direction() == SortDirection.DESC ? " DESC" : "");
+                + (spec.direction() == SortDirection.DESC ? " DESC" : "")
+                + (spec.nulls() == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : "");
     }
 
     @Override

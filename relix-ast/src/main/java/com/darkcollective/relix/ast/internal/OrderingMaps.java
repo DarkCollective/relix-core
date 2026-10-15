@@ -74,7 +74,7 @@ public final class OrderingMaps {
             if (name.isEmpty()) {
                 break;
             }
-            kept.add(new SortSpecification(name.get(), key.direction()));
+            kept.add(key.withExpression(new AttributeOperand(name.get())));
         }
         return Ordering.of(kept);
     }
@@ -97,7 +97,7 @@ public final class OrderingMaps {
             if (name.isEmpty()) {
                 break;
             }
-            kept.add(new SortSpecification(name.get(), key.direction()));
+            kept.add(key.withExpression(new AttributeOperand(name.get())));
         }
         return Ordering.of(kept);
     }
