@@ -214,6 +214,19 @@ public final class ValueComparator implements Comparator<Value> {
      * @throws EvaluationException if the values have no shared order
      */
     public static int compareNonNull(Value a, Value b) {
+        return compareNonNull(a, b, null, null);
+    }
+
+    /**
+     * {@link #compareNonNull(Value, Value)}, naming in its failure the column each value
+     * was read from, so a text cell that is not the temporal it meets is reported as
+     * {@code cannot read '2026-03-1T10:45:00Z' (ts) as a TIMESTAMP}.
+     *
+     * @param aColumn the column {@code a} was read from, or null when it is not a column
+     * @param bColumn the column {@code b} was read from, or null when it is not a column
+     * @throws EvaluationException if the values have no shared order
+     */
+    public static int compareNonNull(Value a, Value b, String aColumn, String bColumn) {
         final Value ca = canonical(a);
         final Value cb = canonical(b);
         return switch (ca) {
@@ -235,8 +248,33 @@ public final class ValueComparator implements Comparator<Value> {
                     sa.value().compareTo(sb.value());
             case DurationValue  da when cb instanceof DurationValue  db ->
                     da.value().compareTo(db.value());
-            default -> throw new EvaluationException(
-                    "Cannot compare " + ca.type() + " with " + cb.type());
+            default -> throw new EvaluationException(unorderable(ca, aColumn, cb, bColumn));
         };
+    }
+
+    /**
+     * Why two canonical values have no shared order. Text that meets a temporal is text
+     * that did not read as one, since {@link #canonical} reads every string that does,
+     * so the message names the text and what it failed to be.
+     */
+    private static String unorderable(Value a, String aColumn, Value b, String bColumn) {
+        String message = "Cannot compare " + a.type() + " with " + b.type();
+        if (a instanceof StringValue s && isTemporal(b)) {
+            return message + ": " + unreadable(s, aColumn, b);
+        }
+        if (b instanceof StringValue s && isTemporal(a)) {
+            return message + ": " + unreadable(s, bColumn, a);
+        }
+        return message;
+    }
+
+    private static String unreadable(StringValue text, String column, Value temporal) {
+        return "cannot read '" + text.value() + "'" + (column == null ? "" : " (" + column + ")")
+                + " as a " + temporal.type();
+    }
+
+    private static boolean isTemporal(Value v) {
+        return v instanceof DateValue || v instanceof TimeValue
+                || v instanceof TimestampValue || v instanceof DurationValue;
     }
 }

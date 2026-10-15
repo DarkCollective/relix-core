@@ -54,6 +54,24 @@ Items := csv[
 ];
 ```
 
+A cell is a bare value. A column of dates or timestamps holds text such as
+`2026-03-01T09:00:00Z`, which a comparison or `SESSIONIZE` reads as the temporal it
+spells. Two cells pass analysis and then cannot be read that way, so analysis warns
+about each:
+
+- A cell written in the literal form, such as `TIMESTAMP '2026-03-01T09:00:00Z'`, is
+  that whole text and never reads as a timestamp. The warning gives the bare value to
+  write instead.
+- A cell that is not the temporal kind the rest of its column is, such as
+  `2026-03-1T10:45:00Z` among ISO timestamps. The warning names its row and its text.
+
+A run-time failure to read a cell as a temporal names the cell's text, and the column
+when a comparison reads it from one:
+
+```
+Cannot compare STRING with TIMESTAMP: cannot read '2026-03-1T10:45:00Z' (ts) as a TIMESTAMP
+```
+
 An inline table may declare foreign-key relationships with a trailing
 `references { col -> Target.col }` clause — the inline-table
 counterpart of the `references:` field on source declarations. Each entry
