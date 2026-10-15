@@ -2689,7 +2689,7 @@ public final class RelAlgebraParser {
     }
 
     private Operand parseArithmeticExpression(int minPrecedence) {
-        Operand left = parsePrimaryOperand();
+        Operand left = parseAtTimeZone(parsePrimaryOperand());
 
         while (isArithmeticOperator(current.type()) && arithmeticPrecedence(current.type()) >= minPrecedence) {
             Token operator = current;
@@ -2714,6 +2714,23 @@ public final class RelAlgebraParser {
         }
 
         return left;
+    }
+
+    /**
+     * SQL's {@code ts AT TIME ZONE zone}, which binds tighter than any arithmetic, as in
+     * PostgreSQL: it is {@code TIMEZONE(zone, ts)}, the wall-clock time in the zone. The
+     * three words are matched by their text, so none is reserved.
+     */
+    private Operand parseAtTimeZone(Operand operand) {
+        while (isWord(current, "AT") && peek(1).type() == TokenType.TIME && isWord(peek(2), "ZONE")) {
+            Token at = current;
+            advance();
+            advance();
+            advance();
+            Operand zone = parsePrimaryOperand();
+            operand = new FunctionCall("TIMEZONE", List.of(zone, operand), loc(at));
+        }
+        return operand;
     }
 
     private Operand parsePrimaryOperand() {
@@ -2848,6 +2865,20 @@ public final class RelAlgebraParser {
             }
             if (sb.toString().equalsIgnoreCase("EXTRACT") && isNameToken(peek(1)) && isWord(peek(2), "FROM")) {
                 return parseExtract(nameToken);
+            }
+            // SQL Server's DATEDIFF(month, a, b) names its unit as a bare word.
+            if (sb.toString().equalsIgnoreCase("DATEDIFF") && isNameToken(peek(1))
+                    && peek(2).type() == TokenType.COMMA) {
+                advance(); // (
+                Token unit = current;
+                advance();
+                List<Operand> arguments = new ArrayList<>(List.of(new StringOperand(
+                        unit.lexeme().toLowerCase(java.util.Locale.ROOT), loc(unit))));
+                while (match(TokenType.COMMA)) {
+                    arguments.add(parseArgument());
+                }
+                expect(TokenType.RPAREN, "Expected ')' after function arguments");
+                return new FunctionCall(sb.toString(), arguments, loc(nameToken));
             }
             if (sb.toString().equalsIgnoreCase("SUBSTRING") || sb.toString().equalsIgnoreCase("POSITION")) {
                 return parseSqlStringCall(sb.toString(), nameToken);

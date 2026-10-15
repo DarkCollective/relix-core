@@ -191,6 +191,25 @@ final class DateTimeFunctions {
                 DATETIME.fn("EPOCH", NUMBER, PURE_DETERMINISTIC, List.of(p("t", ANY)),
                         DateTimeFunctions::epochSpelling, DateTimeFunctions::epoch),
 
+                // ts AT TIME ZONE zone: the wall-clock time in the zone at the instant ts,
+                // as a TIMESTAMP that reads it at UTC. PostgreSQL's timezone(zone, ts).
+                DATETIME.fn("TIMEZONE", TIMESTAMP, PURE_DETERMINISTIC,
+                        List.of(p("zone", STRING), p("ts", TIMESTAMP)), DateTimeFunctions::timezone),
+
+                DATETIME.fn("MAKE_DATE", DATE, PURE_DETERMINISTIC,
+                        List.of(p("year", NUMBER), p("month", NUMBER), p("day", NUMBER)),
+                        DateTimeFunctions::makeDateSpelling, DateTimeFunctions::makeDate),
+
+                DATETIME.fn("LAST_DAY", DATE, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                        Spellings.sqlOn("LAST_DAY", 1, Spellings.MYSQL),
+                        args -> lastDay(args.get(0))),
+
+                // DATEDIFF(unit, start, end): the unit boundaries crossed from start to
+                // end, as SQL Server counts them, each read at UTC.
+                DATETIME.fn("DATEDIFF", NUMBER, PURE_DETERMINISTIC,
+                        List.of(p("unit", STRING), p("start", ANY), p("end", ANY)),
+                        DateTimeFunctions::dateDiffSpelling, DateTimeFunctions::dateDiff),
+
                 DATETIME.fn("DATE_TRUNC", TIMESTAMP, PURE_DETERMINISTIC,
                         List.of(p("unit", STRING), p("ts", TIMESTAMP)),
                         DateTimeFunctions::dateTruncSpelling, DateTimeFunctions::dateTrunc),
@@ -351,6 +370,153 @@ final class DateTimeFunctions {
             case com.darkcollective.relix.value.StringValue text -> new TimeValue(LocalTime.parse(text.value()));
             default -> throw new ClassCastException();
         };
+    }
+
+    /** Time-zone names in any letter case, as PostgreSQL reads them: the IANA regions, and UTC. */
+    private static final Map<String, java.time.ZoneId> ZONES = zones();
+
+    private static Map<String, java.time.ZoneId> zones() {
+        Map<String, java.time.ZoneId> zones = new java.util.HashMap<>();
+        for (String id : java.time.ZoneId.getAvailableZoneIds()) {
+            // An offset written as a name, Etc/GMT+2 or UTC+2, counts west where an ISO
+            // offset counts east; POSIX and Java disagree on it, so neither is offered.
+            if (!id.matches(".*[+-]\\d.*")) {
+                zones.put(id.toLowerCase(Locale.ROOT), java.time.ZoneId.of(id));
+            }
+        }
+        zones.put("utc", ZoneOffset.UTC);
+        return Map.copyOf(zones);
+    }
+
+    /** {@code TIMEZONE(zone, ts)}: the wall-clock time in {@code zone} at the instant {@code ts}, read at UTC. */
+    private static Value timezone(List<Value> args) {
+        if (args.get(0).isNull() || args.get(1).isNull()) {
+            return NullValue.INSTANCE;
+        }
+        String name = string(args.get(0), "TIMEZONE");
+        java.time.ZoneId zone = ZONES.get(name.strip().toLowerCase(Locale.ROOT));
+        if (zone == null) {
+            throw reject("TIMEZONE: unknown time zone '" + name + "'; use a region name such as 'Europe/London', or 'UTC'");
+        }
+        if (!(args.get(1) instanceof TimestampValue ts)) {
+            throw reject("TIMEZONE: expected TIMESTAMP, got " + args.get(1).type());
+        }
+        return new TimestampValue(LocalDateTime.ofInstant(ts.value(), zone).toInstant(ZoneOffset.UTC));
+    }
+
+    /** {@code MAKE_DATE(year, month, day)}: the date, refusing one the calendar does not have. */
+    private static Value makeDate(List<Value> args) {
+        if (args.stream().anyMatch(Value::isNull)) {
+            return NullValue.INSTANCE;
+        }
+        int year = Arguments.integer(args.get(0), "MAKE_DATE");
+        int month = Arguments.integer(args.get(1), "MAKE_DATE");
+        int day = Arguments.integer(args.get(2), "MAKE_DATE");
+        try {
+            if (year < 1) {
+                throw new DateTimeException("year");
+            }
+            return new DateValue(LocalDate.of(year, month, day));
+        } catch (DateTimeException e) {
+            throw reject("MAKE_DATE: date field value out of range: " + year + "-" + month + "-" + day);
+        }
+    }
+
+    /** {@code MAKE_DATE} on PostgreSQL and DuckDB, and SQL Server's {@code DATEFROMPARTS}. */
+    private static Optional<String> makeDateSpelling(PushdownTarget target, List<String> arguments) {
+        if (!target.isFamily(PushdownTarget.SQL) || arguments.size() != 3) {
+            return Optional.empty();
+        }
+        if (target.isVariant(POSTGRES) || target.isVariant(DUCKDB)) {
+            return Optional.of("make_date(" + String.join(", ", arguments) + ")");
+        }
+        if (target.isVariant(SQLSERVER)) {
+            return Optional.of("DATEFROMPARTS(" + String.join(", ", arguments) + ")");
+        }
+        return Optional.empty();
+    }
+
+    /** The calendar date of a DATE or TIMESTAMP, the latter read at UTC. */
+    private static LocalDateTime moment(Value value, String function) {
+        return switch (value) {
+            case DateValue d -> d.value().atStartOfDay();
+            case TimestampValue ts -> LocalDateTime.ofInstant(ts.value(), ZoneOffset.UTC);
+            default -> throw reject(function + ": expected DATE or TIMESTAMP, got " + value.type());
+        };
+    }
+
+    /** {@code LAST_DAY(d)}: the last day of the month {@code d} falls in. */
+    private static Value lastDay(Value value) {
+        if (value.isNull()) {
+            return NullValue.INSTANCE;
+        }
+        LocalDate date = moment(value, "LAST_DAY").toLocalDate();
+        return new DateValue(date.withDayOfMonth(date.lengthOfMonth()));
+    }
+
+    /** The units {@code DATEDIFF} counts, by every name SQL Server gives them. */
+    private static final Map<String, String> DATEDIFF_UNITS = Map.ofEntries(
+            Map.entry("year", "year"), Map.entry("yy", "year"), Map.entry("yyyy", "year"),
+            Map.entry("quarter", "quarter"), Map.entry("qq", "quarter"), Map.entry("q", "quarter"),
+            Map.entry("month", "month"), Map.entry("mm", "month"), Map.entry("m", "month"),
+            Map.entry("week", "week"), Map.entry("wk", "week"), Map.entry("ww", "week"),
+            Map.entry("day", "day"), Map.entry("dd", "day"), Map.entry("d", "day"),
+            Map.entry("hour", "hour"), Map.entry("hh", "hour"),
+            Map.entry("minute", "minute"), Map.entry("mi", "minute"), Map.entry("n", "minute"),
+            Map.entry("second", "second"), Map.entry("ss", "second"), Map.entry("s", "second"));
+
+    private static String dateDiffUnit(Value unit) {
+        String written = string(unit, "DATEDIFF");
+        String canonical = DATEDIFF_UNITS.get(written.strip().toLowerCase(Locale.ROOT));
+        if (canonical == null) {
+            throw reject("DATEDIFF: unknown unit '" + written
+                    + "' (expected year, quarter, month, week, day, hour, minute or second)");
+        }
+        return canonical;
+    }
+
+    /**
+     * {@code DATEDIFF(unit, start, end)}: how many boundaries of the unit lie between
+     * {@code start} and {@code end}, negative when {@code end} is earlier. Months count
+     * month starts crossed, so 31 January to 1 February is 1; a week starts on Monday.
+     */
+    private static Value dateDiff(List<Value> args) {
+        if (args.stream().anyMatch(Value::isNull)) {
+            return NullValue.INSTANCE;
+        }
+        String unit = dateDiffUnit(args.get(0));
+        LocalDateTime a = moment(args.get(1), "DATEDIFF");
+        LocalDateTime b = moment(args.get(2), "DATEDIFF");
+        long n = switch (unit) {
+            case "year" -> b.getYear() - a.getYear();
+            case "quarter" -> (b.getYear() * 4L + (b.getMonthValue() - 1) / 3)
+                    - (a.getYear() * 4L + (a.getMonthValue() - 1) / 3);
+            case "month" -> (b.getYear() * 12L + b.getMonthValue()) - (a.getYear() * 12L + a.getMonthValue());
+            case "week" -> ChronoUnit.WEEKS.between(
+                    a.toLocalDate().with(java.time.DayOfWeek.MONDAY), b.toLocalDate().with(java.time.DayOfWeek.MONDAY));
+            case "day" -> ChronoUnit.DAYS.between(a.toLocalDate(), b.toLocalDate());
+            case "hour" -> ChronoUnit.HOURS.between(a.truncatedTo(ChronoUnit.HOURS), b.truncatedTo(ChronoUnit.HOURS));
+            case "minute" -> ChronoUnit.MINUTES.between(a.truncatedTo(ChronoUnit.MINUTES), b.truncatedTo(ChronoUnit.MINUTES));
+            default -> ChronoUnit.SECONDS.between(a.truncatedTo(ChronoUnit.SECONDS), b.truncatedTo(ChronoUnit.SECONDS));
+        };
+        return number(n);
+    }
+
+    /**
+     * SQL Server's {@code DATEDIFF}, which counts boundaries as this does, at UTC; its
+     * week starts on the session's {@code DATEFIRST}, so a week runs in the engine.
+     * The unit is read back out of its rendered literal, since it is SQL Server's
+     * keyword rather than a value there.
+     */
+    private static Optional<String> dateDiffSpelling(PushdownTarget target, List<String> arguments) {
+        if (!target.isFamily(PushdownTarget.SQL) || !target.isVariant(SQLSERVER) || arguments.size() != 3) {
+            return Optional.empty();
+        }
+        return Spellings.literal(arguments.get(0).startsWith("N'") ? arguments.get(0).substring(1) : arguments.get(0))
+                .map(u -> DATEDIFF_UNITS.get(u.strip().toLowerCase(Locale.ROOT)))
+                .filter(u -> !u.equals("week"))
+                .map(u -> "DATEDIFF(" + u + ", SWITCHOFFSET(" + arguments.get(1) + ", '+00:00'), SWITCHOFFSET("
+                        + arguments.get(2) + ", '+00:00'))");
     }
 
     /** {@code EPOCH}: seconds, with their fraction, as PostgreSQL's {@code EXTRACT(EPOCH …)} counts them. */

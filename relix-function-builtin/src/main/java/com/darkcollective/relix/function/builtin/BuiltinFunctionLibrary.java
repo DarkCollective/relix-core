@@ -116,6 +116,7 @@ public final class BuiltinFunctionLibrary implements FunctionLibrary {
         all.addAll(ConditionalFunctions.all());
         all.addAll(TypeCheckFunctions.all());
         all.addAll(ConversionFunctions.all());
+        all.addAll(FormatFunctions.all());
         all.addAll(NestedFunctions.all());
         all.addAll(OrderingFunctions.all());
         all.addAll(SqlNames.all(all));

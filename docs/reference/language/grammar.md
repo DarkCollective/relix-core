@@ -546,6 +546,9 @@ operand           ::= sum ( "||" sum )*
 sum               ::= term ( ( "+" | "-" ) term )*
 term              ::= factor ( ( "*" | "/" | "%" ) factor )*
 factor            ::= "-" factor
+                    | primary_operand ( "AT" "TIME" "ZONE" zone_operand )*
+/* ts AT TIME ZONE 'Europe/London' is TIMEZONE('Europe/London', ts). */
+zone_operand      ::= "-" zone_operand
                     | primary_operand
 
 primary_operand   ::= literal
@@ -554,6 +557,7 @@ primary_operand   ::= literal
                     | extract_call
                     | substring_call
                     | position_call
+                    | datediff_call
                     | function_call
                     | column_ref
                     | "(" operand ")"
@@ -570,6 +574,8 @@ function_call     ::= ( operand_name - "CAST" ) ( "." name )* CALL_OPEN ( argume
 
 /* SQL's CAST(qty AS NUMBER) and EXTRACT(WEEK FROM d): a conversion and a date field,
    each the function it names (see the CAST and EXTRACT pages). */
+/* DATEDIFF(month, a, b): SQL Server's unit, a bare word, is read as a string. */
+datediff_call     ::= "DATEDIFF" CALL_OPEN name "," argument ( "," argument )* ")"
 cast_call         ::= "CAST" CALL_OPEN operand "AS" cast_type ")"
 cast_type         ::= "NUMBER" | "STRING" | "BOOLEAN" | "DATE" | "TIME" | "TIMESTAMP"
 extract_call      ::= "EXTRACT" CALL_OPEN extract_field "FROM" operand ")"
@@ -727,6 +733,9 @@ are easy to miss in the rules above.
 - **A regular-expression match is a test.** `s ~ p` is `REGEXP_LIKE(s, p) = TRUE`,
   `~*` ignores case, and `!~`, `!~*` and `NOT MATCHES` compare with FALSE. The pattern
   is Java's dialect; `MATCHES` is not reserved.
+- **`AT TIME ZONE` binds before arithmetic.** `ts AT TIME ZONE z` is
+  `TIMEZONE(z, ts)`; its three words are not reserved. `DATEDIFF(month, a, b)` reads
+  a bare first word as the unit's name.
 - **Where NULLs sort.** Without `NULLS FIRST` or `NULLS LAST`, a sort key puts its
   NULLs last whether it runs ascending or descending. PostgreSQL and Oracle put them
   first in a descending sort, so a query ported from them says `NULLS FIRST`. `NULLS`,
