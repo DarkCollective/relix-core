@@ -33,5 +33,8 @@ NUMBER only; NULL in → NULL out. Always rounds upward, including for negatives
 # Alternatives:
 Int / Fix round down/toward zero; Round rounds to nearest.
 
+# SQL names:
+`CEIL` is this function in any letter case, and `CEILING` is the same function by SQL's other name.
+
 # See Also:
 [int](int.md), [fix](fix.md), [round](round.md)

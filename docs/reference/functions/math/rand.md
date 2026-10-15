@@ -34,6 +34,9 @@ reproducible. Because it is impure it is never constant-folded.
 SAMPLE p for probabilistic sampling and SAMPLE n ROWS for an exact-count sample
 express the common cases more directly.
 
+# SQL names:
+`RANDOM` is the same function by PostgreSQL's and SQLite's name.
+
 # See Also:
 [sample-bernoulli](../../advanced/sample-bernoulli.md), [sample-reservoir](../../advanced/sample-reservoir.md), [int](int.md)
 

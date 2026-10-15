@@ -49,7 +49,7 @@ final class BuiltinFunctionLibraryTest {
      * {@code Pi} — the two built-ins that were never in the library the port started from
      * — {@code Mod}, and the multi-branch conditionals {@code Switch} and {@code Choose}.
      */
-    private static final int BUILTIN_COUNT = 79;
+    private static final int BUILTIN_COUNT = 98;
 
     /** The eight aggregates: five SQL reducers, one that gathers, two that pick a row. */
     private static final int AGGREGATE_COUNT = 8;
@@ -125,9 +125,9 @@ final class BuiltinFunctionLibraryTest {
                             Collectors.counting()));
 
             assertThat(byCategory).containsOnly(
-                    Map.entry("string", 13L),
+                    Map.entry("string", 24L),
                     Map.entry("similarity", 5L),
-                    Map.entry("math", 23L),
+                    Map.entry("math", 31L),
                     Map.entry("datetime", 23L),
                     Map.entry("conditional", 6L),
                     Map.entry("typecheck", 2L),
@@ -193,7 +193,7 @@ final class BuiltinFunctionLibraryTest {
                     .collect(Collectors.toSet());
             assertThat(volatilePerRow)
                     .as("de-duplicating one of these would return the same random number twice")
-                    .containsExactly("rand");
+                    .containsExactly("rand", "random");
 
             Set<String> stable = FUNCTIONS.stream()
                     .filter(fn -> fn.signature().has(FunctionProperty.STABLE))
@@ -239,12 +239,14 @@ final class BuiltinFunctionLibraryTest {
         }
 
         @Test
-        @DisplayName("the documentation key follows the function's own name and category")
+        @DisplayName("the documentation key follows the function's own name and category, or an alias's original's")
         void documentationKeyShape() {
+            java.util.Map<String, String> aliases = SqlNames.aliases();
             for (ScalarFunction fn : FUNCTIONS) {
                 var signature = fn.signature();
-                assertThat(signature.docKey()).contains("functions/" + signature.category()
-                        + "/" + signature.name().toLowerCase(Locale.ROOT) + ".md");
+                String named = aliases.getOrDefault(signature.name(), signature.name());
+                assertThat(signature.docKey()).as(signature.name()).contains("functions/" + signature.category()
+                        + "/" + named.toLowerCase(Locale.ROOT) + ".md");
             }
         }
     }

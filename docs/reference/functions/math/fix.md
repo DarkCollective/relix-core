@@ -39,5 +39,8 @@ Int(−3.9) = −4.
 # Alternatives:
 Int floors toward negative infinity; Ceil rounds up; Round rounds to nearest.
 
+# SQL names:
+SQL's `TRUNC` and `TRUNCATE` are a function of their own that also takes a number of places: `TRUNC(x)` is `Fix(x)`. See [trunc](trunc.md).
+
 # See Also:
 [int](int.md), [ceil](ceil.md), [round](round.md)

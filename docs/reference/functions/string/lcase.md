@@ -23,5 +23,8 @@ Case-insensitive filter:
 # Limitations:
 STRING only; NULL in → NULL out. Case folding follows Locale.ROOT.
 
+# SQL names:
+`LOWER` is the same function by SQL's name: `LOWER(name)` is `LCase(name)`.
+
 # See Also:
 [ucase](ucase.md), [trim](trim.md), [replace](replace.md)

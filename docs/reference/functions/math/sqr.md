@@ -29,5 +29,8 @@ result, not exact.
 # Alternatives:
 Power(x, 0.5) is equivalent; Power(x, 2) squares.
 
+# SQL names:
+`SQRT` is the same function by SQL's name.
+
 # See Also:
 [power](power.md), [exp](exp.md), [log](log.md)

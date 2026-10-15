@@ -33,5 +33,8 @@ differs from Fix, which truncates toward zero.
 # Alternatives:
 Fix truncates toward zero; Ceil rounds up; Round rounds to nearest.
 
+# SQL names:
+`FLOOR` is the same function by SQL's name: `FLOOR(x)` is `Int(x)`.
+
 # See Also:
 [fix](fix.md), [ceil](ceil.md), [round](round.md), [abs](abs.md)

@@ -154,6 +154,25 @@ final class FunctionCoverageTest {
             num("CInt", "4", n("3.7")),
             num("CDbl", "3.14", s("3.14")),
             exact("CBool", "true", s(" Yes ")),
+            // ── SQL names ───────────────────────────────────────────────────────
+            exact("UPPER", "ABC", s("abc")),
+            exact("LOWER", "abc", s("ABC")),
+            num("LENGTH", "5", s("hello")),
+            num("CHAR_LENGTH", "5", s("hello")),
+            exact("CHAR", "A", n("65")),
+            num("FLOOR", "-4", n("-3.5")),
+            num("CEILING", "-3", n("-3.5")),
+            num("SQRT", "3", n("9")),
+            num("SIGN", "-1", n("-7")),
+            num("LN", "0", n("1")),
+            exact("SUBSTRING", "he", s("hello"), n("0"), n("3")),
+            exact("SUBSTR", "llo", s("hello"), n("3")),
+            num("STRPOS", "3", s("hello"), s("l")),
+            num("CHARINDEX", "3", s("l"), s("hello")),
+            num("ASCII", "0", s("")),
+            exact("CONCAT", "a1b", s("a"), n("1"), NullValue.INSTANCE, s("b")),
+            num("TRUNC", "2.7", n("2.78"), n("1")),
+            num("TRUNCATE", "1200", n("1234"), n("-2")),
             // ── Nested ──────────────────────────────────────────────────────────
             exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
             // ── Ordering ──────────────────────────────────────────────────────────
@@ -164,7 +183,7 @@ final class FunctionCoverageTest {
      * {@code Rand} is deliberately absent from the table above and named here instead:
      * it has no expected value, and asserting a range is the job of {@code MathFunctionsTest}.
      */
-    private static final Set<String> COVERED_ELSEWHERE = Set.of("rand");
+    private static final Set<String> COVERED_ELSEWHERE = Set.of("rand", "random");
 
     private static Value duration(String iso) {
         return new DurationValue(Duration.parse(iso));

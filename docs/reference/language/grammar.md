@@ -550,6 +550,8 @@ primary_operand   ::= literal
                     | bound_parameter
                     | cast_call
                     | extract_call
+                    | substring_call
+                    | position_call
                     | function_call
                     | column_ref
                     | "(" operand ")"
@@ -569,6 +571,10 @@ function_call     ::= ( operand_name - "CAST" ) ( "." name )* CALL_OPEN ( argume
 cast_call         ::= "CAST" CALL_OPEN operand "AS" cast_type ")"
 cast_type         ::= "NUMBER" | "STRING" | "BOOLEAN" | "DATE" | "TIME" | "TIMESTAMP"
 extract_call      ::= "EXTRACT" CALL_OPEN extract_field "FROM" operand ")"
+/* SUBSTRING(s FROM 2 FOR 3) is SUBSTRING(s, 2, 3); POSITION('@' IN s) is STRPOS(s, '@'). */
+substring_call    ::= "SUBSTRING" CALL_OPEN operand
+                      ( "FROM" operand ( "FOR" operand )? | "FOR" operand ) ")"
+position_call     ::= "POSITION" CALL_OPEN operand ( "∈" | "IN" ) operand ")"
 extract_field     ::= "YEAR" | "MONTH" | "DAY" | "HOUR" | "MINUTE" | "SECOND"
                     | "DOW" | "ISODOW" | "DOY" | "WEEK" | "ISOYEAR" | "QUARTER" | "EPOCH"
 /* An argument may be a condition: IIf(amount > 100, 'big', 'small'). */
