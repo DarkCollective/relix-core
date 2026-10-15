@@ -18,14 +18,15 @@ Angle of a slope, in radians:
   π Atn(rise / run) → angle_rad (Lines)
 
 Convert the result to degrees:
-  π Atn(slope) * 180 / 3.14159265 → angle_deg (Lines)
+  π Degrees(Atn(slope)) → angle_deg (Lines)
 
 # Limitations:
-Returns radians in (−π/2, π/2). NUMBER only; NULL in → NULL out. Single-argument
-form only (no two-argument atan2). Floating point.
+Returns radians in (−π/2, π/2). NUMBER only; NULL in → NULL out. Floating point.
+It cannot tell (1, 1) from (−1, −1), since both are a ratio of 1: Atan2(y, x) can.
 
 # Alternatives:
-Tan is the forward direction (angle → ratio).
+Tan is the forward direction (angle → ratio). Atan2(y, x) takes the two
+coordinates and returns the angle in the right quadrant.
 
 # See Also:
-[tan](tan.md), [sin](sin.md), [cos](cos.md)
+[atan2](atan2.md), [tan](tan.md), [asin](asin.md), [acos](acos.md), [degrees](degrees.md)

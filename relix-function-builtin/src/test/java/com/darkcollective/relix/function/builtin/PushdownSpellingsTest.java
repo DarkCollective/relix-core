@@ -567,8 +567,8 @@ final class PushdownSpellingsTest {
     @Test
     @DisplayName("the transcendental numerics decline: a different double, or no answer at all")
     void transcendentalsDecline() {
-        for (String function : List.of("Sqr", "Log", "Exp", "Sin", "Cos", "Tan", "Atn",
-                "Power")) {
+        for (String function : List.of("Sqr", "Log", "Log10", "Exp", "Sin", "Cos", "Tan", "Atn",
+                "Asin", "Acos", "Atan2", "Degrees", "Radians", "Power")) {
             for (PushdownTarget target : List.of(POSTGRES, MYSQL, GENERIC, DUCKDB, SQLITE, SQLSERVER, DB2, MONGO)) {
                 assertThat(render(function, target, "a"))
                         .as("%s on %s", function, target).isEmpty();
