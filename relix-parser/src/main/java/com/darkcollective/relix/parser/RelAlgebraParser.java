@@ -2533,8 +2533,14 @@ public final class RelAlgebraParser {
             advance();
 
             Operand right = parseArithmeticExpression(precedence + 1);
+            // SQL's remainder operator is the Mod function, so it folds and pushes down as Mod.
+            if (operator.type() == TokenType.MODULO) {
+                left = new FunctionCall("Mod", List.of(left, right), loc(operator));
+                continue;
+            }
             ArithmeticOperator arithOp = switch (operator.type()) {
-                case PLUS     -> ArithmeticOperator.PLUS;
+                // SQL's concatenation is the + that concatenates two strings.
+                case PLUS, CONCATENATE -> ArithmeticOperator.PLUS;
                 case MINUS    -> ArithmeticOperator.MINUS;
                 case MULTIPLY -> ArithmeticOperator.MULTIPLY;
                 case DIVIDE   -> ArithmeticOperator.DIVIDE;
@@ -2573,7 +2579,8 @@ public final class RelAlgebraParser {
             }
             case NUMBER -> {
                 Token numTok = current;
-                String value = current.lexeme();
+                // A number written with an exponent carries itself written out as its literal.
+                String value = current.literal() != null ? current.literal() : current.lexeme();
                 advance();
                 yield new NumberOperand(value, loc(numTok));
             }
@@ -2893,15 +2900,17 @@ public final class RelAlgebraParser {
 
     private static boolean isArithmeticOperator(TokenType type) {
         return switch (type) {
-            case PLUS, MINUS, MULTIPLY, DIVIDE -> true;
+            case PLUS, MINUS, MULTIPLY, DIVIDE, MODULO, CONCATENATE -> true;
             default -> false;
         };
     }
 
     private static int arithmeticPrecedence(TokenType type) {
         return switch (type) {
-            case MULTIPLY, DIVIDE -> 20;
+            case MULTIPLY, DIVIDE, MODULO -> 20;
             case PLUS, MINUS -> 10;
+            // Below + and -, as in PostgreSQL: 'n = ' || n + 1 adds before it concatenates.
+            case CONCATENATE -> 5;
             default -> -1;
         };
     }

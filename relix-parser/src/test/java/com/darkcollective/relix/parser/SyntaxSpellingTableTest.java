@@ -171,6 +171,10 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
         row("`x NOT BETWEEN a AND b`", "σ x NOT BETWEEN a AND b (R)", "σ x < a ∨ x > b (R)");
         row("`a IS DISTINCT FROM b`", "σ a IS DISTINCT FROM b (R)",
                 "σ (a ≠ b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b ≠ ⊥) ∨ (a ≠ ⊥ ∧ b = ⊥) (R)");
+        row("`a || b`", "π a || b → c (R)", "π a + b → c (R)");
+        row("`x % y`", "π x % y → m (R)", "π Mod(x, y) → m (R)");
+        row("`'it''s'`", "π 'it''s' → s (R)", "π \"it's\" → s (R)");
+        row("`1e6`, `2.5E-3`", "π 1e6 → a, 2.5E-3 → b (R)", "π 1000000 → a, 0.0025 → b (R)");
         row("`a IS NOT DISTINCT FROM b`", "σ a IS NOT DISTINCT FROM b (R)",
                 "σ (a = b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b = ⊥) (R)");
     }

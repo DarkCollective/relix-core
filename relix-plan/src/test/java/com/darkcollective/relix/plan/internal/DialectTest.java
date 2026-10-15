@@ -102,6 +102,23 @@ final class DialectTest {
     }
 
     @Nested
+    @DisplayName("joining two strings")
+    class Concatenation {
+
+        @Test
+        @DisplayName("each dialect joins with the operator that is NULL when either side is")
+        void perDialect() {
+            assertThat(Dialect.POSTGRES.concatenate("a", "b")).contains("(a || b)");
+            assertThat(Dialect.DUCKDB.concatenate("a", "b")).contains("(a || b)");
+            assertThat(Dialect.SQLITE.concatenate("a", "b")).contains("(a || b)");
+            assertThat(Dialect.DB2.concatenate("a", "b")).contains("(a || b)");
+            assertThat(Dialect.MYSQL.concatenate("a", "b")).contains("CONCAT(a, b)");
+            assertThat(Dialect.SQLSERVER.concatenate("a", "b")).contains("(a + b)");
+            assertThat(Dialect.GENERIC.concatenate("a", "b")).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("literals SQL Server spells its own way")
     class SqlServerLiterals {
 

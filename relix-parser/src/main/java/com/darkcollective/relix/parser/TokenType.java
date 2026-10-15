@@ -44,7 +44,8 @@ package com.darkcollective.relix.parser;
  *       {@code LESS} (&lt;), {@code LESS_EQUAL} (≤), {@code GREATER} (&gt;),
  *       {@code GREATER_EQUAL} (≥), {@code NULL} (⊥).</li>
  *   <li><b>Arithmetic operators</b> — {@code PLUS}, {@code MINUS},
- *       {@code MULTIPLY}, {@code DIVIDE}.</li>
+ *       {@code MULTIPLY}, {@code DIVIDE}, and SQL's {@code CONCATENATE} ({@code ||})
+ *       and {@code MODULO} ({@code %}).</li>
  *   <li><b>Punctuation</b> — {@code LPAREN}, {@code RPAREN}, {@code COMMA},
  *       {@code DOT}, {@code ARROW} (→), {@code UNDIRECTED_EDGE} (↔),
  *       {@code LBRACE}, {@code RBRACE}.</li>
@@ -181,6 +182,10 @@ public enum TokenType {
     MINUS,
     MULTIPLY,
     DIVIDE,
+    // SQL's spellings of two operations Relix writes otherwise: `a || b` is `a + b`,
+    // and `x % y` is `Mod(x, y)`.
+    CONCATENATE,
+    MODULO,
 
     LPAREN,
     RPAREN,

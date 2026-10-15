@@ -274,7 +274,9 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         // Rendered through the comparison renderer: on a backend whose collation is not
         // exact, a string column in a predicate becomes CONVERT(…) COLLATE …, so `=`,
         // IN and LIKE mean what they mean in the engine.
-        Optional<String> sql = SqlExpressions.predicate(node.predicate(), p.comparing, p.ordering,
+        // Typed, so that a + inside the condition is written as addition or as joining.
+        Optional<String> sql = SqlExpressions.predicate(node.predicate(),
+                ColumnRenderer.typed(p.comparing, p.schema), ColumnRenderer.typed(p.ordering, p.schema),
                 p.dialect, functions);
         if (sql.isEmpty()) {
             return Optional.empty();
@@ -315,7 +317,8 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         }
         // A select item is a value, rendered plainly; a condition inside one — the test of
         // an IIf — compares as a WHERE clause would.
-        ColumnRenderer items = ColumnRenderer.withComparing(p.renderer, p.comparing, p.ordering);
+        ColumnRenderer items = ColumnRenderer.typed(
+                ColumnRenderer.withComparing(p.renderer, p.comparing, p.ordering), p.schema);
         List<String> selectList = new ArrayList<>(node.attributes().size());
         for (ProjectedAttribute attr : node.attributes()) {
             Optional<String> sql = SqlExpressions.operand(attr.expression(), items, p.dialect, functions);

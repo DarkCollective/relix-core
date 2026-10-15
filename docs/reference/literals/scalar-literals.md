@@ -3,7 +3,7 @@
 # Syntax:
 "<text>"          -- a string, in double quotes
 '<text>'          -- the same string, in single quotes
-<digits>[.<digits>]   -- a number: 42, 3.25, 0.5
+<digits>[.<digits>][e[±]<digits>]   -- a number: 42, 3.25, 0.5, 1e6, 2.5E-3
 TRUE | FALSE      -- a boolean, in any case
 
 π name, "in stock" → status, price * 1.2 → gross, TRUE → listed (Products)
@@ -20,13 +20,15 @@ A string literal is text between two double quotes or two single quotes. The two
 are the same string, so `"Asha"` and `'Asha'` compare equal. Inside either, a backslash
 escapes the next character: `\"` and `\'` write a quote, `\\` a backslash, `\n` a
 newline and `\t` a tab. Any other character after a backslash is a syntax error. A quote
-of the other kind needs no escape, so `"it's"` and `'say "hi"'` are both fine. A doubled
-quote does not escape one, as it does in SQL: write `'it\'s'` or `"it's"`, since
-`'it''s'` is a syntax error.
+of the other kind needs no escape, so `"it's"` and `'say "hi"'` are both fine. As in SQL,
+the string's own quote doubled is one quote: `'it''s'` is the same string as `'it\'s'`
+and `"it's"`, and `''''` is a single quote.
 
 A number literal is a run of digits with an optional fraction, such as `42`, `3.25` or
 `0.5`. A fraction needs a digit on each side of the point, so `.5` and `5.` are syntax
-errors. Exponent notation such as `1e3` is not part of the grammar. A negative number is
+errors. A number may end in an exponent, `e` or `E` and a power of ten with an optional
+sign: `1e6` is `1000000`, `2.5E-3` is `0.0025` and `1.5e+2` is `150`. It is read as
+the number written out in full, so it is as exact as any other. A negative number is
 the minus operator applied to a literal: `-7` is `-(7)`. Numbers are exact decimals
 of any size, so `0.1 + 0.2 = 0.3` holds and a 64-bit id keeps every digit.
 
@@ -44,15 +46,7 @@ In an inline table, cells are bare values and are not written as literals: a cel
 holding `"Asha"` is the text with its quotes.
 
 ```relix-invalid
-π price * 1e3 → milli (Products)
-```
-
-```relix-invalid
 π .5 → half (Products)
-```
-
-```relix-invalid
-π 'it''s' → note (Products)
 ```
 
 ```relix-invalid
@@ -69,6 +63,12 @@ The same comparison in single quotes:
 A quote of the other kind inside a string, and an escaped one:
   π name, "it's" → note, 'say "hi"' → greeting, "say \"hi\"" → same (Users)
 
+SQL's doubled quote, the same string as 'it\'s':
+  π name, 'it''s' → note (Users)
+
+Numbers in exponent notation:
+  π name, price * 1e3 → milli, tax * 2.5E-3 → scaled (Products)
+
 Numbers in arithmetic and a comparison:
   π name, price * 1.2 + 0.5 → gross (σ price > 10 (Products))
 
@@ -76,7 +76,7 @@ A negative number and a boolean column:
   π name, -1 → sentinel, FALSE → archived (Products)
 
 # Limitations:
-No exponent notation and no hexadecimal. A column named `null` is written with
+No hexadecimal. An exponent may be at most 1000 either way. A column named `null` is written with
 backticks, `` `null` ``, since the bare word is the NULL literal. A string
 cannot span lines except by writing `\n`.
 

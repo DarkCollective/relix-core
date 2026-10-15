@@ -167,7 +167,8 @@ Writing constant values, including the first-class temporal types.
 
 | Page | What it does |
 |------|--------------|
-| [String, number and boolean literals](literals/scalar-literals.md) | `"text"` or `'text'`, `42`, `3.25`, `TRUE` / `FALSE` |
+| [String, number and boolean literals](literals/scalar-literals.md) | `"text"` or `'text'`, `42`, `3.25`, `1e6`, `TRUE` / `FALSE` |
+| [Arithmetic and concatenation](language/arithmetic.md) | `+ - * /`, SQL's `%` and `\|\|` |
 | [DATE literal](literals/date-literal.md) | `DATE '2026-01-31'` |
 | [TIME literal](literals/time-literal.md) | `TIME '09:30:00'` |
 | [TIMESTAMP literal](literals/timestamp-literal.md) | `TIMESTAMP '2026-01-31T09:30:00Z'` |
