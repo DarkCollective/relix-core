@@ -249,7 +249,8 @@ argument).
 [Switch](functions/conditional/switch.md),
 [Choose](functions/conditional/choose.md),
 [Nz](functions/conditional/nz.md),
-[Coalesce](functions/conditional/coalesce.md)
+[Coalesce](functions/conditional/coalesce.md),
+[NULLIF](functions/conditional/nullif.md)
 
 **Ordering** —
 [LEAST](functions/ordering/least.md),

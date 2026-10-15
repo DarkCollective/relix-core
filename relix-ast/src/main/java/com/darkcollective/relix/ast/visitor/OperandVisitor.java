@@ -38,6 +38,9 @@ public interface OperandVisitor<R> {
     R visit(NumberOperand node);
     /** Visits a boolean literal. */
     R visit(BooleanOperand node);
+
+    /** Visits the NULL literal written as a value. */
+    R visit(NullOperand node);
     /** Visits a typed date literal ({@code DATE '2026-06-15'}). */
     R visit(DateOperand node);
     /** Visits a typed time-of-day literal ({@code TIME '13:40:00'}). */

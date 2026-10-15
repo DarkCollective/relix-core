@@ -682,6 +682,17 @@ final class PushdownSpellingsTest {
         }
 
         @Test
+        @DisplayName("NULLIF reaches the dialects whose = is the engine's equality, and no other")
+        void nullIf() {
+            for (PushdownTarget target : List.of(POSTGRES, DUCKDB, SQLITE, DB2)) {
+                assertThat(render("NULLIF", target, "a", "b")).as("%s", target).contains("NULLIF(a, b)");
+            }
+            for (PushdownTarget target : List.of(MYSQL, SQLSERVER, GENERIC, MONGO)) {
+                assertThat(render("NULLIF", target, "a", "b")).as("%s", target).isEmpty();
+            }
+        }
+
+        @Test
         @DisplayName("too few arguments decline, even on a SQL dialect")
         void tooFewDecline() {
             assertThat(render("Switch", POSTGRES, "'only'")).isEmpty();
@@ -695,7 +706,7 @@ final class PushdownSpellingsTest {
         List<String> spelled = List.of("year", "month", "day", "hour", "minute", "second",
                 "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "mod", "replace",
                 "coalesce", "nz", "isnull", "len", "left", "right", "mid", "least", "greatest",
-                "iif", "switch", "choose");
+                "iif", "switch", "choose", "nullif");
 
         List<String> unexpected = BuiltinCalls.all().stream()
                 .filter(fn -> !spelled.contains(fn.signature().canonicalName()))

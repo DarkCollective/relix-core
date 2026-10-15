@@ -18,6 +18,7 @@ package com.darkcollective.relix.processor.eval;
 import com.darkcollective.relix.processor.EvaluationException;
 
 import com.darkcollective.relix.ast.AttributeOperand;
+import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
 import com.darkcollective.relix.ast.ConditionOperand;
@@ -260,6 +261,7 @@ public final class OperandEvaluator {
             case StringOperand  s -> new StringValue(s.value());
             case NumberOperand  n -> NumberValue.of(n.value());
             case BooleanOperand b -> BooleanValue.of(b.value());
+            case NullOperand ignored -> NullValue.INSTANCE;
             case DateOperand      d -> new DateValue(d.value());
             case TimeOperand      t -> new TimeValue(t.value());
             case TimestampOperand ts -> new TimestampValue(ts.value());

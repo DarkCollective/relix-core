@@ -17,6 +17,7 @@ package com.darkcollective.relix.semantic.internal;
 
 import com.darkcollective.relix.semantic.SemanticError;
 import com.darkcollective.relix.ast.AndPredicate;
+import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
@@ -170,6 +171,13 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
     public Void visit(ComparisonPredicate node) {
         validateOperand(node.left());
         validateOperand(node.right());
+        // x < NULL, NULL = x: a comparison with the missing value is UNKNOWN on every
+        // row, so it can only be a null test written the wrong way round.
+        if (node.left() instanceof NullOperand || node.right() instanceof NullOperand) {
+            error(node.location(), "a comparison with NULL is never true; test for a missing"
+                    + " value with IS NULL (x IS NULL, x IS NOT NULL)");
+            return null;
+        }
         // Temporal values compare only with the same temporal type (ADR-0013).
         String cmpError = TemporalArithmetic.comparisonError(
                 typeInferrer.infer(node.left(), schema),
@@ -303,6 +311,7 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
             case NumberOperand  ignored -> { /* literals need no validation */ }
             case StringOperand  ignored -> { /* literals need no validation */ }
             case BooleanOperand ignored -> { /* literals need no validation */ }
+            case NullOperand ignored -> { /* literals need no validation */ }
             case DateOperand      ignored -> { /* typed temporal literals are pre-validated at parse time */ }
             case TimeOperand      ignored -> { /* typed temporal literals are pre-validated at parse time */ }
             case TimestampOperand ignored -> { /* typed temporal literals are pre-validated at parse time */ }

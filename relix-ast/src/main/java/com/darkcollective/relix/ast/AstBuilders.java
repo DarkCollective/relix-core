@@ -118,6 +118,11 @@ public abstract class AstBuilders {
         return new StringOperand(value);
     }
 
+    /** The NULL literal, written as a value. */
+    public static NullOperand nullValue() {
+        return new NullOperand();
+    }
+
     /** A boolean literal. */
     public static BooleanOperand bool(boolean value) {
         return new BooleanOperand(value);

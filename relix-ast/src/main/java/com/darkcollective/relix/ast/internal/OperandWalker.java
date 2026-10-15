@@ -20,6 +20,7 @@ import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
+import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.DateOperand;
@@ -130,6 +131,7 @@ public final class OperandWalker {
             case NumberOperand ignored -> { }
             case StringOperand ignored -> { }
             case BooleanOperand ignored -> { }
+            case NullOperand ignored -> { }
             case DateOperand ignored -> { }
             case TimeOperand ignored -> { }
             case TimestampOperand ignored -> { }
