@@ -27,5 +27,8 @@ SQL: folds to `SIGN(<e>)` on all dialects.
 # Limitations:
 NUMBER only; NULL in → NULL out.
 
+# SQL names:
+`SIGN` is the same function by SQL's name.
+
 # See Also:
 [abs](abs.md), [round](round.md)

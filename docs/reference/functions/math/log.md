@@ -40,5 +40,8 @@ one-argument LOG(x) is base 10 in PostgreSQL: write Log10(x) for that.
 # Alternatives:
 Exp is the inverse (e^x). Log10(x) is the base-10 logarithm.
 
+# SQL names:
+`LN` is the one-argument form by SQL's name: `LN(x)` is `Log(x)`. `LOG` itself is the natural logarithm, as in MySQL and SQL Server; PostgreSQL's one-argument `log` is base 10, which here is Log10.
+
 # See Also:
 [log10](log10.md), [exp](exp.md), [power](power.md), [sqr](sqr.md)

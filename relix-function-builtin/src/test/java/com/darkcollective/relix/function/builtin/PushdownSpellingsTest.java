@@ -765,7 +765,9 @@ final class PushdownSpellingsTest {
                 "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "mod", "replace",
                 "coalesce", "nz", "isnull", "len", "left", "right", "mid", "least", "greatest",
                 "iif", "switch", "choose", "nullif",
-                "dow", "isodow", "doy", "week", "isoyear", "quarter", "epoch");
+                "dow", "isodow", "doy", "week", "isoyear", "quarter", "epoch",
+                "length", "char_length", "floor", "ceiling", "sign", "substring", "substr",
+                "ascii", "trunc", "truncate");
 
         List<String> unexpected = BuiltinCalls.all().stream()
                 .filter(fn -> !spelled.contains(fn.signature().canonicalName()))

@@ -35,5 +35,8 @@ an index. STRING arguments; a NULL argument returns NULL.
 IsNumeric / pattern checks for validation; Replace to substitute rather than
 locate.
 
+# SQL names:
+`INSTR` is this function in any letter case, as MySQL writes it. PostgreSQL's `STRPOS(s, sub)` and `POSITION(sub IN s)`, and SQL Server's `CHARINDEX(sub, s)`, find the same position; see [strpos](strpos.md) and [charindex](charindex.md).
+
 # See Also:
 [mid](mid.md), [left](left.md), [right](right.md), [replace](replace.md), [len](len.md)

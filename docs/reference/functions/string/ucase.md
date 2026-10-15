@@ -24,5 +24,8 @@ Case-insensitive match:
 # Limitations:
 STRING only; NULL in → NULL out. Case folding follows Locale.ROOT (locale-neutral).
 
+# SQL names:
+`UPPER` is the same function by SQL's name: `UPPER(name)` is `UCase(name)`.
+
 # See Also:
 [lcase](lcase.md), [trim](trim.md), [replace](replace.md)

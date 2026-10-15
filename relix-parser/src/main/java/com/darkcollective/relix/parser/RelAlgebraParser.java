@@ -2812,6 +2812,9 @@ public final class RelAlgebraParser {
             if (sb.toString().equalsIgnoreCase("EXTRACT") && isNameToken(peek(1)) && isWord(peek(2), "FROM")) {
                 return parseExtract(nameToken);
             }
+            if (sb.toString().equalsIgnoreCase("SUBSTRING") || sb.toString().equalsIgnoreCase("POSITION")) {
+                return parseSqlStringCall(sb.toString(), nameToken);
+            }
             advance(); // consume '('
             List<Operand> arguments = new ArrayList<>();
             if (current.type() != TokenType.RPAREN) {
@@ -2823,6 +2826,42 @@ public final class RelAlgebraParser {
             return new FunctionCall(sb.toString(), arguments, loc(nameToken));
         }
         return new AttributeOperand(sb.toString(), loc(nameToken));
+    }
+
+    /**
+     * Parses a call to {@code SUBSTRING} or {@code POSITION}, which SQL also writes with
+     * words between the arguments: {@code SUBSTRING(s FROM start FOR length)}, either
+     * clause alone, is {@code SUBSTRING(s, start, length)} (a start of 1 when only
+     * {@code FOR} is given), and {@code POSITION(sub IN s)} is {@code STRPOS(s, sub)}.
+     * Written with commas, either is an ordinary call. The current token is the {@code (}.
+     */
+    private Operand parseSqlStringCall(String name, Token nameToken) {
+        expect(TokenType.LPAREN, "Expected '(' after " + name);
+        Operand first = parseOperand();
+        SourceLocation at = loc(nameToken);
+        if (name.equalsIgnoreCase("POSITION") && match(TokenType.ELEMENT_OF)) {
+            Operand in = parseOperand();
+            expect(TokenType.RPAREN, "Expected ')' after POSITION(… IN …)");
+            return new FunctionCall("STRPOS", List.of(in, first), at);
+        }
+        if (name.equalsIgnoreCase("SUBSTRING") && (isWord(current, "FROM") || isWord(current, "FOR"))) {
+            Operand start = new NumberOperand("1", at);
+            if (matchWord("FROM")) {
+                start = parseOperand();
+            }
+            List<Operand> arguments = new ArrayList<>(List.of(first, start));
+            if (matchWord("FOR")) {
+                arguments.add(parseOperand());
+            }
+            expect(TokenType.RPAREN, "Expected ')' after SUBSTRING(… FROM … FOR …)");
+            return new FunctionCall(name, arguments, at);
+        }
+        List<Operand> arguments = new ArrayList<>(List.of(first));
+        while (match(TokenType.COMMA)) {
+            arguments.add(parseArgument());
+        }
+        expect(TokenType.RPAREN, "Expected ')' after function arguments");
+        return new FunctionCall(name, arguments, at);
     }
 
     /**

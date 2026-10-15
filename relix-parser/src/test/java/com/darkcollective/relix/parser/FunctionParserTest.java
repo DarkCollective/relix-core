@@ -232,4 +232,28 @@ final class FunctionParserTest extends ParserTestSupport {
         assertParseError("π CAST(s AS 1) → x (R)").hasMessageContaining("Expected a type after 'AS'");
         assertParseError("π CAST(s AS DATE → x (R)").hasMessageContaining("Expected ')' after the CAST type");
     }
+
+    // ==================== SUBSTRING … FROM … FOR, POSITION … IN (#136) ====================
+
+    @org.junit.jupiter.api.Test
+    public void substringWithWords() {
+        assertParsesTo("π SUBSTRING(s FROM 2 FOR 3) → x (R)", parse("π SUBSTRING(s, 2, 3) → x (R)"));
+        assertParsesTo("π substring(s from 2) → x (R)", parse("π substring(s, 2) → x (R)"));
+        assertParsesTo("π SUBSTRING(s FOR 3) → x (R)", parse("π SUBSTRING(s, 1, 3) → x (R)"));
+        assertParsesTo("π SUBSTRING(s, 2) → x (R)",
+                AstBuilders.project(java.util.List.of(AstBuilders.projected(
+                        AstBuilders.func("SUBSTRING", AstBuilders.attr("s"), AstBuilders.num("2")), "x")),
+                        AstBuilders.rel("R")));
+        assertParseError("π SUBSTRING(s FROM 2 FOR 3 → x (R)").hasMessageContaining("Expected ')' after SUBSTRING");
+    }
+
+    @org.junit.jupiter.api.Test
+    public void positionIn() {
+        assertParsesTo("π POSITION('@' IN email) → x (R)", parse("π STRPOS(email, '@') → x (R)"));
+        assertParsesTo("π position(a, b) → x (R)",
+                AstBuilders.project(java.util.List.of(AstBuilders.projected(
+                        AstBuilders.func("position", AstBuilders.attr("a"), AstBuilders.attr("b")), "x")),
+                        AstBuilders.rel("R")));
+        assertParseError("π POSITION('@' IN email → x (R)").hasMessageContaining("Expected ')' after POSITION");
+    }
 }
