@@ -83,12 +83,14 @@ The conditions that go inside a `σ` (selection) or join.
 | Page | Unicode / ASCII | What it does |
 |------|-----------------|--------------|
 | [Comparison](predicates/comparison.md) | `= ≠ < ≤ > ≥` | Compare two values |
+| [Range test](predicates/between.md) | `BETWEEN`, `NOT BETWEEN` | Value within a range, both ends included |
+| [Null-safe comparison](predicates/is-distinct-from.md) | `IS [NOT] DISTINCT FROM` | Compare two values, NULL equal to NULL |
 | [And](predicates/and.md) | `∧` / `AND` | Both conditions hold |
 | [Or](predicates/or.md) | `∨` / `OR` | Either condition holds |
 | [Not](predicates/not.md) | `¬` / `NOT` | Negate a condition |
 | [Null test](predicates/is-null.md) | `⊥` / `NULL` / `IS [NOT] NULL` | Test for a missing value |
 | [Set membership](predicates/in.md) | `∈` / `IN`, `∉` / `NOT IN` | Test membership in a set |
-| [Pattern match](predicates/like.md) | `LIKE`, `NOT LIKE` | Wildcard string match (`%` = any run, `_` = any one char) |
+| [Pattern match](predicates/like.md) | `LIKE`, `NOT LIKE`, `ESCAPE` | Wildcard string match (`%` = any run, `_` = any one char) |
 
 ## 5. Joins
 

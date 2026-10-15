@@ -131,7 +131,8 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
         row("`∧`", "σ a = 1 ∧ b = 2 (R)", "SELECT a = 1 AND b = 2 (R)");
         row("`∨`", "σ a = 1 ∨ b = 2 (R)", "SELECT a = 1 OR b = 2 (R)");
         row("`¬`", "σ ¬(a = 1) (R)", "SELECT NOT (a = 1) (R)");
-        row("`≠`", "σ status ≠ \"inactive\" (Users)", "SELECT status != \"inactive\" (Users)");
+        row("`≠`", "σ status ≠ \"inactive\" (Users)", "SELECT status != \"inactive\" (Users)",
+                "SELECT status <> \"inactive\" (Users)");
         row("`≤`", "σ age ≤ 18 (Users)", "SELECT age <= 18 (Users)");
         row("`≥`", "σ age ≥ 18 (Users)", "SELECT age >= 18 (Users)");
 
@@ -166,6 +167,12 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
                 List.of("A ⟖ A.i = B.j B", "A ><| A.i = B.j B", "A RJOIN A.i = B.j B"),
                 List.of("A ⟗ A.i = B.j B", "A |><| A.i = B.j B", "A FJOIN A.i = B.j B")));
         row("`COUNT(*)`", "γ d, COUNT(*) -> n (R)", "γ d, COUNT(1) -> n (R)");
+        row("`x BETWEEN a AND b`", "σ x BETWEEN a AND b (R)", "σ x >= a ∧ x <= b (R)");
+        row("`x NOT BETWEEN a AND b`", "σ x NOT BETWEEN a AND b (R)", "σ x < a ∨ x > b (R)");
+        row("`a IS DISTINCT FROM b`", "σ a IS DISTINCT FROM b (R)",
+                "σ (a ≠ b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b ≠ ⊥) ∨ (a ≠ ⊥ ∧ b = ⊥) (R)");
+        row("`a IS NOT DISTINCT FROM b`", "σ a IS NOT DISTINCT FROM b (R)",
+                "σ (a = b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b = ⊥) (R)");
     }
 
     // ── The claim ────────────────────────────────────────────────────────────

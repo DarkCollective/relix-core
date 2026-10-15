@@ -403,6 +403,12 @@ final class AstEquivalenceTest {
             assertThat(AstEquivalence.equivalent(
                     like(operand, str("a%")),
                     like(operand, str("b%")))).isFalse();
+            assertThat(AstEquivalence.equivalent(
+                    like(operand, str("a!%"), false, '!'),
+                    like(operand, str("a!%"), false, '!'))).isTrue();
+            assertThat(AstEquivalence.equivalent(
+                    like(operand, str("a!%"), false, '!'),
+                    like(operand, str("a!%")))).as("an escape changes what the pattern matches").isFalse();
         }
     }
 

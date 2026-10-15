@@ -235,6 +235,14 @@ public abstract class AstBuilders {
         return new PatternPredicate(operand, pattern, true);
     }
 
+    /** SQL {@code LIKE … ESCAPE}, or {@code NOT LIKE … ESCAPE} when {@code negated}. */
+    public static PatternPredicate like(Operand operand, Operand pattern, boolean negated,
+                                        char escapeCharacter) {
+        return new PatternPredicate(operand, pattern, negated,
+                java.util.Optional.of(String.valueOf(escapeCharacter)),
+                SourceLocation.UNKNOWN);
+    }
+
     // -------------------------------------------------------------------------
     // Element helpers — the list members the node factories take
     // -------------------------------------------------------------------------

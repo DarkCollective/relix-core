@@ -157,7 +157,12 @@ final class MongoExpressions {
         if (f.isEmpty() || !(p.pattern() instanceof StringOperand s)) {
             return Optional.empty();
         }
-        String regex = LikePatterns.toRegex(s.value());
+        String regex;
+        try {
+            regex = LikePatterns.toRegex(s.value(), p.escape());
+        } catch (IllegalArgumentException malformed) {
+            return Optional.empty(); // the engine reports it
+        }
         if (p.negated()) {
             return Optional.of(notNullGuarded(f.get(),
                     "{" + JsonStrings.quote(f.get()) + ": {\"$not\": {\"$regex\": " + JsonStrings.quote(regex) + "}}}"));
