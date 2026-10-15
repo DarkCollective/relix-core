@@ -2310,7 +2310,15 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         Optional<Schema> rightOpt = annotations.get(right);
         if (leftOpt.isEmpty() || rightOpt.isEmpty()) return;
         Schema combined = leftOpt.get().concat(rightOpt.get());
+        int before = errors.size();
         validatePredicate(condition, combined, opName);
+        if (errors.size() == before) {
+            SourceLocation loc = condition.location();
+            for (String message : JoinConditionChecks.warnings(
+                    left, right, leftOpt.get(), rightOpt.get(), condition, opName)) {
+                errors.add(SemanticError.warning(loc.filePath(), loc.line(), loc.column(), message));
+            }
+        }
     }
 
     // =========================================================================
