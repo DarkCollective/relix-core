@@ -386,6 +386,23 @@ public final class RelAlgebraParser {
             String ijoinLeftStart = null, ijoinLeftEnd = null;
             String ijoinRightStart = null, ijoinRightEnd = null;
 
+            // JOIN … USING (columns): written where a condition goes, A ⟕ USING (id) B,
+            // or after the right input as SQL writes it, A LJOIN B USING (id).
+            Optional<UsingJoinNode.Kind> usingKind = usingKind(operator.type());
+            if (usingKind.isPresent() && (startsUsingList() || usingFollowsRightInput())) {
+                List<String> columns = startsUsingList() ? parseUsingList() : null;
+                RelNode right = parseExpression(precedence + 1);
+                if (columns == null) {
+                    if (!startsUsingList()) {
+                        throw error(current, "Expected 'USING (' after the right input of '"
+                                + operator.lexeme() + "'");
+                    }
+                    columns = parseUsingList();
+                }
+                left = new UsingJoinNode(usingKind.get(), left, right, columns, loc(operator));
+                continue;
+            }
+
             if (operator.type() == TokenType.THETA_JOIN ||
                 operator.type() == TokenType.LEFT_OUTER_JOIN ||
                 operator.type() == TokenType.RIGHT_OUTER_JOIN ||
@@ -469,6 +486,12 @@ public final class RelAlgebraParser {
                 rejectConditionAfterRightInput(operator, left);
             }
             RelNode right = parseExpression(precedence + 1);
+            // A ⋈ B USING (id): the natural join reads its right input first, then USING.
+            if (operator.type() == TokenType.NATURAL_JOIN && startsUsingList()) {
+                left = new UsingJoinNode(UsingJoinNode.Kind.INNER, left, right, parseUsingList(),
+                        loc(operator));
+                continue;
+            }
             if (operator.type() == TokenType.NATURAL_JOIN && isComparison(current.type())) {
                 // `A ⋈ A.x = B.y B`: the condition was read as the right input, and the
                 // comparison after it is where parsing stops. Say what went wrong, at
@@ -507,6 +530,75 @@ public final class RelAlgebraParser {
         }
 
         return left;
+    }
+
+    /** The USING join a join operator writes, for the four that take {@code USING}. */
+    private static Optional<UsingJoinNode.Kind> usingKind(TokenType operator) {
+        return switch (operator) {
+            case NATURAL_JOIN     -> Optional.of(UsingJoinNode.Kind.INNER);
+            case LEFT_OUTER_JOIN  -> Optional.of(UsingJoinNode.Kind.LEFT);
+            case RIGHT_OUTER_JOIN -> Optional.of(UsingJoinNode.Kind.RIGHT);
+            case FULL_OUTER_JOIN  -> Optional.of(UsingJoinNode.Kind.FULL);
+            default -> Optional.empty();
+        };
+    }
+
+    /** Whether the current tokens open a USING column list, {@code USING (}. */
+    private boolean startsUsingList() {
+        return current.type() == TokenType.USING && peek(1).type() == TokenType.LPAREN;
+    }
+
+    /**
+     * Whether a USING column list follows the right input of the join just read, which
+     * is SQL's order: {@code A LJOIN B USING (id)}. The tokens are scanned at the
+     * input's own nesting level up to the first that settles it — {@code USING (} says
+     * yes, and a comparison or connective says the operator is followed by a condition
+     * instead, as is the end of the expression.
+     */
+    private boolean usingFollowsRightInput() {
+        // A right input that opens with a unary operator, σ x = 1 (B), holds comparisons
+        // of its own, and is no condition: a condition never starts with an operator.
+        boolean operatorInput = isPrefixOperator(current.type());
+        int depth = 0;
+        for (int i = 0; ; i++) {
+            TokenType type = peek(i).type();
+            if (type == TokenType.LPAREN) {
+                depth++;
+            } else if (type == TokenType.RPAREN) {
+                depth--;
+            } else if (depth == 0 && type == TokenType.USING && peek(i + 1).type() == TokenType.LPAREN) {
+                return true;
+            }
+            if (type == TokenType.EOF || depth < 0
+                    || depth == 0 && (isBinaryRelOperator(type) || !operatorInput && opensCondition(type))) {
+                return false;
+            }
+        }
+    }
+
+    /** Whether a token at a join input's own level says it is a condition rather than a relation. */
+    private static boolean opensCondition(TokenType type) {
+        return isComparison(type) || isLogicalOperator(type) || switch (type) {
+            case IS, LIKE, ELEMENT_OF, NOT_ELEMENT_OF -> true;
+            default -> false;
+        };
+    }
+
+    /** Parses {@code USING (a, b)}: one or more column names, none twice. */
+    private List<String> parseUsingList() {
+        expect(TokenType.USING, "Expected 'USING'");
+        expect(TokenType.LPAREN, "Expected '(' after 'USING'");
+        List<String> columns = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        do {
+            Token name = expectName("Expected a column name in USING (…)");
+            if (!seen.add(name.lexeme().toLowerCase(java.util.Locale.ROOT))) {
+                throw error(name, "USING names column '" + name.lexeme() + "' twice");
+            }
+            columns.add(name.lexeme());
+        } while (match(TokenType.COMMA));
+        expect(TokenType.RPAREN, "Expected ')' after the USING columns");
+        return columns;
     }
 
     /**

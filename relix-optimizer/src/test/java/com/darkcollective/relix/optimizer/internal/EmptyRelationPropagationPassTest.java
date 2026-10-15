@@ -23,6 +23,7 @@ import com.darkcollective.relix.ast.AllenRelation;
 import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.EmptyRelationNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.IntersectionNode;
 import com.darkcollective.relix.ast.IntervalJoinNode;
 import com.darkcollective.relix.ast.Predicate;
@@ -242,6 +243,29 @@ final class EmptyRelationPropagationPassTest {
             assertThat(run(oneSide)).isSameAs(oneSide);
             assertThat(run(fullJoin(empty("A"), empty("B"), joinOn())))
                     .isNode(EmptyRelationNode.class);
+        }
+
+        @Test
+        @DisplayName("a USING join collapses as the join of its kind does")
+        void usingJoin() {
+            for (UsingJoinNode.Kind kind : UsingJoinNode.Kind.values()) {
+                RelNode leftEmpty = AstBuilders.usingJoin(empty("A"), rel("B"), kind, "id");
+                RelNode rightEmpty = AstBuilders.usingJoin(rel("A"), empty("B"), kind, "id");
+                boolean leftCollapses = kind == UsingJoinNode.Kind.INNER || kind == UsingJoinNode.Kind.LEFT;
+                boolean rightCollapses = kind == UsingJoinNode.Kind.INNER || kind == UsingJoinNode.Kind.RIGHT;
+                if (leftCollapses) {
+                    assertThat(run(leftEmpty)).isNode(EmptyRelationNode.class);
+                } else {
+                    assertThat(run(leftEmpty)).isSameAs(leftEmpty);
+                }
+                if (rightCollapses) {
+                    assertThat(run(rightEmpty)).isNode(EmptyRelationNode.class);
+                } else {
+                    assertThat(run(rightEmpty)).isSameAs(rightEmpty);
+                }
+                assertThat(run(AstBuilders.usingJoin(empty("A"), empty("B"), kind, "id")))
+                        .isNode(EmptyRelationNode.class);
+            }
         }
 
         @Test

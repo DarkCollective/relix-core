@@ -40,6 +40,7 @@ import com.darkcollective.relix.ast.LeftOuterJoinNode;
 import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.MaterializationMode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.ObjectiveSense;
 import com.darkcollective.relix.ast.OptimizeNode;
 import com.darkcollective.relix.ast.OuterUnionNode;
@@ -612,6 +613,12 @@ public final class IrReport {
 
             // ── Joins ───────────────────────────────────────────────────────
             case NaturalJoinNode   ignored -> "⋈";
+            case UsingJoinNode     uj -> switch (uj.kind()) {
+                case INNER -> "⋈";
+                case LEFT  -> "⟕";
+                case RIGHT -> "⟖";
+                case FULL  -> "⟗";
+            } + " USING (" + String.join(", ", uj.columns()) + ")";
             case ThetaJoinNode     tj -> "⨝ "  + tj.condition().accept(PRED);
             case LeftOuterJoinNode  lj -> "⟕ "  + lj.condition().accept(PRED);
             case RightOuterJoinNode rj -> "⟖ "  + rj.condition().accept(PRED);
@@ -732,6 +739,7 @@ public final class IrReport {
             case SessionizeNode s -> List.of(s.input());
             // Binary
             case NaturalJoinNode   nj -> List.of(nj.left(), nj.right());
+            case UsingJoinNode     uj -> List.of(uj.left(), uj.right());
             case ThetaJoinNode     tj -> List.of(tj.left(), tj.right());
             case LeftOuterJoinNode  lj -> List.of(lj.left(), lj.right());
             case RightOuterJoinNode rj -> List.of(rj.left(), rj.right());

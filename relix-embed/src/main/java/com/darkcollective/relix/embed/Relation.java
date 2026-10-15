@@ -18,6 +18,7 @@ package com.darkcollective.relix.embed;
 import com.darkcollective.relix.ast.visitor.internal.PrettyPrinter;
 import com.darkcollective.relix.ast.AllenRelation;
 import com.darkcollective.relix.ast.AstBuilders;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import java.util.function.UnaryOperator;
 import java.util.IdentityHashMap;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
@@ -630,6 +631,58 @@ public final class Relation {
      */
     public Relation fullJoin(Relation right, Predicate condition) {
         return derive(AstBuilders.fullJoin(node, other(right), condition), right);
+    }
+
+    /**
+     * ⋈ USING — the inner join on the named shared columns only, each of them once in
+     * the output; SQL's {@code JOIN … USING (columns)}.
+     *
+     * @param right   the right input; must not be null
+     * @param columns the shared columns to match on; at least one
+     * @return the joined relation
+     * @since 1.0
+     */
+    public Relation joinUsing(Relation right, String... columns) {
+        return derive(AstBuilders.usingJoin(node, other(right), UsingJoinNode.Kind.INNER, columns), right);
+    }
+
+    /**
+     * ⟕ USING — every left row, joined on the named shared columns; SQL's
+     * {@code LEFT JOIN … USING (columns)}.
+     *
+     * @param right   the right input; must not be null
+     * @param columns the shared columns to match on; at least one
+     * @return the joined relation
+     * @since 1.0
+     */
+    public Relation leftJoinUsing(Relation right, String... columns) {
+        return derive(AstBuilders.usingJoin(node, other(right), UsingJoinNode.Kind.LEFT, columns), right);
+    }
+
+    /**
+     * ⟖ USING — every right row, joined on the named shared columns; SQL's
+     * {@code RIGHT JOIN … USING (columns)}.
+     *
+     * @param right   the right input; must not be null
+     * @param columns the shared columns to match on; at least one
+     * @return the joined relation
+     * @since 1.0
+     */
+    public Relation rightJoinUsing(Relation right, String... columns) {
+        return derive(AstBuilders.usingJoin(node, other(right), UsingJoinNode.Kind.RIGHT, columns), right);
+    }
+
+    /**
+     * ⟗ USING — every row of both, joined on the named shared columns, each of them the
+     * value of whichever side is present; SQL's {@code FULL JOIN … USING (columns)}.
+     *
+     * @param right   the right input; must not be null
+     * @param columns the shared columns to match on; at least one
+     * @return the joined relation
+     * @since 1.0
+     */
+    public Relation fullJoinUsing(Relation right, String... columns) {
+        return derive(AstBuilders.usingJoin(node, other(right), UsingJoinNode.Kind.FULL, columns), right);
     }
 
     /**

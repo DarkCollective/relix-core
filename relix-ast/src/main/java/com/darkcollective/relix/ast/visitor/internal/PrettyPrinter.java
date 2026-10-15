@@ -234,6 +234,18 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     }
 
     @Override
+    public String visit(UsingJoinNode node) {
+        String operator = switch (node.kind()) {
+            case INNER -> "⋈";
+            case LEFT  -> "⟕";
+            case RIGHT -> "⟖";
+            case FULL  -> "⟗";
+        };
+        return "(" + print(node.left()) + ") " + spelling.of(operator) + " USING ("
+                + String.join(", ", node.columns()) + ") (" + print(node.right()) + ")";
+    }
+
+    @Override
     public String visit(ThetaJoinNode node) {
         return "(" + print(node.left()) + ") " + spelling.of("⨝") + " " + node.condition().accept(predicatePrinter) + " (" + print(node.right()) + ")";
     }

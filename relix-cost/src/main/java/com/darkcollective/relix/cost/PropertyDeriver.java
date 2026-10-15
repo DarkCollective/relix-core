@@ -44,6 +44,7 @@ import com.darkcollective.relix.ast.IntersectionNode;
 import com.darkcollective.relix.ast.LeftOuterJoinNode;
 import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.OptimizeNode;
 import com.darkcollective.relix.ast.OuterUnionNode;
 import com.darkcollective.relix.ast.ProductNode;
@@ -336,6 +337,7 @@ public final class PropertyDeriver {
             case TreeNode ignored -> RelationProperties.none();
             case WhyNode ignored -> RelationProperties.none();
             case NaturalJoinNode ignored -> RelationProperties.none();
+            case UsingJoinNode ignored -> RelationProperties.none();
             case ThetaJoinNode ignored -> RelationProperties.none();
             case LeftOuterJoinNode ignored -> RelationProperties.none();
             case RightOuterJoinNode ignored -> RelationProperties.none();

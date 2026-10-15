@@ -108,6 +108,7 @@ final class EmptyRelationNodeTest {
         @Override public String visit(RelationFunctionCall n) { return other(); }
         @Override public String visit(TruthRelationNode n) { return other(); }
         @Override public String visit(ProjectionNode n) { return other(); }
+        @Override public String visit(UsingJoinNode n) { return other(); }
         @Override public String visit(SelectionNode n) { return other(); }
         @Override public String visit(RenameNode n) { return other(); }
         @Override public String visit(NaturalJoinNode n) { return other(); }

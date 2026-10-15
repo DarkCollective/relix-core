@@ -351,6 +351,12 @@ public final class AstLocations {
         }
 
         @Override
+        public RelNode visit(UsingJoinNode node) {
+            return new UsingJoinNode(node.kind(), node.left().accept(this), node.right().accept(this),
+                    node.columns());
+        }
+
+        @Override
         public RelNode visit(CompositionNode node) {
             return new CompositionNode(node.left().accept(this), node.right().accept(this));
         }

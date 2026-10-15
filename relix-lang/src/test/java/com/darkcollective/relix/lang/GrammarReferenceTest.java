@@ -240,6 +240,13 @@ final class GrammarReferenceTest {
             "query { π 2e → a (R) };",
             "query { λ 1e3 (R) };",
             "Bad := \"a\"\"b\";",
+            // JOIN … USING
+            "query { A JOIN B USING (id) ⟕ USING (a, b) C };",
+            "query { A LJOIN σ x = 1 (B) USING (id) };",
+            "query { A |><| (B) USING (id) };",
+            "query { A ⨝ USING (id) B };",
+            "query { A JOIN B USING () };",
+            "query { A JOIN B USING id };",
             // NULL placement and ties
             "query { τ a DESC NULLS FIRST, b nulls last, c (R) };",
             "query { τ a NULLS (R) };",

@@ -85,7 +85,7 @@ final class AstBuilderCoverageTest {
     final class Completeness {
 
         @Test
-        @DisplayName("RelNode — all 55 concrete node kinds")
+        @DisplayName("RelNode — all 56 concrete node kinds")
         void relNodesAreCovered() {
             assertThat(uncovered(RelNode.class))
                     .as("RelNode kinds with no AstBuilders factory")
@@ -114,9 +114,9 @@ final class AstBuilderCoverageTest {
     final class Counts {
 
         @Test
-        @DisplayName("RelNode permits 55 concrete kinds")
+        @DisplayName("RelNode permits 56 concrete kinds")
         void relNodeCount() {
-            assertThat(concreteKinds(RelNode.class)).hasSize(55);
+            assertThat(concreteKinds(RelNode.class)).hasSize(56);
         }
 
         @Test
@@ -203,6 +203,7 @@ final class AstBuilderCoverageTest {
             .of(ConsolidationFunction.class, i -> ConsolidationFunction.values()[i % ConsolidationFunction.values().length])
             .of(SortDirection.class, i -> SortDirection.values()[i % SortDirection.values().length])
             .of(NullPlacement.class, i -> NullPlacement.values()[i % NullPlacement.values().length])
+            .of(UsingJoinNode.Kind.class, i -> UsingJoinNode.Kind.values()[i % UsingJoinNode.Kind.values().length])
             .of(TieBreak.class, i -> TieBreak.values()[i % TieBreak.values().length])
             .ofListElement(Long.class, i -> (long) (i + 1))
             // Optional<E> takes its element from here too: SOLVE's WITHIN and MAX … ROUNDS.

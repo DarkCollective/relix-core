@@ -100,6 +100,7 @@ semi/anti joins filter the left relation by the existence of a match.
 | Join | Unicode / ASCII | What it does |
 |------|-----------------|--------------|
 | [Natural join](joins/natural-join.md) | `⋈` / `JOIN` | Match on shared column names |
+| [USING join](joins/using-join.md) | `⋈ USING` / `JOIN … USING` | Match on the named shared columns only — inner, left, right or full |
 | [Theta join](joins/theta-join.md) | `⨝` / `><` | Match on an explicit condition |
 | [Left outer join](joins/left-outer-join.md) | `⟕` / `\|><` / `LJOIN` | Keep all left rows |
 | [Right outer join](joins/right-outer-join.md) | `⟖` / `><\|` / `RJOIN` | Keep all right rows |
