@@ -2009,8 +2009,26 @@ public final class RelAlgebraParser {
         // inference, validation, execution, and SQL pushdown need no COUNT(*) case.
         // Restricted to COUNT — SUM(*)/MIN(*) are meaningless, so `*` keeps its
         // ordinary MULTIPLY reading everywhere else.
+        // SQL's COUNT(DISTINCT x): each distinct value of the argument, once. A ranking
+        // aggregate has no such reading, and COUNT(DISTINCT *) has none in SQL either.
+        boolean distinct = false;
+        if (current.type() == TokenType.DISTINCT) {
+            Token distinctTok = current;
+            if (operator == AggregateOperator.ARGMAX || operator == AggregateOperator.ARGMIN) {
+                throw ParseException.at(operator + " ranks rows and takes no DISTINCT",
+                        lexer.input(), distinctTok);
+            }
+            advance();
+            if (current.type() == TokenType.MULTIPLY && peek(1).type() == TokenType.RPAREN) {
+                throw ParseException.at("COUNT(DISTINCT *) has no meaning: name what to count"
+                        + " distinct values of, as in COUNT(DISTINCT session)",
+                        lexer.input(), current);
+            }
+            distinct = true;
+        }
+
         Operand argument;
-        if (operator == AggregateOperator.COUNT
+        if (!distinct && operator == AggregateOperator.COUNT
                 && current.type() == TokenType.MULTIPLY
                 && peek(1).type() == TokenType.RPAREN) {
             Token star = current;
@@ -2036,7 +2054,7 @@ public final class RelAlgebraParser {
             alias = Optional.of(expectName("Expected alias name after '→'").lexeme());
         }
 
-        return new AggregateFunction(operator, argument, yieldExpr, alias);
+        return new AggregateFunction(operator, argument, yieldExpr, alias, distinct);
     }
 
     private boolean startsRenameAttributeList() {

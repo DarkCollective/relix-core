@@ -157,6 +157,15 @@ final class SqlPushdownPlannerTest {
         }
 
         @Test
+        @DisplayName("a DISTINCT aggregate folds as SQL's own NAME(DISTINCT x), never as the plain call")
+        void distinctAggregatePushesDown() {
+            assertThat(scanOf(push(ORDERS
+                    + "query { γ id, COUNT(DISTINCT amount) → n, SUM(DISTINCT amount) → s (Orders) };"))
+                    .nativeQuery())
+                    .isEqualTo("SELECT id, COUNT(DISTINCT amount), SUM(DISTINCT amount) FROM orders GROUP BY id");
+        }
+
+        @Test
         @DisplayName("scalar γ (no grouping keys) folds with no GROUP BY clause")
         void scalarAggregationNoGroupBy() {
             assertThat(scanOf(push(ORDERS + "query { γ SUM(amount) → total (Orders) };")).nativeQuery())
@@ -633,6 +642,10 @@ final class SqlPushdownPlannerTest {
                             + "FROM `orders`");
             assertThat(scanOf(push(MYSQL_ORDERS + "query { γ COUNT(name) → n (Orders) };")).nativeQuery())
                     .isEqualTo("SELECT COUNT(`name`) FROM `orders`");
+            // A distinct count asks which names are equal, so 'a' and 'A' must stay two.
+            assertThat(scanOf(push(MYSQL_ORDERS + "query { γ COUNT(DISTINCT name) → n (Orders) };")).nativeQuery())
+                    .isEqualTo("SELECT COUNT(DISTINCT CONVERT(`name` USING utf8mb4) COLLATE utf8mb4_0900_bin) "
+                            + "FROM `orders`");
         }
 
         /**

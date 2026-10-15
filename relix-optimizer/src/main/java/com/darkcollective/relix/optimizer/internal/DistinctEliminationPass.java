@@ -169,7 +169,9 @@ public final class DistinctEliminationPass {
      */
     private static boolean duplicateInsensitive(AggregationNode node, FunctionCatalog functions) {
         for (AggregateFunction aggregate : node.aggregates()) {
-            boolean declared = functions.aggregate(aggregate.operator().name())
+            // A DISTINCT aggregate reads each value once, so a duplicated row cannot
+            // reach it twice, whatever the aggregate itself declares.
+            boolean declared = aggregate.distinct() || functions.aggregate(aggregate.operator().name())
                     .map(reduction -> reduction.signature()
                             .has(AggregateProperty.DUPLICATE_INSENSITIVE))
                     .orElse(false);

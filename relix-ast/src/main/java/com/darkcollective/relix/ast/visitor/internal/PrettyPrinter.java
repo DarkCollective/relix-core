@@ -412,7 +412,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String aggregates = node.aggregates().stream()
                 .map(agg -> {
                     String funcName = agg.operator().name();
-                    String args = agg.argument().accept(operandPrinter)
+                    String args = (agg.distinct() ? "DISTINCT " : "") + agg.argument().accept(operandPrinter)
                             + agg.yieldExpr().map(y -> ", " + y.accept(operandPrinter)).orElse("");
                     String funcCall = funcName + "(" + args + ")";
                     return agg.alias()

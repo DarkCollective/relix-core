@@ -560,6 +560,43 @@ final class AggregationParserTest extends ParserTestSupport {
         assertPrettyPrints(node, "γ SUM(price * qty) → revenue (Sales)");
     }
 
+    // ==================== DISTINCT inside an aggregate ====================
+
+    @Test
+    public void parsesDistinctAggregatesBesideAPlainOne() {
+        assertParsesTo("GROUP user, COUNT(DISTINCT session) -> sessions, COUNT(*) -> clicks (S)",
+                groupBy(
+                        List.of("user"),
+                        List.of(distinctAgg(AggregateOperator.COUNT, attr("session"), "sessions"),
+                                AggregateFunction.aliased(AggregateOperator.COUNT, num("1"), "clicks")),
+                        rel("S")));
+        assertParsesTo("γ SUM(distinct amount * 2) → s, MIN(DISTINCT a) → lo (R)",
+                groupBy(
+                        List.of(),
+                        List.of(distinctAgg(AggregateOperator.SUM,
+                                        arith(attr("amount"), ArithmeticOperator.MULTIPLY, num("2")), "s"),
+                                distinctAgg(AggregateOperator.MIN, attr("a"), "lo")),
+                        rel("R")));
+    }
+
+    @Test
+    public void distinctAggregatePrintsBack() {
+        assertPrettyPrints(parse("γ g, COUNT(DISTINCT x) → n (R)"), "γ g, COUNT(DISTINCT x) → n (R)");
+    }
+
+    @Test
+    public void refusesDistinctWhereItHasNoMeaning() {
+        assertParseError("γ COUNT(DISTINCT *) → n (R)")
+                .hasMessageContaining("COUNT(DISTINCT *) has no meaning: name what to count"
+                        + " distinct values of, as in COUNT(DISTINCT session)");
+        assertParseError("γ COUNT(DISTINCT * 2) → n (R)")
+                .hasMessageContaining("found '*'");
+        assertParseError("γ g, ARGMAX(DISTINCT a, b) → n (R)")
+                .hasMessageContaining("ARGMAX ranks rows and takes no DISTINCT");
+        assertParseError("γ g, ARGMIN(DISTINCT a, b) → n (R)")
+                .hasMessageContaining("ARGMIN ranks rows and takes no DISTINCT");
+    }
+
     // ==================== COUNT(*) — SQL row-count synonym ====================
 
     /**
