@@ -139,6 +139,76 @@ final class MathFunctionsTest {
                     .hasMessage("Log: argument must be positive");
             assertThatThrownBy(() -> call("Log", n("-1")))
                     .hasMessage("Log: argument must be positive");
+            assertThatThrownBy(() -> call("Log10", n("0")))
+                    .hasMessage("Log10: argument must be positive");
+            assertThatThrownBy(() -> call("Asin", n("2")))
+                    .hasMessage("Asin: argument must be between -1 and 1");
+            assertThatThrownBy(() -> call("Acos", n("-1.5")))
+                    .hasMessage("Acos: argument must be between -1 and 1");
+        }
+    }
+
+    @Nested
+    @DisplayName("Logarithms to a base")
+    final class Bases {
+
+        @Test
+        @DisplayName("Log10 and Log(b, y) land exactly on an exact power")
+        void exactPowers() {
+            assertThat(number(call("Log10", n("1000")))).isEqualByComparingTo("3");
+            assertThat(number(call("Log", n("10"), n("1000")))).isEqualByComparingTo("3");
+            assertThat(number(call("Log", n("2"), n("8")))).isEqualByComparingTo("3");
+            assertThat(number(call("Log", n("2"), n("0.5")))).isEqualByComparingTo("-1");
+        }
+
+        @Test
+        @DisplayName("Log(b, y) between powers is ln y / ln b")
+        void between() {
+            assertThat(number(call("Log", n("2"), n("10"))).doubleValue())
+                    .isEqualTo(Math.log(10) / Math.log(2), within(1e-15));
+            assertThat(number(call("Log", n("1")))).isEqualByComparingTo("0");
+        }
+
+        @Test
+        @DisplayName("a non-positive argument or a base of 1 is rejected, and NULL passes through")
+        void domain() {
+            assertThatThrownBy(() -> call("Log", n("0"), n("8")))
+                    .hasMessage("Log: arguments must be positive");
+            assertThatThrownBy(() -> call("Log", n("2"), n("-8")))
+                    .hasMessage("Log: arguments must be positive");
+            assertThatThrownBy(() -> call("Log", n("1"), n("8")))
+                    .hasMessage("Log: base must not be 1");
+            assertThat(call("Log", NULL, n("8")).isNull()).isTrue();
+            assertThat(call("Log", n("2"), NULL).isNull()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("Inverse trigonometry and angle units")
+    final class Angles {
+
+        @Test
+        @DisplayName("Asin, Acos and Atan2 answer as PostgreSQL does, at the boundaries too")
+        void inverses() {
+            assertThat(approx("Asin", "1")).isEqualTo(Math.PI / 2, within(1e-15));
+            assertThat(approx("Asin", "-1")).isEqualTo(-Math.PI / 2, within(1e-15));
+            assertThat(approx("Acos", "-1")).isEqualTo(Math.PI, within(1e-15));
+            assertThat(approx("Acos", "0.5")).isEqualTo(Math.PI / 3, within(1e-15));
+            assertThat(number(call("Atan2", n("1"), n("-1"))).doubleValue())
+                    .isEqualTo(3 * Math.PI / 4, within(1e-15));
+            assertThat(number(call("Atan2", n("-1"), n("0"))).doubleValue())
+                    .isEqualTo(-Math.PI / 2, within(1e-15));
+            assertThat(number(call("Atan2", n("0"), n("0")))).isEqualByComparingTo("0");
+            assertThat(call("Atan2", NULL, n("1")).isNull()).isTrue();
+            assertThat(call("Atan2", n("1"), NULL).isNull()).isTrue();
+        }
+
+        @Test
+        @DisplayName("Degrees and Radians convert either way")
+        void units() {
+            assertThat(approx("Degrees", "3.141592653589793")).isEqualTo(180.0);
+            assertThat(approx("Radians", "180")).isEqualTo(Math.PI);
+            assertThat(approx("Degrees", "-1")).isEqualTo(-57.29577951308232, within(1e-12));
         }
     }
 
@@ -180,7 +250,8 @@ final class MathFunctionsTest {
         @DisplayName("a NULL input yields NULL, not an error")
         void nullIn() {
             for (String name : new String[]{"Abs", "Int", "Fix", "Round", "Ceil", "Sgn",
-                    "Sqr", "Log", "Exp", "Sin", "Cos", "Tan", "Atn"}) {
+                    "Sqr", "Log", "Exp", "Sin", "Cos", "Tan", "Atn",
+                    "Log10", "Asin", "Acos", "Degrees", "Radians"}) {
                 assertThat(call(name, NULL).isNull()).as(name).isTrue();
             }
             assertThat(call("Power", NULL, n("2")).isNull()).isTrue();
