@@ -184,6 +184,10 @@ final class FunctionCoverageTest {
             exact("split_part",  "SPLIT_PART(\"a,b,c\", \",\", -1)",  "c"),
             exact("concat_ws",   "CONCAT_WS(\"-\", \"a\", 1)",        "a-1"),
             exact("initcap",     "INITCAP(\"hELLO wORLD\")",        "Hello World"),
+            exact("regexp_like",    "REGEXP_LIKE(\"abc123\", \"[0-9]+\")",       "true"),
+            exact("regexp_replace", "REGEXP_REPLACE(\"abc\", \"b\", \"X\")",     "aXc"),
+            exact("regexp_substr",  "REGEXP_SUBSTR(\"abc123\", \"[0-9]+\")",     "123"),
+            num  ("regexp_count",   "REGEXP_COUNT(\"a1b2\", \"[0-9]\")",         "2"),
             // ── Nested data ─────────────────────────────────────────────────────
             // Its argument is a constructed struct, since no literal spells an object.
             exact("entries", "Entries({ us: 3, gb: 7 })",

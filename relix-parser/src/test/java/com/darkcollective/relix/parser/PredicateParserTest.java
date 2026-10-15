@@ -453,4 +453,25 @@ final class PredicateParserTest extends ParserTestSupport {
                 select(like(attr("name"), str("%smith%")), rel("Users")));
     }
 
+
+    // ==================== Regular-expression match (#138) ====================
+
+    @Test
+    public void regexMatchIsRegexpLikeComparedWithTrue() {
+        assertParsesTo("σ s ~ 'a+' (R)", parse("σ REGEXP_LIKE(s, 'a+') = TRUE (R)"));
+        assertParsesTo("σ s ~* 'a+' (R)", parse("σ REGEXP_LIKE(s, 'a+', 'i') = TRUE (R)"));
+        assertParsesTo("σ s !~ 'a+' (R)", parse("σ REGEXP_LIKE(s, 'a+') = FALSE (R)"));
+        assertParsesTo("σ s !~* 'a+' (R)", parse("σ REGEXP_LIKE(s, 'a+', 'i') = FALSE (R)"));
+        assertParsesTo("σ s matches 'a+' (R)", parse("σ s ~ 'a+' (R)"));
+        assertParsesTo("σ s NOT MATCHES p (R)", parse("σ s !~ p (R)"));
+        assertParsesTo("σ (s ~ 'a') ∧ t = 1 (R)", parse("σ REGEXP_LIKE(s, 'a') = TRUE ∧ t = 1 (R)"));
+        // MATCHES is not reserved.
+        assertParsesTo("π matches (R)", AstBuilders.project(java.util.List.of(
+                AstBuilders.projected(AstBuilders.attr("matches"))), AstBuilders.rel("R")));
+        assertParsesTo("σ (s !~ 'a') ∧ t = 1 (R)", parse("σ REGEXP_LIKE(s, 'a') = FALSE ∧ t = 1 (R)"));
+        // A parenthesised condition followed by a match is its truth value matched.
+        assertParsesTo("σ (a = b) ~ 'x' (R)", parse("σ REGEXP_LIKE((a = b), 'x') = TRUE (R)"));
+        assertParseError("σ s ! 'a' (R)");
+        assertParseError("σ s ~ (R)");
+    }
 }

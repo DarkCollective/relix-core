@@ -520,6 +520,8 @@ condition_tail    ::= comparison_op operand
                     | ( "∈" | "IN" ) set_expr
                     | ( "∉" | ( "¬" | "NOT" ) "IN" ) set_expr
                     | ( ( "¬" | "NOT" ) )? "LIKE" operand ( "ESCAPE" STRING )?
+                    | ( "~" | "~*" | "!~" | "!~*" ) operand     /* a regular-expression match */
+                    | ( ( "¬" | "NOT" ) )? "MATCHES" operand
                     | ( ( "¬" | "NOT" ) )? "BETWEEN" operand ( "∧" | "AND" ) operand
                     | ( "=" | "≠" | "!=" | "<>" ) null_word     /* a null test */
                     | "IS" ( ( "¬" | "NOT" ) )? null_word        /* a null test */
@@ -722,6 +724,9 @@ are easy to miss in the rules above.
 - **`CAST` and `EXTRACT` are SQL's.** `CAST(x AS NUMBER)` is the conversion to the
   type, and a NULL casts to NULL. `EXTRACT(WEEK FROM d)` is `WEEK(d)`. `CAST` is not
   a name a function can have; `EXTRACT` without `FROM` is an ordinary call.
+- **A regular-expression match is a test.** `s ~ p` is `REGEXP_LIKE(s, p) = TRUE`,
+  `~*` ignores case, and `!~`, `!~*` and `NOT MATCHES` compare with FALSE. The pattern
+  is Java's dialect; `MATCHES` is not reserved.
 - **Where NULLs sort.** Without `NULLS FIRST` or `NULLS LAST`, a sort key puts its
   NULLs last whether it runs ascending or descending. PostgreSQL and Oracle put them
   first in a descending sort, so a query ported from them says `NULLS FIRST`. `NULLS`,

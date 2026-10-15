@@ -282,6 +282,10 @@ public final class Lexer {
                 if (match('=')) {
                     yield token(TokenType.NOT_EQUAL, startIndex, startLine, startColumn);
                 }
+                if (match('~')) {
+                    match('*');
+                    yield token(TokenType.REGEX_NOT_MATCH, startIndex, startLine, startColumn);
+                }
                 throw new ParseException(
                         "Unexpected character",
                         input,
@@ -348,6 +352,11 @@ public final class Lexer {
             case '*' -> token(TokenType.MULTIPLY, startIndex, startLine, startColumn);
             case '/' -> token(TokenType.DIVIDE, startIndex, startLine, startColumn);
             case '%' -> token(TokenType.MODULO, startIndex, startLine, startColumn);
+            // SQL's regular-expression match; ~* ignores case.
+            case '~' -> {
+                match('*');
+                yield token(TokenType.REGEX_MATCH, startIndex, startLine, startColumn);
+            }
             case '(' -> token(TokenType.LPAREN, startIndex, startLine, startColumn);
             case ')' -> token(TokenType.RPAREN, startIndex, startLine, startColumn);
             case ',' -> token(TokenType.COMMA, startIndex, startLine, startColumn);

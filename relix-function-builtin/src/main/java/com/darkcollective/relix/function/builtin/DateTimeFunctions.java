@@ -574,39 +574,10 @@ final class DateTimeFunctions {
      * than needing to be remembered here.
      */
     private static Optional<String> mysqlDateTrunc(String renderedUnit, String timestamp) {
-        return sqlStringLiteral(renderedUnit)
+        return Spellings.literal(renderedUnit)
                 .map(unit -> unit.toLowerCase(Locale.ROOT))
                 .map(MYSQL_TRUNCATION_PATTERNS::get)
                 .map(pattern -> "CAST(DATE_FORMAT(" + timestamp + ", '" + pattern
                         + "') AS DATETIME)");
-    }
-
-    /**
-     * Reads the text of a rendered SQL string literal, or empty when the argument is
-     * not one — an expression, a column, or a quoted run that does not close cleanly.
-     *
-     * <p>Undoubles an embedded quote, and declines a lone one: {@code 'a'||'b'} opens
-     * and closes with a quote but is two literals and an operator, and reading it as
-     * the single value {@code a'||'b} would be a spelling deciding what a fragment of
-     * SQL means.
-     */
-    private static Optional<String> sqlStringLiteral(String rendered) {
-        int last = rendered.length() - 1;
-        if (last < 1 || rendered.charAt(0) != '\'' || rendered.charAt(last) != '\'') {
-            return Optional.empty();
-        }
-        StringBuilder text = new StringBuilder(last - 1);
-        for (int i = 1; i < last; i++) {
-            char c = rendered.charAt(i);
-            if (c != '\'') {
-                text.append(c);
-            } else if (i + 1 < last && rendered.charAt(i + 1) == '\'') {
-                text.append('\'');
-                i++;
-            } else {
-                return Optional.empty();
-            }
-        }
-        return Optional.of(text.toString());
     }
 }
