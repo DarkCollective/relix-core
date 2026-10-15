@@ -137,6 +137,7 @@ final class FunctionCoverageTest {
             // ── Conditional ─────────────────────────────────────────────────────
             exact("iif",     "IIf(3 > 2, \"y\", \"n\")",           "y"),   // comparison-arg regression guard
             exact("nz",      "Nz(\"present\", \"fallback\")",      "present"),
+            exact("nullif",  "NULLIF(\"kept\", \"n/a\")",         "kept"),
             exact("coalesce","Coalesce(\"first\", \"second\")",    "first"),
             exact("switch",  "Switch(1 > 2, \"a\", 3 > 2, \"b\", \"c\")", "b"),  // first match wins; else default
             exact("choose",  "Choose(2, \"a\", \"b\", \"c\")",           "b"),  // 1-based positional pick

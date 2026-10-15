@@ -32,8 +32,13 @@ of any size, so `0.1 + 0.2 = 0.3` holds and a 64-bit id keeps every digit.
 
 A boolean literal is `TRUE` or `FALSE`, matched in any case.
 
-There is no NULL literal in an expression. A missing value is written as an empty
-cell, `⊥` or `NULL` in an inline table, and tested with `IS NULL` or `IS NOT NULL`.
+`NULL`, or `⊥`, is the missing value itself, written where a value goes:
+`IIf(late, NULL, fee)`, `COUNT(IIf(paid, id, NULL))`. It takes its type from where it
+stands, the other branch of a conditional, and is `ANY` alone. In a null test it is
+not a value but part of the test: `x = NULL` and `x IS NULL` both ask whether `x` is
+missing. Comparing with it in any other way, `x < NULL` or `NULL = x`, is refused,
+since such a comparison is never true. In an inline table a missing value is an empty
+cell, `⊥` or `NULL`.
 
 In an inline table, cells are bare values and are not written as literals: a cell
 holding `"Asha"` is the text with its quotes.
@@ -71,7 +76,8 @@ A negative number and a boolean column:
   π name, -1 → sentinel, FALSE → archived (Products)
 
 # Limitations:
-No exponent notation, no hexadecimal, and no NULL literal in expressions. A string
+No exponent notation and no hexadecimal. A column named `null` is written with
+backticks, `` `null` ``, since the bare word is the NULL literal. A string
 cannot span lines except by writing `\n`.
 
 # Alternatives:

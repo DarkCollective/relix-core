@@ -41,9 +41,15 @@ Bucket a numeric flag:
 Default a display value:
   π order_id, IIf(active = true, status, "inactive") → display_status (Accounts)
 
+A missing value in one branch — the result keeps the other branch's type:
+  π order_id, IIf(status = "cancelled", NULL, amount) → billable (Orders)
+
+Count only some rows, SQL's portable aggregate filter:
+  γ region, COUNT(IIf(status = "shipped", order_id, NULL)) → shipped (Orders)
+
 # Limitations:
-The condition must be BOOLEAN. The result type is ANY (the two branches may differ
-in type). A NULL condition yields NULL — neither branch is evaluated in that case.
+The condition must be BOOLEAN. The result type is the branches' common type, ANY
+when they differ; a NULL branch takes the other's. A NULL condition yields NULL — neither branch is evaluated in that case.
 
 # Alternatives:
 Nz / Coalesce specifically for substituting a value when something is NULL.

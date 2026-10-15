@@ -89,6 +89,11 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
     }
 
     @Override
+    public String visit(NullOperand node) {
+        return spelling.of("⊥");
+    }
+
+    @Override
     public String visit(DateOperand node) {
         return "DATE '" + node.value() + "'";
     }

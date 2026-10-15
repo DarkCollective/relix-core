@@ -126,9 +126,9 @@ final class AstBuilderCoverageTest {
         }
 
         @Test
-        @DisplayName("Operand permits 16 kinds")
+        @DisplayName("Operand permits 17 kinds")
         void operandCount() {
-            assertThat(concreteKinds(Operand.class)).hasSize(16);
+            assertThat(concreteKinds(Operand.class)).hasSize(17);
         }
     }
 

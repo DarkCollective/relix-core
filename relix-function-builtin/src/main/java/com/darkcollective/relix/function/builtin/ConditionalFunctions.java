@@ -17,6 +17,7 @@ package com.darkcollective.relix.function.builtin;
 
 import com.darkcollective.relix.function.Argument;
 import com.darkcollective.relix.function.Arity;
+import com.darkcollective.relix.function.FunctionContext;
 import com.darkcollective.relix.function.ScalarFunction;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.value.BooleanValue;
@@ -88,6 +89,18 @@ final class ConditionalFunctions {
                         Arity.atLeast(1), Category::widest,
                         Spellings.sql("COALESCE"),
                         ConditionalFunctions::coalesce),
+
+                // NULLIF(a, b) is NULL where a equals b, and a otherwise: SQL's way to turn
+                // a sentinel back into a missing value. Equal is the engine's equality, so
+                // it is offered only to backends whose plain = agrees with it; MySQL's and
+                // SQL Server's default collations ignore case, and would call 'a' and 'A'
+                // equal.
+                CONDITIONAL.contextual("NULLIF", ANY, PURE_DETERMINISTIC,
+                        List.of(p("value", ANY), p("sentinel", ANY)), Arity.exactly(2),
+                        types -> types.get(0),
+                        Spellings.sqlOn("NULLIF", 2, Spellings.POSTGRES, Spellings.DUCKDB,
+                                Spellings.SQLITE, Spellings.DB2),
+                        ConditionalFunctions::nullIf),
 
                 // Switch(cond1, val1, cond2, val2, …[, default]) — the searched CASE. The
                 // first condition that holds picks its value; a trailing odd argument is the
@@ -179,6 +192,27 @@ final class ConditionalFunctions {
     }
 
     // ── Result types ──────────────────────────────────────────────────────────
+
+    /**
+     * {@code NULLIF(a, b)}: NULL when {@code a} equals {@code b}, else {@code a}. A NULL
+     * {@code a} is NULL, and a NULL {@code b} equals nothing, so {@code a} comes back.
+     * Values the engine's order cannot compare, a number and a word, are not equal, as
+     * {@code =} finds them.
+     */
+    private static Value nullIf(FunctionContext context, List<Value> arguments) {
+        Value value = arguments.get(0);
+        Value sentinel = arguments.get(1);
+        if (value.isNull() || sentinel.isNull()) {
+            return value;
+        }
+        boolean equal;
+        try {
+            equal = context.valueOrder().compare(value, sentinel) == 0;
+        } catch (RuntimeException incomparable) {
+            equal = false;
+        }
+        return equal ? NullValue.INSTANCE : value;
+    }
 
     /** {@code IIf} returns one of its two branches; the condition's type says nothing. */
     private static ScalarType iifReturnType(List<ScalarType> argumentTypes) {

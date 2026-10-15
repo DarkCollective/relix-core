@@ -16,6 +16,7 @@
 package com.darkcollective.relix.semantic.internal;
 
 import com.darkcollective.relix.ast.ArrayConstruction;
+import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.internal.AttributeNames;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
@@ -42,8 +43,11 @@ import com.darkcollective.relix.symbol.StructType;
 import com.darkcollective.relix.symbol.Type;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Infers the static {@link Type} of an {@link Operand} expression against an input
@@ -109,6 +113,8 @@ final class OperandTypeInferrer {
             case NumberOperand            ignored -> ScalarType.NUMBER;
             case StringOperand            ignored -> ScalarType.STRING;
             case BooleanOperand           ignored -> ScalarType.BOOLEAN;
+            // NULL takes its type from where it stands (see the conditional rules); alone it is ANY.
+            case NullOperand              ignored -> ScalarType.ANY;
             case DateOperand              ignored -> ScalarType.DATE;
             case TimeOperand              ignored -> ScalarType.TIME;
             case TimestampOperand         ignored -> ScalarType.TIMESTAMP;
@@ -122,11 +128,7 @@ final class OperandTypeInferrer {
             // A function's result may follow its arguments — a conditional returns
             // whichever branch it selects — so the argument types are inferred first
             // and the resolved definition is asked what a call with those returns.
-            case FunctionCall fn ->
-                    ResolvedFunction.of(functions, fn.functionName(), symbolTable)
-                            .returnType(fn.arguments().stream()
-                                    .map(arg -> scalar(infer(arg, inputSchema)))
-                                    .toList());
+            case FunctionCall fn -> callType(fn, inputSchema);
             case SetLiteralOperand        ignored -> ScalarType.ANY;
             // Nested constructions yield struct/array values with a recursively
             // inferred nested type (NF² — ADR-0001).
@@ -141,6 +143,55 @@ final class OperandTypeInferrer {
             // itself (QueryParameters); on its own it is whatever its value turns out to be.
             case ParameterOperand    ignored -> ScalarType.ANY;
         };
+    }
+
+    /**
+     * The type a call returns, asked of the resolved definition with the argument types.
+     *
+     * <p>A NULL argument has no type of its own and takes the one its context expects:
+     * in {@code IIf(late, NULL, fee)} the other branch's. Read as {@code ANY}, it would
+     * make the call {@code ANY} too, so when it does, each type another argument has is
+     * tried in its place, and the first for which the call returns that same type is
+     * the answer — {@code NUMBER} here — provided the other arguments hold it there.
+     * Where none settles it, the call is {@code ANY}.
+     */
+    private Type callType(FunctionCall fn, Schema inputSchema) {
+        ResolvedFunction resolved = ResolvedFunction.of(functions, fn.functionName(), symbolTable);
+        List<ScalarType> types = fn.arguments().stream()
+                .map(arg -> scalar(infer(arg, inputSchema)))
+                .toList();
+        Type plain = resolved.returnType(types);
+        if (plain != ScalarType.ANY || fn.arguments().stream().noneMatch(NullOperand.class::isInstance)) {
+            return plain;
+        }
+        Set<ScalarType> candidates = new LinkedHashSet<>();
+        for (int i = 0; i < types.size(); i++) {
+            if (!(fn.arguments().get(i) instanceof NullOperand) && types.get(i) != ScalarType.ANY) {
+                candidates.add(types.get(i));
+            }
+        }
+        for (ScalarType candidate : candidates) {
+            // The candidate settles the call only if the other arguments hold it there:
+            // where any type given to the NULLs comes straight back, as in
+            // IIf(c, NULL, NULL), the NULLs alone decide and nothing is known.
+            ScalarType probe = candidate == ScalarType.STRING ? ScalarType.NUMBER : ScalarType.STRING;
+            if (resolved.returnType(withNulls(fn, types, candidate)) == candidate
+                    && resolved.returnType(withNulls(fn, types, probe)) != probe) {
+                return candidate;
+            }
+        }
+        return plain;
+    }
+
+    /** {@code types} with each NULL argument's position given {@code type}. */
+    private static List<ScalarType> withNulls(FunctionCall fn, List<ScalarType> types, ScalarType type) {
+        List<ScalarType> settled = new ArrayList<>(types);
+        for (int i = 0; i < settled.size(); i++) {
+            if (fn.arguments().get(i) instanceof NullOperand) {
+                settled.set(i, type);
+            }
+        }
+        return settled;
     }
 
     /**
