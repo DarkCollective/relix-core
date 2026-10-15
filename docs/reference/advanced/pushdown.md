@@ -217,8 +217,9 @@ differently:
   back trimmed from the engine and untrimmed from the database. And searching is
   collation-dependent, so SQL's `LOCATE` finds a case-insensitive match where
   relix finds none.
-- **The transcendental numerics** — `Sqr`, `Log`, `Exp`, `Power`, `Sin`, `Cos`,
-  `Tan`, `Atn`. A database computes these to within about one unit in the last
+- **The transcendental numerics** — `Sqr`, `Log`, `Log10`, `Exp`, `Power`, `Sin`,
+  `Cos`, `Tan`, `Atn`, `Asin`, `Acos`, `Atan2`, and the angle conversions
+  `Degrees` and `Radians`. A database computes these to within about one unit in the last
   place, and so does the engine, and they are entitled to land on either side of
   it: MySQL answers `TAN(4)` with `1.1578212823495775` where relix answers
   `1.1578212823495777`. Four of them additionally have no answer for some

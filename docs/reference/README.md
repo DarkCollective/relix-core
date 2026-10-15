@@ -208,6 +208,7 @@ argument).
 [Sgn](functions/math/sgn.md),
 [Sqr](functions/math/sqr.md),
 [Log](functions/math/log.md),
+[Log10](functions/math/log10.md),
 [Exp](functions/math/exp.md),
 [Power](functions/math/power.md),
 [Mod](functions/math/mod.md),
@@ -215,6 +216,11 @@ argument).
 [Cos](functions/math/cos.md),
 [Tan](functions/math/tan.md),
 [Atn](functions/math/atn.md),
+[Atan2](functions/math/atan2.md),
+[Asin](functions/math/asin.md),
+[Acos](functions/math/acos.md),
+[Degrees](functions/math/degrees.md),
+[Radians](functions/math/radians.md),
 [Pi](functions/math/pi.md),
 [Rand](functions/math/rand.md)
 

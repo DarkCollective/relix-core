@@ -7,7 +7,7 @@ Sin(<radians>)
 
 # Description:
 Sin returns the sine of an angle given in radians. It is used in geometry, signal,
-and wave calculations. (Multiply degrees by π/180 to convert to radians first.)
+and wave calculations. (Convert degrees with Radians first.)
 
 # Technical Description:
 Sin(x: NUMBER) → NUMBER. Returns sin(x) where x is in radians (Math.sin). NULL
@@ -18,11 +18,11 @@ Resolve a wind reading into its east/west component:
   π station, speed * Sin(direction_rad) → east (Wind)
 
 From degrees:
-  π Sin(degrees * 3.14159265 / 180) → s (Angles)
+  π Sin(Radians(degrees)) → s (Angles)
 
 # Limitations:
 Argument is in radians, not degrees. NUMBER only; NULL in → NULL out. Floating
 point.
 
 # See Also:
-[cos](cos.md), [tan](tan.md), [atn](atn.md)
+[cos](cos.md), [tan](tan.md), [asin](asin.md), [radians](radians.md)

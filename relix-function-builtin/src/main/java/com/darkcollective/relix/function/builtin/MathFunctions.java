@@ -142,12 +142,18 @@ final class MathFunctions {
                             return Math.sqrt(d);
                         })),
 
-                MATH.fn("Log", NUMBER, PURE_DETERMINISTIC, List.of(p("x", NUMBER)),
-                        args -> approximate(args, "Log", d -> {
+                // Log(x) is the natural logarithm; Log(b, y) is the logarithm of y to
+                // base b, in SQL's argument order (PostgreSQL's LOG(b, x)).
+                MATH.fn("Log", NUMBER, PURE_DETERMINISTIC,
+                        List.of(p("x", NUMBER), p("y", NUMBER)), Arity.between(1, 2),
+                        MathFunctions::log),
+
+                MATH.fn("Log10", NUMBER, PURE_DETERMINISTIC, List.of(p("x", NUMBER)),
+                        args -> approximate(args, "Log10", d -> {
                             if (d <= 0) {
-                                throw reject("Log: argument must be positive");
+                                throw reject("Log10: argument must be positive");
                             }
-                            return Math.log(d);
+                            return Math.log10(d);
                         })),
 
                 MATH.fn("Exp", NUMBER, PURE_DETERMINISTIC, List.of(p("x", NUMBER)),
@@ -164,6 +170,26 @@ final class MathFunctions {
 
                 MATH.fn("Atn", NUMBER, PURE_DETERMINISTIC, List.of(p("x", NUMBER)),
                         args -> approximate(args, "Atn", Math::atan)),
+
+                // The inverse sine and cosine are defined on [-1, 1] only; outside it SQL
+                // raises (PostgreSQL: "input is out of range"), and so does relix.
+                MATH.fn("Asin", NUMBER, PURE_DETERMINISTIC, List.of(p("x", NUMBER)),
+                        args -> approximate(args, "Asin", d -> Math.asin(unit(d, "Asin")))),
+
+                MATH.fn("Acos", NUMBER, PURE_DETERMINISTIC, List.of(p("x", NUMBER)),
+                        args -> approximate(args, "Acos", d -> Math.acos(unit(d, "Acos")))),
+
+                // Atan2(y, x) is the angle of the point (x, y), in (-π, π]: the quadrant
+                // Atn(y / x) cannot tell, and an answer where x is zero.
+                MATH.fn("Atan2", NUMBER, PURE_DETERMINISTIC,
+                        List.of(p("y", NUMBER), p("x", NUMBER)),
+                        MathFunctions::atan2),
+
+                MATH.fn("Degrees", NUMBER, PURE_DETERMINISTIC, List.of(p("radians", NUMBER)),
+                        args -> approximate(args, "Degrees", Math::toDegrees)),
+
+                MATH.fn("Radians", NUMBER, PURE_DETERMINISTIC, List.of(p("degrees", NUMBER)),
+                        args -> approximate(args, "Radians", Math::toRadians)),
 
                 // Pi is the constant π — nullary, and the one math built-in that is a
                 // pure constant rather than a computation of its argument. It declares
@@ -211,6 +237,59 @@ final class MathFunctions {
         }
         double x = number(args.get(0), function).doubleValue();
         return new NumberValue(BigDecimal.valueOf(operation.applyAsDouble(x)));
+    }
+
+    /** Returns an inverse-trig argument that lies in [-1, 1], rejecting one outside. */
+    private static double unit(double x, String function) {
+        if (x < -1 || x > 1) {
+            throw reject(function + ": argument must be between -1 and 1");
+        }
+        return x;
+    }
+
+    /**
+     * {@code Log(x)}, the natural logarithm, or {@code Log(b, y)}, the logarithm of
+     * {@code y} to base {@code b}. A NULL in either argument returns NULL.
+     *
+     * <p>The base-{@code b} logarithm is {@code ln y / ln b}, which lands an ulp off an
+     * exact power — {@code ln 1000 / ln 10} is {@code 2.9999999999999996}. Where the
+     * nearest integer is the answer, it is returned, so {@code Log(10, 1000)} is
+     * {@code 3} as PostgreSQL's exact {@code LOG} has it.
+     */
+    private static Value log(List<Value> args) {
+        if (args.get(0).isNull() || (args.size() == 2 && args.get(1).isNull())) {
+            return NullValue.INSTANCE;
+        }
+        if (args.size() == 1) {
+            double x = number(args.get(0), "Log").doubleValue();
+            if (x <= 0) {
+                throw reject("Log: argument must be positive");
+            }
+            return new NumberValue(BigDecimal.valueOf(Math.log(x)));
+        }
+        double base = number(args.get(0), "Log").doubleValue();
+        double y = number(args.get(1), "Log").doubleValue();
+        if (base <= 0 || y <= 0) {
+            throw reject("Log: arguments must be positive");
+        }
+        if (base == 1) {
+            throw reject("Log: base must not be 1");
+        }
+        double ratio = Math.log(y) / Math.log(base);
+        double whole = Math.rint(ratio);
+        if (Math.pow(base, whole) == y) {
+            ratio = whole;
+        }
+        return new NumberValue(BigDecimal.valueOf(ratio));
+    }
+
+    private static Value atan2(List<Value> args) {
+        if (args.get(0).isNull() || args.get(1).isNull()) {
+            return NullValue.INSTANCE;
+        }
+        double y = number(args.get(0), "Atan2").doubleValue();
+        double x = number(args.get(1), "Atan2").doubleValue();
+        return new NumberValue(BigDecimal.valueOf(Math.atan2(y, x)));
     }
 
     private static Value round(List<Value> args) {

@@ -49,7 +49,7 @@ final class BuiltinFunctionLibraryTest {
      * {@code Pi} — the two built-ins that were never in the library the port started from
      * — {@code Mod}, and the multi-branch conditionals {@code Switch} and {@code Choose}.
      */
-    private static final int BUILTIN_COUNT = 64;
+    private static final int BUILTIN_COUNT = 70;
 
     /** The eight aggregates: five SQL reducers, one that gathers, two that pick a row. */
     private static final int AGGREGATE_COUNT = 8;
@@ -127,7 +127,7 @@ final class BuiltinFunctionLibraryTest {
             assertThat(byCategory).containsOnly(
                     Map.entry("string", 13L),
                     Map.entry("similarity", 5L),
-                    Map.entry("math", 17L),
+                    Map.entry("math", 23L),
                     Map.entry("datetime", 16L),
                     Map.entry("conditional", 5L),
                     Map.entry("typecheck", 2L),
