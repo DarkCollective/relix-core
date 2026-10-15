@@ -74,6 +74,14 @@ final class ReferencePagesTest {
     }
 
     @Test
+    @DisplayName("the words a reader asks for a string or number literal find the scalar-literals page")
+    void scalarLiteralWords() {
+        for (String word : new String[] {"literal", "string", "number", "quote", "boolean", "true"}) {
+            assertThat(lookup(word)).as(word).isEqualTo("literals/scalar-literals.md");
+        }
+    }
+
+    @Test
     @DisplayName("a page is keyed by the ASCII spellings the spellings table gives its operator")
     void asciiSpellingsAreKeys() {
         assertThat(lookup("anti")).isEqualTo("joins/anti-join.md");

@@ -460,6 +460,11 @@ final class ReferenceIndex {
               "introspection-catalog", "catalog", "relix.catalog", "reserved namespace"),
 
             // ── Literals ─────────────────────────────────────────────────────
+            e("literals/scalar-literals.md",   "literal", "String, number and boolean", "\"…\"",
+              "String, number and boolean literals",
+              "scalar-literals", "literal", "literals", "string", "string literal", "strings",
+              "number", "number literal", "numbers", "quote", "quotes", "escape",
+              "boolean", "true", "false"),
             e("literals/date-literal.md",      "literal", "Date",      "DATE '…'",      "Date literal",
               "date-literal", "date literal"),
             e("literals/time-literal.md",      "literal", "Time",      "TIME '…'",      "Time literal",

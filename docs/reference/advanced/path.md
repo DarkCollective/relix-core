@@ -2,6 +2,7 @@
 
 # Syntax:
 PATH <from>, <to> HOPS <m> TO <n> AS <depth> (Edges)
+-- returns one row per connected pair: <from>, <to> and the NUMBER <depth>
 
 PATH <from>, <to> HOPS <n> AS <depth> (Edges)      // shorthand for HOPS 1 TO n
 

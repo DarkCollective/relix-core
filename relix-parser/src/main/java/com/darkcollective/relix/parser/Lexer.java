@@ -38,7 +38,7 @@ import java.util.Map;
  * Kleene-star postfix glyph contextually by the parser when it follows a relation
  * expression.
  * Single-quoted and double-quoted string literals are accepted; escape
- * sequences {@code \\}, {@code \"}, {@code \n}, {@code \t}, {@code \r} are
+ * sequences {@code \\}, {@code \"}, {@code \'}, {@code \n} and {@code \t} are
  * decoded inside string literals.
  *
  * <p>Comments are SQL's: {@code --} to the end of the line, and {@code /* *}{@code /}
