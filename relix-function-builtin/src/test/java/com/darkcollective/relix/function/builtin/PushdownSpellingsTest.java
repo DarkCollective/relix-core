@@ -700,13 +700,72 @@ final class PushdownSpellingsTest {
         }
     }
 
+    @Nested
+    @DisplayName("the calendar fields EXTRACT names (#135)")
+    final class CalendarFields {
+
+        @Test
+        @DisplayName("PostgreSQL and DuckDB extract each field by its own name")
+        void extract() {
+            for (String field : List.of("DOW", "ISODOW", "DOY", "WEEK", "ISOYEAR", "QUARTER")) {
+                assertThat(render(field, POSTGRES, "d")).as(field).contains("EXTRACT(" + field + " FROM d)");
+                assertThat(render(field, DUCKDB, "d")).as(field).contains("EXTRACT(" + field + " FROM d)");
+                assertThat(render(field, POSTGRES)).as(field).isEmpty();
+                assertThat(render(field, SQLITE, "d")).as(field).isEmpty();
+                assertThat(render(field, GENERIC, "d")).as(field).isEmpty();
+                assertThat(render(field, DB2, "d")).as(field).isEmpty();
+                assertThat(render(field, new PushdownTarget("graphql", ""), "d")).as(field).isEmpty();
+            }
+            assertThat(render("EPOCH", POSTGRES, "d")).contains("EXTRACT(EPOCH FROM d)");
+            assertThat(render("EPOCH", DUCKDB, "d")).isEmpty();
+            assertThat(render("EPOCH", MONGO, "d")).isEmpty();
+            assertThat(render("EPOCH", POSTGRES)).isEmpty();
+            assertThat(render("EPOCH", MYSQL, "d")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("MySQL counts the days of a week from other origins, and has QUARTER and DAYOFYEAR")
+        void mysql() {
+            assertThat(render("DOW", MYSQL, "d")).contains("(DAYOFWEEK(d) - 1)");
+            assertThat(render("ISODOW", MYSQL, "d")).contains("(WEEKDAY(d) + 1)");
+            assertThat(render("DOY", MYSQL, "d")).contains("DAYOFYEAR(d)");
+            assertThat(render("QUARTER", MYSQL, "d")).contains("QUARTER(d)");
+            assertThat(render("WEEK", MYSQL, "d")).isEmpty();
+            assertThat(render("DOW", MYSQL)).isEmpty();
+            assertThat(render("ISODOW", MYSQL)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("SQL Server reads DATEPART at UTC where it has the part; its weekday depends on DATEFIRST")
+        void sqlServer() {
+            assertThat(render("QUARTER", SQLSERVER, "d")).contains("DATEPART(quarter, SWITCHOFFSET(d, '+00:00'))");
+            assertThat(render("WEEK", SQLSERVER, "d")).contains("DATEPART(iso_week, SWITCHOFFSET(d, '+00:00'))");
+            assertThat(render("DOY", SQLSERVER, "d")).contains("DATEPART(dayofyear, SWITCHOFFSET(d, '+00:00'))");
+            assertThat(render("DOW", SQLSERVER, "d")).isEmpty();
+            assertThat(render("ISOYEAR", SQLSERVER, "d")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("MongoDB's operators, Sunday-based day of week made zero-based")
+        void mongo() {
+            assertThat(render("DOW", MONGO, "\"$d\"")).contains("{\"$subtract\": [{\"$dayOfWeek\": \"$d\"}, 1]}");
+            assertThat(render("ISODOW", MONGO, "\"$d\"")).contains("{\"$isoDayOfWeek\": \"$d\"}");
+            assertThat(render("WEEK", MONGO, "\"$d\"")).contains("{\"$isoWeek\": \"$d\"}");
+            assertThat(render("ISOYEAR", MONGO, "\"$d\"")).contains("{\"$isoWeekYear\": \"$d\"}");
+            assertThat(render("DOY", MONGO, "\"$d\"")).contains("{\"$dayOfYear\": \"$d\"}");
+            assertThat(render("QUARTER", MONGO, "\"$d\"")).isEmpty();
+            assertThat(render("DOW", MONGO)).isEmpty();
+        }
+    }
+
     @Test
     @DisplayName("every other built-in is evaluated in-engine, and declines every target")
     void everythingElseDeclines() {
         List<String> spelled = List.of("year", "month", "day", "hour", "minute", "second",
                 "date_trunc", "abs", "int", "ceil", "sgn", "round", "fix", "mod", "replace",
                 "coalesce", "nz", "isnull", "len", "left", "right", "mid", "least", "greatest",
-                "iif", "switch", "choose", "nullif");
+                "iif", "switch", "choose", "nullif",
+                "dow", "isodow", "doy", "week", "isoyear", "quarter", "epoch");
 
         List<String> unexpected = BuiltinCalls.all().stream()
                 .filter(fn -> !spelled.contains(fn.signature().canonicalName()))

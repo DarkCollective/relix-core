@@ -166,4 +166,35 @@ final class ConversionFunctionsTest {
             }
         }
     }
+
+    @Nested
+    @DisplayName("CBool, as SQL's CAST to BOOLEAN reads a value (#135)")
+    final class Boolean {
+
+        @Test
+        @DisplayName("a number is true unless it is zero; text is one of PostgreSQL's words, trimmed, any case")
+        void reads() {
+            assertThat(truth(call("CBool", n("0")))).isEqualTo(false);
+            assertThat(truth(call("CBool", n("-2.5")))).isEqualTo(true);
+            assertThat(truth(call("CBool", com.darkcollective.relix.value.BooleanValue.FALSE))).isEqualTo(false);
+            for (String yes : new String[]{"t", "TRUE", " yes ", "On", "1", "y"}) {
+                assertThat(truth(call("CBool", s(yes)))).as(yes).isEqualTo(true);
+            }
+            for (String no : new String[]{"f", "False", "NO", "off", "0", "n"}) {
+                assertThat(truth(call("CBool", s(no)))).as(no).isEqualTo(false);
+            }
+        }
+
+        @Test
+        @DisplayName("anything else is refused, naming the value")
+        void refuses() {
+            assertThatThrownBy(() -> call("CBool", s("maybe")))
+                    .hasMessage("CBool: cannot convert \"maybe\" to a boolean");
+            assertThatThrownBy(() -> call("CBool", com.darkcollective.relix.value.NullValue.INSTANCE))
+                    .hasMessage("CBool: cannot convert NULL");
+            assertThatThrownBy(() -> call("CBool", new com.darkcollective.relix.value.DateValue(
+                    java.time.LocalDate.of(2026, 1, 1))))
+                    .hasMessage("CBool: cannot convert a DATE to a boolean");
+        }
+    }
 }

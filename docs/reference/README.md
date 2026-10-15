@@ -169,6 +169,8 @@ Writing constant values, including the first-class temporal types.
 | Page | What it does |
 |------|--------------|
 | [String, number and boolean literals](literals/scalar-literals.md) | `"text"` or `'text'`, `42`, `3.25`, `1e6`, `TRUE` / `FALSE` |
+| [CAST](language/cast.md) | `CAST(x AS type)` — convert a value to NUMBER, STRING, BOOLEAN, DATE, TIME or TIMESTAMP |
+| [EXTRACT](language/extract.md) | `EXTRACT(field FROM d)` — a field of a date or time, day of week and ISO week among them |
 | [Arithmetic and concatenation](language/arithmetic.md) | `+ - * /`, SQL's `%` and `\|\|` |
 | [DATE literal](literals/date-literal.md) | `DATE '2026-01-31'` |
 | [TIME literal](literals/time-literal.md) | `TIME '09:30:00'` |
@@ -244,7 +246,14 @@ argument).
 [DAYS](functions/datetime/days.md),
 [to_date](functions/datetime/to_date.md),
 [to_time](functions/datetime/to_time.md),
-[to_timestamp](functions/datetime/to_timestamp.md)
+[to_timestamp](functions/datetime/to_timestamp.md),
+[DOW](functions/datetime/dow.md),
+[ISODOW](functions/datetime/isodow.md),
+[DOY](functions/datetime/doy.md),
+[WEEK](functions/datetime/week.md),
+[ISOYEAR](functions/datetime/isoyear.md),
+[QUARTER](functions/datetime/quarter.md),
+[EPOCH](functions/datetime/epoch.md)
 
 **Conditional** —
 [IIf](functions/conditional/iif.md),
@@ -265,7 +274,8 @@ argument).
 **Conversion** —
 [CStr](functions/conversion/cstr.md),
 [CInt](functions/conversion/cint.md),
-[CDbl](functions/conversion/cdbl.md)
+[CDbl](functions/conversion/cdbl.md),
+[CBool](functions/conversion/cbool.md)
 
 **Nested data** —
 [Entries](functions/nested/entries.md)

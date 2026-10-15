@@ -240,6 +240,14 @@ final class GrammarReferenceTest {
             "query { π 2e → a (R) };",
             "query { λ 1e3 (R) };",
             "Bad := \"a\"\"b\";",
+            // CAST and EXTRACT
+            "query { π CAST(a AS NUMBER) → n, cast(b as date) → d, CAST(c + 1 AS STRING) → s (R) };",
+            "query { π EXTRACT(WEEK FROM d) → w, extract(epoch from t) → e (R) };",
+            "query { π EXTRACT(a, b) → x (R) };",
+            "query { π EXTRACT(FORTNIGHT FROM d) → x (R) };",
+            "query { π CAST(a AS MONEY) → x (R) };",
+            "query { π CAST(a) → x (R) };",
+            "query { π cast → x (R) };",
             // JOIN … USING
             "query { A JOIN B USING (id) ⟕ USING (a, b) C };",
             "query { A LJOIN σ x = 1 (B) USING (id) };",

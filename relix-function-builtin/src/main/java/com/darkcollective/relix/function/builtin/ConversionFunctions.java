@@ -37,11 +37,12 @@ import static com.darkcollective.relix.function.builtin.Arguments.reject;
 import static com.darkcollective.relix.function.builtin.Category.PURE_DETERMINISTIC;
 import static com.darkcollective.relix.function.builtin.Category.p;
 import static com.darkcollective.relix.symbol.ScalarType.ANY;
+import static com.darkcollective.relix.symbol.ScalarType.BOOLEAN;
 import static com.darkcollective.relix.symbol.ScalarType.NUMBER;
 import static com.darkcollective.relix.symbol.ScalarType.STRING;
 
 /**
- * The conversion built-ins: reading a value as a string or as a number.
+ * The conversion built-ins: reading a value as a string, a number or a boolean.
  *
  * <p>These are the ones that say no. A conversion is a claim that the value means
  * something in the target type, and NULL, a nested value and a temporal value each mean
@@ -71,7 +72,36 @@ final class ConversionFunctions {
                         args -> toNumber(args.get(0), "CInt", true)),
 
                 CONVERSION.fn("CDbl", NUMBER, PURE_DETERMINISTIC, List.of(p("value", ANY)),
-                        args -> toNumber(args.get(0), "CDbl", false)));
+                        args -> toNumber(args.get(0), "CDbl", false)),
+
+                // CBool reads a value as SQL's CAST to BOOLEAN does: a number is true
+                // unless it is zero, and text is one of PostgreSQL's spellings.
+                CONVERSION.fn("CBool", BOOLEAN, PURE_DETERMINISTIC, List.of(p("value", ANY)),
+                        args -> toBoolean(args.get(0))));
+    }
+
+    /** The text PostgreSQL reads as a boolean, trimmed and in any case: true then false. */
+    private static final java.util.Set<String> TRUE_TEXT = java.util.Set.of("t", "true", "y", "yes", "on", "1");
+    private static final java.util.Set<String> FALSE_TEXT = java.util.Set.of("f", "false", "n", "no", "off", "0");
+
+    /** Reads a value as a boolean, naming one that is not. */
+    private static Value toBoolean(Value value) {
+        return switch (value) {
+            case BooleanValue b -> b;
+            case NumberValue n -> BooleanValue.of(n.value().signum() != 0);
+            case StringValue text -> {
+                String word = text.value().strip().toLowerCase(java.util.Locale.ROOT);
+                if (TRUE_TEXT.contains(word)) {
+                    yield BooleanValue.of(true);
+                }
+                if (FALSE_TEXT.contains(word)) {
+                    yield BooleanValue.of(false);
+                }
+                throw reject("CBool: cannot convert \"" + text.value() + "\" to a boolean");
+            }
+            case NullValue ignored -> throw reject("CBool: cannot convert NULL");
+            default -> throw reject("CBool: cannot convert a " + value.type() + " to a boolean");
+        };
     }
 
     /**

@@ -1,7 +1,7 @@
 # Name: to_time (parse a string to a TIME)
 
 # Syntax:
-to_time(<string>)
+to_time(<string-or-temporal>)
 
 π id, to_time(time_str) → at (RawImport)
 
@@ -10,9 +10,13 @@ to_time turns a text string into a proper TIME (a clock time), so time-of-day da
 that arrived as text can be compared and computed like a real time.
 
 # Technical Description:
-to_time(s: STRING) → TIME. Parses s as an ISO-8601 local time (LocalTime.parse); a
+to_time(s: STRING | TIME | TIMESTAMP) → TIME. Parses s as an ISO-8601 local time (LocalTime.parse); a
 malformed string is an evaluation error. NULL input returns NULL. PURE,
 DETERMINISTIC.
+
+Given a temporal value it converts it as SQL's CAST does: a TIMESTAMP gives its time of day at UTC. A
+TIME is returned as it is, and any other kind is an evaluation error. `CAST(x AS
+TIME)` is this function.
 
 # Examples:
 Convert an imported text time:
