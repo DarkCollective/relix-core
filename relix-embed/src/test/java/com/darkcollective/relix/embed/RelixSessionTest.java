@@ -356,6 +356,43 @@ final class RelixSessionTest {
          * carries it as a location, so its message does not repeat it.
          */
         @Test
+        @DisplayName("SQL's SELECT column list, an aggregate outside GROUP, comma-listed constraints and a trailing SORT are each told what to write instead")
+        void sqlHabitsDiagnosed() {
+            String table = "Items := [| Item | Value |\n| Tent | 3 |];\n";
+            try (Relix relix = Relix.open()) {
+                Diagnostic select = relix.validate(table
+                        + "Totals := { SELECT 'TOTAL' -> Item, SUM(Value) -> Value (Items) };\n")
+                        .getFirst();
+                assertThat(select.message()).isEqualTo("Syntax error in RA expression:"
+                        + " 'SELECT' (σ) filters rows by a condition, and found '->' where its"
+                        + " comparison belongs. To choose or compute columns, use PROJECT (π):"
+                        + " PROJECT a, b * 2 -> c (R)");
+                assertThat(select.location().orElseThrow().line()).isEqualTo(3);
+                assertThat(select.location().orElseThrow().column()).isEqualTo(28);
+
+                Diagnostic aggregate = relix.validate(table
+                        + "query { PROJECT 'TOTAL' -> Item, SUM(Value) -> Value (Items) };\n")
+                        .getFirst();
+                assertThat(aggregate.message()).isEqualTo("'SUM' is an aggregate and can only be"
+                        + " used inside GROUP (γ). For a total over the whole relation, write"
+                        + " GROUP SUM(x) -> total (R)");
+
+                Diagnostic constraints = relix.validate(table
+                        + "S := { OPTIMIZE MAXIMIZE SUM(Value) SUBJECT TO SUM(Value) <= 80,"
+                        + " SUM(Value) <= 60 (Items) };\n").getFirst();
+                assertThat(constraints.message()).isEqualTo("Syntax error in RA expression:"
+                        + " Join OPTIMIZE constraints with AND, not ',':"
+                        + " SUBJECT TO SUM(a) <= 80 AND SUM(b) <= 60");
+
+                Diagnostic sort = relix.validate(table
+                        + "query { PROJECT Item, Value (Items) SORT Item ASC };\n").getFirst();
+                assertThat(sort.message()).isEqualTo("Syntax error in RA expression:"
+                        + " 'SORT' is written before its input, which it takes in parentheses:"
+                        + " SORT Item ASC (PROJECT Item, Value (Items))");
+            }
+        }
+
+        @Test
         @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
         void parseFailurePositionStatedOnce() {
             String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";

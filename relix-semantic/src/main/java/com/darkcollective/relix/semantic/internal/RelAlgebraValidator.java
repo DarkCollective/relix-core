@@ -121,6 +121,7 @@ import com.darkcollective.relix.symbol.function.RelationFunctionSymbol;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -2379,6 +2380,11 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      * @param name the unresolved function name as the user typed it
      */
     private void unknownFunction(SourceLocation loc, String name) {
+        Optional<String> misplaced = aggregateOutsideGroup(name);
+        if (misplaced.isPresent()) {
+            error(loc, misplaced.get());
+            return;
+        }
         String suggestion = Suggestions.didYouMean(name, functionCandidates());
         if (suggestion.isEmpty() && functions.isEmpty()) {
             // Nothing near the name, and no library to have offered one: every call in
@@ -2390,6 +2396,26 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             return;
         }
         error(loc, "Unknown function: '" + name + "'" + suggestion);
+    }
+
+    /**
+     * The diagnostic for an unresolved call that names an aggregate, such as
+     * {@code SUM(x)} in a projection, or empty when {@code name} names none.
+     *
+     * <p>That is SQL's habit, {@code SELECT SUM(x) FROM R}. The name is not unknown, it
+     * is in the wrong place, and "unknown function" sends the writer looking for a
+     * spelling that does not exist.
+     *
+     * @param name the unresolved function name as the user typed it
+     * @return the message saying where the aggregate belongs, if it is one
+     */
+    static Optional<String> aggregateOutsideGroup(String name) {
+        return Arrays.stream(AggregateOperator.values())
+                .filter(op -> op.name().equalsIgnoreCase(name))
+                .findFirst()
+                .map(op -> "'" + name + "' is an aggregate and can only be used inside GROUP (γ)."
+                        + " For a total over the whole relation, write GROUP " + op.name()
+                        + "(x) -> total (R)");
     }
 
     /**
