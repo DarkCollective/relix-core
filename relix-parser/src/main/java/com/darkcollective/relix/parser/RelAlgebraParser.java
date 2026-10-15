@@ -44,6 +44,8 @@ public final class RelAlgebraParser {
     private final Lexer lexer;
     private final String filePath;
     private final List<Token> lookahead = new ArrayList<>();
+    /** Every token parsed so far, for an error that quotes the expression back. */
+    private final List<Token> consumed = new ArrayList<>();
     private Token current;
 
     /**
@@ -99,7 +101,7 @@ public final class RelAlgebraParser {
         Objects.requireNonNull(input, "input");
         RelAlgebraParser parser = new RelAlgebraParser(input);
         RelNode result = parser.parseExpression(0);
-        parser.expect(TokenType.EOF, "Expected end of input");
+        parser.expectEnd();
         return result;
     }
 
@@ -126,7 +128,7 @@ public final class RelAlgebraParser {
         }
         RelAlgebraParser parser = new RelAlgebraParser(input, startLine, startColumn);
         RelNode result = parser.parseExpression(0);
-        parser.expect(TokenType.EOF, "Expected end of input");
+        parser.expectEnd();
         return result;
     }
 
@@ -173,7 +175,7 @@ public final class RelAlgebraParser {
         }
         RelAlgebraParser parser = new RelAlgebraParser(input, filePath, startLine, startColumn);
         RelNode result = parser.parseExpression(0);
-        parser.expect(TokenType.EOF, "Expected end of input");
+        parser.expectEnd();
         parser.comments(comments);
         return result;
     }
@@ -258,7 +260,7 @@ public final class RelAlgebraParser {
         Objects.requireNonNull(input, "input");
         RelAlgebraParser parser = new RelAlgebraParser(input);
         RelNode result = parser.parseExpression(0);
-        parser.expect(TokenType.EOF, "Expected end of input");
+        parser.expectEnd();
         return result;
     }
 
@@ -286,7 +288,7 @@ public final class RelAlgebraParser {
         }
         RelAlgebraParser parser = new RelAlgebraParser(input, startLine, startColumn);
         RelNode result = parser.parseExpression(0);
-        parser.expect(TokenType.EOF, "Expected end of input");
+        parser.expectEnd();
         return result;
     }
 
@@ -345,15 +347,25 @@ public final class RelAlgebraParser {
     /** Current nesting depth; see {@link #MAX_NESTING_DEPTH}. */
     private int depth;
 
+    /**
+     * The {@code SELECT}/{@code σ} whose condition is being parsed, or {@code null}
+     * outside one. Parsing a relation clears it, so a join's condition, or one in a
+     * relation nested anywhere below, is never read as the selection's.
+     */
+    private Token selection;
+
     private RelNode parseExpression(int minPrecedence) {
         if (++depth > MAX_NESTING_DEPTH) {
             throw error(current, "expression nests more than " + MAX_NESTING_DEPTH
                     + " levels deep");
         }
+        Token enclosing = selection;
+        selection = null;
         try {
             return parseExpressionAtDepth(minPrecedence);
         } finally {
             depth--;
+            selection = enclosing;
         }
     }
 
@@ -669,7 +681,14 @@ public final class RelAlgebraParser {
     private SelectionNode parseSelection() {
         Token opTok = current;
         expect(TokenType.SELECT, "Expected 'σ'");
-        Predicate predicate = parsePredicate();
+        Token enclosing = selection;
+        selection = opTok;
+        Predicate predicate;
+        try {
+            predicate = parsePredicate();
+        } finally {
+            selection = enclosing;
+        }
         RelNode input = parseParenthesizedRelation("Expected '(' after selection predicate");
         return new SelectionNode(predicate, input, loc(opTok));
     }
@@ -1755,6 +1774,11 @@ public final class RelAlgebraParser {
         while (match(TokenType.AND)) {
             constraints.add(parseOptimizeConstraint());
         }
+        if (current.type() == TokenType.COMMA && peek(1).type() == TokenType.SUM) {
+            // SQL's habit of listing: SUBJECT TO SUM(w) <= 80, SUM(v) <= 60.
+            throw ParseException.at("Join OPTIMIZE constraints with AND, not ',':"
+                    + " SUBJECT TO SUM(a) <= 80 AND SUM(b) <= 60", lexer.input(), current);
+        }
 
         // LP mode: -> col names the allocation output column.
         Optional<AllocationSpec> allocation = Optional.empty();
@@ -2271,6 +2295,7 @@ public final class RelAlgebraParser {
         }
 
         if (!isComparison(current.type())) {
+            rejectColumnListAfterSelect();
             throw error(current, "Expected comparison operator");
         }
 
@@ -2288,6 +2313,27 @@ public final class RelAlgebraParser {
         advance();
         Operand right = parseOperand();
         return new ComparisonPredicate(left, operator, right, loc(opToken));
+    }
+
+    /**
+     * Refuses SQL's {@code SELECT} column list: {@code SELECT 'TOTAL' -> Item, SUM(v) -> v (R)}.
+     *
+     * <p>{@code SELECT} is σ, a filter, so its condition was being read and the
+     * comparison it needs is missing. Where a {@code ->} or a {@code ,} stands in the
+     * comparison's place, the condition was never a condition: it is a column list, and
+     * saying "expected comparison operator" sends the writer to the literal or the arrow.
+     * The error names the operator that chooses columns instead.
+     */
+    private void rejectColumnListAfterSelect() {
+        if (selection == null
+                || current.type() != TokenType.ARROW && current.type() != TokenType.COMMA) {
+            return;
+        }
+        String written = selection.lexeme().equals("σ") ? "'σ'" : "'" + selection.lexeme() + "' (σ)";
+        throw ParseException.at(written + " filters rows by a"
+                + " condition, and found '" + current.lexeme() + "' where its comparison"
+                + " belongs. To choose or compute columns, use PROJECT (π):"
+                + " PROJECT a, b * 2 -> c (R)", lexer.input(), current);
     }
 
     private Operand parseSetExpression() {
@@ -2677,10 +2723,18 @@ public final class RelAlgebraParser {
      * a closing one or a comma.
      */
     private String sourceText(int from, int to) {
+        List<Token> tokens = new ArrayList<>();
+        for (int i = from; i < to; i++) {
+            tokens.add(peek(i));
+        }
+        return joined(tokens);
+    }
+
+    /** {@code tokens} as source text, spaced as {@link #sourceText} describes. */
+    private static String joined(List<Token> tokens) {
         StringBuilder text = new StringBuilder();
         TokenType previous = null;
-        for (int i = from; i < to; i++) {
-            Token token = peek(i);
+        for (Token token : tokens) {
             TokenType type = token.type();
             if (previous != null && previous != TokenType.DOT && previous != TokenType.LPAREN
                     && type != TokenType.DOT && type != TokenType.RPAREN
@@ -2744,6 +2798,41 @@ public final class RelAlgebraParser {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Expects the end of the input, after a whole expression has parsed.
+     *
+     * <p>An operator keyword there is SQL's order, the clause written after what it
+     * applies to: {@code PROJECT a (R) SORT a ASC}. Relix writes the operator first and
+     * its input in parentheses, and the error rewrites the writer's own expression into
+     * that order, rather than reporting the end of input it expected.
+     */
+    private void expectEnd() {
+        if (isPrefixOperator(current.type())) {
+            int end = 0;
+            while (peek(end).type() != TokenType.EOF) {
+                end++;
+            }
+            String operator = sourceText(0, end);
+            String input = joined(consumed);
+            if (input.length() > 80) {
+                input = "…";
+            }
+            throw ParseException.at("'" + current.lexeme() + "' is written before its input,"
+                    + " which it takes in parentheses: " + operator + " (" + input + ")",
+                    lexer.input(), current);
+        }
+        expect(TokenType.EOF, "Expected end of input");
+    }
+
+    /** True for the keywords that open a unary operator, written before its input. */
+    private static boolean isPrefixOperator(TokenType type) {
+        return switch (type) {
+            case PROJECT, SELECT, RENAME, AGGREGATION, SORT, ORDER, LIMIT, DISTINCT, TOP,
+                 SAMPLE, SHUFFLE -> true;
+            default -> false;
+        };
     }
 
     private Token expect(TokenType type, String message) {
@@ -2810,7 +2899,7 @@ public final class RelAlgebraParser {
 
     private void advance() {
         if (!lookahead.isEmpty()) {
-            lookahead.remove(0);
+            consumed.add(lookahead.remove(0));
         }
         current = peek(0);
     }

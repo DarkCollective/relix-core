@@ -19,6 +19,7 @@ import com.darkcollective.relix.ast.AntiJoinNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.UnionNode;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static com.darkcollective.relix.ast.AstAssertions.assertThat;
@@ -73,6 +74,63 @@ final class ParserErrorTest extends ParserTestSupport {
         assertParseError("σ age (Users)")
                 .hasMessageContaining("Expected comparison operator")
                 .at(1, 7);
+    }
+
+    @Test
+    @DisplayName("SELECT followed by SQL's column list says that SELECT filters, and names PROJECT")
+    public void reportsColumnListAfterSelect() {
+        assertParseError("SELECT 'TOTAL' -> Item, SUM(Value) -> Value (Selection)")
+                .hasMessageContaining("'SELECT' (σ) filters rows by a condition, and found '->'"
+                        + " where its comparison belongs. To choose or compute columns, use"
+                        + " PROJECT (π): PROJECT a, b * 2 -> c (R)")
+                .at(1, 16);
+        assertParseError("σ a, b (R)")
+                .hasMessageContaining("'σ' filters rows by a condition, and found ','")
+                .at(1, 4);
+        assertParseError("select a → b (R)")
+                .hasMessageContaining("'select' (σ) filters rows by a condition, and found '→'");
+    }
+
+    @Test
+    @DisplayName("the column-list hint is a selection's own: a join condition keeps the plain message")
+    public void columnListHintStaysWithItsSelection() {
+        assertParseError("π a, b (R) >< x -> y S")
+                .hasMessageContaining("Expected comparison operator");
+        assertParseError("σ a > 1 (R >< x -> y S)")
+                .hasMessageContaining("Expected comparison operator");
+        // A selection in another's input gets the hint for its own condition.
+        assertParseError("σ a > 1 (σ b, c (R))")
+                .hasMessageContaining("'σ' filters rows by a condition, and found ','")
+                .at(1, 13);
+    }
+
+    @Test
+    @DisplayName("OPTIMIZE constraints listed with a comma are told to join with AND")
+    public void reportsCommaBetweenOptimizeConstraints() {
+        assertParseError("OPTIMIZE MAXIMIZE SUM(v) SUBJECT TO SUM(w) <= 80, SUM(u) <= 60 (Items)")
+                .hasMessageContaining("Join OPTIMIZE constraints with AND, not ',':"
+                        + " SUBJECT TO SUM(a) <= 80 AND SUM(b) <= 60")
+                .at(1, 49);
+        // A comma before a PER key list is something else, and keeps its own message.
+        assertParseError("OPTIMIZE MAXIMIZE SUM(v) SUBJECT TO SUM(w) <= 80, x (Items)")
+                .hasMessageContaining("Expected '(' after the OPTIMIZE specification");
+    }
+
+    @Test
+    @DisplayName("an operator written after its input, SQL's ORDER BY order, is rewritten into Relix's")
+    public void reportsOperatorAfterItsInput() {
+        assertParseError("PROJECT Item, Value (Selected) SORT Item ASC")
+                .hasMessageContaining("'SORT' is written before its input, which it takes in"
+                        + " parentheses: SORT Item ASC (PROJECT Item, Value (Selected))")
+                .at(1, 32);
+        assertParseError("R ⋈ S LIMIT 5")
+                .hasMessageContaining("'LIMIT' is written before its input, which it takes in"
+                        + " parentheses: LIMIT 5 (R ⋈ S)");
+        assertParseError("π a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z (R) σ a > 1")
+                .hasMessageContaining("parentheses: σ a > 1 (…)");
+        // Anything else after a whole expression is still the end of input expected.
+        assertParseError("R S")
+                .hasMessageContaining("Expected end of input");
     }
 
     @Test

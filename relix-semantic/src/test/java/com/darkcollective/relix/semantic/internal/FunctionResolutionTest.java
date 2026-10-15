@@ -254,6 +254,20 @@ final class FunctionResolutionTest {
         }
 
         @Test
+        @DisplayName("an aggregate written as a function is said to belong in GROUP, not called unknown")
+        void aggregateOutsideGroup() {
+            assertThat(analyze(USERS + "query { PROJECT 'TOTAL' -> Item, SUM(id) -> Value (Users) };"))
+                    .messages()
+                    .contains("'SUM' is an aggregate and can only be used inside GROUP (γ)."
+                            + " For a total over the whole relation, write GROUP SUM(x) -> total (R)")
+                    .noneMatch(e -> e.contains("Unknown function"));
+            assertThat(analyze(USERS + "query { σ count(id) > 1 (Users) };")).messages()
+                    .anyMatch(e -> e.contains("'count' is an aggregate and can only be used"
+                            + " inside GROUP (γ). For a total over the whole relation, write"
+                            + " GROUP COUNT(x)"));
+        }
+
+        @Test
         @DisplayName("a function no installed library offers is unknown")
         void absentFromTheCatalogue() {
             assertThat(analyzeWith(FunctionCatalog.of(new TinyLibrary()),

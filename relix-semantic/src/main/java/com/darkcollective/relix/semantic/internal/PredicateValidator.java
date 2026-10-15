@@ -248,7 +248,8 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                 ResolvedFunction resolved =
                         ResolvedFunction.of(functions, fn.functionName(), symbolTable);
                 if (resolved.isUnknown()) {
-                    error(fn.location(), "unknown function '" + fn.functionName() + "'");
+                    error(fn.location(), RelAlgebraValidator.aggregateOutsideGroup(fn.functionName())
+                            .orElse("unknown function '" + fn.functionName() + "'"));
                 } else {
                     int argCount = fn.arguments().size();
                     if (!resolved.accepts(argCount)) {
