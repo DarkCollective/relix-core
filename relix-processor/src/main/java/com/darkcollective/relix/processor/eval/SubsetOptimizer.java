@@ -30,6 +30,7 @@ import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.Value;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -50,6 +51,13 @@ import java.util.Optional;
  * of that line — which rows are candidates, what a NULL coefficient means, how a
  * constraint operator maps onto a bound — so two solvers cannot disagree about what
  * {@code OPTIMIZE} means, only about how fast they answer.
+ *
+ * <p>When more than one subset reaches the optimum, {@link #choose} returns the same
+ * one every time, by a rule rather than by whichever the solver met first: the one
+ * with the fewest rows, and among those the one whose rows come earliest in the
+ * input. The solver's branch-and-bound explores in parallel, so the tie it lands on
+ * otherwise varies from one run to the next — and from one read of a view to the
+ * next, within one script.
  *
  * <p>{@link #choose} returns the chosen rows for a feasible group (possibly empty —
  * e.g. minimising a positive objective), or {@link Optional#empty()} when the group
@@ -130,20 +138,152 @@ public final class SubsetOptimizer {
             variables.add(LinearProgram.Variable.binary(weight));
         }
 
-        // 3. Solve and read back the chosen rows.
-        Optional<double[]> solution = read(solver.solve(new LinearProgram(
-                sense(sense), variables, constraintsOf(constraints, coefficients))),
-                "OPTIMIZE", "group " + groupLabel);
+        // 3. Solve, settle a tie by rule, and read back the chosen rows.
+        String subject = "group " + groupLabel;
+        LinearProgram program = new LinearProgram(
+                sense(sense), variables, constraintsOf(constraints, coefficients));
+        Optional<double[]> solution = read(solver.solve(program), "OPTIMIZE", subject);
         if (solution.isEmpty()) {
             return Optional.empty();
         }
+        boolean[] selected = settleTie(program, chosen(solution.get()), subject);
         List<Row> chosen = new ArrayList<>();
         for (int i = 0; i < candidates.size(); i++) {
-            if (solution.get()[i] >= CHOSEN_THRESHOLD) {
+            if (selected[i]) {
                 chosen.add(candidates.get(i));
             }
         }
         return Optional.of(chosen);
+    }
+
+    /**
+     * Relative slack within which two objective values are the same optimum. Well
+     * inside the solver's own feasibility tolerance of ten significant digits, so an
+     * objective row bounded at the optimum is not refused for its rounding.
+     */
+    private static final double TIE = 1e-9;
+
+    /**
+     * The canonical optimum of a 0/1 program the solver answered with {@code found}:
+     * the one with the fewest chosen variables, and among those the one choosing the
+     * earliest — read as a list of positions, the least.
+     *
+     * <p>The common case costs one solve: {@code found} is cut off, and a program with
+     * no other optimum is infeasible. Only a tie pays for the rule. It minimises the
+     * count among the optima, then decides each position in order, choosing it if an
+     * optimum of that count still can. A position the current optimum already
+     * chooses needs no solve, since that optimum is the proof, and once the count is
+     * reached every later position is left out.
+     *
+     * <p>A solve that stops without deciding raises, as the first one does: a tie
+     * left to chance is the result this exists to prevent.
+     */
+    private boolean[] settleTie(LinearProgram program, boolean[] found, String subject) {
+        int n = found.length;
+        double[] weights = new double[n];
+        for (int i = 0; i < n; i++) {
+            weights[i] = program.variables().get(i).weight();
+        }
+        LinearProgram.Constraint optimal = atOptimum(program.sense(), weights, value(weights, found));
+
+        // Is there another optimum? Cut this one off: at least one position must differ.
+        double[] differ = new double[n];
+        int ones = 0;
+        for (int i = 0; i < n; i++) {
+            differ[i] = found[i] ? -1 : 1;
+            ones += found[i] ? 1 : 0;
+        }
+        List<LinearProgram.Constraint> tied = new ArrayList<>(program.constraints());
+        tied.add(optimal);
+        if (solveWith(program, program.sense(), program.variables(), tied, differ, 1 - ones,
+                LinearProgram.Relation.AT_LEAST, subject).isEmpty()) {
+            return found;
+        }
+
+        // The fewest rows that reach the optimum.
+        double[] count = new double[n];
+        Arrays.fill(count, 1);
+        List<LinearProgram.Variable> counted = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            counted.add(LinearProgram.Variable.binary(1));
+        }
+        boolean[] witness = solveWith(program, LinearProgram.Sense.MINIMISE, counted, tied,
+                null, 0, null, subject).orElse(found);
+        int fewest = 0;
+        for (boolean in : witness) {
+            fewest += in ? 1 : 0;
+        }
+        tied.add(new LinearProgram.Constraint(count, LinearProgram.Relation.EXACTLY, fewest));
+
+        // The earliest of them: decide each position in order.
+        List<LinearProgram.Variable> fixed = new ArrayList<>(program.variables());
+        int decided = 0;
+        for (int i = 0; i < n; i++) {
+            if (decided == fewest) {
+                fixed.set(i, new LinearProgram.Variable(true, 0, 0, weights[i]));
+                continue;
+            }
+            if (!witness[i]) {
+                fixed.set(i, new LinearProgram.Variable(true, 1, 1, weights[i]));
+                Optional<boolean[]> earlier = solveWith(program, program.sense(), fixed, tied,
+                        null, 0, null, subject);
+                if (earlier.isPresent()) {
+                    witness = earlier.get();
+                } else {
+                    fixed.set(i, new LinearProgram.Variable(true, 0, 0, weights[i]));
+                    continue;
+                }
+            }
+            fixed.set(i, new LinearProgram.Variable(true, 1, 1, weights[i]));
+            decided++;
+        }
+        return witness;
+    }
+
+    /**
+     * Solves a variant of {@code program} — its variables and constraints replaced, and
+     * one more constraint when {@code relation} is given — returning the 0/1 answer, or
+     * empty when the variant is infeasible.
+     */
+    private Optional<boolean[]> solveWith(LinearProgram program, LinearProgram.Sense sense,
+                                          List<LinearProgram.Variable> variables,
+                                          List<LinearProgram.Constraint> constraints,
+                                          double[] extra, double bound,
+                                          LinearProgram.Relation relation, String subject) {
+        List<LinearProgram.Constraint> all = new ArrayList<>(constraints);
+        if (relation != null) {
+            all.add(new LinearProgram.Constraint(extra, relation, bound));
+        }
+        return read(solver.solve(new LinearProgram(sense, variables, all)), "OPTIMIZE", subject)
+                .map(SubsetOptimizer::chosen);
+    }
+
+    /** The objective row held at {@code optimum}: no worse than it, within {@link #TIE}. */
+    private static LinearProgram.Constraint atOptimum(LinearProgram.Sense sense, double[] weights,
+                                                      double optimum) {
+        double slack = TIE * Math.max(1, Math.abs(optimum));
+        return sense == LinearProgram.Sense.MAXIMISE
+                ? new LinearProgram.Constraint(weights, LinearProgram.Relation.AT_LEAST, optimum - slack)
+                : new LinearProgram.Constraint(weights, LinearProgram.Relation.AT_MOST, optimum + slack);
+    }
+
+    private static double value(double[] weights, boolean[] selected) {
+        double total = 0;
+        for (int i = 0; i < weights.length; i++) {
+            if (selected[i]) {
+                total += weights[i];
+            }
+        }
+        return total;
+    }
+
+    /** The 0/1 reading of a solver's values. */
+    private static boolean[] chosen(double[] values) {
+        boolean[] selected = new boolean[values.length];
+        for (int i = 0; i < values.length; i++) {
+            selected[i] = values[i] >= CHOSEN_THRESHOLD;
+        }
+        return selected;
     }
 
     /**
