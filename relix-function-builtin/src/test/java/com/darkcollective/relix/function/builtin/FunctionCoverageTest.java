@@ -173,6 +173,14 @@ final class FunctionCoverageTest {
             exact("CONCAT", "a1b", s("a"), n("1"), NullValue.INSTANCE, s("b")),
             num("TRUNC", "2.7", n("2.78"), n("1")),
             num("TRUNCATE", "1200", n("1234"), n("-2")),
+            exact("LPAD", "xyxhi", s("hi"), n("5"), s("xy")),
+            exact("RPAD", "hi   ", s("hi"), n("5")),
+            exact("REVERSE", "olleh", s("hello")),
+            exact("REPEAT", "ababab", s("ab"), n("3")),
+            exact("REPLICATE", "ab", s("ab"), n("1")),
+            exact("SPLIT_PART", "b", s("a,b,c"), s(","), n("2")),
+            exact("CONCAT_WS", "a-1", s("-"), s("a"), NullValue.INSTANCE, n("1")),
+            exact("INITCAP", "Hello World", s("hELLO wORLD")),
             // ── Nested ──────────────────────────────────────────────────────────
             exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
             // ── Ordering ──────────────────────────────────────────────────────────
