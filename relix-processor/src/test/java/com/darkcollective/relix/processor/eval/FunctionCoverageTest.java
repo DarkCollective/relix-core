@@ -188,6 +188,14 @@ final class FunctionCoverageTest {
             exact("regexp_replace", "REGEXP_REPLACE(\"abc\", \"b\", \"X\")",     "aXc"),
             exact("regexp_substr",  "REGEXP_SUBSTR(\"abc123\", \"[0-9]+\")",     "123"),
             num  ("regexp_count",   "REGEXP_COUNT(\"a1b2\", \"[0-9]\")",         "2"),
+            exact("to_char",       "TO_CHAR(" + TS + ", \"FMDay DD Mon\")",         "Wednesday 08 Jul"),
+            exact("format",        "FORMAT(1234567.891, 2)",                        "1,234,567.89"),
+            exact("timezone",      TS + " AT TIME ZONE \"America/New_York\"",      "2026-07-08T09:40:30Z"),
+            exact("make_date",     "MAKE_DATE(2026, 7, 8)",                         "2026-07-08"),
+            exact("datefromparts", "DATEFROMPARTS(2026, 7, 8)",                     "2026-07-08"),
+            exact("last_day",      "LAST_DAY(DATE '2024-02-10')",                   "2024-02-29"),
+            exact("eomonth",       "EOMONTH(DATE '2024-02-10')",                    "2024-02-29"),
+            num  ("datediff",      "DATEDIFF(month, DATE '2024-01-31', DATE '2024-02-01')", "1"),
             // ── Nested data ─────────────────────────────────────────────────────
             // Its argument is a constructed struct, since no literal spells an object.
             exact("entries", "Entries({ us: 3, gb: 7 })",

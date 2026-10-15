@@ -612,7 +612,8 @@ final class BuiltinFunctionEvaluatorTest extends ProcessorTestSupport {
 
         @Test @DisplayName("the legacy Jet date builtins were removed")
         void jetBuiltinsRemoved() {
-            for (String name : List.of("Date", "DateAdd", "DateDiff", "DatePart", "DateSerial")) {
+            // DATEDIFF is back as SQL Server's calendar-unit difference (#139), not Jet's.
+            for (String name : List.of("Date", "DateAdd", "DatePart", "DateSerial")) {
                 assertThatThrownBy(() -> eval.evaluate(func(name), row))
                         .as("%s should be unknown", name)
                         .isInstanceOf(EvaluationException.class)

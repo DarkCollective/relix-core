@@ -185,6 +185,14 @@ final class FunctionCoverageTest {
             exact("REGEXP_REPLACE", "aXc", s("abc"), s("b"), s("X")),
             exact("REGEXP_SUBSTR", "123", s("abc123"), s("[0-9]+")),
             num("REGEXP_COUNT", "2", s("a1b2"), s("[0-9]")),
+            exact("TO_CHAR", "2026-07-08 13:40", TS, s("YYYY-MM-DD HH24:MI")),
+            exact("FORMAT", "1,234.50", n("1234.5"), n("2")),
+            exact("TIMEZONE", "2026-07-08T14:40:30Z", s("Europe/London"), TS),
+            exact("MAKE_DATE", "2024-02-29", n("2024"), n("2"), n("29")),
+            exact("DATEFROMPARTS", "2024-02-29", n("2024"), n("2"), n("29")),
+            exact("LAST_DAY", "2026-07-31", TS),
+            exact("EOMONTH", "2026-07-31", TS),
+            num("DATEDIFF", "0", s("day"), TS, TS),
             // ── Nested ──────────────────────────────────────────────────────────
             exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
             // ── Ordering ──────────────────────────────────────────────────────────
