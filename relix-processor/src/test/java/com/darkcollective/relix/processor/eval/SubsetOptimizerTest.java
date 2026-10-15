@@ -27,6 +27,7 @@ import com.darkcollective.relix.ast.OptimizeConstraint;
 import com.darkcollective.relix.processor.ProcessorTestSupport;
 import com.darkcollective.relix.solver.LinearProgram;
 import com.darkcollective.relix.solver.MathProgrammingSolver;
+import com.darkcollective.relix.solver.SolverCatalog;
 import com.darkcollective.relix.solver.SolverResult;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.symbol.ScalarType;
@@ -480,6 +481,102 @@ final class SubsetOptimizerTest extends ProcessorTestSupport {
             assertThat(result.get()).containsExactlyInAnyOrder(a, b);
         }
     } // end SetCover
+
+    /**
+     * Which optimum a tie returns: the fewest rows, then the earliest, whatever the
+     * solver met first. The weights tell the rows apart where the values tie.
+     */
+    @Nested
+    @DisplayName("tied optima")
+    class Ties {
+
+        /** The installed solver, answering {@code first} to the first question, counting every one. */
+        private final class Scripted implements MathProgrammingSolver {
+            private final MathProgrammingSolver real =
+                    SolverCatalog.installed().solver().orElseThrow();
+            private final SolverResult first;
+            int solves;
+
+            Scripted(SolverResult first) { this.first = first; }
+
+            @Override public String name() { return "scripted"; }
+
+            @Override public SolverResult solve(LinearProgram program) {
+                solves++;
+                return solves == 1 && first != null ? first : real.solve(program);
+            }
+        }
+
+        private List<String> weights(List<Row> rows) {
+            return rows.stream().map(r -> r.get("weight").asDisplayString()).toList();
+        }
+
+        @Test
+        @DisplayName("a unique optimum costs one extra solve, to prove there is no other")
+        void uniqueOptimum() {
+            var solver = new Scripted(null);
+            var rows = List.of(item("60", "10"), item("100", "20"), item("120", "30"));
+            var chosen = new SubsetOptimizer(new OperandEvaluator(), solver).choose(
+                    ObjectiveSense.MAXIMIZE, a("value"), List.of(le(a("weight"), 50)), rows, "(g)");
+            assertThat(values(chosen.orElseThrow())).containsExactly("100", "120");
+            org.assertj.core.api.Assertions.assertThat(solver.solves).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("the earliest optimum wins, though the solver answered with a later one")
+        void earliestWins() {
+            // Any one item fits; all three are worth 10. The solver says the last.
+            var solver = new Scripted(SolverResult.solved(new double[]{0, 0, 1}));
+            var rows = List.of(item("10", "4"), item("10", "3"), item("10", "5"));
+            var chosen = new SubsetOptimizer(new OperandEvaluator(), solver).choose(
+                    ObjectiveSense.MAXIMIZE, a("value"), List.of(le(a("weight"), 5)), rows, "(g)");
+            org.assertj.core.api.Assertions.assertThat(weights(chosen.orElseThrow()))
+                    .containsExactly("4");
+        }
+
+        @Test
+        @DisplayName("the fewest rows win before the earliest: a row adding nothing is left out")
+        void fewestWin() {
+            // {60, 120, 40} and {100, 120} both reach 220 within 50; the zero row fits
+            // in either and adds nothing.
+            var solver = new Scripted(SolverResult.solved(new double[]{1, 1, 0, 1, 1}));
+            var rows = List.of(item("0", "0"), item("60", "10"), item("100", "20"),
+                               item("120", "30"), item("40", "5"));
+            var chosen = new SubsetOptimizer(new OperandEvaluator(), solver).choose(
+                    ObjectiveSense.MAXIMIZE, a("value"), List.of(le(a("weight"), 50)), rows, "(g)");
+            assertThat(values(chosen.orElseThrow())).containsExactly("100", "120");
+        }
+
+        @Test
+        @DisplayName("a minimising tie is settled the same way")
+        void minimise() {
+            // Reach a weight of at least 6 as cheaply as possible: each pair of 3s costs 2.
+            var rows = List.of(item("1", "3"), item("1", "3"), item("1", "3"), item("5", "6"));
+            for (int run = 0; run < 10; run++) {
+                var chosen = OPT.choose(ObjectiveSense.MINIMIZE, a("value"),
+                        List.of(ge(a("weight"), 6)), rows, "(g)").orElseThrow();
+                org.assertj.core.api.Assertions.assertThat(chosen)
+                        .containsExactly(rows.get(0), rows.get(1));
+            }
+        }
+
+        @Test
+        @DisplayName("a search that stops while a tie is being settled is an error, not a guess")
+        void undecidedWhileSettling() {
+            var optimizer = new SubsetOptimizer(new OperandEvaluator(), new MathProgrammingSolver() {
+                int solves;
+                @Override public String name() { return "stub"; }
+                @Override public SolverResult solve(LinearProgram program) {
+                    return ++solves == 1 ? SolverResult.solved(new double[]{1, 0})
+                            : SolverResult.undetermined("FAILED");
+                }
+            });
+            assertThatThrownBy(() -> optimizer.choose(ObjectiveSense.MAXIMIZE, a("value"),
+                    List.of(le(n("1"), 1)), List.of(item("10", "1"), item("10", "1")), "(g)"))
+                    .isInstanceOf(EvaluationException.class)
+                    .hasMessageContaining("FAILED");
+        }
+    }
 
     /**
      * What the engine does with each answer a solver can give — pinned against
