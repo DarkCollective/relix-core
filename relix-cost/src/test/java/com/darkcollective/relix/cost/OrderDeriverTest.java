@@ -16,6 +16,7 @@
 package com.darkcollective.relix.cost;
 
 import com.darkcollective.relix.ast.Ordering;
+import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.RelNode;
@@ -29,6 +30,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import com.darkcollective.relix.ast.AstBuilders;
 
@@ -85,6 +87,69 @@ final class OrderDeriverTest {
         }
 
         @Test
+        @DisplayName("π carries a key it projects, under its output name")
+        void projectionKeepsProjectedKeys() {
+            var node = project(
+                    List.of(projected(attr("item")), projected(attr("price"), "cost")),
+                    sortBy(rel("R"), "price", "item"));
+            assertThat(OrderDeriver.derive(node))
+                    .isEqualTo(Ordering.of(List.of(asc("cost"), asc("item"))));
+        }
+
+        @Test
+        @DisplayName("π carries an expression key as the alias that computes it")
+        void projectionNamesExpressionKey() {
+            var total = arith(attr("price"), ArithmeticOperator.MULTIPLY, attr("qty"));
+            var node = project(
+                    List.of(projected(attr("item")), projected(total, "total")),
+                    sort(List.of(sortKey(total, SortDirection.DESC)), rel("R")));
+            assertThat(OrderDeriver.derive(node)).isEqualTo(Ordering.of(List.of(desc("total"))));
+        }
+
+        @Test
+        @DisplayName("π keeps only the prefix before the first key it drops")
+        void projectionStopsAtDroppedKey() {
+            var node = project(
+                    List.of(projected(attr("x")), projected(attr("z"))),
+                    sortBy(rel("R"), "x", "y", "z"));
+            assertThat(OrderDeriver.derive(node)).isEqualTo(Ordering.of(List.of(asc("x"))));
+        }
+
+        @Test
+        @DisplayName("π that drops the leading key delivers no order")
+        void projectionDropsLeadingKey() {
+            var node = project(List.of(projected(attr("y"))), sortBy(rel("R"), "x", "y"));
+            assertThat(OrderDeriver.derive(node)).isEqualTo(Ordering.none());
+        }
+
+        @Test
+        @DisplayName("an unaliased projected expression is not named here")
+        void projectionUnaliasedExpression() {
+            var total = arith(attr("price"), ArithmeticOperator.MULTIPLY, attr("qty"));
+            var node = project(List.of(projected(total)),
+                    sort(List.of(sortKey(total, SortDirection.ASC)), rel("R")));
+            assertThat(OrderDeriver.derive(node)).isEqualTo(Ordering.none());
+        }
+
+        @Test
+        @DisplayName("a pair rename carries the keys under their new names")
+        void pairRename() {
+            var node = rename(Optional.empty(), List.of(),
+                    List.of(renamePair("PRICE", "cost")), sortBy(rel("R"), "price", "item"));
+            assertThat(OrderDeriver.derive(node))
+                    .isEqualTo(Ordering.of(List.of(asc("cost"), asc("item"))));
+        }
+
+        @Test
+        @DisplayName("a pair rename stops at an expression key")
+        void pairRenameStopsAtExpression() {
+            var upper = func("UCase", attr("name"));
+            var node = rename(Optional.empty(), List.of(), List.of(renamePair("price", "cost")),
+                    sort(List.of(asc("price"), sortKey(upper, SortDirection.ASC)), rel("R")));
+            assertThat(OrderDeriver.derive(node)).isEqualTo(Ordering.of(List.of(asc("cost"))));
+        }
+
+        @Test
         @DisplayName("σ over λ over τ preserves order through the chain")
         void chain() {
             var node = new com.darkcollective.relix.ast.SelectionNode(pred(),
@@ -98,18 +163,9 @@ final class OrderDeriverTest {
     class Clears {
 
         @Test
-        @DisplayName("a column-renaming rename clears order (key names would be stale)")
-        void columnRename() {
+        @DisplayName("a positional rename clears order (it names columns by position)")
+        void positionalRename() {
             var node = rename("X", List.of("a"), sortBy(rel("R"), "x"));
-            assertThat(OrderDeriver.derive(node)).isEqualTo(Ordering.none());
-        }
-
-        @Test
-        @DisplayName("π clears order conservatively")
-        void projection() {
-            var node = project(
-                    List.of(projected(attr("x"))),
-                    sortBy(rel("R"), "x"));
             assertThat(OrderDeriver.derive(node)).isEqualTo(Ordering.none());
         }
 

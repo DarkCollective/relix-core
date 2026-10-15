@@ -315,6 +315,82 @@ final class PlannerTest {
         }
     }
 
+    // ── ordering through π and ρ (#145) ─────────────────────────────────────
+
+    @Nested
+    @DisplayName("π and ρ — delivered ordering under output names")
+    class ProjectRenameOrdering {
+
+        private static final String T =
+                "T := [| item | price | qty |\n" +
+                "      | a    | 2     | 10  |\n" +
+                "      | b    | 5     | 1   |\n" +
+                "      | c    | 3     | 3   |];\n";
+
+        private static List<String> rendered(PhysicalNode node) {
+            return node.deliveredOrdering().keys().stream()
+                    .map(com.darkcollective.relix.ast.SortSpecification::render).toList();
+        }
+
+        @Test
+        @DisplayName("π names an expression key by the alias that computes it")
+        void projectedExpression() {
+            PhysicalNode plan = planFirstQuery(T
+                    + "query { PROJECT item, price * qty -> total (SORT price * qty DESC (T)) };");
+            assertThat(plan).asNode(PhysicalNode.Project.class);
+            org.assertj.core.api.Assertions.assertThat(rendered(plan)).containsExactly("total DESC");
+        }
+
+        @Test
+        @DisplayName("π carries a projected column key")
+        void projectedColumn() {
+            PhysicalNode plan = planFirstQuery(T + "query { PROJECT item, price (SORT price DESC (T)) };");
+            org.assertj.core.api.Assertions.assertThat(rendered(plan)).containsExactly("price DESC");
+        }
+
+        @Test
+        @DisplayName("π names an unaliased expression key by its output column")
+        void projectedUnaliasedExpression() {
+            PhysicalNode.Project plan = assertThat(planFirstQuery(T
+                    + "query { PROJECT item, price * qty (SORT price * qty DESC (T)) };"))
+                    .asNode(PhysicalNode.Project.class);
+            org.assertj.core.api.Assertions.assertThat(rendered(plan))
+                    .containsExactly(plan.schema().columns().get(1).name() + " DESC");
+        }
+
+        @Test
+        @DisplayName("π keeps only the prefix before a dropped key")
+        void projectionDropsKey() {
+            PhysicalNode plan = planFirstQuery(T
+                    + "query { PROJECT item, qty (SORT item, price, qty (T)) };");
+            org.assertj.core.api.Assertions.assertThat(rendered(plan)).containsExactly("item");
+        }
+
+        @Test
+        @DisplayName("ρ renames the keys")
+        void renamePairs() {
+            PhysicalNode plan = planFirstQuery(T + "query { RENAME (price -> cost) (SORT price DESC, item (T)) };");
+            assertThat(plan).asNode(PhysicalNode.Rename.class);
+            org.assertj.core.api.Assertions.assertThat(rendered(plan)).containsExactly("cost DESC", "item");
+        }
+
+        @Test
+        @DisplayName("a positional ρ renames the keys by position")
+        void renamePositional() {
+            PhysicalNode plan = planFirstQuery(T + "query { ρ U(x, y, z) (τ price DESC (T)) };");
+            assertThat(plan).asNode(PhysicalNode.Rename.class);
+            org.assertj.core.api.Assertions.assertThat(rendered(plan)).containsExactly("y DESC");
+        }
+
+        @Test
+        @DisplayName("a relation-only ρ keeps the ordering, expression keys too")
+        void renameRelationOnly() {
+            PhysicalNode plan = planFirstQuery(T + "query { ρ U (τ price * qty DESC (T)) };");
+            assertThat(plan).asNode(PhysicalNode.Rename.class);
+            org.assertj.core.api.Assertions.assertThat(rendered(plan)).containsExactly("price * qty DESC");
+        }
+    }
+
     // ── merge-join delivered ordering (Phase C2 — ADR-0009, issue #529) ─────────
 
     @Nested
