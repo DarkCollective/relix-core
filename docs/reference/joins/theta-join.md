@@ -27,6 +27,24 @@ each side, such as `EditSimilarity(R.name, S.name) >= 0.8`, indexes one side and
 compares only the pairs that could pass. `explain` shows it as `SimilarityJoin`; see
 [record linkage](../advanced/record-linkage.md).
 
+# A condition that relates nothing:
+A condition must compare a column of one side with a column of the other to join
+them. One that never does still analyses, with a **warning**, because it quietly
+turns the join into something else. `⨝` and the outer joins become a cross product,
+and `⋉` and `▷` keep every left row or none, depending only on whether the right side
+is empty. The warning names the side the condition never reads, or the column it
+compares with itself, and suggests a column of the same name on the other side:
+
+```
+warning: Anti-join ▷: Orders.customer_id = Orders.customer_id compares a column with itself, so it says nothing about how a row of Customers meets a row of Orders; did you mean Customers.customer_id = Orders.customer_id?
+```
+
+A bare name both sides carry reads the left side's column each time it is written,
+so `dept_id = dept_id` compares `Users.dept_id` with itself. Qualify the columns to
+compare the two sides: `Users.dept_id = Depts.dept_id`. A condition that filters one
+side on purpose, such as `Customers ⨝ Customers.customer_id = 1 Orders`, is a filtered
+cross product, and the warning is only there to say so.
+
 # Qualified column references above a join:
 When both sides expose a column of the same name, the joined relation keeps both.
 A **relation-qualified** reference — `Relation.column` — resolves to the exact

@@ -355,9 +355,10 @@ final class PredicateValidationTest {
         @Test
         @DisplayName("Theta join: condition can reference columns from both sides")
         void thetaJoinValidBothSides() {
+            // Qualified: a bare dept_id = dept_id reads Users.dept_id on both sides.
             var pred = AstBuilders.cmp(
-                    attr("dept_id"), ComparisonOperator.EQUAL,
-                    attr("dept_id"));
+                    attr("Users.dept_id"), ComparisonOperator.EQUAL,
+                    attr("Depts.dept_id"));
             RelNode tree = join(
                     rel("Users"), rel("Depts"), pred);
             assertThat(inferAndValidate(tree)).isEmpty();
