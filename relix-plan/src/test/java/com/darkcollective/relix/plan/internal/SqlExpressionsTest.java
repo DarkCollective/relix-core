@@ -96,6 +96,7 @@ final class SqlExpressionsTest {
             assertThat(render(str("a'b"))).hasValue("'a''b'");
             assertThat(render(bool(true))).hasValue("TRUE");
             assertThat(render(bool(false))).hasValue("FALSE");
+            assertThat(render(nullValue())).hasValue("NULL");
         }
 
         /**

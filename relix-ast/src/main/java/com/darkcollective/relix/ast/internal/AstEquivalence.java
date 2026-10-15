@@ -21,6 +21,7 @@ import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
+import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.DateOperand;
@@ -155,6 +156,7 @@ public final class AstEquivalence {
             case ParameterOperand x -> b instanceof ParameterOperand y
                     && x.name().equalsIgnoreCase(y.name());
             case BooleanOperand x -> b instanceof BooleanOperand y && x.value() == y.value();
+            case NullOperand x -> b instanceof NullOperand;
             case DateOperand x -> b instanceof DateOperand y && x.value().equals(y.value());
             case TimeOperand x -> b instanceof TimeOperand y && x.value().equals(y.value());
             case TimestampOperand x -> b instanceof TimestampOperand y && x.value().equals(y.value());

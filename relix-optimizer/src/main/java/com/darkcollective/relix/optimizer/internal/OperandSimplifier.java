@@ -17,6 +17,7 @@ package com.darkcollective.relix.optimizer.internal;
 
 import com.darkcollective.relix.optimizer.OptimizationCode;
 import com.darkcollective.relix.ast.AndPredicate;
+import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
@@ -146,6 +147,7 @@ final class OperandSimplifier {
             // A parameter's value is not known until the query runs, so nothing folds it.
             case ParameterOperand  p -> p;
             case BooleanOperand    b -> b;
+            case NullOperand       n -> n;
             case DateOperand       d -> d;
             case TimeOperand       t -> t;
             case TimestampOperand  ts -> ts;

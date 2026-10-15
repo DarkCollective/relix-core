@@ -359,6 +359,19 @@ final class PredicateParserTest extends ParserTestSupport {
     }
 
     @Test
+    public void nullIsAValueInOperandPosition() {
+        assertParsesTo("σ Nz(a, NULL) = 1 (R)",
+                select(cmp(func("Nz", attr("a"), nullValue()), ComparisonOperator.EQUAL, num("1")), rel("R")));
+        assertParsesTo("σ Nz(a, ⊥) = 1 (R)",
+                select(cmp(func("Nz", attr("a"), nullValue()), ComparisonOperator.EQUAL, num("1")), rel("R")));
+        // After = it is still the null test.
+        assertParsesTo("σ a = NULL (R)", select(nullPred(attr("a"), true), rel("R")));
+        assertParsesTo("σ `null` = 1 (R)",
+                select(cmp(attr("null"), ComparisonOperator.EQUAL, num("1")), rel("R")));
+        assertPrettyPrints(parse("σ Nz(a, NULL) = 1 (R)"), "σ Nz(a, ⊥) = 1 (R)");
+    }
+
+    @Test
     public void parenthesisedNullTestIsACondition() {
         assertParsesTo("σ ¬(a IS NULL) (R)", select(not(nullPred(attr("a"), true)), rel("R")));
     }

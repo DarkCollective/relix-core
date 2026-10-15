@@ -224,6 +224,28 @@ final class FunctionResolutionTest {
         }
 
         @Test
+        @DisplayName("a NULL branch takes the other branch's type, and NULL alone is ANY")
+        void nullTakesItsContextsType() {
+            assertThat(schemaOf("π IIf(id > 0, NULL, id) → a, IIf(id > 0, name, ⊥) → b,"
+                    + " Coalesce(NULL, id) → c, NULLIF(name, 'x') → d, IIf(id > 0, NULL, NULL) → e,"
+                    + " IIf(id > 0, NULL, IIf(id > 1, name, id)) → f (Users)").columns())
+                    .extracting(ColumnDefinition::type)
+                    .containsExactly(ScalarType.NUMBER, ScalarType.STRING, ScalarType.NUMBER,
+                            ScalarType.STRING, ScalarType.ANY, ScalarType.ANY);
+        }
+
+        @Test
+        @DisplayName("a comparison with NULL other than the null test is refused, never true")
+        void comparisonWithNull() {
+            assertThat(analyze(USERS + "query { σ id < NULL (Users) };")).messages()
+                    .anyMatch(e -> e.contains("a comparison with NULL is never true; test for a"
+                            + " missing value with IS NULL (x IS NULL, x IS NOT NULL)"));
+            assertThat(analyze(USERS + "query { σ NULL = id (Users) };")).messages()
+                    .anyMatch(e -> e.contains("a comparison with NULL is never true"));
+            assertThat(analyze(USERS + "query { σ id = NULL (Users) };").errors()).isEmpty();
+        }
+
+        @Test
         @DisplayName("a fixed return type is unaffected by the arguments")
         void fixedReturnType() {
             assertThat(schemaOf("π Len(name) → v (Users)").columns())

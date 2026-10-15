@@ -16,6 +16,7 @@
 package com.darkcollective.relix.plan.internal;
 
 import com.darkcollective.relix.ast.SolveEquation;
+import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.SolveStart;
 import com.darkcollective.relix.ast.AstBuilders;
 import com.darkcollective.relix.ast.ConditionalJoinNode;
@@ -319,6 +320,7 @@ final class RelationFunctionInliner {
             case ParameterOperand p -> p;
             case NumberOperand n -> n;
             case BooleanOperand bo -> bo;
+            case NullOperand no -> no;
             case DateOperand d -> d;
             case TimeOperand t -> t;
             case TimestampOperand ts -> ts;

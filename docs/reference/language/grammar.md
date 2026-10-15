@@ -552,7 +552,7 @@ function_call     ::= operand_name ( "." name )* CALL_OPEN ( argument ( "," argu
 argument          ::= operand
                     | predicate
 
-operand_name      ::= name - ( "TRUE" | "FALSE" | "DATE" | "TIME" | "TIMESTAMP" | "DURATION" )
+operand_name      ::= name - ( "TRUE" | "FALSE" | "NULL" | "DATE" | "TIME" | "TIMESTAMP" | "DURATION" )
 
 /* $id: a bound parameter, its value supplied when the query runs (PARAMETER). */
 bound_parameter   ::= PARAMETER
@@ -560,6 +560,7 @@ bound_parameter   ::= PARAMETER
 literal           ::= STRING
                     | NUMBER
                     | "TRUE" | "FALSE"
+                    | null_word                  /* the missing value: IIf(c, NULL, x) */
                     | ( "DATE" | "TIME" | "TIMESTAMP" | "DURATION" ) STRING
                       /* ISO-8601 text: DATE '2026-03-01', TIMESTAMP '2026-03-01T09:30:00Z',
                          TIME '09:30', DURATION 'PT30M' */
@@ -661,9 +662,11 @@ are easy to miss in the rules above.
 - **Braces elsewhere build a struct.** Outside a set, `{a}` is a struct with one
   field `a`. A grouping key is an operand, so `γ {region}, COUNT(*) (Orders)`
   parses and groups by a struct, not by the column. Write `γ region, COUNT(*) (Orders)`.
-- **There is no NULL value to write.** `⊥` and `NULL` appear only in a null test:
-  `x = ⊥`, `x = NULL`, `x IS NULL` and `x IS NOT NULL` all ask whether `x` is NULL.
-  Anywhere else, the word `null` names a column.
+- **NULL is a value, and also part of the null test.** `IIf(c, NULL, x)` writes the
+  missing value. After `=`, `≠` or `IS`, the word is the null test instead: `x = ⊥`,
+  `x = NULL`, `x IS NULL` and `x IS NOT NULL` all ask whether `x` is NULL. Any other
+  comparison with NULL, `x < NULL` or `NULL = x`, parses and is refused by analysis,
+  being never true. A column named `null` needs backticks.
 - **A CSV source declares a `schema` or its `columns`, not both.** `csv_field`
   allows either; giving the two in one source is an error.
 - **`<>`, `!=` and `≠` are one operator.** `<>` is two characters with nothing

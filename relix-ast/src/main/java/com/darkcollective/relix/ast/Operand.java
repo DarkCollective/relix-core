@@ -37,6 +37,7 @@ public sealed interface Operand permits
         StringOperand,
         NumberOperand,
         BooleanOperand,
+        NullOperand,
         DateOperand,
         TimeOperand,
         TimestampOperand,

@@ -2588,6 +2588,13 @@ public final class RelAlgebraParser {
                 advance();
                 yield new BooleanOperand(false, loc(falseTok));
             }
+            // NULL (or ⊥) as a value: IIf(late, NULL, fee). In a null test, x = NULL or
+            // x IS NULL, the word never reaches here; those are read as NullPredicates.
+            case NULL -> {
+                Token nullTok = current;
+                advance();
+                yield new NullOperand(loc(nullTok));
+            }
             case LPAREN -> {
                 // `(a > b)` in operand position is a condition, not an arithmetic
                 // parenthesis — so a boolean can be projected (`π (a > b) → flag`)

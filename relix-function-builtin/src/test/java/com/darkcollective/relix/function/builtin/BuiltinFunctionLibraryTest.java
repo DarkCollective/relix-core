@@ -49,7 +49,7 @@ final class BuiltinFunctionLibraryTest {
      * {@code Pi} — the two built-ins that were never in the library the port started from
      * — {@code Mod}, and the multi-branch conditionals {@code Switch} and {@code Choose}.
      */
-    private static final int BUILTIN_COUNT = 70;
+    private static final int BUILTIN_COUNT = 71;
 
     /** The eight aggregates: five SQL reducers, one that gathers, two that pick a row. */
     private static final int AGGREGATE_COUNT = 8;
@@ -129,7 +129,7 @@ final class BuiltinFunctionLibraryTest {
                     Map.entry("similarity", 5L),
                     Map.entry("math", 23L),
                     Map.entry("datetime", 16L),
-                    Map.entry("conditional", 5L),
+                    Map.entry("conditional", 6L),
                     Map.entry("typecheck", 2L),
                     Map.entry("conversion", 3L),
                     Map.entry("nested", 1L),

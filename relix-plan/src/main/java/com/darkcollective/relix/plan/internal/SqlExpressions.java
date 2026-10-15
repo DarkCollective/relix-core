@@ -16,6 +16,7 @@
 package com.darkcollective.relix.plan.internal;
 
 import com.darkcollective.relix.ast.AndPredicate;
+import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.internal.AttributeNames;
 import com.darkcollective.relix.ast.AttributeOperand;
@@ -213,6 +214,7 @@ public final class SqlExpressions {
             case StringOperand s -> containsPlaceholder(s.value()) ? Optional.empty()
                     : Optional.of(dialect.stringLiteral(s.value()));
             case BooleanOperand b -> Optional.of(dialect.booleanLiteral(b.value()));
+            case NullOperand ignored -> Optional.of("NULL");
             // Temporal literals render per-dialect (ADR-0013), and a dialect with no
             // date types declines them.
             case DateOperand d -> dialect.dateLiteral(d.value());

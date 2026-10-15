@@ -133,6 +133,7 @@ public final class AstLocations {
             case ParameterOperand p -> AstBuilders.param(p.name());
             case NumberOperand n -> new NumberOperand(n.value());
             case BooleanOperand b -> new BooleanOperand(b.value());
+            case NullOperand ignored -> new NullOperand();
             case DateOperand d -> new DateOperand(d.value());
             case TimeOperand t -> new TimeOperand(t.value());
             case TimestampOperand ts -> new TimestampOperand(ts.value());

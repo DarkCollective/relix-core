@@ -237,11 +237,14 @@ final class GrammarReferenceTest {
             "query { σ IsNull(x) = true (R) };",
             "query { σ f(a, b > 1) = true (R) };",
             "query { π IIf(amount > 100, 'big', 'small') → size (Orders) };",
-            // null tests, and that NULL is otherwise a name
+            // null tests, and NULL as a value
             "query { σ x = NULL (Orders) };",
             "query { σ x = ⊥ ∨ y IS NOT NULL ∨ z IS ⊥ (R) };",
             "query { σ x IS ¬ ⊥ (R) };",
             "query { π Nz(x, NULL) → y (Orders) };",
+            "query { π IIf(a > 1, ⊥, a) → y, NULLIF(b, 0) → z (R) };",
+            "query { γ COUNT(IIf(ok = true, id, NULL)) → n (R) };",
+            "query { π `null` (R) };",
             "query { π x → y (R) };",
             "query { π x AS y (R) };",
             // a predicate's truth value as an operand

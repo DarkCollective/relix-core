@@ -134,6 +134,7 @@ final class FunctionCoverageTest {
             // ── Conditional ─────────────────────────────────────────────────────
             exact("IIf", "y", com.darkcollective.relix.value.BooleanValue.TRUE, s("y"), s("n")),
             exact("Nz", "fallback", NullValue.INSTANCE, s("fallback")),
+            exact("NULLIF", "a", s("a"), s("b")),
             exact("Coalesce", "first", NullValue.INSTANCE, s("first")),
             exact("Switch", "b", com.darkcollective.relix.value.BooleanValue.FALSE, s("a"),
                     com.darkcollective.relix.value.BooleanValue.TRUE, s("b"), s("c")),
