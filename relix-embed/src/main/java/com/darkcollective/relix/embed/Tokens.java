@@ -184,7 +184,7 @@ final class Tokens {
             case AND, OR, NOT -> TokenKind.LOGICAL;
 
             case EQUAL, NOT_EQUAL, LESS, LESS_EQUAL, GREATER, GREATER_EQUAL,
-                 LIKE, IS, ELEMENT_OF, NOT_ELEMENT_OF -> TokenKind.COMPARISON;
+                 LIKE, IS, ELEMENT_OF, NOT_ELEMENT_OF, REGEX_MATCH, REGEX_NOT_MATCH -> TokenKind.COMPARISON;
 
             case LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET -> TokenKind.BRACKET;
 

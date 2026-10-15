@@ -91,6 +91,7 @@ The conditions that go inside a `σ` (selection) or join.
 | [Null test](predicates/is-null.md) | `⊥` / `NULL` / `IS [NOT] NULL` | Test for a missing value |
 | [Set membership](predicates/in.md) | `∈` / `IN`, `∉` / `NOT IN` | Test membership in a set |
 | [Pattern match](predicates/like.md) | `LIKE`, `NOT LIKE`, `ESCAPE` | Wildcard string match (`%` = any run, `_` = any one char) |
+| [Regex match](predicates/regex-match.md) | `~` / `MATCHES` | Does a regular expression match (`~*` ignores case) |
 
 ## 5. Joins
 
@@ -205,6 +206,10 @@ argument).
 [REPEAT](functions/string/repeat.md),
 [SPLIT_PART](functions/string/split_part.md),
 [INITCAP](functions/string/initcap.md),
+[REGEXP_LIKE](functions/string/regexp_like.md),
+[REGEXP_REPLACE](functions/string/regexp_replace.md),
+[REGEXP_SUBSTR](functions/string/regexp_substr.md),
+[REGEXP_COUNT](functions/string/regexp_count.md),
 [InStr](functions/string/instr.md),
 [Chr](functions/string/chr.md),
 [Asc](functions/string/asc.md),

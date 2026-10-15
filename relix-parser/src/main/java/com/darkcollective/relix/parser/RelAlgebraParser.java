@@ -2305,7 +2305,8 @@ public final class RelAlgebraParser {
         TokenType t = current.type();
         if (isComparison(t)) return true;
         if (t == TokenType.ELEMENT_OF || t == TokenType.NOT_ELEMENT_OF
-                || t == TokenType.LIKE || t == TokenType.IS || isWord(current, "BETWEEN")) return true;
+                || t == TokenType.LIKE || t == TokenType.IS || isWord(current, "BETWEEN")
+                || startsRegexMatch()) return true;
         return t == TokenType.NOT
                 && (peek(1).type() == TokenType.ELEMENT_OF
                     || peek(1).type() == TokenType.LIKE || isWord(peek(1), "BETWEEN"));
@@ -2411,6 +2412,10 @@ public final class RelAlgebraParser {
             return parseBetween(left);
         }
 
+        if (startsRegexMatch()) {
+            return parseRegexMatch(left);
+        }
+
         // Check for LIKE / NOT LIKE
         if (current.type() == TokenType.LIKE) {
             Token opTok = current;
@@ -2476,6 +2481,37 @@ public final class RelAlgebraParser {
         advance();
         Operand right = parseOperand();
         return new ComparisonPredicate(left, operator, right, loc(opToken));
+    }
+
+    /** Whether a regular-expression match follows: {@code ~}, {@code !~} (each with {@code *}), or {@code [NOT] MATCHES}. */
+    private boolean startsRegexMatch() {
+        return current.type() == TokenType.REGEX_MATCH || current.type() == TokenType.REGEX_NOT_MATCH
+                || isWord(current, "MATCHES")
+                || current.type() == TokenType.NOT && isWord(peek(1), "MATCHES");
+    }
+
+    /**
+     * Parses a regular-expression match, {@code s ~ p}, {@code s ~* p} (ignoring case),
+     * {@code s !~ p}, {@code s !~* p}, {@code s MATCHES p} or {@code s NOT MATCHES p},
+     * into the test it is: {@code REGEXP_LIKE(s, p) = TRUE}, or {@code = FALSE} for a
+     * negation, so a NULL string or pattern is UNKNOWN either way, as in SQL.
+     * {@code MATCHES} is matched by its text, so it is not reserved.
+     */
+    private Predicate parseRegexMatch(Operand subject) {
+        Token op = current;
+        boolean negated = op.type() == TokenType.REGEX_NOT_MATCH || op.type() == TokenType.NOT;
+        boolean ignoreCase = op.lexeme().endsWith("*");
+        advance();
+        if (op.type() == TokenType.NOT) {
+            advance(); // MATCHES
+        }
+        Operand pattern = parseOperand();
+        SourceLocation at = loc(op);
+        List<Operand> arguments = ignoreCase
+                ? List.of(subject, pattern, new StringOperand("i", at))
+                : List.of(subject, pattern);
+        return new ComparisonPredicate(new FunctionCall("REGEXP_LIKE", arguments, at),
+                ComparisonOperator.EQUAL, new BooleanOperand(!negated, at), at);
     }
 
     /**
@@ -2625,7 +2661,8 @@ public final class RelAlgebraParser {
                     return false;
                 }
             } else if (depth > 0 && callDepth == 0 && (isComparison(token.type()) || isLogicalOperator(token.type()) || token.type() == TokenType.ELEMENT_OF || token.type() == TokenType.NOT_ELEMENT_OF || token.type() == TokenType.LIKE
-                    || token.type() == TokenType.IS)) {
+                    || token.type() == TokenType.IS || token.type() == TokenType.REGEX_MATCH
+                    || token.type() == TokenType.REGEX_NOT_MATCH)) {
                 return true;
             } else if (token.type() == TokenType.EOF) {
                 return false;

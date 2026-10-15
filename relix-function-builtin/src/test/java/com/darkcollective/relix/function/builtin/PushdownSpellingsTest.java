@@ -768,7 +768,8 @@ final class PushdownSpellingsTest {
                 "dow", "isodow", "doy", "week", "isoyear", "quarter", "epoch",
                 "length", "char_length", "floor", "ceiling", "sign", "substring", "substr",
                 "ascii", "trunc", "truncate",
-                "lpad", "rpad", "reverse", "repeat", "replicate", "split_part");
+                "lpad", "rpad", "reverse", "repeat", "replicate", "split_part",
+                "regexp_like", "regexp_replace");
 
         List<String> unexpected = BuiltinCalls.all().stream()
                 .filter(fn -> !spelled.contains(fn.signature().canonicalName()))

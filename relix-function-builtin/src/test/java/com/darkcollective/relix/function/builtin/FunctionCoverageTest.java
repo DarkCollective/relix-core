@@ -181,6 +181,10 @@ final class FunctionCoverageTest {
             exact("SPLIT_PART", "b", s("a,b,c"), s(","), n("2")),
             exact("CONCAT_WS", "a-1", s("-"), s("a"), NullValue.INSTANCE, n("1")),
             exact("INITCAP", "Hello World", s("hELLO wORLD")),
+            exact("REGEXP_LIKE", "true", s("abc123"), s("[0-9]+")),
+            exact("REGEXP_REPLACE", "aXc", s("abc"), s("b"), s("X")),
+            exact("REGEXP_SUBSTR", "123", s("abc123"), s("[0-9]+")),
+            num("REGEXP_COUNT", "2", s("a1b2"), s("[0-9]")),
             // ── Nested ──────────────────────────────────────────────────────────
             exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
             // ── Ordering ──────────────────────────────────────────────────────────

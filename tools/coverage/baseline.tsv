@@ -51,8 +51,8 @@
 1	relix-embed/src/main/java/com/darkcollective/relix/embed/Tuple.java
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/BuiltinFunctionLibrary.java
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/Category.java
-2	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/DateTimeFunctions.java
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/MathFunctions.java
+2	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/Spellings.java
 1	relix-function-builtin/src/main/java/com/darkcollective/relix/function/builtin/TypeCheckFunctions.java
 9	relix-lang/src/main/java/com/darkcollective/relix/lang/LangLexer.java
 7	relix-lang/src/main/java/com/darkcollective/relix/lang/ScriptParser.java

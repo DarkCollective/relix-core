@@ -177,6 +177,9 @@ public enum TokenType {
     NULL,
     IS,
     LIKE,
+    // SQL's regular-expression match, ~ or ~* (ignoring case), and its negation !~ or !~*.
+    REGEX_MATCH,
+    REGEX_NOT_MATCH,
 
     PLUS,
     MINUS,
