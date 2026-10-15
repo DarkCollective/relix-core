@@ -248,6 +248,10 @@ final class GrammarReferenceTest {
             "query { π CAST(a AS MONEY) → x (R) };",
             "query { π CAST(a) → x (R) };",
             "query { π cast → x (R) };",
+            // SQL's word-separated string calls
+            "query { π SUBSTRING(s FROM 2 FOR 3) → a, SUBSTRING(s FOR 1) → b, SUBSTRING(s, 2) → c (R) };",
+            "query { π POSITION('@' IN email) → a, position(a, b) → b (R) };",
+            "query { π SUBSTRING(s FROM) → a (R) };",
             // JOIN … USING
             "query { A JOIN B USING (id) ⟕ USING (a, b) C };",
             "query { A LJOIN σ x = 1 (B) USING (id) };",

@@ -42,5 +42,8 @@ in → NULL out.
 # Alternatives:
 Left / Right for prefixes and suffixes; InStr to locate a position first.
 
+# SQL names:
+SQL's `SUBSTRING` and `SUBSTR` are a function of their own, since a start before the first character counts towards the length there where Mid refuses it. See [substring](substring.md).
+
 # See Also:
 [left](left.md), [right](right.md), [instr](instr.md), [len](len.md)

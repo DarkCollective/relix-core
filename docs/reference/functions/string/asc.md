@@ -28,5 +28,8 @@ first character.
 # Alternatives:
 Chr converts the other way (code → character).
 
+# SQL names:
+SQL's `ASCII` is a function of its own: it answers 0 for an empty string where Asc refuses one. See [ascii](ascii.md).
+
 # See Also:
 [chr](chr.md), [left](left.md), [len](len.md)

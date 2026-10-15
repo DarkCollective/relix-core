@@ -29,5 +29,8 @@ The code must be in 0–65535. NUMBER argument; NULL in → NULL out.
 # Alternatives:
 Asc converts the other way (character → code).
 
+# SQL names:
+`CHR` is this function in any letter case, and `CHAR` is the same function by SQL Server's and MySQL's name.
+
 # See Also:
 [asc](asc.md), [replace](replace.md)

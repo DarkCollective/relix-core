@@ -38,5 +38,8 @@ differently for such text, and is offered nothing.
 Operates on STRING values; a non-string argument is an evaluation error. NULL in →
 NULL out.
 
+# SQL names:
+`LENGTH` and `CHAR_LENGTH` are the same function by SQL's names, counting characters as PostgreSQL's do.
+
 # See Also:
 [left](left.md), [right](right.md), [mid](mid.md), [instr](instr.md), [trim](trim.md)

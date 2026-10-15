@@ -187,11 +187,11 @@ relix.relation("γ category, COUNT(*) → n (relix.functions)")
 (category=conditional, n=6)
 (category=conversion, n=4)
 (category=datetime, n=23)
-(category=math, n=23)
+(category=math, n=31)
 (category=nested, n=1)
 (category=ordering, n=2)
 (category=similarity, n=5)
-(category=string, n=13)
+(category=string, n=24)
 (category=typecheck, n=2)
 ```
 
@@ -211,6 +211,7 @@ relix.relation("""
 (name=CURRENT_DATE, pure=false, deterministic=false)
 (name=CURRENT_TIME, pure=false, deterministic=false)
 (name=NOW, pure=false, deterministic=false)
+(name=RANDOM, pure=false, deterministic=false)
 (name=Rand, pure=false, deterministic=false)
 ```
 
