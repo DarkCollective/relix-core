@@ -124,6 +124,13 @@ final class FunctionCoverageTest {
             num("HOUR", "13", TS),
             num("MINUTE", "40", TS),
             num("SECOND", "30", TS),
+            num("DOW", "3", TS),
+            num("ISODOW", "3", TS),
+            num("DOY", "189", TS),
+            num("WEEK", "28", TS),
+            num("ISOYEAR", "2026", TS),
+            num("QUARTER", "3", TS),
+            num("EPOCH", "1783518030", TS),
             exact("DATE_TRUNC", "2026-07-08T00:00:00Z", s("day"), TS),
             num("MINUTES", "120", duration("PT2H")),
             num("SECONDS", "90", duration("PT90S")),
@@ -146,6 +153,7 @@ final class FunctionCoverageTest {
             exact("CStr", "42", n("42")),
             num("CInt", "4", n("3.7")),
             num("CDbl", "3.14", s("3.14")),
+            exact("CBool", "true", s(" Yes ")),
             // ── Nested ──────────────────────────────────────────────────────────
             exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
             // ── Ordering ──────────────────────────────────────────────────────────

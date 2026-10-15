@@ -2805,6 +2805,13 @@ public final class RelAlgebraParser {
         }
 
         if (current.type() == TokenType.LPAREN && current.column() == nameToken.column() + sb.length()) {
+            // SQL's CAST(x AS type) and EXTRACT(field FROM x), which are not argument lists.
+            if (sb.toString().equalsIgnoreCase("CAST")) {
+                return parseCast(nameToken);
+            }
+            if (sb.toString().equalsIgnoreCase("EXTRACT") && isNameToken(peek(1)) && isWord(peek(2), "FROM")) {
+                return parseExtract(nameToken);
+            }
             advance(); // consume '('
             List<Operand> arguments = new ArrayList<>();
             if (current.type() != TokenType.RPAREN) {
@@ -2816,6 +2823,71 @@ public final class RelAlgebraParser {
             return new FunctionCall(sb.toString(), arguments, loc(nameToken));
         }
         return new AttributeOperand(sb.toString(), loc(nameToken));
+    }
+
+    /**
+     * The fields {@code EXTRACT} reads, each the function that computes it: SQL's
+     * {@code EXTRACT(DOW FROM d)} is {@code DOW(d)}.
+     */
+    private static final java.util.Set<String> EXTRACT_FIELDS = java.util.Set.of(
+            "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND",
+            "DOW", "ISODOW", "DOY", "WEEK", "ISOYEAR", "QUARTER", "EPOCH");
+
+    /**
+     * Parses SQL's {@code EXTRACT(field FROM operand)}, which is the field's own function
+     * applied to the operand. The current token is the {@code (}.
+     */
+    private Operand parseExtract(Token nameToken) {
+        expect(TokenType.LPAREN, "Expected '(' after EXTRACT");
+        Token field = expectName("Expected a field after 'EXTRACT('");
+        String name = field.lexeme().toUpperCase(java.util.Locale.ROOT);
+        if (!EXTRACT_FIELDS.contains(name)) {
+            throw error(field, "EXTRACT has no field '" + field.lexeme() + "'; expected one of "
+                    + "YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, ISODOW, DOY, WEEK, ISOYEAR, QUARTER, EPOCH");
+        }
+        advance(); // FROM, which the caller has seen
+        Operand operand = parseOperand();
+        expect(TokenType.RPAREN, "Expected ')' after the EXTRACT operand");
+        return new FunctionCall(name, List.of(operand), loc(nameToken));
+    }
+
+    /**
+     * Parses SQL's {@code CAST(operand AS type)} into the conversion it stands for. To a
+     * date, time or timestamp it is {@code to_date}, {@code to_time} or
+     * {@code to_timestamp}; to a number, a string or a boolean it is {@code CDbl},
+     * {@code CStr} or {@code CBool} — which refuse a NULL, so the cast is written
+     * {@code IIf(x IS NULL, NULL, CDbl(x))}, and a NULL casts to NULL as it does in SQL.
+     * The current token is the {@code (}.
+     */
+    private Operand parseCast(Token nameToken) {
+        expect(TokenType.LPAREN, "Expected '(' after CAST");
+        Operand operand = parseOperand();
+        expect(TokenType.AS, "Expected 'AS' and a type in CAST(… AS type)");
+        Token type = current;
+        // Every type is word-shaped, DATE, TIME and TIMESTAMP keywords among them.
+        if (!isNameToken(type)) {
+            throw error(type, "Expected a type after 'AS'");
+        }
+        advance();
+        expect(TokenType.RPAREN, "Expected ')' after the CAST type");
+        SourceLocation at = loc(nameToken);
+        String conversion = switch (type.lexeme().toUpperCase(java.util.Locale.ROOT)) {
+            case "DATE" -> "to_date";
+            case "TIME" -> "to_time";
+            case "TIMESTAMP" -> "to_timestamp";
+            case "NUMBER" -> "CDbl";
+            case "STRING" -> "CStr";
+            case "BOOLEAN" -> "CBool";
+            default -> throw error(type, "CAST has no type '" + type.lexeme()
+                    + "'; expected NUMBER, STRING, BOOLEAN, DATE, TIME or TIMESTAMP");
+        };
+        FunctionCall converted = new FunctionCall(conversion, List.of(operand), at);
+        if (conversion.startsWith("to_")) {
+            return converted;
+        }
+        return new FunctionCall("IIf", List.of(
+                new ConditionOperand(new NullPredicate(operand, true, at), at),
+                new NullOperand(at), converted), at);
     }
 
     /**

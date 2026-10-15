@@ -37,6 +37,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
+import java.time.temporal.IsoFields;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -154,6 +155,42 @@ final class DateTimeFunctions {
                         part("SECOND", "$second"),
                         args -> timePart(args, "SECOND", LocalTime::getSecond)),
 
+                // The calendar fields SQL's EXTRACT names beyond the six above, each a
+                // function of its own and each answering as PostgreSQL's field does.
+                // DOW counts Sunday as 0; ISODOW counts Monday as 1 and Sunday as 7.
+                DATETIME.fn("DOW", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                        DateTimeFunctions::dowSpelling,
+                        args -> datePart(args, "DOW", d -> d.getDayOfWeek().getValue() % 7)),
+
+                DATETIME.fn("ISODOW", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                        DateTimeFunctions::isodowSpelling,
+                        args -> datePart(args, "ISODOW", d -> d.getDayOfWeek().getValue())),
+
+                DATETIME.fn("DOY", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                        field("DOY", "DAYOFYEAR", "dayofyear", "$dayOfYear"),
+                        args -> datePart(args, "DOY", LocalDate::getDayOfYear)),
+
+                // The ISO week: weeks start on Monday, and week 1 is the one holding the
+                // year's first Thursday, so 1 January may fall in week 52 or 53 of the
+                // year before. ISOYEAR is the year that week belongs to.
+                DATETIME.fn("WEEK", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                        field("WEEK", null, "iso_week", "$isoWeek"),
+                        args -> datePart(args, "WEEK", d -> d.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR))),
+
+                DATETIME.fn("ISOYEAR", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                        field("ISOYEAR", null, null, "$isoWeekYear"),
+                        args -> datePart(args, "ISOYEAR", d -> d.get(IsoFields.WEEK_BASED_YEAR))),
+
+                DATETIME.fn("QUARTER", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                        field("QUARTER", "QUARTER", "quarter", null),
+                        args -> datePart(args, "QUARTER", d -> d.get(IsoFields.QUARTER_OF_YEAR))),
+
+                // EPOCH is seconds since 1970-01-01T00:00:00Z for a timestamp or a date (its
+                // midnight at UTC), seconds since midnight for a time, and a duration's
+                // length in seconds — each with its fraction, as PostgreSQL's is.
+                DATETIME.fn("EPOCH", NUMBER, PURE_DETERMINISTIC, List.of(p("t", ANY)),
+                        DateTimeFunctions::epochSpelling, DateTimeFunctions::epoch),
+
                 DATETIME.fn("DATE_TRUNC", TIMESTAMP, PURE_DETERMINISTIC,
                         List.of(p("unit", STRING), p("ts", TIMESTAMP)),
                         DateTimeFunctions::dateTruncSpelling, DateTimeFunctions::dateTrunc),
@@ -167,17 +204,17 @@ final class DateTimeFunctions {
                 DATETIME.fn("DAYS", NUMBER, PURE_DETERMINISTIC, List.of(p("d", DURATION)),
                         args -> measure(args, "DAYS", Duration::toDays)),
 
-                DATETIME.fn("to_date", DATE, PURE_DETERMINISTIC, List.of(p("s", STRING)),
-                        args -> parse(args, "to_date",
-                                text -> new DateValue(LocalDate.parse(text)), "date")),
+                // Each reads ISO-8601 text, and converts the other temporal kinds as SQL's
+                // CAST does, reading a timestamp at UTC: a timestamp's date or time of
+                // day, and a date's midnight. CAST(x AS DATE | TIME | TIMESTAMP) is these.
+                DATETIME.fn("to_date", DATE, PURE_DETERMINISTIC, List.of(p("s", ANY)),
+                        args -> convert(args, "to_date", "date", DateTimeFunctions::toDate)),
 
-                DATETIME.fn("to_timestamp", TIMESTAMP, PURE_DETERMINISTIC, List.of(p("s", STRING)),
-                        args -> parse(args, "to_timestamp",
-                                text -> new TimestampValue(instant(text)), "timestamp")),
+                DATETIME.fn("to_timestamp", TIMESTAMP, PURE_DETERMINISTIC, List.of(p("s", ANY)),
+                        args -> convert(args, "to_timestamp", "timestamp", DateTimeFunctions::toTimestamp)),
 
-                DATETIME.fn("to_time", TIME, PURE_DETERMINISTIC, List.of(p("s", STRING)),
-                        args -> parse(args, "to_time",
-                                text -> new TimeValue(LocalTime.parse(text)), "time")));
+                DATETIME.fn("to_time", TIME, PURE_DETERMINISTIC, List.of(p("s", ANY)),
+                        args -> convert(args, "to_time", "time", DateTimeFunctions::toTime)));
     }
 
     // ── Implementations ───────────────────────────────────────────────────────
@@ -255,18 +292,84 @@ final class DateTimeFunctions {
         return number(unit.applyAsLong(duration.value()));
     }
 
-    /** Parses text into a temporal value, naming what could not be read. */
-    private static Value parse(List<Value> args, String function,
-                               java.util.function.Function<String, Value> parser, String kind) {
-        if (args.get(0).isNull()) {
+    /**
+     * Converts a value to a temporal kind, passing NULL through and naming a value that
+     * cannot be read or converted.
+     */
+    private static Value convert(List<Value> args, String function, String kind,
+                                 java.util.function.Function<Value, Value> conversion) {
+        Value value = args.get(0);
+        if (value.isNull()) {
             return NullValue.INSTANCE;
         }
-        String text = string(args.get(0), function);
         try {
-            return parser.apply(text);
+            return conversion.apply(value);
         } catch (DateTimeException e) {
-            throw reject(function + ": invalid " + kind + " '" + text + "'");
+            throw reject(function + ": invalid " + kind + " '" + value.asDisplayString() + "'");
+        } catch (ClassCastException e) {
+            throw reject(function + ": cannot convert " + value.type() + " to a " + kind);
         }
+    }
+
+    /** A date: text naming one (or a timestamp, whose UTC date it is), a timestamp's UTC date, or a date. */
+    private static Value toDate(Value value) {
+        return switch (value) {
+            case DateValue d -> d;
+            case TimestampValue ts -> new DateValue(LocalDate.ofInstant(ts.value(), ZoneOffset.UTC));
+            case com.darkcollective.relix.value.StringValue text -> {
+                try {
+                    yield new DateValue(LocalDate.parse(text.value()));
+                } catch (DateTimeParseException notADate) {
+                    yield new DateValue(LocalDate.ofInstant(instant(text.value()), ZoneOffset.UTC));
+                }
+            }
+            default -> throw new ClassCastException();
+        };
+    }
+
+    /** A timestamp: text naming one (or a date, whose midnight it is), a date's midnight at UTC, or a timestamp. */
+    private static Value toTimestamp(Value value) {
+        return switch (value) {
+            case TimestampValue ts -> ts;
+            case DateValue d -> new TimestampValue(d.value().atStartOfDay().toInstant(ZoneOffset.UTC));
+            case com.darkcollective.relix.value.StringValue text -> {
+                try {
+                    yield new TimestampValue(instant(text.value()));
+                } catch (DateTimeParseException notATimestamp) {
+                    yield new TimestampValue(LocalDate.parse(text.value()).atStartOfDay().toInstant(ZoneOffset.UTC));
+                }
+            }
+            default -> throw new ClassCastException();
+        };
+    }
+
+    /** A time of day: text naming one, a timestamp's time of day at UTC, or a time. */
+    private static Value toTime(Value value) {
+        return switch (value) {
+            case TimeValue t -> t;
+            case TimestampValue ts -> new TimeValue(LocalTime.ofInstant(ts.value(), ZoneOffset.UTC));
+            case com.darkcollective.relix.value.StringValue text -> new TimeValue(LocalTime.parse(text.value()));
+            default -> throw new ClassCastException();
+        };
+    }
+
+    /** {@code EPOCH}: seconds, with their fraction, as PostgreSQL's {@code EXTRACT(EPOCH …)} counts them. */
+    private static Value epoch(List<Value> args) {
+        Value value = args.get(0);
+        return switch (value) {
+            case NullValue ignored -> NullValue.INSTANCE;
+            case TimestampValue ts -> seconds(ts.value().getEpochSecond(), ts.value().getNano());
+            case DateValue d -> number(d.value().toEpochDay() * 86_400L);
+            case TimeValue t -> seconds(t.value().toSecondOfDay(), t.value().getNano());
+            case DurationValue d -> seconds(d.value().getSeconds(), d.value().getNano());
+            default -> throw reject("EPOCH: expected TIMESTAMP, DATE, TIME or DURATION, got " + value.type());
+        };
+    }
+
+    private static NumberValue seconds(long whole, int nanos) {
+        BigDecimal value = BigDecimal.valueOf(whole);
+        return new NumberValue(nanos == 0 ? value
+                : value.add(BigDecimal.valueOf(nanos, 9)).stripTrailingZeros());
     }
 
     /**
@@ -324,6 +427,76 @@ final class DateTimeFunctions {
             }
             return Optional.empty();
         };
+    }
+
+    /**
+     * One of the calendar fields beyond the six {@link #part} spells, per backend:
+     * {@code EXTRACT(field FROM e)} on PostgreSQL and DuckDB, whose fields mean what the
+     * engine's do; MySQL's function of the same meaning where it has one; SQL Server's
+     * {@code DATEPART} at UTC where it has the part; and the pipeline operator in
+     * MongoDB. A {@code null} name is a backend with no such field, which declines.
+     */
+    private static PushdownSpelling field(String sqlField, String mysqlFunction,
+                                          String sqlServerPart, String mongoOperator) {
+        return (target, arguments) -> {
+            if (arguments.size() != 1) {
+                return Optional.empty();
+            }
+            String argument = arguments.get(0);
+            if (target.isFamily(PushdownTarget.SQL)) {
+                if (target.isVariant(POSTGRES) || target.isVariant(DUCKDB)) {
+                    return Optional.of("EXTRACT(" + sqlField + " FROM " + argument + ")");
+                }
+                if (target.isVariant(MYSQL) && mysqlFunction != null) {
+                    return Optional.of(mysqlFunction + "(" + argument + ")");
+                }
+                if (target.isVariant(SQLSERVER) && sqlServerPart != null) {
+                    return Optional.of("DATEPART(" + sqlServerPart + ", SWITCHOFFSET(" + argument
+                            + ", '+00:00'))");
+                }
+                return Optional.empty();
+            }
+            if (target.isFamily(PushdownTarget.MONGO) && mongoOperator != null) {
+                return Optional.of("{\"" + mongoOperator + "\": " + argument + "}");
+            }
+            return Optional.empty();
+        };
+    }
+
+    /**
+     * {@code DOW}, Sunday 0 to Saturday 6. MySQL's {@code DAYOFWEEK} and MongoDB's
+     * {@code $dayOfWeek} count Sunday as 1, so they are one more. SQL Server's weekday
+     * depends on the session's {@code DATEFIRST}, which a statement cannot see, so it
+     * declines.
+     */
+    private static Optional<String> dowSpelling(PushdownTarget target, List<String> arguments) {
+        if (target.isFamily(PushdownTarget.SQL) && target.isVariant(MYSQL) && arguments.size() == 1) {
+            return Optional.of("(DAYOFWEEK(" + arguments.get(0) + ") - 1)");
+        }
+        if (target.isFamily(PushdownTarget.MONGO) && arguments.size() == 1) {
+            return Optional.of("{\"$subtract\": [{\"$dayOfWeek\": " + arguments.get(0) + "}, 1]}");
+        }
+        return field("DOW", null, null, null).render(target, arguments);
+    }
+
+    /** {@code ISODOW}, Monday 1 to Sunday 7: MySQL's {@code WEEKDAY} counts Monday as 0. */
+    private static Optional<String> isodowSpelling(PushdownTarget target, List<String> arguments) {
+        if (target.isFamily(PushdownTarget.SQL) && target.isVariant(MYSQL) && arguments.size() == 1) {
+            return Optional.of("(WEEKDAY(" + arguments.get(0) + ") + 1)");
+        }
+        return field("ISODOW", null, null, "$isoDayOfWeek").render(target, arguments);
+    }
+
+    /**
+     * {@code EPOCH} on PostgreSQL alone. MySQL's {@code UNIX_TIMESTAMP} reads a
+     * {@code DATETIME} in the session's zone, and the other backends' forms are not
+     * confirmed here to keep the fraction of a second, so they run in the engine.
+     */
+    private static Optional<String> epochSpelling(PushdownTarget target, List<String> arguments) {
+        if (target.isFamily(PushdownTarget.SQL) && target.isVariant(POSTGRES) && arguments.size() == 1) {
+            return Optional.of("EXTRACT(EPOCH FROM " + arguments.get(0) + ")");
+        }
+        return Optional.empty();
     }
 
     /**
