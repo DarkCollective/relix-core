@@ -2,6 +2,7 @@
 
 # Syntax:
 TRACE <from>, <to> VIA <weight> MINIMIZE|MAXIMIZE AS <path> (Edges)
+-- returns one row per reachable pair: <from>, <to>, <weight> (the total) and <path>
 
 TRACE <from> ↔ <to> VIA <weight> MINIMIZE|MAXIMIZE AS <path> (Edges)  -- both ways
 

@@ -4,10 +4,12 @@
 -- MIP subset selection (default):
 OPTIMIZE MAXIMIZE|MINIMIZE SUM(<objective>)
   SUBJECT TO SUM(<expr>) <=|>=|= <bound> [AND ...] [PER <keys>] (Relation)
+-- returns the chosen input rows, schema unchanged
 
 -- LP continuous allocation (ALLOCATE):
 OPTIMIZE ALLOCATE (<lo>, <hi>) MAXIMIZE|MINIMIZE SUM(<objective>)
   SUBJECT TO SUM(<expr>) <=|>=|= <bound> -> <col> [PER <keys>] (Relation)
+-- returns every input row plus the allocation column <col>
 
 OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(weight) <= 100 PER region (Candidates)
 

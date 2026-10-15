@@ -2,6 +2,7 @@
 
 # Syntax:
 CLUSTER <from>, <to> AS <label> (Edges)
+-- returns one row per node: the node (named as <from>) and its NUMBER <label>
 
 CLUSTER src, dst AS island_id (NetworkTraffic)
 

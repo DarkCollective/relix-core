@@ -5,6 +5,7 @@ SOLVE <left-expression> = <right-expression> [PER <key>, ...]
       [WITHIN <tolerance>] [MAX <n> ROUNDS] [START <column> = <expression>, ...] (Relation)
 SOLVE { <left> = <right>, <left> = <right>, ... } [PER <key>, ...]
       [WITHIN <tolerance>] [MAX <n> ROUNDS] [START <column> = <expression>, ...] (Relation)
+-- returns the input rows with their NULL unknowns filled in, schema unchanged
 
 SOLVE total = principal * rate (Loans)
 SOLVE { cups = coffee + tea, revenue = 3.5 * coffee + 2.5 * tea } (Sales)
