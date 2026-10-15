@@ -174,7 +174,8 @@ public sealed interface PhysicalNode {
             }
             case TopK n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new TopK(n.schema(), n.groupingAttributes(), n.sortSpecs(), n.offset(), n.count(), in);
+                yield in == n.input() ? n : new TopK(n.schema(), n.groupingAttributes(), n.sortSpecs(),
+                        n.offset(), n.count(), n.withTies(), in);
             }
             case Window n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -824,11 +825,19 @@ public sealed interface PhysicalNode {
     /**
      * Top-k per group: within each partition (by {@code groupingAttributes}) keeps
      * the {@code count} rows highest by {@code sortSpecs}, after skipping
-     * {@code offset}.  Output rows are the full input rows.
+     * {@code offset}, and with {@code withTies} every further row tied with the last of
+     * them on all the sort keys.  Output rows are the full input rows.
      */
     record TopK(Schema schema, List<String> groupingAttributes,
                 List<SortSpecification> sortSpecs, Optional<Long> offset, long count,
-                PhysicalNode input) implements PhysicalNode {
+                boolean withTies, PhysicalNode input) implements PhysicalNode {
+        /** A top-k that cuts ties wherever the count falls. */
+        public TopK(Schema schema, List<String> groupingAttributes,
+                    List<SortSpecification> sortSpecs, Optional<Long> offset, long count,
+                    PhysicalNode input) {
+            this(schema, groupingAttributes, sortSpecs, offset, count, false, input);
+        }
+
         @Override public List<PhysicalNode> children() { return List.of(input); }
     }
 

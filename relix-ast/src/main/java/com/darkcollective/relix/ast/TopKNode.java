@@ -41,12 +41,19 @@ import java.util.Optional;
  * {@code λ} over a {@code τ} ({@code LIM-003}).  It has no spelling of its own
  * because {@code λ}/{@code τ} already is one.
  *
+ * <p>{@code withTies} keeps, past the {@code count}-th row of a group, every further row
+ * that ties with it on all the sort keys, as SQL's {@code WITH TIES} does: rows the
+ * order cannot tell apart are kept or dropped together. A tie is equality under the
+ * sort's own comparison, so two NULLs tie and {@code 5} ties with {@code 5.0}.
+ * {@code TOP 2 WITH TIES} over scores {@code 9, 8, 8, 7} keeps three rows.
+ *
  * <p>Example: {@code TOP 3 amount DESC PER customer_id (Orders)}.
  *
  * @param groupingAttributes the partition keys; empty means one global group
  * @param sortSpecs          within-group ordering; at least one required
  * @param offset             rows to skip within each group before taking {@code count}
  * @param count              number of rows to keep per group; non-negative
+ * @param withTies           whether rows tied with the last one kept are kept too; needs a sort key
  * @param input              the source relation; never null
  * @param location           the source location of this node; never null
  */
@@ -55,6 +62,7 @@ public record TopKNode(
         List<SortSpecification> sortSpecs,
         Optional<Long> offset,
         long count,
+        boolean withTies,
         RelNode input,
         SourceLocation location
 ) implements RelNode {
@@ -70,8 +78,37 @@ public record TopKNode(
         if (offset.isPresent() && offset.get() < 0) {
             throw new IllegalArgumentException("Offset cannot be negative");
         }
+        if (withTies && sortSpecs.isEmpty()) {
+            throw new IllegalArgumentException("WITH TIES needs a sort key to decide what ties");
+        }
         groupingAttributes = List.copyOf(groupingAttributes);
         sortSpecs = List.copyOf(sortSpecs);
+    }
+
+    /**
+     * A top-k that cuts ties wherever the count falls.
+     *
+     * @param groupingAttributes the partition keys; empty means one global group
+     * @param sortSpecs          within-group ordering; at least one required
+     * @param offset             rows to skip within each group before taking {@code count}
+     * @param count              number of rows to keep per group; non-negative
+     * @param input              the source relation; never null
+     * @param location           the source location of this node; never null
+     */
+    public TopKNode(List<String> groupingAttributes, List<SortSpecification> sortSpecs,
+                    Optional<Long> offset, long count, RelNode input, SourceLocation location) {
+        this(groupingAttributes, sortSpecs, offset, count, false, input, location);
+    }
+
+    /**
+     * This node over {@code input}, every other component kept.
+     *
+     * @param input the new input; never null
+     * @return the node
+     * @since 1.0
+     */
+    public TopKNode withInput(RelNode input) {
+        return new TopKNode(groupingAttributes, sortSpecs, offset, count, withTies, input, location);
     }
 
     /** Convenience constructor for tests; no offset, {@link SourceLocation#UNKNOWN}. */

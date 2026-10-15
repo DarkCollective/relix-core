@@ -3,6 +3,7 @@
 # Syntax:
 λ <count> (Relation)             -- first N rows
 λ <offset>, <count> (Relation)   -- skip offset rows, then take count
+λ <count> WITH TIES (τ ... (Relation))   -- and every row tied with the last
 LIMIT ...
 
 λ 10 (Orders)
@@ -16,12 +17,23 @@ exactly what you need for paging through results a screenful at a time.
 Limit is almost always paired with SORT so that "first N" means something
 predictable (e.g. the 10 largest, the 5 most recent).
 
+`WITH TIES` keeps going past the Nth row while the rows that follow tie with it on
+every sort key, so that two rows the order cannot tell apart are kept or dropped
+together: the top 3 scores with a tie for third is four rows.
+
 # Technical Description:
 λ applies an optional offset and a row cap to its input. It is a streaming
 operator that stops pulling once the cap is reached — which is what makes it safe
 over an unbounded generator (it bounds the stream). The optimizer pushes λ below
 projections (LIM-001) and folds it into SQL as LIMIT/OFFSET (dialect-aware) or
 Mongo as $skip/$limit.
+
+`λ n WITH TIES` takes a `τ` as its input, since the sort keys are what decide a tie,
+and the pair is the global `TOP n WITH TIES` with those keys: the offset is skipped,
+`n` rows are taken, and then every further row that compares equal to the last one
+taken on all the keys. Equal means equal to the sort, so two NULLs tie and `5` ties
+with `5.0`. It folds into SQL as `FETCH FIRST n ROWS WITH TIES` on PostgreSQL (13 or
+later) and runs in the engine elsewhere.
 
 # Examples:
 First 10 orders:
@@ -35,6 +47,9 @@ Top 10 salaries (sort then limit):
 
 Take a finite prefix of an infinite generator — first 100 prime numbers:
   λ 100 (Primes)
+
+The 3 highest scores, and anyone tied with the third:
+  λ 3 WITH TIES (τ score DESC (Results))
 
 # Worked Example:
 Four rows of sales, two of them with no `bonus` recorded — the NULLs are there deliberately, because they are what makes the rules below visible.
@@ -69,6 +84,21 @@ nothing: the optimizer fuses `λ` over `τ` into a bounded top-N rather than
 sorting the whole input (`LIM-003`, see the [optimizer](../advanced/optimizer.md)
 page).
 
+With `WITH TIES`, a cut that falls between two rows of equal value takes both. The
+two sales with no bonus tie with each other:
+
+```relix
+query { λ 1 WITH TIES (τ bonus DESC NULLS FIRST (Sales)) };
+```
+
+```
+ region  rep  amount  bonus
+ ──────  ───  ──────  ─────
+ east    Bo       80  NULL
+ west    Dee      50  NULL
+(2 rows)
+```
+
 # Limitations:
 Without a SORT below it, "first N" is whatever order the source happens to
 deliver — not guaranteed. Limit caps rows but does not sample randomly; for that
@@ -79,6 +109,12 @@ The count and the offset are whole numbers. A fraction, or a number too large fo
 
 ```relix-invalid
 query { λ 2.5 (Orders) };
+```
+
+`WITH TIES` needs a sorted input, since without one nothing ties:
+
+```relix-invalid
+query { λ 3 WITH TIES (Orders) };
 ```
 
 # Alternatives:

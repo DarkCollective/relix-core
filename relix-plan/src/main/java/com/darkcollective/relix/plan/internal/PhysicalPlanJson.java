@@ -19,6 +19,7 @@ import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
 import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveStart;
+import com.darkcollective.relix.ast.NullPlacement;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -359,6 +360,9 @@ public final class PhysicalPlanJson {
 
             case PhysicalNode.TopK t -> {
                 w.name("count").value(t.count());
+                if (t.withTies()) {
+                    w.name("withTies").value(true);
+                }
                 w.name("offset");
                 if (t.offset().isPresent()) {
                     w.value(t.offset().get());
@@ -385,7 +389,8 @@ public final class PhysicalPlanJson {
                 w.name("sortSpecs").beginArray();
                 for (var spec : win.sortSpecs()) {
                     w.value(spec.expression().accept(OPND)
-                            + (spec.direction() == SortDirection.DESC ? " DESC" : " ASC"));
+                            + (spec.direction() == SortDirection.DESC ? " DESC" : " ASC")
+                            + (spec.nulls() == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : ""));
                 }
                 w.endArray();
                 w.name("outputColumn").value(win.outputColumn());
@@ -475,7 +480,8 @@ public final class PhysicalPlanJson {
                     w.name("orderSpecs").beginArray();
                     for (SortSpecification spec : t.orderSpecs()) {
                         w.value(spec.expression().accept(OPND)
-                                + (spec.direction() == SortDirection.DESC ? " DESC" : " ASC"));
+                                + (spec.direction() == SortDirection.DESC ? " DESC" : " ASC")
+                            + (spec.nulls() == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : ""));
                     }
                     w.endArray();
                 }

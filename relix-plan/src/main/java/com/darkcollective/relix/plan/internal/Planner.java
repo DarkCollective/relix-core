@@ -587,7 +587,7 @@ public final class Planner {
             }
             case TopKNode t        -> new PhysicalNode.TopK(
                     schemaOf(t), t.groupingAttributes(), t.sortSpecs(),
-                    t.offset(), t.count(), plan(t.input()));
+                    t.offset(), t.count(), t.withTies(), plan(t.input()));
             case WindowNode w      -> new PhysicalNode.Window(
                     schemaOf(w), w.function(), w.partitionKeys(), w.sortSpecs(),
                     w.frame(), w.outputColumn(), plan(w.input()));

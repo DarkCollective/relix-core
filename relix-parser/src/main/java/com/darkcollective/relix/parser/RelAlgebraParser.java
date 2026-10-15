@@ -818,7 +818,18 @@ public final class RelAlgebraParser {
             direction = SortDirection.DESC;
         }
 
-        return new SortSpecification(expression, direction);
+        // SQL's NULLS FIRST / NULLS LAST, matched by text so that none of the three
+        // words becomes reserved. Without it a key puts its NULLs last.
+        NullPlacement nulls = NullPlacement.NULLS_LAST;
+        if (isWord(current, "NULLS") && (isWord(peek(1), "FIRST") || isWord(peek(1), "LAST"))) {
+            advance();
+            nulls = matchWord("FIRST") ? NullPlacement.NULLS_FIRST : NullPlacement.NULLS_LAST;
+            if (nulls == NullPlacement.NULLS_LAST) {
+                advance();
+            }
+        }
+
+        return new SortSpecification(expression, direction, nulls);
     }
 
     private DistinctNode parseDistinct() {
@@ -1866,6 +1877,7 @@ public final class RelAlgebraParser {
         } else {
             count = firstValue;
         }
+        boolean withTies = parseWithTies();
 
         List<SortSpecification> sortSpecs = parseSortSpecificationList();
 
@@ -1883,7 +1895,17 @@ public final class RelAlgebraParser {
         RelNode input = parseParenthesizedRelation(
                 keys.isEmpty() ? "Expected 'PER' or '(' after the TOP sort keys"
                                : "Expected '(' after the TOP grouping keys");
-        return new TopKNode(List.copyOf(keys), sortSpecs, offset, count, input, loc(opTok));
+        return new TopKNode(List.copyOf(keys), sortSpecs, offset, count, withTies, input, loc(opTok));
+    }
+
+    /** Consumes SQL's {@code WITH TIES} after a row count, and says whether it was written. */
+    private boolean parseWithTies() {
+        if (current.type() == TokenType.WITH && peek(1).type() == TokenType.TIES) {
+            advance();
+            advance();
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -1899,7 +1921,12 @@ public final class RelAlgebraParser {
         }
     }
 
-    private LimitNode parseLimit() {
+    /**
+     * Parses a λ. With SQL's {@code WITH TIES} it keeps the rows tied with the last one
+     * too, which needs the order that decides a tie, so its input must be a τ; the pair
+     * is then the global {@code TOP} that means the same thing, with the ties kept.
+     */
+    private RelNode parseLimit() {
         Token opTok = current;
         expect(TokenType.LIMIT, "Expected 'λ'");
 
@@ -1918,8 +1945,16 @@ public final class RelAlgebraParser {
             // One argument: count
             count = firstValue;
         }
+        boolean withTies = parseWithTies();
 
         RelNode input = parseParenthesizedRelation("Expected '(' after limit specification");
+        if (withTies) {
+            if (!(input instanceof SortNode sort)) {
+                throw error(opTok, "WITH TIES needs a sorted input, to know what ties: "
+                        + "λ n WITH TIES (τ key (R))");
+            }
+            return new TopKNode(List.of(), sort.sortSpecs(), offset, count, true, sort.input(), loc(opTok));
+        }
         return new LimitNode(offset, count, input, loc(opTok));
     }
 

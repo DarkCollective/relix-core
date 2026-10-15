@@ -3,11 +3,13 @@
 # Syntax:
 TOP <count> <sort-specs> [PER <keys>] (Relation)
 TOP <offset>, <count> <sort-specs> [PER <keys>] (Relation)
+TOP <count> WITH TIES <sort-specs> [PER <keys>] (Relation)
 -- returns the kept input rows, schema unchanged
 
 TOP 3 amount DESC PER customer_id (Orders)
 TOP 5, 3 amount DESC PER customer_id (Orders)   -- skip 5, take 3 per group
 TOP 3 amount DESC (Orders)                      -- one global group: the top 3 overall
+TOP 1 WITH TIES amount DESC PER customer_id (Orders)   -- every order tied for the biggest
 
 # Description:
 TOP keeps the highest (or lowest) N rows within each group. It answers "the 3
@@ -27,6 +29,12 @@ highest by the sort specifications (optionally skipping `offset` rows first) —
 the `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …) ≤ k` idiom. Requires ≥1 sort
 spec. Output = full input rows (a windowed filter). It cannot
 desugar (no per-group ranking primitive) and does not push down ([bag]).
+
+`WITH TIES` keeps, in each group, every further row that ties with the last one
+kept on all the sort keys — SQL's `FETCH FIRST n ROWS WITH TIES` and `TOP n WITH
+TIES`. A tie is equality under the sort, so two NULLs tie. A global
+`TOP n WITH TIES` folds into SQL on PostgreSQL; with `PER`, or on another
+backend, it runs in the engine.
 
 # Examples:
 The 3 biggest orders per customer:
@@ -82,6 +90,32 @@ Bob has only two orders, so both survive. To get *2nd and 3rd place* per custome
 group rather than the whole row — e.g. just the highest amount — reach for the
 `ARGMAX` aggregate instead.
 
+When two rows tie for the last place kept, plain TOP keeps the one that arrived
+first. `WITH TIES` keeps both:
+
+```relix
+Results := [
+| race | runner | secs |
+|------|--------|------|
+| r1   | Ann    | 61   |
+| r1   | Ben    | 59   |
+| r1   | Cat    | 59   |
+| r2   | Dan    | 70   |
+| r2   | Eve    | 72   |
+];
+
+query { TOP 1 WITH TIES secs PER race (Results) };
+```
+
+```
+ race  runner  secs
+ ────  ──────  ────
+ r1    Ben       59
+ r1    Cat       59
+ r2    Dan       70
+(3 rows)
+```
+
 # Limitations:
 Requires at least one sort spec: without one, "highest" has no meaning.
 
@@ -117,7 +151,8 @@ reached the operator first is kept — the same rows a full sort followed by a
 limit would leave. So `TOP 1 amount DESC PER customer` over two orders of equal
 amount returns the earlier of the two rather than an arbitrary one. A relation
 has no inherent row order, though, so "earlier" is only as meaningful as the
-order the input delivers: add a tie-breaking sort key when the choice matters.
+order the input delivers: add a tie-breaking sort key when the choice matters, or
+write `WITH TIES` to keep every row tied for the last place.
 
 **Partition pruning (TOPK-001).** A selection that fixes a PER key to a constant
 above a TOP — `σ customer = "Alice" (TOP 2 amount DESC PER customer (Orders))` —

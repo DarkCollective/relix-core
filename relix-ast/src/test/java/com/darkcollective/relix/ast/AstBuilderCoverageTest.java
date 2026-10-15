@@ -202,6 +202,7 @@ final class AstBuilderCoverageTest {
             .of(ObjectiveSense.class, i -> ObjectiveSense.values()[i % ObjectiveSense.values().length])
             .of(ConsolidationFunction.class, i -> ConsolidationFunction.values()[i % ConsolidationFunction.values().length])
             .of(SortDirection.class, i -> SortDirection.values()[i % SortDirection.values().length])
+            .of(NullPlacement.class, i -> NullPlacement.values()[i % NullPlacement.values().length])
             .of(TieBreak.class, i -> TieBreak.values()[i % TieBreak.values().length])
             .ofListElement(Long.class, i -> (long) (i + 1))
             // Optional<E> takes its element from here too: SOLVE's WITHIN and MAX … ROUNDS.

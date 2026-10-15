@@ -341,6 +341,20 @@ final class AstNodeUnaryTest extends AstTestSupport {
         }
 
         @Test
+        @DisplayName("WITH TIES needs a sort key, and keeps its other components")
+        void withTiesNeedsAKey() {
+            assertThatThrownBy(() -> new TopKNode(List.of("k"), List.of(), Optional.empty(), 3L, true,
+                    AstBuilders.rel("R"), SourceLocation.UNKNOWN))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("WITH TIES needs a sort key");
+            TopKNode ties = AstBuilders.topKWithTies(List.of("k"), List.of(spec()), Optional.of(1L), 3L,
+                    AstBuilders.rel("R"));
+            assertThat(ties.withInput(AstBuilders.rel("S")))
+                    .isEqualTo(AstBuilders.topKWithTies(List.of("k"), List.of(spec()), Optional.of(1L), 3L,
+                            AstBuilders.rel("S")));
+        }
+
+        @Test
         @DisplayName("rejects null input relation")
         void rejectsNullInput() {
             assertThatThrownBy(() -> new TopKNode(List.of("k"), List.of(spec()), 3L, null))

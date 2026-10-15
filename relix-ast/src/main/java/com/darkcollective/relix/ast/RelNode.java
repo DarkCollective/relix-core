@@ -357,8 +357,7 @@ public sealed interface RelNode permits
             case TopKNode n -> {
                 RelNode in = f.apply(n.input());
                 yield in == n.input() ? n
-                        : new TopKNode(n.groupingAttributes(), n.sortSpecs(),
-                                       n.offset(), n.count(), in, n.location());
+                        : n.withInput(in);
             }
             case CoverNode n -> {
                 RelNode in = f.apply(n.input());
