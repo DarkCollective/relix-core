@@ -631,6 +631,12 @@ public abstract class AstBuilders {
         return new CompositionNode(left, right);
     }
 
+    /** {@code JOIN … USING (columns)} — a join on the named shared columns, of the given kind. */
+    public static UsingJoinNode usingJoin(RelNode left, RelNode right, UsingJoinNode.Kind kind,
+                                          String... columns) {
+        return new UsingJoinNode(kind, left, right, List.of(columns));
+    }
+
     // -------------------------------------------------------------------------
     // Recursion and graph operators
     // -------------------------------------------------------------------------

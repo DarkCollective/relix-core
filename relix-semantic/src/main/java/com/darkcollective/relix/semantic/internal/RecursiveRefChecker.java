@@ -46,6 +46,7 @@ import com.darkcollective.relix.ast.LateralJoinNode;
 import com.darkcollective.relix.ast.LeftOuterJoinNode;
 import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.OptimizeNode;
 import com.darkcollective.relix.ast.OuterUnionNode;
 import com.darkcollective.relix.ast.PairwiseUniversalNode;
@@ -202,6 +203,15 @@ final class RecursiveRefChecker {
                         + countRecursiveRefs(n.right(), name, why);
             }
             case RightOuterJoinNode n -> {
+                String why = firstReason(forbidden, "under an outer join");
+                yield countRecursiveRefs(n.left(), name, why)
+                        + countRecursiveRefs(n.right(), name, why);
+            }
+            // An inner USING join is monotone, as the natural join is; its outer forms are
+            // outer joins.
+            case UsingJoinNode n when n.kind() == UsingJoinNode.Kind.INNER ->
+                    countRecursiveRefs(n.left(), name, forbidden) + countRecursiveRefs(n.right(), name, forbidden);
+            case UsingJoinNode n -> {
                 String why = firstReason(forbidden, "under an outer join");
                 yield countRecursiveRefs(n.left(), name, why)
                         + countRecursiveRefs(n.right(), name, why);

@@ -31,6 +31,7 @@ import com.darkcollective.relix.ast.LateralJoinNode;
 import com.darkcollective.relix.ast.LeftOuterJoinNode;
 import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.OuterUnionNode;
 import com.darkcollective.relix.ast.ProductNode;
 import com.darkcollective.relix.ast.ProjectionNode;
@@ -223,6 +224,12 @@ final class EmptyRelationPropagationPass {
             case AsOfJoinNode n       -> isEmpty(n.left());
             case LateralJoinNode n    -> isEmpty(n.left());
             case FullOuterJoinNode n  -> isEmpty(n.left()) && isEmpty(n.right());
+            case UsingJoinNode n      -> switch (n.kind()) {
+                case INNER -> isEmpty(n.left()) || isEmpty(n.right());
+                case LEFT  -> isEmpty(n.left());
+                case RIGHT -> isEmpty(n.right());
+                case FULL  -> isEmpty(n.left()) && isEmpty(n.right());
+            };
 
             // Set operations. − and ÷ output a subset of their left input; ∩ is empty
             // if either side is. ∪/⊎/⊔/∆ need both. (X − ∅ → X and ∅ ⊎ X → X are

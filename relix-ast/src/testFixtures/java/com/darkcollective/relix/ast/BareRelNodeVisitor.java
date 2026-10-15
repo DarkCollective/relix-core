@@ -67,6 +67,7 @@ public abstract class BareRelNodeVisitor<R> implements RelNodeVisitor<R> {
     @Override public R visit(DivisionNode node) { return unhandled("DivisionNode"); }
     @Override public R visit(SymmetricDifferenceNode node) { return unhandled("SymmetricDifferenceNode"); }
     @Override public R visit(CompositionNode node) { return unhandled("CompositionNode"); }
+    @Override public R visit(UsingJoinNode node) { return unhandled("UsingJoinNode"); }
     @Override public R visit(AggregationNode node) { return unhandled("AggregationNode"); }
     @Override public R visit(SortNode node) { return unhandled("SortNode"); }
     @Override public R visit(LimitNode node) { return unhandled("LimitNode"); }

@@ -54,6 +54,7 @@ import com.darkcollective.relix.ast.LateralJoinNode;
 import com.darkcollective.relix.ast.LeftOuterJoinNode;
 import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.NotPredicate;
 import com.darkcollective.relix.ast.NullPredicate;
 import com.darkcollective.relix.ast.NumberOperand;
@@ -1522,6 +1523,32 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         return "[" + schema.columns().stream()
                 .map(ColumnDefinition::name)
                 .collect(Collectors.joining(", ")) + "]";
+    }
+
+    /**
+     * A USING join's inputs, and the type of each named column on both sides: a column
+     * that is a NUMBER on one side and a STRING on the other can never match, so naming
+     * it is a mistake rather than a query that returns nothing. A column the inference
+     * could not find has been reported there.
+     */
+    @Override
+    public Void visit(UsingJoinNode node) {
+        node.left().accept(this);
+        node.right().accept(this);
+        Optional<Schema> leftOpt  = annotations.get(node.left());
+        Optional<Schema> rightOpt = annotations.get(node.right());
+        if (leftOpt.isEmpty() || rightOpt.isEmpty()) return null;
+        for (String column : node.columns()) {
+            Optional<ColumnDefinition> l = leftOpt.get().column(column);
+            Optional<ColumnDefinition> r = rightOpt.get().column(column);
+            if (l.isPresent() && r.isPresent()
+                    && l.get().type() != ScalarType.ANY && r.get().type() != ScalarType.ANY
+                    && !l.get().type().equals(r.get().type())) {
+                error(node.location(), "USING column '" + column + "' is " + l.get().type()
+                        + " on the left and " + r.get().type() + " on the right, so no row can match");
+            }
+        }
+        return null;
     }
 
     @Override
