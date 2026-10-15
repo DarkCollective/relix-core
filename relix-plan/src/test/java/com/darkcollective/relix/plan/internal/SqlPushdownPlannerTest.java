@@ -1029,6 +1029,66 @@ final class SqlPushdownPlannerTest {
     }
 
     @Nested
+    @DisplayName("+ is addition or joining, and is sent as whichever it is (#132)")
+    class Concatenation {
+
+        private static String people(String url) {
+            return "connection db from database { url: \"" + url + "\" };\n"
+                    + "source P from db { table: \"p\", schema: { id: NUMBER, first: STRING, "
+                    + "last: STRING, extra: ANY } };\n";
+        }
+
+        private Optional<String> sql(String url, String query) {
+            return push(people(url) + "query { " + query + " };").map(PhysicalNode.PushedScan::nativeQuery);
+        }
+
+        @Test
+        @DisplayName("two strings are joined with the dialect's own operator")
+        void strings() {
+            assertThat(sql("jdbc:postgresql://h/db", "π first || ' ' || last → full (P)"))
+                    .contains("SELECT ((\"first\" || ' ') || \"last\") FROM \"p\"");
+            assertThat(sql("jdbc:mysql://h/db", "π first + last → full (P)"))
+                    .contains("SELECT CONCAT(`first`, `last`) FROM `p`");
+            assertThat(sql("jdbc:sqlserver://h", "π first + last → full (P)"))
+                    .contains("SELECT ([first] + [last]) FROM [p]");
+            // A call is text when its function says it returns a STRING.
+            assertThat(sql("jdbc:postgresql://h/db", "π first + Left(last, 1) → full (P)"))
+                    .hasValueSatisfying(q -> assertThat(q).startsWith("SELECT (\"first\" || "));
+        }
+
+        @Test
+        @DisplayName("a string + in a condition is joined too")
+        void inACondition() {
+            assertThat(sql("jdbc:postgresql://h/db", "σ first || last = 'AdaLovelace' (P)"))
+                    .contains("SELECT \"id\", \"first\", \"last\", \"extra\" FROM \"p\" "
+                            + "WHERE ((\"first\" || \"last\") = 'AdaLovelace')");
+        }
+
+        @Test
+        @DisplayName("two numbers are still added")
+        void numbers() {
+            assertThat(sql("jdbc:postgresql://h/db", "π id + 1 → n (P)"))
+                    .contains("SELECT (\"id\" + 1) FROM \"p\"");
+            assertThat(sql("jdbc:h2:mem:x", "π id + Mod(id, 2) → n (P)"))
+                    .contains("SELECT (id + MOD(id, 2)) FROM p");
+        }
+
+        @Test
+        @DisplayName("a + whose sides may be text runs in the engine, as does joining on an unidentified backend")
+        void unknownDeclines() {
+            assertThat(sql("jdbc:postgresql://h/db", "π first + id → n (P)")).isEmpty();
+            assertThat(sql("jdbc:postgresql://h/db", "π extra + 1 → n (P)")).isEmpty();
+            assertThat(sql("jdbc:postgresql://h/db", "π IIf(id > 1, first, last) + 'x' → n (P)")).isEmpty();
+            assertThat(sql("jdbc:postgresql://h/db", "π NULL + id → n (P)")).isEmpty();
+            assertThat(sql("jdbc:postgresql://h/db", "π Nope(id) + 1 → n (P)")).isEmpty();
+            assertThat(sql("jdbc:h2:mem:x", "π first || last → n (P)")).isEmpty();
+            // Text on both sides, but a side the dialect cannot write: UCase is not pushed.
+            assertThat(sql("jdbc:postgresql://h/db", "π first || UCase(last) → n (P)")).isEmpty();
+            assertThat(sql("jdbc:postgresql://h/db", "π UCase(first) || last → n (P)")).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("AS-OF join → LATERAL nearest-row lookup (ADR-0014 slice 5, #207)")
     class AsOfFold {
 

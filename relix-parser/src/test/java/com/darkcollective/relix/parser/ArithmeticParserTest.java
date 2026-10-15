@@ -89,4 +89,43 @@ final class ArithmeticParserTest extends ParserTestSupport {
         assertParsesTo("σ (price + tax) * 0.8 > 50 (Products)",
                 select(cmp(arith(arith(attr("price"), ArithmeticOperator.PLUS, attr("tax")), ArithmeticOperator.MULTIPLY, num("0.8")), ComparisonOperator.GREATER, num("50")), rel("Products")));
     }
+
+    @Test
+    public void percentIsMod() {
+        assertParsesTo("π qty % 12 → loose (Orders)",
+                project(List.of(projected(func("Mod", attr("qty"), num("12")), "loose")), rel("Orders")));
+    }
+
+    @Test
+    public void percentBindsAsMultiplicationDoes() {
+        assertParsesTo("σ a + b % c * d = 1 (R)",
+                select(cmp(arith(attr("a"), ArithmeticOperator.PLUS,
+                                arith(func("Mod", attr("b"), attr("c")), ArithmeticOperator.MULTIPLY, attr("d"))),
+                        ComparisonOperator.EQUAL, num("1")), rel("R")));
+    }
+
+    @Test
+    public void doublePipeIsPlus() {
+        assertParsesTo("π first || ' ' || last → full (People)",
+                project(List.of(projected(arith(arith(attr("first"), ArithmeticOperator.PLUS, str(" ")),
+                        ArithmeticOperator.PLUS, attr("last")), "full")), rel("People")));
+    }
+
+    @Test
+    public void doublePipeBindsMoreLooselyThanPlus() {
+        assertParsesTo("π 'n = ' || n + 1 → label (R)",
+                project(List.of(projected(arith(str("n = "), ArithmeticOperator.PLUS,
+                        arith(attr("n"), ArithmeticOperator.PLUS, num("1"))), "label")), rel("R")));
+        assertParsesTo("π a || b * c || d → label (R)",
+                project(List.of(projected(arith(arith(attr("a"), ArithmeticOperator.PLUS,
+                                arith(attr("b"), ArithmeticOperator.MULTIPLY, attr("c"))),
+                        ArithmeticOperator.PLUS, attr("d")), "label")), rel("R")));
+    }
+
+    @Test
+    public void doublePipeLeavesTheJoinSpellingsAlone() {
+        assertParsesTo("A |><| A.i = B.j B", parse("A ⟗ A.i = B.j B"));
+        assertParsesTo("A |>< A.i = B.j B", parse("A ⟕ A.i = B.j B"));
+        assertParseError("π a | b → c (R)");
+    }
 }
