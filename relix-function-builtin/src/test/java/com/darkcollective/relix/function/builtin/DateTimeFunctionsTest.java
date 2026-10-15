@@ -224,4 +224,90 @@ final class DateTimeFunctionsTest {
                     .hasMessage("to_timestamp: invalid timestamp 'yesterday'");
         }
     }
+
+    @Nested
+    @DisplayName("The calendar fields EXTRACT names (#135)")
+    final class CalendarFields {
+
+        private static Value day(String iso) {
+            return new DateValue(LocalDate.parse(iso));
+        }
+
+        @Test
+        @DisplayName("day of week counts Sunday as 0, the ISO day Monday as 1 and Sunday as 7")
+        void dayOfWeek() {
+            assertThat(number(call("DOW", day("2026-07-05")))).isEqualByComparingTo("0");
+            assertThat(number(call("ISODOW", day("2026-07-05")))).isEqualByComparingTo("7");
+            assertThat(number(call("DOW", TS))).isEqualByComparingTo("3");
+            assertThat(number(call("ISODOW", day("2026-07-06")))).isEqualByComparingTo("1");
+        }
+
+        @Test
+        @DisplayName("ISO week and year cross the calendar year where the first Thursday says")
+        void isoWeekAtYearBoundaries() {
+            assertThat(number(call("WEEK", day("2021-01-01")))).isEqualByComparingTo("53");
+            assertThat(number(call("ISOYEAR", day("2021-01-01")))).isEqualByComparingTo("2020");
+            assertThat(number(call("WEEK", day("2024-12-30")))).isEqualByComparingTo("1");
+            assertThat(number(call("ISOYEAR", day("2024-12-30")))).isEqualByComparingTo("2025");
+            assertThat(number(call("WEEK", day("2026-01-01")))).isEqualByComparingTo("1");
+            assertThat(number(call("WEEK", day("2027-01-01")))).isEqualByComparingTo("53");
+        }
+
+        @Test
+        @DisplayName("day of year and quarter")
+        void dayOfYearAndQuarter() {
+            assertThat(number(call("DOY", day("2024-12-31")))).isEqualByComparingTo("366");
+            assertThat(number(call("QUARTER", day("2026-03-31")))).isEqualByComparingTo("1");
+            assertThat(number(call("QUARTER", day("2026-04-01")))).isEqualByComparingTo("2");
+        }
+
+        @Test
+        @DisplayName("epoch counts seconds, keeping a fraction, for each temporal kind")
+        void epoch() {
+            assertThat(number(call("EPOCH", TS))).isEqualByComparingTo("1783518030");
+            assertThat(number(call("EPOCH", new TimestampValue(Instant.parse("1970-01-01T00:00:01.25Z")))))
+                    .isEqualByComparingTo("1.25");
+            assertThat(number(call("EPOCH", DATE))).isEqualByComparingTo("1783468800");
+            assertThat(number(call("EPOCH", TIME))).isEqualByComparingTo("49230");
+            assertThat(number(call("EPOCH", new DurationValue(Duration.ofMillis(-1500))))).isEqualByComparingTo("-1.5");
+            assertThat(call("EPOCH", NULL).isNull()).isTrue();
+            assertThatThrownBy(() -> call("EPOCH", s("x")))
+                    .hasMessage("EPOCH: expected TIMESTAMP, DATE, TIME or DURATION, got STRING");
+        }
+    }
+
+    @Nested
+    @DisplayName("Conversion between the temporal kinds, as CAST has it (#135)")
+    final class Conversion {
+
+        @Test
+        @DisplayName("a timestamp's UTC date and time of day, and a date's midnight")
+        void betweenKinds() {
+            assertThat(call("to_date", TS)).isEqualTo(DATE);
+            assertThat(call("to_date", DATE)).isEqualTo(DATE);
+            assertThat(call("to_time", TS)).isEqualTo(TIME);
+            assertThat(call("to_time", TIME)).isEqualTo(TIME);
+            assertThat(call("to_timestamp", DATE))
+                    .isEqualTo(new TimestampValue(Instant.parse("2026-07-08T00:00:00Z")));
+            assertThat(call("to_timestamp", TS)).isEqualTo(TS);
+        }
+
+        @Test
+        @DisplayName("text naming the other kind is read as SQL reads it")
+        void textOfTheOtherKind() {
+            assertThat(call("to_date", s("2026-07-08T23:30:00-02:00")))
+                    .isEqualTo(new DateValue(LocalDate.of(2026, 7, 9)));
+            assertThat(call("to_timestamp", s("2026-07-08")))
+                    .isEqualTo(new TimestampValue(Instant.parse("2026-07-08T00:00:00Z")));
+        }
+
+        @Test
+        @DisplayName("a kind with no conversion is named")
+        void noConversion() {
+            assertThatThrownBy(() -> call("to_date", TIME)).hasMessage("to_date: cannot convert TIME to a date");
+            assertThatThrownBy(() -> call("to_time", DATE)).hasMessage("to_time: cannot convert DATE to a time");
+            assertThatThrownBy(() -> call("to_timestamp", TIME))
+                    .hasMessage("to_timestamp: cannot convert TIME to a timestamp");
+        }
+    }
 }

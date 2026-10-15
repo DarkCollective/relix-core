@@ -1,7 +1,7 @@
 # Name: to_timestamp (parse a string to a TIMESTAMP)
 
 # Syntax:
-to_timestamp(<string>)
+to_timestamp(<string-or-temporal>)
 
 σ to_timestamp(ts_str) >= TIMESTAMP '2026-01-01T00:00:00Z' (RawEvents)
 
@@ -11,10 +11,14 @@ date-time data that arrived as text can be filtered, sorted, and used in time
 arithmetic like a real timestamp.
 
 # Technical Description:
-to_timestamp(s: STRING) → TIMESTAMP. Parses s as an ISO-8601 date-time via the same
+to_timestamp(s: STRING | DATE | TIMESTAMP) → TIMESTAMP. Parses s as an ISO-8601 date-time via the same
 rule as the TIMESTAMP literal (an offset is normalised to UTC; an offsetless
 payload is interpreted as UTC). A malformed string is an evaluation error. NULL
 input returns NULL. PURE, DETERMINISTIC.
+
+Given a temporal value it converts it as SQL's CAST does: a DATE gives its midnight at UTC, and ISO text naming a date gives that date's midnight. A
+TIMESTAMP is returned as it is, and any other kind is an evaluation error. `CAST(x AS
+TIMESTAMP)` is this function.
 
 # Examples:
 Parse and window imported event times:

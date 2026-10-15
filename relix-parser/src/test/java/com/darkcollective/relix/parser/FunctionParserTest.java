@@ -190,4 +190,46 @@ final class FunctionParserTest extends ParserTestSupport {
         assertParseError("π FUNC(a, ) (R)")
                 .hasMessageContaining("Expected attribute, string, number, boolean literal, function call, or '('");
     }
+
+    // ==================== CAST and EXTRACT (#135) ====================
+
+    @org.junit.jupiter.api.Test
+    public void extractIsTheFieldsFunction() {
+        assertParsesTo("π EXTRACT(week FROM d) → w (R)",
+                AstBuilders.project(java.util.List.of(AstBuilders.projected(
+                        AstBuilders.func("WEEK", AstBuilders.attr("d")), "w")), AstBuilders.rel("R")));
+        assertParsesTo("π extract(Epoch from t + 1) → e (R)", parse("π EPOCH(t + 1) → e (R)"));
+        // Without FROM it is an ordinary call.
+        assertParsesTo("π EXTRACT(a, b) → x (R)",
+                AstBuilders.project(java.util.List.of(AstBuilders.projected(
+                        AstBuilders.func("EXTRACT", AstBuilders.attr("a"), AstBuilders.attr("b")), "x")),
+                        AstBuilders.rel("R")));
+        assertParsesTo("π EXTRACT(1, d) → x (R)",
+                AstBuilders.project(java.util.List.of(AstBuilders.projected(
+                        AstBuilders.func("EXTRACT", AstBuilders.num("1"), AstBuilders.attr("d")), "x")),
+                        AstBuilders.rel("R")));
+        assertParseError("π EXTRACT(FORTNIGHT FROM d) → x (R)").hasMessageContaining("EXTRACT has no field 'FORTNIGHT'");
+        assertParseError("π EXTRACT(WEEK FROM d → x (R)").hasMessageContaining("Expected ')' after the EXTRACT operand");
+    }
+
+    @org.junit.jupiter.api.Test
+    public void castToATemporalKindIsItsConversion() {
+        assertParsesTo("π CAST(s AS date) → d, CAST(s AS TIME) → t, cast(s as Timestamp) → ts (R)",
+                parse("π to_date(s) → d, to_time(s) → t, to_timestamp(s) → ts (R)"));
+    }
+
+    @org.junit.jupiter.api.Test
+    public void castToNumberStringOrBooleanPassesNullThrough() {
+        assertParsesTo("π CAST(s AS NUMBER) → n (R)", parse("π IIf(s IS NULL, NULL, CDbl(s)) → n (R)"));
+        assertParsesTo("π CAST(s AS string) → n (R)", parse("π IIf(s IS NULL, NULL, CStr(s)) → n (R)"));
+        assertParsesTo("π CAST(s AS BOOLEAN) → n (R)", parse("π IIf(s IS NULL, NULL, CBool(s)) → n (R)"));
+    }
+
+    @org.junit.jupiter.api.Test
+    public void castErrors() {
+        assertParseError("π CAST(s AS MONEY) → x (R)").hasMessageContaining("CAST has no type 'MONEY'");
+        assertParseError("π CAST(s) → x (R)").hasMessageContaining("Expected 'AS' and a type");
+        assertParseError("π CAST(s AS 1) → x (R)").hasMessageContaining("Expected a type after 'AS'");
+        assertParseError("π CAST(s AS DATE → x (R)").hasMessageContaining("Expected ')' after the CAST type");
+    }
 }

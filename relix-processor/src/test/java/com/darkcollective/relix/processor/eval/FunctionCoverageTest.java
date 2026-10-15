@@ -127,6 +127,13 @@ final class FunctionCoverageTest {
             num  ("hour",    "HOUR("   + TS + ")",                 "13"),
             num  ("minute",  "MINUTE(" + TS + ")",                 "40"),
             num  ("second",  "SECOND(" + TS + ")",                 "30"),
+            num  ("dow",     "DOW("    + TS + ")",                 "3"),
+            num  ("isodow",  "ISODOW(" + TS + ")",                 "3"),
+            num  ("doy",     "DOY("    + TS + ")",                 "189"),
+            num  ("week",    "WEEK("   + TS + ")",                 "28"),
+            num  ("isoyear", "ISOYEAR(" + TS + ")",                "2026"),
+            num  ("quarter", "QUARTER(" + TS + ")",                "3"),
+            num  ("epoch",   "EPOCH("  + TS + ")",                 "1783518030"),
             exact("date_trunc", "DATE_TRUNC('day', " + TS + ")",  "2026-07-08T00:00:00Z"),
             num  ("minutes", "MINUTES(DURATION 'PT2H')",           "120"),
             num  ("seconds", "SECONDS(DURATION 'PT90S')",          "90"),
@@ -148,6 +155,7 @@ final class FunctionCoverageTest {
             exact("cstr",    "CStr(42)",                           "42"),
             num  ("cint",    "CInt(3.7)",                          "4"),
             num  ("cdbl",    "CDbl(\"3.14\")",                     "3.14"),
+            exact("cbool",   "CBool(\"yes\")",                     "true"),
             // ── Nested data ─────────────────────────────────────────────────────
             // Its argument is a constructed struct, since no literal spells an object.
             exact("entries", "Entries({ us: 3, gb: 7 })",

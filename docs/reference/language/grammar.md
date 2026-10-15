@@ -548,6 +548,8 @@ factor            ::= "-" factor
 
 primary_operand   ::= literal
                     | bound_parameter
+                    | cast_call
+                    | extract_call
                     | function_call
                     | column_ref
                     | "(" operand ")"
@@ -560,7 +562,15 @@ column_ref        ::= operand_name ( "." name )*
 
 /* Round(price, 2).  The "(" must follow the name with NO space between
    (CALL_OPEN): "Round (price)" is the column Round followed by a parenthesis. */
-function_call     ::= operand_name ( "." name )* CALL_OPEN ( argument ( "," argument )* )? ")"
+function_call     ::= ( operand_name - "CAST" ) ( "." name )* CALL_OPEN ( argument ( "," argument )* )? ")"
+
+/* SQL's CAST(qty AS NUMBER) and EXTRACT(WEEK FROM d): a conversion and a date field,
+   each the function it names (see the CAST and EXTRACT pages). */
+cast_call         ::= "CAST" CALL_OPEN operand "AS" cast_type ")"
+cast_type         ::= "NUMBER" | "STRING" | "BOOLEAN" | "DATE" | "TIME" | "TIMESTAMP"
+extract_call      ::= "EXTRACT" CALL_OPEN extract_field "FROM" operand ")"
+extract_field     ::= "YEAR" | "MONTH" | "DAY" | "HOUR" | "MINUTE" | "SECOND"
+                    | "DOW" | "ISODOW" | "DOY" | "WEEK" | "ISOYEAR" | "QUARTER" | "EPOCH"
 /* An argument may be a condition: IIf(amount > 100, 'big', 'small'). */
 argument          ::= operand
                     | predicate
@@ -703,6 +713,9 @@ are easy to miss in the rules above.
   and puts it once, first, in the output; any other column both inputs have stays
   twice, the right one suffixed `_r`. A full join's `id` is whichever side has one.
   A column may not be named twice.
+- **`CAST` and `EXTRACT` are SQL's.** `CAST(x AS NUMBER)` is the conversion to the
+  type, and a NULL casts to NULL. `EXTRACT(WEEK FROM d)` is `WEEK(d)`. `CAST` is not
+  a name a function can have; `EXTRACT` without `FROM` is an ordinary call.
 - **Where NULLs sort.** Without `NULLS FIRST` or `NULLS LAST`, a sort key puts its
   NULLs last whether it runs ascending or descending. PostgreSQL and Oracle put them
   first in a descending sort, so a query ported from them says `NULLS FIRST`. `NULLS`,
