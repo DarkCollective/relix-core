@@ -526,10 +526,12 @@ set_expr          ::= "{" ( operand ( "," operand )* )? "}"
 ## Operands (scalar expressions)
 
 ```ebnf
-/* * and / bind tighter than + and -; all four associate to the left.
-   A leading "-" negates the term right after it. */
-operand           ::= term ( ( "+" | "-" ) term )*
-term              ::= factor ( ( "*" | "/" ) factor )*
+/* * / and % bind tighter than + and -, which bind tighter than ||; all
+   associate to the left.  A leading "-" negates the term right after it.
+   a || b is SQL's spelling of a + b, and x % y of Mod(x, y). */
+operand           ::= sum ( "||" sum )*
+sum               ::= term ( ( "+" | "-" ) term )*
+term              ::= factor ( ( "*" | "/" | "%" ) factor )*
 factor            ::= "-" factor
                     | primary_operand
 
@@ -618,10 +620,11 @@ reserved_word     ::= "TRUE" | "FALSE" | "NULL" | "UNIT" | "DEE" | "EMPTY" | "DU
                  one backtick: `order`, `line total`.  Never empty, and never
                  only whitespace.
 
-   NUMBER        digits, optionally "." and more digits: 42, 3.14.
-                 No exponent, no leading "." and no sign (a "-" before a
-                 number is the minus operator).
-   INTEGER       a NUMBER without a fractional part.
+   NUMBER        digits, optionally "." and more digits, optionally an
+                 exponent: "e" or "E", an optional sign, and digits:
+                 42, 3.14, 1e6, 2.5E-3.  No leading "." and no sign (a "-"
+                 before a number is the minus operator).
+   INTEGER       a NUMBER of digits alone: no fraction and no exponent.
    POSITIVE_INTEGER
                  an INTEGER of at least 1.
 
@@ -630,7 +633,8 @@ reserved_word     ::= "TRUE" | "FALSE" | "NULL" | "UNIT" | "DEE" | "EMPTY" | "DU
                  a CALL_OPEN is accepted too; the reverse is not so.
 
    STRING        expression layer: '…' or "…".  Escapes: \\  \"  \'  \n  \t;
-                 any other backslash sequence is an error.
+                 any other backslash sequence is an error.  The string's own
+                 quote doubled is one quote, as in SQL: 'it''s'.
    STRING_DQ     statement layer: "…" only.  \" is a quote; any other
                  backslash is kept as written, so "C:\data\a.csv" needs no
                  doubling.
@@ -679,6 +683,11 @@ are easy to miss in the rules above.
 - **A LIKE escape is one character.** `ESCAPE '!'` makes the character after each
   `!` literal, so `'50!%'` matches `50%`. `BETWEEN`, `DISTINCT FROM` and `ESCAPE`
   are matched by their text rather than reserved, so they remain usable as names.
+- **SQL's literal and operator spellings.** `'it''s'` is `'it\'s'`, `1e6` is
+  `1000000` and `2.5E-3` is `0.0025`. `a || b` is `a + b`, so it concatenates two
+  strings and adds two numbers; it binds more loosely than `+`, as in PostgreSQL.
+  `x % y` is `Mod(x, y)` and binds as `*` does. A doubled quote is one quote only in
+  the expression layer.
 - **Two minus signs.** The ASCII hyphen `-` subtracts numbers. The Unicode minus `−`
   (U+2212) is set difference, whose ASCII spellings are `DIFF`, `MINUS` and
   `EXCEPT`.
@@ -761,6 +770,12 @@ SQL's `<>` is the same operator as `!=` and `≠`:
 
 ```relix
 query { σ status <> 'open' (Orders) };
+```
+
+SQL's quote, concatenation, remainder and exponent spellings:
+
+```relix
+query { π 'it''s ' || customer → note, qty % 3 → bucket, amount * 1e-2 → scaled (Orders) };
 ```
 
 `BETWEEN` needs both bounds:

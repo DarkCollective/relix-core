@@ -323,6 +323,29 @@ public enum Dialect {
     }
 
     /**
+     * Two strings joined, as the engine's {@code +} joins them: NULL if either is NULL.
+     *
+     * <p>SQL's operator is {@code ||}, which PostgreSQL, DuckDB, SQLite and Db2 read so.
+     * MySQL reads {@code ||} as OR unless told otherwise, and its {@code CONCAT} is
+     * NULL when an argument is, so it is that. SQL Server joins strings with {@code +},
+     * NULL when either is under the {@code CONCAT_NULL_YIELDS_NULL} setting it always
+     * has on. An unidentified backend is offered none of them, since which it reads is
+     * exactly what is not known.
+     *
+     * @param left  the rendered left string; must not be null
+     * @param right the rendered right string; must not be null
+     * @return the expression, parenthesised; or empty when this dialect declines it
+     */
+    public Optional<String> concatenate(String left, String right) {
+        return switch (this) {
+            case POSTGRES, DUCKDB, SQLITE, DB2 -> Optional.of("(" + left + " || " + right + ")");
+            case MYSQL -> Optional.of("CONCAT(" + left + ", " + right + ")");
+            case SQLSERVER -> Optional.of("(" + left + " + " + right + ")");
+            case GENERIC -> Optional.empty();
+        };
+    }
+
+    /**
      * Renders {@code subject LIKE pattern} (or {@code NOT LIKE}) so that it matches what
      * the engine's {@code LIKE} matches, or empty where this dialect cannot say it.
      *

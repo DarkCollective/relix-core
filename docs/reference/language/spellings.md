@@ -108,10 +108,19 @@ parse to the identical tree; the canonical form is what gets printed back.
 | `GROUP BY` | `GROUP` / `γ` | AggregationNode |
 | `LJOIN` / `RJOIN` / `FJOIN` | `\|><` / `><\|` / `\|><\|` | outer joins |
 | `COUNT(*)` | `COUNT(1)` | AggregateFunction(COUNT, number `1`) |
+| `a \|\| b` | `a + b` | arithmetic `+` |
+| `x % y` | `Mod(x, y)` | function call |
+| `'it''s'` | `"it's"` | string literal |
+| `1e6`, `2.5E-3` | `1000000`, `0.0025` | number literal |
 
 `BY` is an optional noise word after `ORDER` and `GROUP`. The `MINUS` **keyword** is
 set difference while the arithmetic `-` character is unchanged, so `a - b` and
 `A MINUS B` never collide.
+
+`||` binds more loosely than `+`, as in PostgreSQL, and `%` as tightly as `*`. Since
+`||` is `+`, it joins two strings and adds two numbers. A doubled quote and an
+exponent are read in the lexer, so the tree holds the string and the number they
+stand for.
 
 `COUNT(*)` is SQL's row-count spelling: a literal argument is never NULL, so
 counting it counts every row, where `COUNT(expr)` counts non-NULL values. `*` is

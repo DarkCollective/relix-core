@@ -39,7 +39,9 @@ import java.util.Map;
  * expression.
  * Single-quoted and double-quoted string literals are accepted; escape
  * sequences {@code \\}, {@code \"}, {@code \'}, {@code \n} and {@code \t} are
- * decoded inside string literals.
+ * decoded inside string literals, and so is SQL's doubled quote, {@code 'it''s'}.
+ * A number may carry an exponent, {@code 1e6} or {@code 2.5E-3}; its token's literal
+ * is the number written out without one.
  *
  * <p>Comments are SQL's: {@code --} to the end of the line, and {@code /* *}{@code /}
  * for a block. They are the forms the script grammar uses, which matters because a
@@ -195,6 +197,9 @@ public final class Lexer {
         return KEYWORDS.keySet();
     }
 
+    /** The largest exponent, either way, a number literal may carry: {@code 1e1000}. */
+    private static final int MAX_EXPONENT_DIGITS = 1000;
+
     private final String input;
     private final List<Comment> comments = new ArrayList<>();
     private int index;
@@ -324,6 +329,10 @@ public final class Lexer {
                 yield token(TokenType.MINUS, startIndex, startLine, startColumn);
             }
             case '|' -> {
+                // SQL's concatenation operator, read as the + that concatenates.
+                if (match('|')) {
+                    yield token(TokenType.CONCATENATE, startIndex, startLine, startColumn);
+                }
                 if (!match('>') || !match('<')) {
                     throw new ParseException(
                             "Unexpected character",
@@ -338,6 +347,7 @@ public final class Lexer {
             }
             case '*' -> token(TokenType.MULTIPLY, startIndex, startLine, startColumn);
             case '/' -> token(TokenType.DIVIDE, startIndex, startLine, startColumn);
+            case '%' -> token(TokenType.MODULO, startIndex, startLine, startColumn);
             case '(' -> token(TokenType.LPAREN, startIndex, startLine, startColumn);
             case ')' -> token(TokenType.RPAREN, startIndex, startLine, startColumn);
             case ',' -> token(TokenType.COMMA, startIndex, startLine, startColumn);
@@ -478,14 +488,58 @@ public final class Lexer {
             }
         }
 
+        // An exponent, 1e6 or 2.5E-3. The e is read as one only when digits follow it,
+        // with or without a sign, so a name written straight after a number is not
+        // swallowed. The token's literal is the number written out in full, which is
+        // what the NUMBER the rest of the language knows looks like.
+        if (!isAtEnd() && (peek() == 'e' || peek() == 'E') && startsExponent()) {
+            advance();
+            if (peek() == '+' || peek() == '-') {
+                advance();
+            }
+            while (!isAtEnd() && Character.isDigit(peek())) {
+                advance();
+            }
+            String lexeme = input.substring(startIndex, index);
+            java.math.BigDecimal value;
+            try {
+                value = new java.math.BigDecimal(lexeme);
+            } catch (NumberFormatException tooLarge) {
+                value = null;
+            }
+            // Written out, the number has as many digits as its exponent says; past
+            // MAX_EXPONENT_DIGITS that is a literal no one meant to write.
+            if (value == null || Math.abs(value.scale()) > MAX_EXPONENT_DIGITS) {
+                throw new ParseException("Exponent out of range", input,
+                        new Token(TokenType.NUMBER, lexeme, null, startLine, startColumn));
+            }
+            return new Token(TokenType.NUMBER, lexeme, value.toPlainString(), startLine, startColumn);
+        }
+
         return token(TokenType.NUMBER, startIndex, startLine, startColumn);
+    }
+
+    /** Whether the {@code e} at the current position begins an exponent: a digit follows, after an optional sign. */
+    private boolean startsExponent() {
+        int at = index + 1;
+        if (at < input.length() && (input.charAt(at) == '+' || input.charAt(at) == '-')) {
+            at++;
+        }
+        return at < input.length() && Character.isDigit(input.charAt(at));
     }
 
     private Token stringToken(int startIndex, int startLine, int startColumn, char quote) {
         StringBuilder value = new StringBuilder();
 
-        while (!isAtEnd() && peek() != quote) {
+        while (!isAtEnd() && (peek() != quote || peekNext() == quote)) {
             char c = advance();
+
+            // A doubled quote is one quote, as in SQL: 'it''s'.
+            if (c == quote) {
+                advance();
+                value.append(quote);
+                continue;
+            }
 
             if (c == '\\') {
                 if (isAtEnd()) {

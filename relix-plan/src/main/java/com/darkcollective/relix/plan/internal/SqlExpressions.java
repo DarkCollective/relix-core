@@ -43,6 +43,8 @@ import com.darkcollective.relix.ast.TimeOperand;
 import com.darkcollective.relix.ast.TimestampOperand;
 import com.darkcollective.relix.ast.UnaryOperand;
 import com.darkcollective.relix.function.PushdownSpelling;
+import com.darkcollective.relix.symbol.ScalarType;
+import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.function.ScalarFunction;
 
 import java.util.ArrayList;
@@ -78,6 +80,52 @@ public final class SqlExpressions {
     @FunctionalInterface
     interface ColumnRenderer {
         Optional<String> render(String attribute);
+
+        /**
+         * Whether a reference holds text, which decides how a {@code +} over it is
+         * written: SQL adds numbers with {@code +} and joins strings with something else.
+         *
+         * <p>A renderer that knows no types answers {@link Text#NOT_STRING} for every
+         * name, which is how a reference was read before any renderer knew one. One built
+         * over a schema answers from it; see {@link #typed}.
+         *
+         * @param attribute the reference
+         * @return what the reference is known to hold
+         */
+        default Text text(String attribute) {
+            return Text.NOT_STRING;
+        }
+
+        /**
+         * {@code self}, answering {@link #text} from {@code schema}: a STRING column holds
+         * text, an ANY column or a name the schema does not have may, and any other
+         * column does not.
+         *
+         * @param self   how a reference renders
+         * @param schema the columns a reference names
+         * @return the renderer
+         */
+        static ColumnRenderer typed(ColumnRenderer self, Schema schema) {
+            return new ColumnRenderer() {
+                @Override
+                public Optional<String> render(String attribute) {
+                    return self.render(attribute);
+                }
+
+                @Override
+                public Optional<Comparing> comparing() {
+                    return self.comparing();
+                }
+
+                @Override
+                public Text text(String attribute) {
+                    return schema.column(column(attribute))
+                            .map(c -> c.type() == ScalarType.STRING ? Text.STRING
+                                    : c.type() == ScalarType.ANY ? Text.UNKNOWN : Text.NOT_STRING)
+                            .orElse(Text.UNKNOWN);
+                }
+            };
+        }
 
         /**
          * The renderers a condition inside one of this renderer's operands compares
@@ -122,7 +170,27 @@ public final class SqlExpressions {
                 public Optional<Comparing> comparing() {
                     return Optional.of(comparing);
                 }
+
+                @Override
+                public Text text(String attribute) {
+                    return self.text(attribute);
+                }
             };
+        }
+    }
+
+    /** Whether an operand holds text, as far as rendering it can tell. */
+    enum Text {
+        /** It holds a string, or NULL. */
+        STRING,
+        /** It holds a number, a date, a boolean — anything but a string — or NULL. */
+        NOT_STRING,
+        /** It may hold either. */
+        UNKNOWN;
+
+        /** What the sum of two operands holds: a string only if both are, and unknown when they disagree. */
+        Text plus(Text other) {
+            return this == other ? this : UNKNOWN;
         }
     }
 
@@ -349,11 +417,51 @@ public final class SqlExpressions {
     private static Optional<String> arithmetic(BinaryArithmeticExpression e,
                                                ColumnRenderer cols, Dialect dialect,
                                            PushdownFunctions functions) {
+        // The engine's + adds two numbers and joins two strings. SQL spells the two
+        // differently, so a + is sent only once it is known which it is, and the
+        // dialect's own concatenation is used for the second.
+        if (e.operator() == ArithmeticOperator.PLUS) {
+            Text text = text(e, cols, functions);
+            if (text == Text.UNKNOWN) {
+                return Optional.empty();
+            }
+            if (text == Text.STRING) {
+                Optional<String> l = operand(e.left(), cols, dialect, functions);
+                Optional<String> r = operand(e.right(), cols, dialect, functions);
+                if (l.isEmpty() || r.isEmpty()) {
+                    return Optional.empty();
+                }
+                return dialect.concatenate(l.get(), r.get());
+            }
+        }
         Optional<String> op = sqlOp(e.operator());
         if (op.isEmpty()) {
             return Optional.empty();
         }
         return binary(e.left(), op.get(), e.right(), cols, dialect, functions);
+    }
+
+    /**
+     * Whether {@code operand} holds text: a string literal does, a column as its renderer
+     * says, a call as its function declares, and a sum only where both sides agree.
+     * Anything else, a number or a difference, does not.
+     */
+    static Text text(Operand operand, ColumnRenderer cols, PushdownFunctions functions) {
+        return switch (operand) {
+            case StringOperand ignored -> Text.STRING;
+            case AttributeOperand a -> cols.text(a.name());
+            case FunctionCall f -> functions.scalar(f.functionName())
+                    .map(fn -> switch (fn.signature().returnType()) {
+                        case STRING -> Text.STRING;
+                        case ANY -> Text.UNKNOWN;
+                        default -> Text.NOT_STRING;
+                    })
+                    .orElse(Text.UNKNOWN);
+            case BinaryArithmeticExpression e when e.operator() == ArithmeticOperator.PLUS ->
+                    text(e.left(), cols, functions).plus(text(e.right(), cols, functions));
+            case NullOperand ignored -> Text.UNKNOWN;
+            default -> Text.NOT_STRING;
+        };
     }
 
     private static Optional<String> elementOf(ElementOfPredicate e, ColumnRenderer cols, Dialect dialect,

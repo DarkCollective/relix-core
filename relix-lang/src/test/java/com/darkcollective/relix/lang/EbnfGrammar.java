@@ -77,15 +77,30 @@ final class EbnfGrammar {
             Map.entry("INTEGER", EbnfGrammar::isInteger),
             Map.entry("POSITIVE_INTEGER", t -> isInteger(t) && !t.text().matches("0+")),
             Map.entry("STRING", EbnfGrammar::isString),
-            Map.entry("STRING_DQ", t -> t.kind() == Kind.STRING_DQ),
+            Map.entry("STRING_DQ", t -> t.kind() == Kind.STRING_DQ && !hasDoubledQuote(t)),
             Map.entry("NONBLANK_STRING", t -> isString(t) && !isBlankString(t)),
-            Map.entry("NONBLANK_STRING_DQ", t -> t.kind() == Kind.STRING_DQ && !isBlankString(t)),
+            Map.entry("NONBLANK_STRING_DQ",
+                    t -> t.kind() == Kind.STRING_DQ && !hasDoubledQuote(t) && !isBlankString(t)),
             Map.entry("CALL_OPEN", t -> t.kind() == Kind.SYMBOL && t.text().equals("(") && t.touching()),
             Map.entry("MARKDOWN_TABLE", t -> t.kind() == Kind.MARKDOWN_TABLE),
             Map.entry("CSV_TABLE", t -> t.kind() == Kind.CSV_TABLE));
 
     private static boolean isInteger(Token t) {
-        return t.kind() == Kind.NUMBER && t.text().indexOf('.') < 0;
+        return t.kind() == Kind.NUMBER && t.text().chars().allMatch(Character::isDigit);
+    }
+
+    /** Whether a string token holds its own quote doubled, {@code 'it''s'}: one quote in the expression layer only. */
+    private static boolean hasDoubledQuote(Token t) {
+        char q = t.text().charAt(0);
+        String body = t.text().substring(1, t.text().length() - 1);
+        for (int i = 0; i < body.length(); i++) {
+            if (body.charAt(i) == '\\') {
+                i++;
+            } else if (body.charAt(i) == q) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** An expression-layer STRING: either quote, and only the escapes the page lists. */
@@ -720,6 +735,19 @@ final class EbnfGrammar {
                         j++;
                     }
                 }
+                // An exponent: e or E, an optional sign, and at least one digit.
+                if (j < src.length() && (src.charAt(j) == 'e' || src.charAt(j) == 'E')) {
+                    int k = j + 1;
+                    if (k < src.length() && (src.charAt(k) == '+' || src.charAt(k) == '-')) {
+                        k++;
+                    }
+                    if (k < src.length() && Character.isDigit(src.charAt(k))) {
+                        j = k;
+                        while (j < src.length() && Character.isDigit(src.charAt(j))) {
+                            j++;
+                        }
+                    }
+                }
                 out.add(new Token(Kind.NUMBER, src.substring(i, j), false, startAt));
                 i = j;
             } else {
@@ -797,6 +825,8 @@ final class EbnfGrammar {
             char c = src.charAt(j);
             if (c == '\\') {
                 j++;
+            } else if (c == q && j + 1 < src.length() && src.charAt(j + 1) == q) {
+                j++;            // a doubled quote is one quote, not the end
             } else if (c == q) {
                 return j;
             }

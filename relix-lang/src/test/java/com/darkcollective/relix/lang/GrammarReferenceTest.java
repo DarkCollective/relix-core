@@ -230,6 +230,16 @@ final class GrammarReferenceTest {
             "query { σ a != 1 ∧ b ≠ 2 ∧ c <= 3 ∧ d ≥ 4 (R) };",
             "query { σ x < -1 (R) };",
             "query { σ a - -1 > 2 (R) };",
+            // SQL's literal and operator spellings, and the shapes next to them
+            "query { π a || b || 'c' → s, x % 3 * 2 → m (R) };",
+            "query { π 'n = ' || n + 1 → s (R) };",
+            "query { π a | b → s (R) };",
+            "query { π a %% b → s (R) };",
+            "query { π 'it''s' → s, \"say \"\"hi\"\"\" → t, '''' → q (R) };",
+            "query { π 1e6 → a, 2.5E-3 → b, 1.5e+2 → c (R) };",
+            "query { π 2e → a (R) };",
+            "query { λ 1e3 (R) };",
+            "Bad := \"a\"\"b\";",
             "query { σ -x > 1 (R) };",
             // a predicate always compares
             "query { σ active (R) };",
