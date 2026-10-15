@@ -212,6 +212,9 @@ final class SolverExecutor {
                 ? null                                     // nothing to rank by: first come, first kept
                 : rowComparator(node.sortSpecs(), ctx.operandEval());
         long offset = node.offset().orElse(0L);
+        if (node.withTies()) {
+            return withTies(node, comparator, offset, ctx);
+        }
         int bound = retained(offset, node.count());
 
         SequencedMap<List<Value>, TopRows> groups = new LinkedHashMap<>();
@@ -228,6 +231,46 @@ final class SolverExecutor {
         List<Row> output = new ArrayList<>();
         for (TopRows group : groups.values()) {
             group.ordered().stream().skip(offset).forEach(output::add);
+        }
+        return BagRelation.of(node.schema(), output).stream();
+    }
+
+    /**
+     * {@code TOP … WITH TIES}: each group's rows in order, the offset skipped, then the
+     * count taken and every further row that ties with the last one taken.
+     *
+     * <p>A tie is the sort's own comparator answering zero, so two NULLs tie and
+     * {@code 5} ties with {@code 5.0}. The sort is stable, so rows that tie keep the order
+     * they arrived in, as the plain top-k keeps them. A group is held whole, since how
+     * many rows tie with the last is not known until every row has been seen.
+     */
+    private Stream<Row> withTies(PhysicalNode.TopK node, Comparator<Row> comparator, long offset,
+                                 EvalCtx ctx) {
+        List<String> groupAttrs = node.groupingAttributes();
+        SequencedMap<List<Value>, List<Row>> groups = new LinkedHashMap<>();
+        long[] held = {0};
+        try (Stream<Row> input = dispatch.holding(node.input(), ctx, node, () -> held[0])) {
+            input.forEach(row -> {
+                groups.computeIfAbsent(groupAttrs.stream().map(row::get).toList(),
+                        unused -> new ArrayList<>()).add(row);
+                held[0]++;
+            });
+        }
+
+        // A TopKNode with ties always has a sort key, so there is an order to tie under.
+        Comparator<Row> order = comparator;
+        List<Row> output = new ArrayList<>();
+        for (List<Row> group : groups.values()) {
+            group.sort(order);
+            long end = Math.min(group.size(), offset + Math.min(node.count(), Long.MAX_VALUE - offset));
+            if (end <= offset) {
+                continue;
+            }
+            Row last = group.get((int) end - 1);
+            while (end < group.size() && order.compare(group.get((int) end), last) == 0) {
+                end++;
+            }
+            output.addAll(group.subList((int) offset, (int) end));
         }
         return BagRelation.of(node.schema(), output).stream();
     }

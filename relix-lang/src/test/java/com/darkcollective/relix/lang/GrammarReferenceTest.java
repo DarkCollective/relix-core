@@ -240,6 +240,15 @@ final class GrammarReferenceTest {
             "query { π 2e → a (R) };",
             "query { λ 1e3 (R) };",
             "Bad := \"a\"\"b\";",
+            // NULL placement and ties
+            "query { τ a DESC NULLS FIRST, b nulls last, c (R) };",
+            "query { τ a NULLS (R) };",
+            "query { τ nulls (R) };",
+            "query { λ 3 WITH TIES (τ a DESC (R)) };",
+            "query { λ 1, 3 WITH TIES (ORDER BY a NULLS FIRST (R)) };",
+            "query { λ 3 WITH TIES (R) };",
+            "query { TOP 2 WITH TIES a DESC NULLS FIRST PER k (R) };",
+            "query { WINDOW RANK() SORT a DESC NULLS FIRST AS r (R) };",
             "query { σ -x > 1 (R) };",
             // a predicate always compares
             "query { σ active (R) };",

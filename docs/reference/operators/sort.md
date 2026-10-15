@@ -1,7 +1,7 @@
 # Name: Sort (τ / SORT / ORDER [BY])
 
 # Syntax:
-τ <key> [ASC|DESC] [, <key> [ASC|DESC]] ... (Relation)
+τ <key> [ASC|DESC] [NULLS FIRST|NULLS LAST] [, <key> ...] ... (Relation)
 SORT ...
 ORDER ...          -- SQL-prior synonym
 ORDER BY ...       -- SQL-prior synonym; BY is an optional noise word
@@ -11,6 +11,7 @@ ORDER BY ...       -- SQL-prior synonym; BY is an optional noise word
 τ dept ASC, salary DESC (Employees)
 τ to_timestamp(logged) DESC (RawLogs)   -- sort by a computed value
 ORDER BY salary DESC (Employees)        -- same AST as τ salary DESC (Employees)
+τ bonus DESC NULLS FIRST (Sales)        -- missing values first
 
 # Description:
 Sort orders the rows of a relation by one or more keys. Each sort key can go
@@ -40,7 +41,9 @@ the order UTF-8 bytes sort in, and the order a SQL binary collation gives — ra
 than by the UTF-16 code unit a Java `char` is, so a character outside the basic
 multilingual plane sorts after every character in it rather than in the middle.
 For text inside that plane, which is all of ASCII and every 8-bit character set,
-the two rules are the same rule. NULLs sort last in both directions.
+the two rules are the same rule. NULLs sort last in both directions, unless a key
+says `NULLS FIRST`; `NULLS LAST` writes the default out. The placement belongs to the
+key, so `τ a NULLS FIRST, b (R)` puts NULLs of `a` first and NULLs of `b` last.
 
 τ is not the only source of a delivered order: a merge join emits its output in
 join-key order, so a chain of merge joins on the same key sorts once rather than
@@ -127,12 +130,33 @@ whether the `τ` runs in-engine or is pushed into a database: the SQL that comes
 states the placement explicitly rather than inheriting the backend's default, which
 would otherwise put a query's NULLs first on one connection and last on another.
 
+PostgreSQL and Oracle put NULLs *first* in a descending sort, so a query ported from
+them asks for that with `NULLS FIRST`:
+
+```relix
+query { τ bonus DESC NULLS FIRST (Sales) };
+```
+
+```
+ region  rep  amount  bonus
+ ──────  ───  ──────  ─────
+ east    Bo       80  NULL
+ west    Dee      50  NULL
+ west    Cy      200     25
+ east    Ada     120     10
+(4 rows)
+```
+
+The two NULLs tie, so they keep the order they arrived in. A sort that differs from
+the one below it only in where its NULLs go is a different order, and is not
+removed as redundant.
+
 
 # Limitations:
 Sort must see all rows before emitting any, so it cannot run over an unbounded
-generator without a bound below it. NULL placement in merge joins is still being
-refined; for plain τ, NULLs sort last in both directions, in-engine and pushed
-alike.
+generator without a bound below it. Pushed into SQL, `NULLS FIRST` and `NULLS LAST`
+are written as such on PostgreSQL, DuckDB and Db2, and as an extra leading key on
+the NULL test elsewhere.
 
 # Alternatives:
 For "N highest per group" use TOP … PER instead of sorting the whole relation.

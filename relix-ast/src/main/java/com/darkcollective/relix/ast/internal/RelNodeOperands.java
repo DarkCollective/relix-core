@@ -466,7 +466,7 @@ public final class RelNodeOperands {
                 List<SortSpecification> specs = mapSortSpecs(n.sortSpecs(), onOperand);
                 yield specs == n.sortSpecs() ? n
                         : new TopKNode(n.groupingAttributes(), specs, n.offset(), n.count(),
-                                n.input(), n.location());
+                                n.withTies(), n.input(), n.location());
             }
             case TreeNode n -> {
                 List<SortSpecification> specs = mapSortSpecs(n.orderSpecs(), onOperand);
@@ -581,7 +581,7 @@ public final class RelNodeOperands {
                                                         UnaryOperator<Operand> f) {
         return mapList(specs, s -> {
             Operand e = f.apply(s.expression());
-            return e == s.expression() ? s : new SortSpecification(e, s.direction());
+            return e == s.expression() ? s : s.withExpression(e);
         });
     }
 

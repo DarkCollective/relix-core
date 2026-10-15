@@ -287,7 +287,8 @@ public enum Dialect {
 
     /**
      * Renders one {@code ORDER BY} key so the database places NULLs where the engine
-     * does — <strong>last, in both directions</strong>.
+     * does — <strong>last, in both directions</strong>, unless the key asks for them
+     * first with {@code NULLS FIRST}.
      *
      * <p>This is not a preference either: an in-engine {@code τ} and a pushed one are
      * the same operator, so a query that sorts differently depending on whether the
@@ -310,15 +311,38 @@ public enum Dialect {
      *
      * @param expr       the rendered key expression (already quoted)
      * @param descending whether the key itself sorts descending
+     * @param nullsFirst whether the key places its NULLs first rather than last
      * @return the {@code ORDER BY} terms for this key, in order; never empty
      */
-    public List<String> orderByTerms(String expr, boolean descending) {
+    public List<String> orderByTerms(String expr, boolean descending, boolean nullsFirst) {
         String direction = descending ? " DESC" : " ASC";
         return switch (this) {
-            case POSTGRES, DUCKDB, DB2 -> List.of(expr + direction + " NULLS LAST");
-            case GENERIC, MYSQL, SQLITE -> List.of("(" + expr + " IS NULL) ASC", expr + direction);
-            case SQLSERVER -> List.of("CASE WHEN " + expr + " IS NULL THEN 1 ELSE 0 END ASC",
+            case POSTGRES, DUCKDB, DB2 -> List.of(expr + direction + (nullsFirst ? " NULLS FIRST" : " NULLS LAST"));
+            case GENERIC, MYSQL, SQLITE -> List.of("(" + expr + " IS NULL)" + (nullsFirst ? " DESC" : " ASC"),
                     expr + direction);
+            case SQLSERVER -> List.of("CASE WHEN " + expr + " IS NULL THEN " + (nullsFirst ? "0 ELSE 1" : "1 ELSE 0")
+                    + " END ASC", expr + direction);
+        };
+    }
+
+    /**
+     * The row-limit clause of {@code TOP … WITH TIES}, which keeps every row tied with the
+     * last one on the {@code ORDER BY} it follows, or empty where the dialect has none.
+     *
+     * <p>PostgreSQL has the standard's {@code FETCH FIRST n ROWS WITH TIES} from version
+     * 13. SQL Server spells it only as {@code SELECT TOP n WITH TIES}, which takes no
+     * offset, and MySQL, SQLite, DuckDB and Db2 have no form of it, so there the ties are
+     * found in the engine over the rows the rest of the statement returns.
+     *
+     * @param count  the number of rows before the ties
+     * @param offset the number of leading rows to skip (0 = none)
+     * @return the SQL clause, without a leading space; or empty where this dialect has none
+     */
+    public Optional<String> limitWithTies(long count, long offset) {
+        return switch (this) {
+            case POSTGRES -> Optional.of((offset > 0 ? "OFFSET " + offset + " ROWS " : "")
+                    + "FETCH FIRST " + count + " ROWS WITH TIES");
+            case GENERIC, MYSQL, DUCKDB, SQLITE, SQLSERVER, DB2 -> Optional.empty();
         };
     }
 

@@ -102,6 +102,33 @@ final class DialectTest {
     }
 
     @Nested
+    @DisplayName("NULL placement and ties (#133)")
+    class NullsAndTies {
+
+        @Test
+        @DisplayName("a key's NULLs go last unless it asks for them first, in each dialect's spelling")
+        void nullPlacement() {
+            assertThat(Dialect.POSTGRES.orderByTerms("x", true, false)).containsExactly("x DESC NULLS LAST");
+            assertThat(Dialect.DUCKDB.orderByTerms("x", true, true)).containsExactly("x DESC NULLS FIRST");
+            assertThat(Dialect.DB2.orderByTerms("x", false, true)).containsExactly("x ASC NULLS FIRST");
+            assertThat(Dialect.MYSQL.orderByTerms("x", false, false)).containsExactly("(x IS NULL) ASC", "x ASC");
+            assertThat(Dialect.SQLITE.orderByTerms("x", true, true)).containsExactly("(x IS NULL) DESC", "x DESC");
+            assertThat(Dialect.GENERIC.orderByTerms("x", false, true)).containsExactly("(x IS NULL) DESC", "x ASC");
+        }
+
+        @Test
+        @DisplayName("WITH TIES is PostgreSQL's FETCH … WITH TIES, and no other dialect's")
+        void withTies() {
+            assertThat(Dialect.POSTGRES.limitWithTies(3, 0)).contains("FETCH FIRST 3 ROWS WITH TIES");
+            assertThat(Dialect.POSTGRES.limitWithTies(3, 2)).contains("OFFSET 2 ROWS FETCH FIRST 3 ROWS WITH TIES");
+            for (Dialect d : List.of(Dialect.GENERIC, Dialect.MYSQL, Dialect.DUCKDB, Dialect.SQLITE,
+                    Dialect.SQLSERVER, Dialect.DB2)) {
+                assertThat(d.limitWithTies(3, 0)).as("%s", d).isEmpty();
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("joining two strings")
     class Concatenation {
 
@@ -143,8 +170,10 @@ final class DialectTest {
         @Test
         @DisplayName("NULLs are placed by a CASE, T-SQL having neither NULLS LAST nor a boolean to sort")
         void nullOrdering() {
-            assertThat(Dialect.SQLSERVER.orderByTerms("[x]", true))
+            assertThat(Dialect.SQLSERVER.orderByTerms("[x]", true, false))
                     .containsExactly("CASE WHEN [x] IS NULL THEN 1 ELSE 0 END ASC", "[x] DESC");
+            assertThat(Dialect.SQLSERVER.orderByTerms("[x]", false, true))
+                    .containsExactly("CASE WHEN [x] IS NULL THEN 0 ELSE 1 END ASC", "[x] ASC");
         }
 
         @Test

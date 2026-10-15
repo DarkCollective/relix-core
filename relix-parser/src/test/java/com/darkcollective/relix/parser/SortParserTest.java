@@ -22,6 +22,7 @@ import com.darkcollective.relix.ast.internal.*;
 import java.util.List;
 
 import static com.darkcollective.relix.ast.AstBuilders.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Comprehensive tests for Sort Operator (τ).
@@ -364,5 +365,65 @@ final class SortParserTest extends ParserTestSupport {
         assertParseError("τ name, (Users)")
                 .hasMessageContaining("Expected '(' after sort specifications");
     }
-}
 
+    // ==================== NULLS FIRST / NULLS LAST (#133) ====================
+
+    @Test
+    public void parsesNullsFirstAndLast() {
+        assertParsesTo("τ bonus DESC NULLS FIRST, name nulls last (Sales)",
+                sort(List.of(sortKey(attr("bonus"), SortDirection.DESC, NullPlacement.NULLS_FIRST),
+                                sortKey(attr("name"), SortDirection.ASC, NullPlacement.NULLS_LAST)),
+                        rel("Sales")));
+    }
+
+    @Test
+    public void nullsLastIsTheDefaultWrittenOut() {
+        assertParsesTo("τ bonus DESC NULLS LAST (Sales)", parse("τ bonus DESC (Sales)"));
+        assertParsesTo("τ bonus NULLS FIRST (Sales)",
+                sort(List.of(sortKey(attr("bonus"), SortDirection.ASC, NullPlacement.NULLS_FIRST)),
+                        rel("Sales")));
+    }
+
+    @Test
+    public void nullsIsOnlyAKeywordBeforeFirstOrLast() {
+        // A column called nulls still sorts; NULLS without FIRST or LAST is no clause.
+        assertParsesTo("τ nulls DESC (R)", sort(List.of(desc("nulls")), rel("R")));
+        assertParseError("τ x NULLS (R)");
+        assertParseError("τ x NULLS MIDDLE (R)");
+    }
+
+    @Test
+    public void nullsFirstRoundTrips() {
+        RelNode node = parse("τ bonus DESC NULLS FIRST, name (Sales)");
+        assertThat(node.prettyPrint()).isEqualTo("τ bonus DESC NULLS FIRST, name (Sales)");
+    }
+
+    // ==================== WITH TIES (#133) ====================
+
+    @Test
+    public void limitWithTiesIsAGlobalTopThatKeepsTies() {
+        assertParsesTo("λ 3 WITH TIES (τ score DESC (R))",
+                topKWithTies(List.of(), List.of(desc("score")), java.util.Optional.empty(), 3, rel("R")));
+        assertParsesTo("LIMIT 2, 3 with ties (ORDER BY score DESC NULLS FIRST (R))",
+                topKWithTies(List.of(),
+                        List.of(sortKey(attr("score"), SortDirection.DESC, NullPlacement.NULLS_FIRST)),
+                        java.util.Optional.of(2L), 3, rel("R")));
+    }
+
+    @Test
+    public void limitWithTiesNeedsASortedInput() {
+        assertParseError("λ 3 WITH TIES (R)").hasMessageContaining("WITH TIES needs a sorted input");
+        assertParseError("λ 3 WITH (τ x (R))");
+    }
+
+    @Test
+    public void topWithTies() {
+        assertParsesTo("TOP 2 WITH TIES amount DESC PER customer (Orders)",
+                topKWithTies(List.of("customer"), List.of(desc("amount")), java.util.Optional.empty(), 2,
+                        rel("Orders")));
+        assertThat(parse("TOP 1, 2 WITH TIES amount DESC (Orders)").prettyPrint())
+                .isEqualTo("TOP 1, 2 WITH TIES amount DESC (Orders)");
+        assertThat(parse("λ 2 WITH TIES (τ amount (Orders))").prettyPrint())
+                .isEqualTo("TOP 2 WITH TIES amount (Orders)");
+    }
+}

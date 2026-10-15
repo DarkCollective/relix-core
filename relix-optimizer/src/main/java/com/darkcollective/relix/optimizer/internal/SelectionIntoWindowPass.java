@@ -92,8 +92,7 @@ final class SelectionIntoWindowPass {
                     "partition", "WINDOW", "other partitions not computed");
             case TopKNode t -> PartitionPruning.Target.of(
                     OptimizationCode.TOPK_001, t.groupingAttributes(), t.input(),
-                    input -> new TopKNode(t.groupingAttributes(), t.sortSpecs(), t.offset(),
-                            t.count(), input, t.location()),
+                    t::withInput,
                     "partition", "TOP", "other partitions not computed");
             default -> null;
         };

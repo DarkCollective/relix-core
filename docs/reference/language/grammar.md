@@ -380,12 +380,15 @@ aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" | "COLLECT" ) "(" "DISTINC
                     | "COUNT" "(" ( "DISTINCT"? operand | "*" ) ")" ( arrow name )?
                     | ( "ARGMAX" | "ARGMIN" ) "(" operand "," operand ")" ( arrow name )?
 
-/* τ amount DESC, name (Orders);  ORDER BY amount DESC (Orders) */
+/* τ amount DESC, name (Orders);  ORDER BY amount DESC (Orders);
+   τ bonus DESC NULLS FIRST (Sales): NULLs go last unless a key says first. */
 sort              ::= ( "τ" | "SORT" | "ORDER" ) "BY"? sort_key ( "," sort_key )* input
-sort_key          ::= operand ( "ASC" | "DESC" )?
+sort_key          ::= operand ( "ASC" | "DESC" )? ( "NULLS" ( "FIRST" | "LAST" ) )?
 
-/* λ 10 (R): the first 10 rows.  λ 20, 10 (R): skip 20, then take 10. */
-limit             ::= ( "λ" | "LIMIT" ) INTEGER ( "," INTEGER )? input
+/* λ 10 (R): the first 10 rows.  λ 20, 10 (R): skip 20, then take 10.
+   λ 3 WITH TIES (τ score DESC (R)): the first 3, and every row tied with the third. */
+limit             ::= ( "λ" | "LIMIT" ) INTEGER ( "," INTEGER )?
+                      ( input | "WITH" "TIES" "(" sort ")" )
 
 distinct          ::= ( "δ" | "DISTINCT" ) input
 /* ω (R): each row with its lineage as a nested provenance column. */
@@ -455,8 +458,8 @@ signed_number     ::= "-"? NUMBER
 per_identifiers   ::= "PER" IDENTIFIER ( "," IDENTIFIER )*
 
 /* TOP 3 amount DESC PER customer_id (Orders).  TOP 10, 5 …: skip 10, keep 5.
-   Without PER, the top rows overall. */
-top_k             ::= "TOP" INTEGER ( "," INTEGER )? sort_key ( "," sort_key )*
+   Without PER, the top rows overall.  TOP 3 WITH TIES …: and the rows tied with the third. */
+top_k             ::= "TOP" INTEGER ( "," INTEGER )? ( "WITH" "TIES" )? sort_key ( "," sort_key )*
                       per_identifiers? input
 
 /* COVER 2 (Params): a small set of rows covering every pair of column values. */
@@ -688,6 +691,12 @@ are easy to miss in the rules above.
   strings and adds two numbers; it binds more loosely than `+`, as in PostgreSQL.
   `x % y` is `Mod(x, y)` and binds as `*` does. A doubled quote is one quote only in
   the expression layer.
+- **Where NULLs sort.** Without `NULLS FIRST` or `NULLS LAST`, a sort key puts its
+  NULLs last whether it runs ascending or descending. PostgreSQL and Oracle put them
+  first in a descending sort, so a query ported from them says `NULLS FIRST`. `NULLS`,
+  `FIRST` and `LAST` are matched by their text rather than reserved.
+- **`WITH TIES` needs an order.** `λ n WITH TIES` takes a `τ` as its input, since the
+  sort keys decide what ties; `TOP n WITH TIES` has its own.
 - **Two minus signs.** The ASCII hyphen `-` subtracts numbers. The Unicode minus `−`
   (U+2212) is set difference, whose ASCII spellings are `DIFF`, `MINUS` and
   `EXCEPT`.

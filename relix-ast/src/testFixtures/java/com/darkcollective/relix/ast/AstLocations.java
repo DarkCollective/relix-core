@@ -179,7 +179,7 @@ public final class AstLocations {
 
     private static List<SortSpecification> stripSpecs(List<SortSpecification> specs) {
         return specs.stream()
-                .map(s -> new SortSpecification(stripLocations(s.expression()), s.direction()))
+                .map(s -> s.withExpression(stripLocations(s.expression())))
                 .toList();
     }
 
@@ -478,7 +478,8 @@ public final class AstLocations {
         @Override
         public RelNode visit(TopKNode node) {
             return new TopKNode(node.groupingAttributes(), stripSpecs(node.sortSpecs()),
-                    node.offset(), node.count(), node.input().accept(this), SourceLocation.UNKNOWN);
+                    node.offset(), node.count(), node.withTies(), node.input().accept(this),
+                    SourceLocation.UNKNOWN);
         }
 
         @Override

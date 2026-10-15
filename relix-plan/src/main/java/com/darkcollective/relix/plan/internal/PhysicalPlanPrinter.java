@@ -217,6 +217,7 @@ public final class PhysicalPlanPrinter {
                     o.constraints(), o.groupingKeys(), o.allocation());
             case PhysicalNode.TopK t      -> "TOP " + t.count()
                     + t.offset().map(o -> " OFFSET " + o).orElse("")
+                    + (t.withTies() ? " WITH TIES" : "")
                     + (t.groupingAttributes().isEmpty() ? ""
                             : " PER " + String.join(", ", t.groupingAttributes()));
             case PhysicalNode.Window w    -> DisplayLabels.window(w.function(), w.frame(),
@@ -275,7 +276,8 @@ public final class PhysicalPlanPrinter {
             case PhysicalNode.Tree t -> {
                 String order = t.orderSpecs().isEmpty() ? "" : " ORDER " + t.orderSpecs().stream()
                         .map(s -> s.expression().accept(OPND)
-                                + (s.direction() == com.darkcollective.relix.ast.SortDirection.DESC ? " DESC" : ""))
+                                + (s.direction() == com.darkcollective.relix.ast.SortDirection.DESC ? " DESC" : "")
+                                + (s.nulls() == com.darkcollective.relix.ast.NullPlacement.NULLS_FIRST ? " NULLS FIRST" : ""))
                         .collect(java.util.stream.Collectors.joining(", "));
                 yield "TREE " + t.keyColumn() + " BY " + t.parentColumn() + order
                         + " AS " + t.childrenColumn();
