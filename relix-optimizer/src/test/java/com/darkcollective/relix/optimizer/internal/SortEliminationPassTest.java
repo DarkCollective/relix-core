@@ -90,6 +90,24 @@ final class SortEliminationPassTest {
             assertThat(apply(sortBy(inner, "x"))).isSameAs(inner);
             assertThat(fired()).isTrue();
         }
+        @Test
+        @DisplayName("τ cost (π item, price → cost (τ price (R))) → the π (order carried by name)")
+        void sortOverProjectionOverSort() {
+            var inner = project(
+                    java.util.List.of(projected(attr("item")), projected(attr("price"), "cost")),
+                    sortBy(rel("R"), "price"));
+            assertThat(apply(sortBy(inner, "cost"))).isSameAs(inner);
+            assertThat(fired()).isTrue();
+        }
+
+        @Test
+        @DisplayName("τ cost (ρ price → cost (τ price (R))) → the ρ")
+        void sortOverRenameOverSort() {
+            var inner = rename(java.util.Optional.empty(), java.util.List.of(),
+                    java.util.List.of(renamePair("price", "cost")), sortBy(rel("R"), "price"));
+            assertThat(apply(sortBy(inner, "cost"))).isSameAs(inner);
+            assertThat(fired()).isTrue();
+        }
     }
 
     // =========================================================================
@@ -99,6 +117,15 @@ final class SortEliminationPassTest {
     @Nested
     @DisplayName("SORT-001 — does not fire")
     class NoOp {
+
+        @Test
+        @DisplayName("τ y (π x, y (τ x (R))) is kept (π delivers x order, not y)")
+        void sortOverProjectionWithOtherOrder() {
+            var node = sortBy(project(java.util.List.of(projected(attr("x")), projected(attr("y"))),
+                    sortBy(rel("R"), "x")), "y");
+            assertThat(apply(node)).isSameAs(node);
+            assertThat(fired()).isFalse();
+        }
 
         @Test
         @DisplayName("τ over a bare base relation is kept")

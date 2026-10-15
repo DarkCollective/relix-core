@@ -34,10 +34,15 @@ import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
 import com.darkcollective.relix.ast.WindowFunction;
 import com.darkcollective.relix.ast.Ordering;
+import com.darkcollective.relix.ast.internal.OrderingMaps;
+import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.relation.RelationSymbol;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Locale;
+import java.util.HashMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -278,8 +283,9 @@ public sealed interface PhysicalNode {
      * The default implementation returns {@link Ordering#none()} —
      * meaning no guaranteed row order — which is the conservative safe answer for
      * any operator that does not propagate or establish an ordering.  Individual
-     * nodes that do preserve order ({@link Select}, {@link Limit}) or establish it
-     * ({@link Sort}) override this method.
+     * nodes that do preserve order ({@link Select}, {@link Limit}), carry it under new
+     * column names ({@link Project}, {@link Rename}) or establish it ({@link Sort})
+     * override this method.
      *
      * @return the delivered ordering; never null
      */
@@ -483,8 +489,22 @@ public sealed interface PhysicalNode {
         @Override public Ordering deliveredOrdering() { return input.deliveredOrdering(); }
     }
 
+    /**
+     * Projection (π) — computes {@code attributes} from each row, streaming.
+     *
+     * <p>It keeps its input's row order, so it delivers the longest prefix of the input's
+     * ordering whose every key it projects, named as the output names it: over
+     * {@code τ price * qty DESC}, {@code π item, price * qty → total} delivers
+     * {@code total DESC}.
+     */
     record Project(Schema schema, List<ProjectedAttribute> attributes, PhysicalNode input) implements PhysicalNode {
         @Override public List<PhysicalNode> children() { return List.of(input); }
+        @Override public Ordering deliveredOrdering() {
+            boolean named = schema.columns().size() == attributes.size();
+            return OrderingMaps.throughProjection(input.deliveredOrdering(), attributes,
+                    i -> named ? Optional.of(schema.columns().get(i).name())
+                               : OrderingMaps.nameOf(attributes.get(i)));
+        }
     }
 
     /**
@@ -514,6 +534,32 @@ public sealed interface PhysicalNode {
         }
 
         @Override public List<PhysicalNode> children() { return List.of(input); }
+
+        /**
+         * A rename moves no rows, so it delivers its input's ordering with each key
+         * renamed. A rename of the relation alone delivers the ordering unchanged; a
+         * column rename carries the keys over bare columns, up to the first key that is
+         * an expression.
+         */
+        @Override public Ordering deliveredOrdering() {
+            Ordering ordering = input.deliveredOrdering();
+            List<String> before = input.schema().columns().stream().map(ColumnDefinition::name).toList();
+            List<String> after = schema.columns().stream().map(ColumnDefinition::name).toList();
+            if (pairs.isEmpty() && before.equals(after)) {
+                return ordering;
+            }
+            // Each input column's output name: by pair, else by position, which a
+            // positional rename's equal arity makes one-to-one.
+            Map<String, String> renamed = new HashMap<>();
+            for (int i = 0; i < Math.min(before.size(), after.size()); i++) {
+                renamed.put(before.get(i).toLowerCase(Locale.ROOT), after.get(i));
+            }
+            for (RenameNode.RenamePair pair : pairs) {
+                renamed.put(pair.from().toLowerCase(Locale.ROOT), pair.to());
+            }
+            return OrderingMaps.renamed(ordering,
+                    column -> Optional.ofNullable(renamed.get(column.toLowerCase(Locale.ROOT))));
+        }
     }
 
     /**

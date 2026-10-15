@@ -48,6 +48,12 @@ once per join, and a δ or γ over that output can stream. A semi merge join car
 its left input's order through unchanged; an anti merge join advertises no order,
 because it emits left rows with a NULL join key ahead of the sorted run.
 
+A projection or a rename above a τ keeps the order under the output's column names.
+A π delivers the longest prefix of its input's order whose keys it projects, so
+`π item, price * qty → total (τ price * qty DESC (T))` is sorted by `total DESC`,
+which is a bare column again, and a π that drops the second of three keys is sorted
+by the first alone. A ρ renames the keys it carries.
+
 # Examples:
 Alphabetical list of users:
   τ name (Users)
