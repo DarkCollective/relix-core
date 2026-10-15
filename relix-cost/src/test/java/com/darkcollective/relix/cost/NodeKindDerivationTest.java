@@ -183,6 +183,7 @@ final class NodeKindDerivationTest {
             Map.entry("TreeNode", Distinctness.BREAKS),
             Map.entry("WhyNode", Distinctness.BREAKS),
             Map.entry("NaturalJoinNode", Distinctness.BREAKS),
+            Map.entry("UsingJoinNode", Distinctness.BREAKS),
             Map.entry("ThetaJoinNode", Distinctness.BREAKS),
             Map.entry("LeftOuterJoinNode", Distinctness.BREAKS),
             Map.entry("RightOuterJoinNode", Distinctness.BREAKS),

@@ -71,6 +71,7 @@ import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
 import com.darkcollective.relix.ast.TopKNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.UnionAllNode;
 import com.darkcollective.relix.ast.UnionNode;
 import com.darkcollective.relix.ast.UniversalNode;
@@ -611,6 +612,7 @@ public final class Planner {
             case WhyNode w -> new PhysicalNode.Why(schemaOf(w), w.input());
 
             case NaturalJoinNode j    -> planNaturalJoin(j);
+            case UsingJoinNode j      -> planUsingJoin(j);
             case ThetaJoinNode j      -> planJoin(JoinKind.INNER,       j, j.left(), j.right(), j.condition());
             case LeftOuterJoinNode j  -> planJoin(JoinKind.LEFT_OUTER,  j, j.left(), j.right(), j.condition());
             case RightOuterJoinNode j -> planJoin(JoinKind.RIGHT_OUTER, j, j.left(), j.right(), j.condition());
@@ -1247,6 +1249,90 @@ public final class Planner {
         return new PhysicalNode.Join(schemaOf(node), JoinKind.NATURAL, algorithm,
                 buildSide(JoinKind.NATURAL, node.left(), node.right(), algorithm),
                 Optional.empty(), keys, Set.of(), Set.of(), left, right);
+    }
+
+    /**
+     * Plans {@code JOIN … USING (columns)} by writing it as the join it means, then
+     * planning that.
+     *
+     * <p>The right input's USING columns are renamed to names neither input uses, so that
+     * each side's copy of a named column can be told apart without a qualifier — the
+     * inputs need not be named relations. The rows are then a join of the kind asked for,
+     * on an equality per named column, and a projection writes the output heading the
+     * analysis inferred: each named column once (the left copy, the right copy for a
+     * right join, or the {@code Coalesce} of the two for a full one), then the left
+     * input's other columns, then the right's.
+     */
+    private PhysicalNode planUsingJoin(UsingJoinNode node) {
+        Schema left = schemaOf(node.left());
+        Schema right = schemaOf(node.right());
+        Schema out = schemaOf(node);
+
+        Set<String> taken = new HashSet<>();
+        left.columns().forEach(c -> taken.add(c.name().toLowerCase(Locale.ROOT)));
+        right.columns().forEach(c -> taken.add(c.name().toLowerCase(Locale.ROOT)));
+        Map<String, String> fresh = new LinkedHashMap<>();
+        List<RenameNode.RenamePair> pairs = new ArrayList<>();
+        for (String column : node.columns()) {
+            String from = right.column(column).orElseThrow().name();
+            String name = "__using_" + from;
+            for (int n = 1; taken.contains(name.toLowerCase(Locale.ROOT)); n++) {
+                name = "__using_" + from + "_" + n;
+            }
+            taken.add(name.toLowerCase(Locale.ROOT));
+            fresh.put(column.toLowerCase(Locale.ROOT), name);
+            pairs.add(new RenameNode.RenamePair(from, name));
+        }
+        RelNode renamed = new RenameNode(Optional.empty(), List.of(), pairs, node.right(), node.location());
+
+        Predicate condition = null;
+        for (String column : node.columns()) {
+            Predicate equal = new ComparisonPredicate(
+                    new AttributeOperand(left.column(column).orElseThrow().name()), ComparisonOperator.EQUAL,
+                    new AttributeOperand(fresh.get(column.toLowerCase(Locale.ROOT))), node.location());
+            condition = condition == null ? equal : new AndPredicate(condition, equal, node.location());
+        }
+        RelNode join = switch (node.kind()) {
+            case INNER -> new ThetaJoinNode(node.left(), renamed, condition, node.location());
+            case LEFT  -> new LeftOuterJoinNode(node.left(), renamed, condition, node.location());
+            case RIGHT -> new RightOuterJoinNode(node.left(), renamed, condition, node.location());
+            case FULL  -> new FullOuterJoinNode(node.left(), renamed, condition, node.location());
+        };
+
+        // The output heading, column by column: the named columns, then the left input's
+        // others in order, then the right's in order — the shape the inference gave it.
+        List<ProjectedAttribute> attributes = new ArrayList<>(out.width());
+        int position = 0;
+        for (String column : node.columns()) {
+            Operand leftCopy = new AttributeOperand(left.column(column).orElseThrow().name());
+            Operand rightCopy = new AttributeOperand(fresh.get(column.toLowerCase(Locale.ROOT)));
+            Operand value = switch (node.kind()) {
+                case INNER, LEFT -> leftCopy;
+                case RIGHT -> rightCopy;
+                case FULL -> new FunctionCall("Coalesce", List.of(leftCopy, rightCopy), node.location());
+            };
+            attributes.add(ProjectedAttribute.aliased(value, out.columns().get(position++).name()));
+        }
+        Set<String> named = new HashSet<>(fresh.keySet());
+        for (ColumnDefinition c : left.columns()) {
+            if (!named.contains(c.name().toLowerCase(Locale.ROOT))) {
+                attributes.add(ProjectedAttribute.aliased(new AttributeOperand(c.name()),
+                        out.columns().get(position++).name()));
+            }
+        }
+        RelNode joined = join;
+        this.schemas = SchemaInference.annotate(symbols, joined, this.schemas, functions);
+        Schema joinSchema = schemaOf(joined);
+        for (int i = 0; i < right.width(); i++) {
+            if (!named.contains(right.columns().get(i).name().toLowerCase(Locale.ROOT))) {
+                attributes.add(ProjectedAttribute.aliased(
+                        new AttributeOperand(joinSchema.columns().get(left.width() + i).name()),
+                        out.columns().get(position++).name()));
+            }
+        }
+        RelNode lowered = new ProjectionNode(attributes, joined, node.location());
+        this.schemas = SchemaInference.annotate(symbols, lowered, this.schemas, functions);
+        return plan(lowered);
     }
 
     /**

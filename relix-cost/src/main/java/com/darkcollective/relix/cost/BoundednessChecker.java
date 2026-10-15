@@ -28,6 +28,7 @@ import com.darkcollective.relix.ast.FixpointNode;
 import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.DivisionNode;
 import com.darkcollective.relix.ast.FullOuterJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.IntersectionNode;
 import com.darkcollective.relix.ast.MaterializationMode;
 import com.darkcollective.relix.ast.OptimizeNode;
@@ -180,6 +181,7 @@ public final class BoundednessChecker {
             case UnionAllNode ignored            -> "⊎ (UALL)";
             case DivisionNode ignored            -> "÷ (DIV)";
             case FullOuterJoinNode ignored       -> "⟗ (full outer join)";
+            case UsingJoinNode ignored           -> "⟗ USING (full outer join)";
             case UnionNode ignored               -> "∪ (UNION)";
             case OuterUnionNode ignored          -> "⊔ (OUNION)";
             case IntersectionNode ignored        -> "∩ (INTER)";

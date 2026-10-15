@@ -49,6 +49,8 @@ public interface RelNodeVisitor<R> {
     R visit(RenameNode node);
     /** Visits a natural join (⋈) node. */
     R visit(NaturalJoinNode node);
+    /** Visits a join on named shared columns ({@code JOIN … USING}). */
+    R visit(UsingJoinNode node);
     /** Visits a theta join (⨝) node. */
     R visit(ThetaJoinNode node);
     /** Visits a left outer join (⟕) node. */

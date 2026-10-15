@@ -54,6 +54,7 @@ import com.darkcollective.relix.ast.IntervalJoinNode;
 import com.darkcollective.relix.ast.LeftOuterJoinNode;
 import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.ProductNode;
@@ -923,6 +924,62 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
             return Optional.empty();
         }
         Schema schema = naturalJoinSchema(left, right);
+        return annotate(node, schema);
+    }
+
+    // =========================================================================
+    // USING join — the named columns once, then each side's others
+    // =========================================================================
+
+    /**
+     * {@code JOIN … USING (columns)}: each named column once, from the left input (the
+     * right for a right join), then the left input's other columns, then the right's,
+     * a right column whose name is already taken getting the {@code _r} suffix.
+     */
+    @Override
+    public Optional<Schema> visit(UsingJoinNode node) {
+        Optional<Schema> leftOpt  = node.left().accept(this);
+        Optional<Schema> rightOpt = node.right().accept(this);
+        if (leftOpt.isEmpty() || rightOpt.isEmpty()) return Optional.empty();
+
+        Schema left  = leftOpt.get();
+        Schema right = rightOpt.get();
+        if (left.isOpen() || right.isOpen()) {
+            errors.add(SemanticError.error(
+                    node.location().filePath(), node.location().line(), node.location().column(),
+                    "USING join: open (schema-on-read) input is not supported — the USING "
+                            + "columns are settled before any row is read. Use a join with an "
+                            + "explicit condition (L ⨝ L.id = R.id R), which resolves its "
+                            + "columns per row"));
+            return Optional.empty();
+        }
+        List<ColumnDefinition> using = new ArrayList<>();
+        Set<String> named = new LinkedHashSet<>();
+        for (String column : node.columns()) {
+            Optional<ColumnDefinition> l = left.column(column);
+            Optional<ColumnDefinition> r = right.column(column);
+            if (l.isEmpty() || r.isEmpty()) {
+                Schema missing = l.isEmpty() ? left : right;
+                errors.add(SemanticError.error(
+                        node.location().filePath(), node.location().line(), node.location().column(),
+                        "USING column '" + column + "' is not a column of the "
+                                + (l.isEmpty() ? "left" : "right") + " input (columns: "
+                                + missing.columns().stream().map(ColumnDefinition::name)
+                                        .collect(java.util.stream.Collectors.joining(", "))
+                                + ")"));
+                return Optional.empty();
+            }
+            using.add(node.kind() == UsingJoinNode.Kind.RIGHT ? r.get() : l.get());
+            named.add(column.toLowerCase(Locale.ROOT));
+        }
+        List<ColumnDefinition> leading = new ArrayList<>(using);
+        left.columns().stream()
+                .filter(c -> !named.contains(c.name().toLowerCase(Locale.ROOT)))
+                .forEach(leading::add);
+        List<ColumnDefinition> rest = right.columns().stream()
+                .filter(c -> !named.contains(c.name().toLowerCase(Locale.ROOT)))
+                .toList();
+        Schema schema = rest.isEmpty() ? new Schema(leading) : new Schema(leading).concat(new Schema(rest));
         return annotate(node, schema);
     }
 

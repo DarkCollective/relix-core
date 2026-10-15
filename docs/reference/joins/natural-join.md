@@ -95,7 +95,7 @@ non-equality match. Composition (∘) joins on shared columns and then drops the
 all.
 
 # See Also:
-[theta-join](theta-join.md), [left-outer-join](left-outer-join.md), [semi-join](semi-join.md), [composition](../set-operations/composition.md), [rename](../operators/rename.md)
+[using-join](using-join.md), [theta-join](theta-join.md), [left-outer-join](left-outer-join.md), [semi-join](semi-join.md), [composition](../set-operations/composition.md), [rename](../operators/rename.md)
 
 # Notes:
 Rename (ρ) is the usual fix when key names don't match or when self-joining.

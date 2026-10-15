@@ -37,6 +37,7 @@ import com.darkcollective.relix.ast.IntervalJoinNode;
 import com.darkcollective.relix.ast.LateralJoinNode;
 import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.OptimizeConstraint;
 import com.darkcollective.relix.ast.OptimizeNode;
@@ -155,6 +156,7 @@ public final class RelNodeOperands {
             case DistinctNode ignored -> { }
             case WhyNode ignored -> { }
             case NaturalJoinNode ignored -> { }
+            case UsingJoinNode ignored -> { }
             case ProductNode ignored -> { }
             case UnionNode ignored -> { }
             case UnionAllNode ignored -> { }
@@ -310,6 +312,7 @@ public final class RelNodeOperands {
             case WhyNode ignored -> false;
             case LateralJoinNode ignored -> false;
             case NaturalJoinNode ignored -> false;
+            case UsingJoinNode ignored -> false;
             case ConditionalJoinNode ignored -> false;
             case AsOfJoinNode ignored -> false;
             case IntervalJoinNode ignored -> false;
@@ -371,6 +374,7 @@ public final class RelNodeOperands {
             case DistinctNode ignored -> node;
             case WhyNode ignored -> node;
             case NaturalJoinNode ignored -> node;
+            case UsingJoinNode ignored -> node;
             case ProductNode ignored -> node;
             case UnionNode ignored -> node;
             case UnionAllNode ignored -> node;

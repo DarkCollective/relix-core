@@ -176,6 +176,7 @@ public final class RelNodeCorpus {
 
                 // ── joins ───────────────────────────────────────────────────────
                 naturalJoin(LEFT, RIGHT),
+                AstBuilders.usingJoin(LEFT, RIGHT, UsingJoinNode.Kind.FULL, "id", "day"),
                 join(LEFT, RIGHT, CONDITION),
                 leftJoin(LEFT, RIGHT, CONDITION),
                 rightJoin(LEFT, RIGHT, CONDITION),

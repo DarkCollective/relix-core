@@ -274,9 +274,14 @@ union_tier_op     ::= "∪" | "UNION"
 intersect_op      ::= "∩" | "INTER" | "INTERSECT"
 
 /* A join's condition is written BETWEEN the operator and its right input:
-     Users ⨝ Users.id = Orders.user_id Orders                           */
+     Users ⨝ Users.id = Orders.user_id Orders
+   USING may stand there too, or follow the right input as SQL writes it:
+     Orders ⟕ USING (customer_id) Customers
+     Orders LJOIN Customers USING (customer_id)                         */
 join_tail         ::= natural_join_op postfix_expr
                     | conditional_join_op predicate postfix_expr
+                    | using_join_op using_columns postfix_expr
+                    | using_join_op postfix_expr using_columns
                     | asof_join
                     | interval_join
                     | product_op postfix_expr
@@ -290,6 +295,9 @@ conditional_join_op ::= "⨝" | "><"                          /* theta join */
                     | "⋉" | "SEMI"                           /* semi-join */
                     | "▷" | "ANTI"                           /* anti-join */
                     | "USEMI"                                /* pairwise universal semi-join */
+using_join_op     ::= natural_join_op
+                    | "⟕" | "|><" | "LJOIN" | "⟖" | "><|" | "RJOIN" | "⟗" | "|><|" | "FJOIN"
+using_columns     ::= "USING" "(" name ( "," name )* ")"
 product_op        ::= "×" | "CROSS"
                     | "÷" | "DIV"
                     | "∘" | "COMPOSE"
@@ -691,6 +699,10 @@ are easy to miss in the rules above.
   strings and adds two numbers; it binds more loosely than `+`, as in PostgreSQL.
   `x % y` is `Mod(x, y)` and binds as `*` does. A doubled quote is one quote only in
   the expression layer.
+- **`USING` matches the named columns only.** `A JOIN B USING (id)` joins on `id`
+  and puts it once, first, in the output; any other column both inputs have stays
+  twice, the right one suffixed `_r`. A full join's `id` is whichever side has one.
+  A column may not be named twice.
 - **Where NULLs sort.** Without `NULLS FIRST` or `NULLS LAST`, a sort key puts its
   NULLs last whether it runs ascending or descending. PostgreSQL and Oracle put them
   first in a descending sort, so a query ported from them says `NULLS FIRST`. `NULLS`,

@@ -44,6 +44,7 @@ public sealed interface RelNode permits
         SelectionNode,
         RenameNode,
         NaturalJoinNode,
+        UsingJoinNode,
         ConditionalJoinNode,
         AsOfJoinNode,
         IntervalJoinNode,
@@ -100,8 +101,8 @@ public sealed interface RelNode permits
      *   <li>{@link MaterializationMode#SORTED} — {@link SortNode}</li>
      *   <li>{@link MaterializationMode#BAG} — {@link AggregationNode},
      *       {@link UniversalNode}, {@link UnionAllNode}, {@link DivisionNode},
-     *       {@link FullOuterJoinNode}, and a {@link SolveNode} that fits {@code PER}
-     *       group</li>
+     *       {@link FullOuterJoinNode}, a full {@link UsingJoinNode}, and a
+     *       {@link SolveNode} that fits {@code PER} group</li>
      *   <li>{@link MaterializationMode#SET} — {@link UnionNode},
      *       {@link OuterUnionNode}, {@link IntersectionNode},
      *       {@link DifferenceNode}, {@link SymmetricDifferenceNode}</li>
@@ -123,6 +124,7 @@ public sealed interface RelNode permits
             case UnionAllNode      ignored -> MaterializationMode.BAG;
             case DivisionNode      ignored -> MaterializationMode.BAG;
             case FullOuterJoinNode ignored -> MaterializationMode.BAG;
+            case UsingJoinNode u when u.kind() == UsingJoinNode.Kind.FULL -> MaterializationMode.BAG;
             case UnionNode         ignored -> MaterializationMode.SET;
             case OuterUnionNode    ignored -> MaterializationMode.SET;
             case IntersectionNode  ignored -> MaterializationMode.SET;
@@ -214,6 +216,7 @@ public sealed interface RelNode permits
             case WhyNode n             -> List.of(n.input());
             case LateralJoinNode n     -> List.of(n.left()); // TVF call is not a relational child
             case NaturalJoinNode n     -> List.of(n.left(), n.right());
+            case UsingJoinNode n       -> List.of(n.left(), n.right());
             case ConditionalJoinNode n -> List.of(n.left(), n.right());
             case AsOfJoinNode n            -> List.of(n.left(), n.right());
             case IntervalJoinNode n        -> List.of(n.left(), n.right());
@@ -412,6 +415,11 @@ public sealed interface RelNode permits
             case NaturalJoinNode n -> {
                 RelNode l = f.apply(n.left()), r = f.apply(n.right());
                 yield (l == n.left() && r == n.right()) ? n : new NaturalJoinNode(l, r, n.location());
+            }
+            case UsingJoinNode n -> {
+                RelNode l = f.apply(n.left()), r = f.apply(n.right());
+                yield (l == n.left() && r == n.right()) ? n
+                        : new UsingJoinNode(n.kind(), l, r, n.columns(), n.location());
             }
             case ConditionalJoinNode n -> {
                 RelNode l = f.apply(n.left()), r = f.apply(n.right());

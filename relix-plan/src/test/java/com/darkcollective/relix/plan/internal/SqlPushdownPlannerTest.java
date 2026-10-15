@@ -1029,6 +1029,70 @@ final class SqlPushdownPlannerTest {
     }
 
     @Nested
+    @DisplayName("JOIN … USING (#134)")
+    class UsingJoins {
+
+        private static final String TABLES =
+                "connection db from database { url: \"jdbc:postgresql://h/db\" };\n"
+                + "source A from db { table: \"a\", schema: { id: NUMBER, k: NUMBER, x: STRING } };\n"
+                + "source B from db { table: \"b\", schema: { id: NUMBER, k: NUMBER, x: STRING } };\n"
+                + "source C from db { table: \"c\", schema: { k: STRING } };\n"
+                + "source D from csv(\"d.csv\") { schema: { k: NUMBER } };\n";
+
+        private Optional<String> sql(String query) {
+            return push(TABLES + "query { " + query + " };").map(PhysicalNode.PushedScan::nativeQuery);
+        }
+
+        @Test
+        @DisplayName("an inner USING join is JOIN … ON its columns, selecting the joined heading")
+        void inner() {
+            assertThat(sql("A JOIN B USING (k)")).contains(
+                    "SELECT \"A\".\"k\", \"A\".\"id\", \"A\".\"x\", \"B\".\"id\", \"B\".\"x\" "
+                            + "FROM \"a\" \"A\" JOIN \"b\" \"B\" ON (\"A\".\"k\" = \"B\".\"k\")");
+        }
+
+        @Test
+        @DisplayName("each input's filter reads its own table, and a σ above reads the joined heading")
+        void filters() {
+            assertThat(sql("σ x_r = 'q' (σ x = 'p' (A) JOIN σ x = 'r' (B) USING (k, id))")).contains(
+                    "SELECT \"A\".\"k\", \"A\".\"id\", \"A\".\"x\", \"B\".\"x\" "
+                            + "FROM \"a\" \"A\" JOIN \"b\" \"B\" "
+                            + "ON (\"A\".\"k\" = \"B\".\"k\") AND (\"A\".\"id\" = \"B\".\"id\") "
+                            + "WHERE (\"A\".\"x\" = 'p') AND (\"B\".\"x\" = 'r') AND (\"B\".\"x\" = 'q')");
+        }
+
+        @Test
+        @DisplayName("an outer USING join, a qualified reference above one, or a type mismatch is not folded")
+        void declines() {
+            assertThat(sql("A LJOIN B USING (k)")).isEmpty();
+            assertThat(sql("σ A.x = 'p' (A JOIN B USING (k))")).isEmpty();
+            assertThat(sql("A JOIN B USING (id) JOIN C USING (k)")).isEmpty();
+            assertThat(sql("A JOIN C USING (k)")).isEmpty();
+            // An input that does not push leaves the join in the engine.
+            assertThat(sql("σ id / 2 = 1 (A) JOIN B USING (k)")).isEmpty();
+            assertThat(sql("A JOIN σ id / 2 = 1 (B) USING (k)")).isEmpty();
+            // A side that is no table on the connection.
+            assertThat(sql("A JOIN D USING (k)")).isEmpty();
+            assertThat(sql("D JOIN A USING (k)")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("on a backend whose collation is not exact, a string USING column compares exactly")
+        void collation() {
+            String mysql = "connection db from database { url: \"jdbc:mysql://h/db\" };\n"
+                    + "source A from db { table: \"a\", schema: { id: NUMBER, x: STRING } };\n"
+                    + "source B from db { table: \"b\", schema: { id: NUMBER, x: STRING } };\n";
+            assertThat(push(mysql + "query { A JOIN B USING (x) };").map(PhysicalNode.PushedScan::nativeQuery))
+                    .hasValueSatisfying(q -> assertThat(q).contains(
+                            "ON (CONVERT(`A`.`x` USING utf8mb4) COLLATE utf8mb4_0900_bin = "
+                                    + "CONVERT(`B`.`x` USING utf8mb4) COLLATE utf8mb4_0900_bin)"));
+            // A number compares exactly already.
+            assertThat(push(mysql + "query { A JOIN B USING (id) };").map(PhysicalNode.PushedScan::nativeQuery))
+                    .hasValueSatisfying(q -> assertThat(q).contains("ON (`A`.`id` = `B`.`id`)"));
+        }
+    }
+
+    @Nested
     @DisplayName("NULLS FIRST / LAST and WITH TIES (#133)")
     class NullsAndTies {
 

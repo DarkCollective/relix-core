@@ -44,6 +44,7 @@ import com.darkcollective.relix.ast.IntersectionNode;
 import com.darkcollective.relix.ast.LeftOuterJoinNode;
 import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.ProductNode;
 import com.darkcollective.relix.ast.ProjectionNode;
@@ -410,6 +411,11 @@ public final class CostEstimator {
             // Inner equi/natural joins refine with distinct counts when possible;
             // outer joins keep the ~max(sides) heuristic.
             case NaturalJoinNode j -> equiJoinRows(j.left(), j.right(), null, depth);
+            // A USING join is an equi-join on its columns; its outer forms keep the
+            // ~max(sides) heuristic the outer joins do.
+            case UsingJoinNode j when j.kind() == UsingJoinNode.Kind.INNER ->
+                    equiJoinRows(j.left(), j.right(), null, depth);
+            case UsingJoinNode j -> max(rowsAt(j.left(), depth + 1), rowsAt(j.right(), depth + 1));
             case ThetaJoinNode j   -> equiJoinRows(j.left(), j.right(), j.condition(), depth);
             case LeftOuterJoinNode ignored -> max(rowsAt(node.children().get(0), depth + 1),
                         rowsAt(node.children().get(1), depth + 1));

@@ -40,6 +40,7 @@ import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.TopKNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.UniversalNode;
 import com.darkcollective.relix.ast.WindowFunction;
 import com.darkcollective.relix.ast.WindowNode;
@@ -210,6 +211,7 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             case TopKNode t        -> topK(t);
             case ThetaJoinNode j   -> join(j);
             case NaturalJoinNode j -> naturalJoin(j);
+            case UsingJoinNode j   -> usingJoin(j);
             case AsOfJoinNode j    -> asOfJoin(j);
             case IntervalJoinNode j -> intervalJoin(j);
             case WindowNode w      -> window(w);
@@ -1187,6 +1189,130 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         joined.comparing = natComparing;
         joined.ordersExactly = left.ordersExactly;
         joined.ordering = natOrdering;
+        return Optional.of(joined);
+    }
+
+    /**
+     * Folds an inner {@code JOIN … USING (columns)} of two tables on one connection into
+     * {@code JOIN … ON} equating the named columns, the same statement on every dialect.
+     * The select list is the join's own heading: each named column from the left table,
+     * then the left table's other columns, then the right's, a right column whose name
+     * is taken renamed as the heading renames it. The outer forms are not folded, since
+     * no outer join is, and run in the engine over whatever their inputs push.
+     */
+    private Optional<Pushed> usingJoin(UsingJoinNode node) {
+        if (node.kind() != UsingJoinNode.Kind.INNER) {
+            return Optional.empty();
+        }
+        Peeled leftPeel = peelFilters(node.left());
+        Peeled rightPeel = peelFilters(node.right());
+        Optional<Pushed> leftOpt = build(leftPeel.scan());
+        Optional<Pushed> rightOpt = build(rightPeel.scan());
+        if (leftOpt.isEmpty() || rightOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        Pushed left = leftOpt.get();
+        Pushed right = rightOpt.get();
+        if (!bareJoinable(left, right)) {
+            return Optional.empty();
+        }
+        Schema leftSchema = schemaOf(node.left());
+        Schema rightSchema = schemaOf(node.right());
+        List<String> using = new ArrayList<>(node.columns().size());
+        for (String column : node.columns()) {
+            // Analysis has refused a column either side lacks; one typed differently on
+            // each side is refused too, and is not sent to be compared by a backend.
+            if (!leftSchema.column(column).map(ColumnDefinition::type)
+                    .equals(rightSchema.column(column).map(ColumnDefinition::type))) {
+                return Optional.empty();
+            }
+            using.add(column);
+        }
+
+        Dialect dialect = left.dialect;
+        JoinAliases aliases = JoinAliases.of(left, right);
+        StringColumns joinStrings = stringColumnsOf(left.baseColumns, right.baseColumns);
+        List<String> condition = new ArrayList<>(using.size());
+        for (String column : using) {
+            String l = qualified(dialect, aliases.left(), column);
+            String r = qualified(dialect, aliases.right(), column);
+            if (!left.exactStrings && joinStrings.includes(column)) {
+                l = dialect.exactStringComparison(l);
+                r = dialect.exactStringComparison(r);
+            }
+            condition.add("(" + l + " = " + r + ")");
+        }
+
+        // Output column → the side and table column it reads, in heading order.
+        Schema schema = schemaOf(node);
+        Map<String, String> sources = new LinkedHashMap<>();
+        List<String> selectList = new ArrayList<>(schema.width());
+        int position = 0;
+        for (String column : using) {
+            sources.put(schema.columns().get(position++).name().toLowerCase(Locale.ROOT),
+                    qualified(dialect, aliases.left(), column));
+        }
+        for (ColumnDefinition c : leftSchema.columns()) {
+            if (!containsIgnoreCase(using, c.name())) {
+                sources.put(schema.columns().get(position++).name().toLowerCase(Locale.ROOT),
+                        qualified(dialect, aliases.left(), c.name()));
+            }
+        }
+        for (ColumnDefinition c : rightSchema.columns()) {
+            if (!containsIgnoreCase(using, c.name())) {
+                sources.put(schema.columns().get(position++).name().toLowerCase(Locale.ROOT),
+                        qualified(dialect, aliases.right(), c.name()));
+            }
+        }
+        sources.values().forEach(selectList::add);
+        // A reference above the join names an output column; a qualified one is not
+        // folded, since a USING column belongs to neither table alone.
+        ColumnRenderer renderer = attribute -> SqlExpressions.qualifier(attribute).isPresent()
+                ? Optional.empty()
+                : Optional.ofNullable(sources.get(SqlExpressions.column(attribute).toLowerCase(Locale.ROOT)));
+
+        String from = dialect.table(left.tableName) + " " + dialect.quote(aliases.left())
+                + " JOIN " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
+                + " ON " + String.join(" AND ", condition);
+        ColumnRenderer comparing = comparingRenderer(renderer, joinStrings,
+                left.exactStrings, dialect, dialect::exactStringComparison);
+        ColumnRenderer ordering = comparingRenderer(renderer, joinStrings,
+                left.ordersExactly, dialect, dialect::exactStringOrder);
+        // A filter peeled from either input names that input's own columns, which are
+        // the table's: rendered against each side's table as written there.
+        ColumnRenderer leftTable = attribute -> Optional.of(qualified(dialect, aliases.left(),
+                SqlExpressions.column(attribute)));
+        ColumnRenderer rightTable = attribute -> Optional.of(qualified(dialect, aliases.right(),
+                SqlExpressions.column(attribute)));
+        List<String> where = new ArrayList<>();
+        for (Predicate filter : leftPeel.filters()) {
+            Optional<String> sql = SqlExpressions.predicate(filter,
+                    comparingRenderer(leftTable, joinStrings, left.exactStrings, dialect, dialect::exactStringComparison),
+                    comparingRenderer(leftTable, joinStrings, left.ordersExactly, dialect, dialect::exactStringOrder),
+                    dialect, functions);
+            if (sql.isEmpty()) {
+                return Optional.empty();
+            }
+            where.add(sql.get());
+        }
+        for (Predicate filter : rightPeel.filters()) {
+            Optional<String> sql = SqlExpressions.predicate(filter,
+                    comparingRenderer(rightTable, joinStrings, left.exactStrings, dialect, dialect::exactStringComparison),
+                    comparingRenderer(rightTable, joinStrings, left.ordersExactly, dialect, dialect::exactStringOrder),
+                    dialect, functions);
+            if (sql.isEmpty()) {
+                return Optional.empty();
+            }
+            where.add(sql.get());
+        }
+
+        Pushed joined = new Pushed(left.connectorType, left.connection, from, selectList,
+                schema, renderer, dialect);
+        joined.where.addAll(where);
+        joined.exactStrings = left.exactStrings;
+        joined.comparing = comparing;
+        joined.ordersExactly = left.ordersExactly;
+        joined.ordering = ordering;
         return Optional.of(joined);
     }
 
