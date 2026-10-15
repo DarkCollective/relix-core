@@ -376,8 +376,8 @@ aggregation       ::= ( "γ" | "GROUP" ) "BY"?
                       ( grouping_key ( "," grouping_key )* ","? )?
                       aggregate ( "," aggregate )* ","? input
 grouping_key      ::= operand ( arrow name )?
-aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" | "COLLECT" ) "(" operand ")" ( arrow name )?
-                    | "COUNT" "(" ( operand | "*" ) ")" ( arrow name )?
+aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" | "COLLECT" ) "(" "DISTINCT"? operand ")" ( arrow name )?
+                    | "COUNT" "(" ( "DISTINCT"? operand | "*" ) ")" ( arrow name )?
                     | ( "ARGMAX" | "ARGMIN" ) "(" operand "," operand ")" ( arrow name )?
 
 /* τ amount DESC, name (Orders);  ORDER BY amount DESC (Orders) */

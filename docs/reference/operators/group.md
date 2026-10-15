@@ -9,6 +9,7 @@ GROUP BY ...       -- SQL-prior synonym; BY is an optional noise word
 GROUP BY dept, SUM(salary) -> total (Employees)   -- same AST as the γ form above
 γ YEAR(order_date) → yr, SUM(amount) → revenue (Orders)   -- derived grouping key
 γ SUM(amount) → grand_total (Orders)        -- no grouping = whole-relation total
+γ user_id, COUNT(DISTINCT url) → pages (Clicks)   -- each distinct value once
 
 # Description:
 Group is how you summarise data: collapse many rows into one row per group and
@@ -34,6 +35,9 @@ expressions (e.g. group by `DATE_TRUNC('day', ts)`, aggregate `SUM(price*qty)`),
 not just column names; each grouping key takes an optional `→ alias` (else the
 column name for a bare column, or an expression-derived name). Supported
 aggregates: SUM, AVG, COUNT, MIN, MAX, COLLECT (NEST → array), ARGMAX, ARGMIN.
+All but ARGMAX and ARGMIN take SQL's `DISTINCT` after the parenthesis —
+`COUNT(DISTINCT session)` — and then read each distinct non-NULL value of the
+argument once per group (COLLECT keeps one NULL, as it keeps NULLs at all).
 Output schema = grouping-key columns + one column per aggregate (named by its
 alias, else `op_arg`). γ is a blocking/materialising operator ([bag]) but becomes
 a single streaming pass when its input is already ordered by the grouping keys.
@@ -55,6 +59,9 @@ Aggregate an expression, not just a column — revenue per region:
 
 Group by a derived key — annual revenue, bucketing by the order year:
   γ YEAR(order_date) → yr, SUM(amount) → revenue (Orders)
+
+Distinct pages per user from a click log, beside the click count:
+  γ user_id, COUNT(DISTINCT url) → pages, COUNT(*) → clicks (Clicks)
 
 Gather each customer's order ids into an array (NEST):
   γ customer_id, COLLECT(order_id) → order_ids (Orders)

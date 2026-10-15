@@ -198,7 +198,9 @@ final class NestUnnestPass {
             return u;
         }
         AggregateFunction collect = a.aggregates().get(0);
-        if (collect.operator() != AggregateOperator.COLLECT
+        // COLLECT(DISTINCT x) keeps each value once per group, which unnesting does not
+        // give back: the projection would return every row's x.
+        if (collect.operator() != AggregateOperator.COLLECT || collect.distinct()
                 || !collect.outputName().equalsIgnoreCase(u.column())) {
             return u;
         }

@@ -296,7 +296,8 @@ final class ReferenceIndex {
             // ── Aggregates ───────────────────────────────────────────────────
             e("aggregates/sum.md",    "aggregate", "SUM",    "SUM",    "Sum of a numeric expression",    "sum"),
             e("aggregates/avg.md",    "aggregate", "AVG",    "AVG",    "Average of a numeric expression", "avg", "average"),
-            e("aggregates/count.md",  "aggregate", "COUNT",  "COUNT",  "Count rows or non-null values",   "count"),
+            e("aggregates/count.md",  "aggregate", "COUNT",  "COUNT",  "Count rows or non-null values",   "count",
+              "count distinct", "count(distinct", "distinct count"),
             e("aggregates/min.md",    "aggregate", "MIN",    "MIN",    "Minimum value",                   "min"),
             e("aggregates/max.md",    "aggregate", "MAX",    "MAX",    "Maximum value",                   "max"),
             e("aggregates/collect.md","aggregate", "COLLECT","COLLECT","Gather group values into an array","collect"),

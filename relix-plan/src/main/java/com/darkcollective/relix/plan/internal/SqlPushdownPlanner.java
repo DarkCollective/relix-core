@@ -432,10 +432,15 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             // position exactly as an ORDER BY key does. COUNT, SUM and AVG reduce
             // without asking which of two values is larger, and are left alone — which
             // keeps the collation out of SQL that has no use for it.
-            ColumnRenderer cols = ORDERING_AGGREGATES.contains(aggregate.operator())
-                    ? p.ordering : p.renderer;
-            Optional<String> expr =
-                    aggregateSql(aggregate.operator(), aggregate.argument(), cols, p.dialect);
+            //
+            // A DISTINCT aggregate asks which values are equal, as a grouping key does,
+            // so its argument is rendered as a key is: under a collation that tells 'a'
+            // from 'A', where the engine does.
+            ColumnRenderer cols = aggregate.distinct() ? p.comparing
+                    : ORDERING_AGGREGATES.contains(aggregate.operator()) ? p.ordering : p.renderer;
+            Optional<String> expr = aggregate.distinct()
+                    ? distinctAggregateSql(aggregate.operator(), aggregate.argument(), cols, p.dialect)
+                    : aggregateSql(aggregate.operator(), aggregate.argument(), cols, p.dialect);
             if (expr.isEmpty()) {
                 return Optional.empty();
             }
@@ -727,6 +732,24 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         return functions.aggregate(operator.name())
                 .flatMap(reduction -> reduction.pushdown()
                         .render(dialect.pushdownTarget(), List.of(rendered.get())));
+    }
+
+    /**
+     * SQL's {@code NAME(DISTINCT x)}, for an aggregate whose own spelling is the plain
+     * call {@code NAME(x)}. A spelling of any other shape cannot be told where the
+     * {@code DISTINCT} goes, so it declines; what must never happen is the plain call
+     * standing in for the distinct one.
+     */
+    private Optional<String> distinctAggregateSql(AggregateOperator operator, Operand argument,
+                                                  ColumnRenderer cols, Dialect dialect) {
+        Optional<String> rendered = SqlExpressions.operand(argument, cols, dialect, functions);
+        if (rendered.isEmpty()) {
+            return Optional.empty();
+        }
+        String plain = operator.name() + "(" + rendered.get() + ")";
+        return aggregateSql(operator, argument, cols, dialect)
+                .filter(plain::equals)
+                .map(call -> operator.name() + "(DISTINCT " + rendered.get() + ")");
     }
 
     private Optional<Pushed> window(WindowNode node) {
