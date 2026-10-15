@@ -1029,6 +1029,34 @@ final class SqlPushdownPlannerTest {
     }
 
     @Nested
+    @DisplayName("a regular-expression match (#138)")
+    class RegexMatch {
+
+        private Optional<String> sql(String url, String query) {
+            return push("connection db from database { url: \"" + url + "\" };\n"
+                    + "source S from db { table: \"s\", schema: { id: NUMBER, code: STRING } };\n"
+                    + "query { " + query + " };").map(PhysicalNode.PushedScan::nativeQuery);
+        }
+
+        @Test
+        @DisplayName("a portable pattern is PostgreSQL's ~ and MySQL's case-sensitive REGEXP_LIKE")
+        void portable() {
+            assertThat(sql("jdbc:postgresql://h/db", "σ code ~* '^ab[0-9]+' (S)")).contains(
+                    "SELECT \"id\", \"code\" FROM \"s\" WHERE ((\"code\" ~* '^ab[0-9]+') = TRUE)");
+            assertThat(sql("jdbc:mysql://h/db", "σ code !~ 'x' (S)")).hasValueSatisfying(q ->
+                    assertThat(q).contains("REGEXP_LIKE(").contains("'x', 'cn') = FALSE)"));
+        }
+
+        @Test
+        @DisplayName("a pattern only Java reads one way, or a dialect without one, runs in the engine")
+        void engine() {
+            assertThat(sql("jdbc:postgresql://h/db", "σ code ~ 'x$' (S)")).isEmpty();
+            assertThat(sql("jdbc:sqlserver://h", "σ code ~ 'x' (S)")).isEmpty();
+            assertThat(sql("jdbc:h2:mem:x", "σ code ~ 'x' (S)")).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("JOIN … USING (#134)")
     class UsingJoins {
 

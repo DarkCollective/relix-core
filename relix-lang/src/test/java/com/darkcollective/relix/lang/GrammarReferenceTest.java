@@ -240,6 +240,11 @@ final class GrammarReferenceTest {
             "query { π 2e → a (R) };",
             "query { λ 1e3 (R) };",
             "Bad := \"a\"\"b\";",
+            // regular-expression matches
+            "query { σ s ~ '^a' ∧ t ~* 'b' ∨ u !~ 'c' ∨ v !~* 'd' (R) };",
+            "query { σ s MATCHES 'a' ∧ t NOT MATCHES 'b' ∧ matches = 1 (R) };",
+            "query { σ s ~~ 'a' (R) };",
+            "query { σ s ~ (R) };",
             // CAST and EXTRACT
             "query { π CAST(a AS NUMBER) → n, cast(b as date) → d, CAST(c + 1 AS STRING) → s (R) };",
             "query { π EXTRACT(WEEK FROM d) → w, extract(epoch from t) → e (R) };",
