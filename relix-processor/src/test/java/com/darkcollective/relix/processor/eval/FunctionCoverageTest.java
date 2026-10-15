@@ -176,6 +176,14 @@ final class FunctionCoverageTest {
             exact("concat",      "CONCAT(\"a\", 1, \"b\")",           "a1b"),
             num  ("trunc",       "TRUNC(2.78, 1)",                   "2.7"),
             num  ("truncate",    "TRUNCATE(1234, -2)",               "1200"),
+            exact("lpad",        "LPAD(\"hi\", 5, \"xy\")",           "xyxhi"),
+            exact("rpad",        "RPAD(\"hi\", 3, \"!\")",            "hi!"),
+            exact("reverse",     "REVERSE(\"hello\")",              "olleh"),
+            exact("repeat",      "REPEAT(\"ab\", 3)",               "ababab"),
+            exact("replicate",   "REPLICATE(\"ab\", 2)",            "abab"),
+            exact("split_part",  "SPLIT_PART(\"a,b,c\", \",\", -1)",  "c"),
+            exact("concat_ws",   "CONCAT_WS(\"-\", \"a\", 1)",        "a-1"),
+            exact("initcap",     "INITCAP(\"hELLO wORLD\")",        "Hello World"),
             // ── Nested data ─────────────────────────────────────────────────────
             // Its argument is a constructed struct, since no literal spells an object.
             exact("entries", "Entries({ us: 3, gb: 7 })",
