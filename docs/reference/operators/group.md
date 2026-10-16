@@ -11,6 +11,9 @@ GROUP BY dept, SUM(salary) -> total (Employees)   -- same AST as the γ form abo
 γ SUM(amount) → grand_total (Orders)        -- no grouping = whole-relation total
 γ user_id, COUNT(DISTINCT url) → pages (Clicks)   -- each distinct value once
 γ region, COUNT(*) FILTER (WHERE status = 'open') → open_n (Orders)   -- only some rows
+γ ROLLUP (region, product), SUM(amount) → total (Sales)   -- subtotals and a grand total
+γ CUBE (region, product), SUM(amount) → total (Sales)     -- every combination of totals
+γ GROUPING SETS ((region), (product), ()), SUM(amount) → total (Sales)   -- the totals listed
 
 # Description:
 Group is how you summarise data: collapse many rows into one row per group and
@@ -28,6 +31,11 @@ The worked example below shows the difference.
 
 If you give no grouping keys, the whole relation collapses to a single
 summary row.
+
+To get subtotals in the same result, group by `ROLLUP (region, product)`. That
+gives a row for each region and product, a subtotal for each region and a grand
+total. `CUBE` gives the totals for every combination of its keys. `GROUPING SETS`
+gives exactly the groupings you list.
 
 # Technical Description:
 γ partitions R by the grouping-key tuple and applies each aggregate function to
@@ -47,6 +55,25 @@ alias, else `op_arg`). γ is a blocking/materialising operator ([bag]) but becom
 a single streaming pass when its input is already ordered by the grouping keys.
 SUM/AVG/COUNT/MIN/MAX over bare-column grouping keys push down to SQL GROUP BY (a
 derived grouping key aggregates in-engine).
+
+**Grouping sets.** A grouping element can be SQL's `ROLLUP (k, …)`, `CUBE (k, …)` or
+`GROUPING SETS (set, …)`, where a set is `(k, …)`, `()` or one key. Each grouping set
+groups the rows by its own keys, and every other key is NULL in the rows it produces.
+`ROLLUP (a, b)` is the sets `(a, b)`, `(a)` and `()`. `CUBE (a, b)` is `(a, b)`, `(a)`,
+`(b)` and `()`, and a CUBE takes at most 12 keys. Several elements combine as SQL's do,
+one set from each: `region, ROLLUP (product)` is `(region, product)` and `(region)`.
+A key written twice is one key, and a set listed twice gives its rows twice. The
+output columns are the keys in the order the sets first name them, which is the order
+they are written in unless a plain key follows a GROUPING SETS whose sets do not all
+name the same keys. [GROUPING(k)](../aggregates/grouping.md) tells a rolled-up NULL
+from a NULL in the data. The input is read once, and every set is computed from that
+read. An empty set, the grand total, gives its row over an empty input, as an ungrouped
+γ does. The other sets give no rows then. A σ above the γ on a key that some set rolls
+up is not moved below it, because below it would keep that set's rows. Grouping sets
+push down as `GROUP BY GROUPING SETS (…)` to PostgreSQL, DuckDB, SQL Server and Db2.
+They push as `GROUP BY … WITH ROLLUP` to MySQL when they are a ROLLUP of the keys in
+the order listed. Anything else runs in the engine. The γ prints back as
+`GROUPING SETS (…)`.
 
 # Examples:
 Total salary cost per department:
@@ -103,6 +130,30 @@ are **gone**, because there is no single value for them within a group. If you
 need one, say which: `ARGMAX(amount, rep)` picks the rep from the group's biggest
 deal, and `COLLECT(rep)` keeps them all.
 
+**Subtotals.** `ROLLUP` adds a subtotal for each region and a grand total below the
+detail. [GROUPING](../aggregates/grouping.md) marks the rows it added:
+
+```relix
+query { τ level, region, rep (γ ROLLUP (region, rep), SUM(amount) → total,
+                              GROUPING(region, rep) → level (Sales)) };
+```
+
+```
+ region  rep   total  level
+ ──────  ────  ─────  ─────
+ east    Ada     120      0
+ east    Bo       80      0
+ west    Cy      200      0
+ west    Dee      50      0
+ east    NULL    200      1
+ west    NULL    250      1
+ NULL    NULL    450      3
+(7 rows)
+```
+
+The `level` is 1 where `rep` is rolled up and 3 where both keys are. A NULL with
+level 0 would be a NULL in the data.
+
 **Do not put braces around the grouping keys.** The keys are a plain
 comma-separated list. Braces are legal there, but they do not group: `{region}`
 [builds a struct](../literals/struct-construction.md), so the braced form groups
@@ -146,7 +197,7 @@ To keep the actual rows that achieve a maximum per group (not just one value),
 use TOP k … PER. To test a condition across a whole group, use ∀ (FORALL).
 
 # See Also:
-[sum](../aggregates/sum.md), [avg](../aggregates/avg.md), [count](../aggregates/count.md), [min](../aggregates/min.md), [max](../aggregates/max.md), [collect](../aggregates/collect.md), [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [filter](../aggregates/filter.md), [stddev](../aggregates/stddev.md), [percentile](../aggregates/percentile_cont.md), [top](../advanced/top.md), [forall](forall.md), [sort](sort.md)
+[sum](../aggregates/sum.md), [avg](../aggregates/avg.md), [count](../aggregates/count.md), [min](../aggregates/min.md), [max](../aggregates/max.md), [collect](../aggregates/collect.md), [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [filter](../aggregates/filter.md), [grouping](../aggregates/grouping.md), [stddev](../aggregates/stddev.md), [percentile](../aggregates/percentile_cont.md), [top](../advanced/top.md), [forall](forall.md), [sort](sort.md)
 
 # Notes:
 When the planner can prove the input is already sorted on the grouping keys it

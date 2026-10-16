@@ -194,6 +194,7 @@ final class NestUnnestPass {
     private static RelNode tryRoundTrip(UnnestNode u, String queryName, OptimizationContext ctx) {
         if (u.ordinalityColumn().isPresent()
                 || !(u.input() instanceof AggregationNode a)
+                || a.hasGroupingSets()
                 || a.aggregates().size() != 1) {
             return u;
         }

@@ -919,7 +919,8 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             case WindowFunction.AggregateWindow a -> {
                 if (a.operator() == AggregateOperator.COLLECT
                         || a.operator() == AggregateOperator.ARGMAX
-                        || a.operator() == AggregateOperator.ARGMIN) {
+                        || a.operator() == AggregateOperator.ARGMIN
+                        || a.operator() == AggregateOperator.GROUPING) {
                     error(node.location(), "Window: aggregate " + a.operator().name()
                             + " is not supported in a ROLLING window "
                             + "(use SUM, AVG, COUNT, MIN, or MAX)");
@@ -1982,6 +1983,17 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         }
 
         for (AggregateFunction agg : node.aggregates()) {
+            // GROUPING names grouping keys, and is about them rather than about the rows.
+            if (agg.operator() == AggregateOperator.GROUPING) {
+                for (Operand key : agg.groupingArguments()) {
+                    if (node.groupingIndex(key).isEmpty()) {
+                        error(node.location(), "GROUPING(" + key.prettyPrint() + "): "
+                                + key.prettyPrint() + " is not a grouping key of this γ;"
+                                + " GROUPING names the keys the rows are grouped by");
+                    }
+                }
+                continue;
+            }
             // The argument (and the ARGMAX/ARGMIN yield) are full expressions: validate
             // their attribute references and function calls against the input schema.
             var operandValidator = new PredicateValidator(

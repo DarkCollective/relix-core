@@ -16,6 +16,8 @@
 package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.ast.AggregateFunction;
+import com.darkcollective.relix.ast.AggregateOperator;
+import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.function.Accumulator;
@@ -25,6 +27,8 @@ import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.eval.OperandEvaluator;
+import com.darkcollective.relix.value.NullValue;
+import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.Type;
@@ -71,6 +75,9 @@ final class AggregateExecutor {
     Stream<Row> executeAggregate(PhysicalNode.Aggregate node, EvalCtx ctx) {
         if (node.streaming()) {
             return executeStreamingAggregate(node, ctx);
+        }
+        if (!node.groupingSets().isEmpty()) {
+            return executeGroupingSets(node, ctx);
         }
         Schema outputSchema = node.schema();
         Schema inputSchema = node.input().schema();
@@ -149,6 +156,77 @@ final class AggregateExecutor {
     }
 
     /**
+     * Aggregation by several grouping sets — {@code ROLLUP}, {@code CUBE},
+     * {@code GROUPING SETS}. The input is read once and each row's keys evaluated once;
+     * then every set groups those rows by its own keys, and its rows carry NULL for each
+     * key it leaves out. An empty set is a total over every row, and like an ungrouped
+     * aggregate gives its row over an empty input too. The rows come set by set, in the
+     * order the sets are listed.
+     */
+    private Stream<Row> executeGroupingSets(PhysicalNode.Aggregate node, EvalCtx ctx) {
+        Schema outputSchema = node.schema();
+        List<GroupingKey> groupKeys = node.groupingKeys();
+        OperandEvaluator eval = ctx.operandEval();
+        List<Type> keyTypes = ExecSupport.keyTypes(outputSchema, groupKeys.size());
+
+        List<Row> rows;
+        try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
+            rows = input.toList();
+        }
+        List<List<Value>> keyValues = new ArrayList<>(rows.size());
+        List<List<Value>> canonical = new ArrayList<>(rows.size());
+        for (Row row : rows) {
+            List<Value> values = groupKey(row, groupKeys, eval);
+            keyValues.add(values);
+            canonical.add(ExecSupport.canonicalKey(values, keyTypes));
+        }
+
+        List<Row> outputRows = new ArrayList<>();
+        for (List<Integer> set : node.groupingSets()) {
+            Map<List<Value>, List<Integer>> groups = new java.util.LinkedHashMap<>();
+            for (int r = 0; r < rows.size(); r++) {
+                List<Value> key = new ArrayList<>(set.size());
+                for (int index : set) {
+                    key.add(canonical.get(r).get(index));
+                }
+                groups.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
+            }
+            if (set.isEmpty() && groups.isEmpty()) {
+                groups.put(List.of(), List.of());   // the grand total over no rows
+            }
+            for (List<Integer> members : groups.values()) {
+                List<Row> groupRows = members.stream().map(rows::get).toList();
+                List<Value> output = new ArrayList<>(outputSchema.width());
+                for (int i = 0; i < groupKeys.size(); i++) {
+                    // As in aggregateRow, the key a row shows is its group's first row's.
+                    output.add(set.contains(i) ? keyValues.get(members.getFirst()).get(i) : NullValue.INSTANCE);
+                }
+                for (AggregateFunction agg : node.aggregates()) {
+                    output.add(agg.operator() == AggregateOperator.GROUPING
+                            ? groupingValue(agg, groupKeys, set)
+                            : computeAggregate(agg, groupRows, eval));
+                }
+                outputRows.add(ArrayRow.of(outputSchema, output));
+            }
+        }
+        return BagRelation.of(outputSchema, outputRows).stream();
+    }
+
+    /**
+     * The value of {@code GROUPING(k, …)} in a row of grouping set {@code set}: one bit
+     * per named key, the last the lowest, set where the row has rolled the key up.
+     */
+    private static Value groupingValue(AggregateFunction agg, List<GroupingKey> groupKeys, List<Integer> set) {
+        long bits = 0;
+        for (Operand key : agg.groupingArguments()) {
+            // Analysis has checked that every argument names a key.
+            int index = AggregationNode.groupingIndex(groupKeys, key).orElseThrow();
+            bits = bits << 1 | (set.contains(index) ? 0 : 1);
+        }
+        return new NumberValue(java.math.BigDecimal.valueOf(bits));
+    }
+
+    /**
      * The grouping-key tuple of {@code row}: each grouping key's expression
      * evaluated against the row (a bare column reduces to {@code row.get(name)},
      * a derived key such as {@code YEAR(ts)} to the computed value).
@@ -173,9 +251,17 @@ final class AggregateExecutor {
         // the scalar aggregate over no rows, which has no key to emit.
         output.addAll(groupRows.isEmpty() ? List.of() : groupKey(groupRows.getFirst(), groupKeys, eval));
         for (AggregateFunction agg : aggregates) {
-            output.add(computeAggregate(agg, groupRows, eval));
+            // An ordinary grouping rolls no key up, so its GROUPING is 0.
+            output.add(agg.operator() == AggregateOperator.GROUPING
+                    ? groupingValue(agg, groupKeys, allKeys(groupKeys))
+                    : computeAggregate(agg, groupRows, eval));
         }
         return ArrayRow.of(outputSchema, output);
+    }
+
+    /** The indexes of every key: the one grouping set of an ordinary grouping. */
+    private static List<Integer> allKeys(List<GroupingKey> groupKeys) {
+        return java.util.stream.IntStream.range(0, groupKeys.size()).boxed().toList();
     }
 
     /**

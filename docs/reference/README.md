@@ -154,6 +154,7 @@ Collapse many rows into summary rows with `γ` (GROUP) and aggregate functions.
 | [PERCENTILE_DISC](aggregates/percentile_disc.md) | The first value a fraction of the group reaches |
 | [STRING_AGG](aggregates/string_agg.md) | Join a group's values into one string (GROUP_CONCAT, LISTAGG) |
 | [FILTER](aggregates/filter.md) | `AGG(x) FILTER (WHERE c)` — aggregate only the rows where a condition holds |
+| [GROUPING](aggregates/grouping.md) | Which keys a ROLLUP, CUBE or GROUPING SETS row rolled up (GROUPING_ID) |
 | [Window / Rolling](operators/rolling.md) | `ROLLING … OVER … ROWS`, `ROWS`/`RANGE BETWEEN`, `PARTITION` — sliding, cumulative, framed or whole-partition aggregate added as a column (no row collapse) |
 | [Window / Ranking](operators/window-ranking.md) | `WINDOW ROW_NUMBER/RANK/DENSE_RANK/PERCENT_RANK/CUME_DIST/NTILE` — per-partition rank column added to every row |
 | [Window / Offset](operators/window-offset.md) | `WINDOW LAG/LEAD/FIRST_VALUE/LAST_VALUE/NTH_VALUE` — adjacent / boundary row value added as a column (no row collapse) |

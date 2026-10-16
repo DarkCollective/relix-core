@@ -141,6 +141,7 @@ public final class BoundednessChecker {
         // Only a grouping entirely over plain columns can be matched against the
         // input's delivered ordering; a derived key (e.g. YEAR(ts)) blocks.
         return node instanceof AggregationNode agg
+                && !agg.hasGroupingSets()
                 && GroupingKey.plainColumns(agg.groupingKeys())
                         .map(cols -> OrderDeriver.derive(agg.input()).groupsBy(cols))
                         .orElse(false);

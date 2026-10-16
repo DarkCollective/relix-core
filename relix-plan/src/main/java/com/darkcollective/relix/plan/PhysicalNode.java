@@ -166,7 +166,8 @@ public sealed interface PhysicalNode {
             }
             case Aggregate n -> {
                 PhysicalNode in = f.apply(n.input());
-                yield in == n.input() ? n : new Aggregate(n.schema(), n.groupingKeys(), n.aggregates(), n.streaming(), in);
+                yield in == n.input() ? n
+                        : new Aggregate(n.schema(), n.groupingKeys(), n.groupingSets(), n.aggregates(), n.streaming(), in);
             }
             case Universal n -> {
                 PhysicalNode in = f.apply(n.input());
@@ -791,10 +792,25 @@ public sealed interface PhysicalNode {
      * aggregates in a single linear pass
      * holding only one group at a time instead of building a full hash index;
      * otherwise it falls back to the hash-grouped aggregate.
+     *
+     * <p>{@code groupingSets} are the logical node's
+     * {@linkplain com.darkcollective.relix.ast.AggregationNode#groupingSets() grouping sets}:
+     * empty for the ordinary grouping, and otherwise computed together from one read of
+     * the input, never streaming.
      */
-    record Aggregate(Schema schema, List<GroupingKey> groupingKeys,
+    record Aggregate(Schema schema, List<GroupingKey> groupingKeys, List<List<Integer>> groupingSets,
                      List<AggregateFunction> aggregates, boolean streaming,
                      PhysicalNode input) implements PhysicalNode {
+        public Aggregate {
+            groupingSets = List.copyOf(groupingSets);
+        }
+
+        /** An ordinary grouping, by every key at once. */
+        public Aggregate(Schema schema, List<GroupingKey> groupingKeys,
+                         List<AggregateFunction> aggregates, boolean streaming, PhysicalNode input) {
+            this(schema, groupingKeys, List.of(), aggregates, streaming, input);
+        }
+
         @Override public List<PhysicalNode> children() { return List.of(input); }
 
         /**

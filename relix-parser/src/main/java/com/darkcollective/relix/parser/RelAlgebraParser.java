@@ -849,11 +849,11 @@ public final class RelAlgebraParser {
         expect(TokenType.AGGREGATION, "Expected 'γ'");
         consumeOptionalBy();
 
-        List<GroupingKey> groupingKeys = parseGroupingKeys();
+        Grouping grouping = parseGrouping();
         List<AggregateFunction> aggregates = parseAggregateFunctionList();
         RelNode input = parseParenthesizedRelation("Expected '(' after aggregation expression");
 
-        return new AggregationNode(groupingKeys, aggregates, input, loc(opTok));
+        return new AggregationNode(grouping.keys(), grouping.sets(), aggregates, input, loc(opTok));
     }
 
     private SortNode parseSort() {
@@ -2145,25 +2145,40 @@ public final class RelAlgebraParser {
         return new LimitNode(offset, count, input, loc(opTok));
     }
 
+    /** The keys of a γ, and the grouping sets over them: empty for the ordinary grouping. */
+    private record Grouping(List<GroupingKey> keys, List<List<Integer>> sets) { }
+
+    /** A CUBE of more keys than this is refused: it would be 2^n grouping sets. */
+    private static final int MAX_CUBE_KEYS = 12;
+
     /**
-     * Parses the grouping-key list of a γ: zero or more comma-separated
-     * {@link GroupingKey}s (each a full {@link Operand} expression with an
-     * optional {@code → alias}) preceding the aggregate-function list. Parsing
-     * stops at the first aggregate-function keyword (SUM, COUNT, …) or the input
-     * relation's {@code (}, so a bare column, a function call
-     * ({@code YEAR(ts) → yr}), or an arithmetic expression may all be grouping
-     * keys — mirroring what the projection/selection positions already accept.
+     * Parses the grouping-key list of a γ: zero or more comma-separated elements
+     * preceding the aggregate-function list. An element is a {@link GroupingKey} (a full
+     * {@link Operand} expression with an optional {@code → alias}), or SQL's
+     * {@code ROLLUP (k, …)}, {@code CUBE (k, …)} or {@code GROUPING SETS ((k, …), …, ())}.
+     * Parsing stops at the first aggregate-function keyword (SUM, COUNT, …) or the input
+     * relation's {@code (}, so a bare column, a function call ({@code YEAR(ts) → yr}), or
+     * an arithmetic expression may all be grouping keys — mirroring what the
+     * projection/selection positions already accept.
+     *
+     * <p>The grouping sets of several elements are SQL's: every combination of one set
+     * from each, so {@code region, ROLLUP (product)} is {@code (region, product)} and
+     * {@code (region)}. A key written twice is one key. The keys are numbered in the
+     * order the sets name them first, which is the order they are written in unless a
+     * plain key follows a {@code GROUPING SETS} whose sets do not all name the same keys.
      */
-    private List<GroupingKey> parseGroupingKeys() {
+    private Grouping parseGrouping() {
         List<GroupingKey> keys = new ArrayList<>();
+        List<List<List<Integer>>> elements = new ArrayList<>();
+        boolean sets = false;
 
         while (!startsAggregateFunction() && current.type() != TokenType.LPAREN) {
-            Operand expression = parseOperand();
-            Optional<String> alias = Optional.empty();
-            if (match(TokenType.ARROW)) {
-                alias = Optional.of(expectName("Expected alias name after '→'").lexeme());
+            if (startsGroupingSetsElement()) {
+                sets = true;
+                elements.add(parseGroupingSetsElement(keys));
+            } else {
+                elements.add(List.of(List.of(addGroupingKey(keys, parseGroupingKey()))));
             }
-            keys.add(new GroupingKey(expression, alias));
 
             if (current.type() == TokenType.COMMA) {
                 advance();
@@ -2172,7 +2187,142 @@ public final class RelAlgebraParser {
             }
         }
 
-        return keys;
+        if (!sets) {
+            return new Grouping(keys, List.of());
+        }
+        List<List<Integer>> combined = List.of(List.of());
+        for (List<List<Integer>> element : elements) {
+            List<List<Integer>> next = new ArrayList<>(combined.size() * element.size());
+            for (List<Integer> prefix : combined) {
+                for (List<Integer> set : element) {
+                    java.util.TreeSet<Integer> union = new java.util.TreeSet<>(prefix);
+                    union.addAll(set);
+                    next.add(List.copyOf(union));
+                }
+            }
+            combined = next;
+        }
+        // Number the keys in the order the sets name them first.
+        int[] renumbered = new int[keys.size()];
+        java.util.Arrays.fill(renumbered, -1);
+        List<GroupingKey> ordered = new ArrayList<>(keys.size());
+        for (List<Integer> set : combined) {
+            for (int index : set) {
+                if (renumbered[index] < 0) {
+                    renumbered[index] = ordered.size();
+                    ordered.add(keys.get(index));
+                }
+            }
+        }
+        List<List<Integer>> renumberedSets = combined.stream()
+                .map(set -> set.stream().map(index -> renumbered[index]).sorted().toList())
+                .toList();
+        return new Grouping(ordered, renumberedSets);
+    }
+
+    /** Whether {@code ROLLUP (}, {@code CUBE (} or {@code GROUPING SETS} starts here. */
+    private boolean startsGroupingSetsElement() {
+        return (isWord(current, "ROLLUP") || isWord(current, "CUBE")) && peek(1).type() == TokenType.LPAREN
+                || isWord(current, "GROUPING") && isWord(peek(1), "SETS");
+    }
+
+    /** One grouping key: an expression and an optional {@code → alias}. */
+    private GroupingKey parseGroupingKey() {
+        Operand expression = parseOperand();
+        Optional<String> alias = Optional.empty();
+        if (match(TokenType.ARROW)) {
+            alias = Optional.of(expectName("Expected alias name after '→'").lexeme());
+        }
+        return new GroupingKey(expression, alias);
+    }
+
+    /**
+     * Adds {@code key} to {@code keys}, or finds the key already there with the same
+     * expression, and returns its index. An alias written on either is the key's.
+     */
+    private int addGroupingKey(List<GroupingKey> keys, GroupingKey key) {
+        for (int i = 0; i < keys.size(); i++) {
+            GroupingKey existing = keys.get(i);
+            if (com.darkcollective.relix.ast.internal.AstEquivalence.equivalent(
+                    existing.expression(), key.expression())) {
+                if (key.alias().isPresent() && existing.alias().isPresent()
+                        && !key.alias().get().equals(existing.alias().get())) {
+                    throw ParseException.at("Grouping key " + key.expression().prettyPrint()
+                            + " is named both '" + existing.alias().get() + "' and '"
+                            + key.alias().get() + "': a key has one column", lexer.input(), current);
+                }
+                if (existing.alias().isEmpty() && key.alias().isPresent()) {
+                    keys.set(i, key);
+                }
+                return i;
+            }
+        }
+        keys.add(key);
+        return keys.size() - 1;
+    }
+
+    /**
+     * Parses {@code ROLLUP (k, …)}, {@code CUBE (k, …)} or
+     * {@code GROUPING SETS (set, …)} into its grouping sets, adding its keys to
+     * {@code keys}. A set of {@code GROUPING SETS} is {@code (k, …)}, {@code ()}, or one
+     * key without parentheses. {@code ROLLUP} is each prefix of its keys, longest first;
+     * {@code CUBE} every subset, in the order PostgreSQL lists them.
+     */
+    private List<List<Integer>> parseGroupingSetsElement(List<GroupingKey> keys) {
+        Token start = current;
+        if (isWord(current, "GROUPING")) {
+            advance(); // GROUPING
+            advance(); // SETS
+            expect(TokenType.LPAREN, "Expected '(' after GROUPING SETS");
+            List<List<Integer>> sets = new ArrayList<>();
+            do {
+                if (match(TokenType.LPAREN)) {
+                    List<Integer> set = new ArrayList<>();
+                    if (current.type() != TokenType.RPAREN) {
+                        do {
+                            set.add(addGroupingKey(keys, parseGroupingKey()));
+                        } while (match(TokenType.COMMA));
+                    }
+                    expect(TokenType.RPAREN, "Expected ')' after a grouping set");
+                    sets.add(set);
+                } else {
+                    sets.add(List.of(addGroupingKey(keys, parseGroupingKey())));
+                }
+            } while (match(TokenType.COMMA));
+            expect(TokenType.RPAREN, "Expected ')' after the grouping sets");
+            return sets;
+        }
+        boolean cube = isWord(current, "CUBE");
+        String name = cube ? "CUBE" : "ROLLUP";
+        advance();
+        expect(TokenType.LPAREN, "Expected '(' after " + name);
+        List<Integer> listed = new ArrayList<>();
+        do {
+            listed.add(addGroupingKey(keys, parseGroupingKey()));
+        } while (match(TokenType.COMMA));
+        expect(TokenType.RPAREN, "Expected ')' after the " + name + " keys");
+        List<List<Integer>> sets = new ArrayList<>();
+        if (cube) {
+            if (listed.size() > MAX_CUBE_KEYS) {
+                throw error(start, "CUBE of " + listed.size() + " keys would be " + (1L << listed.size())
+                        + " grouping sets; it takes at most " + MAX_CUBE_KEYS + " keys");
+            }
+            int n = listed.size();
+            for (int mask = (1 << n) - 1; mask >= 0; mask--) {
+                List<Integer> set = new ArrayList<>();
+                for (int i = 0; i < n; i++) {
+                    if ((mask & (1 << (n - 1 - i))) != 0) {
+                        set.add(listed.get(i));
+                    }
+                }
+                sets.add(set);
+            }
+        } else {
+            for (int size = listed.size(); size >= 0; size--) {
+                sets.add(List.copyOf(listed.subList(0, size)));
+            }
+        }
+        return sets;
     }
 
     /**
@@ -2193,7 +2343,9 @@ public final class RelAlgebraParser {
             java.util.Map.entry("STRING_AGG", AggregateOperator.STRING_AGG),
             java.util.Map.entry("GROUP_CONCAT", AggregateOperator.STRING_AGG),
             java.util.Map.entry("LISTAGG", AggregateOperator.STRING_AGG),
-            java.util.Map.entry("ARRAY_AGG", AggregateOperator.COLLECT));
+            java.util.Map.entry("ARRAY_AGG", AggregateOperator.COLLECT),
+            java.util.Map.entry("GROUPING", AggregateOperator.GROUPING),
+            java.util.Map.entry("GROUPING_ID", AggregateOperator.GROUPING));
 
     /** The named aggregates that roll over a window frame: the variance family. */
     private static final java.util.Set<AggregateOperator> ROLLING_STATISTICS = java.util.EnumSet.of(
@@ -2259,6 +2411,9 @@ public final class RelAlgebraParser {
 
         if (operator == AggregateOperator.PERCENTILE_CONT || operator == AggregateOperator.PERCENTILE_DISC) {
             return parsePercentile(operator, nameTok);
+        }
+        if (operator == AggregateOperator.GROUPING) {
+            return parseGroupingIndicator(nameTok);
         }
 
         expect(TokenType.LPAREN, "Expected '(' after aggregate function name");
@@ -2404,6 +2559,26 @@ public final class RelAlgebraParser {
         }
 
         return new AggregateFunction(operator, argument, yieldExpr, alias, distinct, orderBy);
+    }
+
+    /**
+     * Parses SQL's {@code GROUPING(k, …)}, or SQL Server's and Oracle's
+     * {@code GROUPING_ID(k, …)}, which is the same: the keys it names, held as an
+     * {@link ArrayConstruction}. Whether each is a grouping key is checked when the
+     * query is analysed.
+     */
+    private AggregateFunction parseGroupingIndicator(Token nameTok) {
+        expect(TokenType.LPAREN, "Expected '(' after " + nameTok.lexeme());
+        List<Operand> keys = new ArrayList<>();
+        do {
+            keys.add(parseOperand());
+        } while (match(TokenType.COMMA));
+        expect(TokenType.RPAREN, "Expected ')' after the " + nameTok.lexeme() + " keys");
+        if (isWord(current, "FILTER")) {
+            throw error(current, "GROUPING reads no rows, so it takes no FILTER");
+        }
+        return finishAggregate(AggregateOperator.GROUPING, new ArrayConstruction(keys, loc(nameTok)),
+                Optional.empty(), false, List.of());
     }
 
     /**

@@ -224,8 +224,7 @@ public final class ColumnPruningPass {
                 RelNode newInput = prune(a.input(), Optional.of(aggregationNeed(a)),
                         queryName, schemas, ctx);
                 yield (newInput == a.input()) ? a
-                        : new AggregationNode(a.groupingKeys(), a.aggregates(), newInput,
-                                a.location());
+                        : a.withInput(newInput);
             }
 
             // ── ×: no condition, so simply split the need by side ─────────────

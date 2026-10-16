@@ -745,4 +745,84 @@ final class AggregationParserTest extends ParserTestSupport {
         assertParseError("γ LISTAGG(x) WITHIN GROUP (y) (R)").hasMessageContaining("ORDER BY");
         assertParseError("γ SUM(x ORDER BY y) (R)");
     }
+
+    // ==================== grouping sets (#125) ====================
+
+    private static List<List<Integer>> sets(String text) {
+        return ((AggregationNode) parse(text)).groupingSets();
+    }
+
+    @Test
+    public void rollupIsEveryPrefixLongestFirst() {
+        assertParsesTo("γ ROLLUP (region, product), SUM(x) → t (R)",
+                groupingSets(GroupingKey.columns(List.of("region", "product")),
+                        List.of(List.of(0, 1), List.of(0), List.of()),
+                        List.of(agg(AggregateOperator.SUM, "x", "t")), rel("R")));
+    }
+
+    @Test
+    public void cubeIsEverySubsetInPostgresOrder() {
+        org.assertj.core.api.Assertions.assertThat(sets("γ cube (a, b), COUNT(*) (R)"))
+                .containsExactly(List.of(0, 1), List.of(0), List.of(1), List.of());
+    }
+
+    @Test
+    public void groupingSetsAsListedWithBareAndEmptySets() {
+        org.assertj.core.api.Assertions.assertThat(sets("γ GROUPING SETS ((a, b), a, (), (b)), COUNT(*) (R)"))
+                .containsExactly(List.of(0, 1), List.of(0), List.of(), List.of(1));
+    }
+
+    @Test
+    public void elementsCombineAndRepeatedKeysAreOneKey() {
+        AggregationNode node = (AggregationNode) parse("γ a, ROLLUP (b, a → k), COUNT(*) (R)");
+        org.assertj.core.api.Assertions.assertThat(node.groupingKeys()).extracting(GroupingKey::outputName)
+                .containsExactly("k", "b");
+        // (a, b, a) and (a, b) are the same set, and PostgreSQL keeps both.
+        org.assertj.core.api.Assertions.assertThat(node.groupingSets())
+                .containsExactly(List.of(0, 1), List.of(0, 1), List.of(0));
+        // A plain key after sets that do not all name the same keys is numbered where a set names it.
+        AggregationNode later = (AggregationNode) parse("γ GROUPING SETS ((a), (b)), c, COUNT(*) (R)");
+        org.assertj.core.api.Assertions.assertThat(later.groupingKeys()).extracting(GroupingKey::outputName)
+                .containsExactly("a", "c", "b");
+        // The same alias written twice is one name.
+        org.assertj.core.api.Assertions.assertThat(((AggregationNode) parse("γ a → k, ROLLUP (a → k), COUNT(*) (R)"))
+                .groupingKeys()).extracting(GroupingKey::outputName).containsExactly("k");
+        // One set naming every key is the ordinary grouping.
+        assertParsesTo("γ GROUPING SETS ((a, b)), COUNT(*) (R)", parse("γ a, b, COUNT(*) (R)"));
+        assertParsesTo("γ GROUPING SETS (()), COUNT(*) (R)", parse("γ COUNT(*) (R)"));
+    }
+
+    @Test
+    public void groupingSetsPrintAsTheyParse() {
+        for (String text : List.of("γ ROLLUP (YEAR(d) → yr, region), SUM(x) → t, GROUPING(yr, region) → g (R)",
+                "γ GROUPING SETS ((a), (b)), c, COUNT(*) (R)", "γ CUBE (a, b, c), GROUPING_ID(c, a) (R)")) {
+            RelNode node = parse(text);
+            assertParsesTo(node.prettyPrint(), node);
+        }
+        org.assertj.core.api.Assertions.assertThat(parse("γ ROLLUP (a → x, b), GROUPING(a) → g (R)").prettyPrint())
+                .isEqualTo("γ GROUPING SETS ((a → x, b), (a), ()), GROUPING(a) → g (R)");
+    }
+
+    @Test
+    public void groupingNamesItsKeys() {
+        assertParsesTo("γ ROLLUP (a, b), GROUPING_ID(a, b) → g (R)",
+                parse("γ ROLLUP (a, b), GROUPING(a, b) → g (R)"));
+        AggregateFunction grouping = ((AggregationNode) parse("γ ROLLUP (a), GROUPING(a) (R)")).aggregates().get(0);
+        org.assertj.core.api.Assertions.assertThat(grouping.groupingArguments()).extracting(Operand::prettyPrint)
+                .containsExactly("a");
+        org.assertj.core.api.Assertions.assertThat(grouping.outputName()).isEqualTo("grouping_a");
+        // Not reserved: columns may be called rollup, cube and grouping.
+        org.assertj.core.api.Assertions.assertThat(((AggregationNode) parse("γ rollup, cube, grouping, COUNT(*) (R)"))
+                .groupingKeys()).hasSize(3);
+    }
+
+    @Test
+    public void groupingSetsErrors() {
+        assertParseError("γ ROLLUP (a → x, a → y), COUNT(*) (R)").hasMessageContaining("named both 'x' and 'y'");
+        assertParseError("γ CUBE (a, b, c, d, e, f, g, h, i, j, k, l, m), COUNT(*) (R)")
+                .hasMessageContaining("at most 12 keys");
+        assertParseError("γ ROLLUP (a), GROUPING(a) FILTER (WHERE a > 1) (R)").hasMessageContaining("no FILTER");
+        assertParseError("γ GROUPING SETS ((a, b), COUNT(*) (R)");
+        assertParseError("γ ROLLUP (), COUNT(*) (R)");
+    }
 }

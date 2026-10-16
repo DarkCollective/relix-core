@@ -207,7 +207,8 @@ public final class PhysicalPlanPrinter {
             case PhysicalNode.Limit l    -> "Limit " + l.count()
                     + l.offset().map(o -> " OFFSET " + o).orElse("");
             case PhysicalNode.Sort s     -> "Sort";
-            case PhysicalNode.Aggregate a -> "Aggregate" + (a.streaming() ? " streaming" : "");
+            case PhysicalNode.Aggregate a -> "Aggregate" + (a.streaming() ? " streaming" : "")
+                    + (a.groupingSets().isEmpty() ? "" : " " + a.groupingSets().size() + " grouping sets");
             case PhysicalNode.Universal u -> "Universal"
                     + (u.groupingAttributes().isEmpty()
                             ? "" : " " + String.join(", ", u.groupingAttributes()));

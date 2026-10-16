@@ -437,7 +437,17 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             groupBy.add(col.get());
             outputs.put(outputKey(key.outputName()), col.get());
         }
+        Optional<List<String>> grouped = groupBy(node, groupBy, p.dialect);
+        if (grouped.isEmpty()) {
+            return Optional.empty();
+        }
         for (AggregateFunction aggregate : node.aggregates()) {
+            if (aggregate.operator() == AggregateOperator.GROUPING) {
+                String bits = groupingSql(node, aggregate, groupBy);
+                selectList.add(bits);
+                outputs.put(outputKey(aggregate.outputName()), bits);
+                continue;
+            }
             // MIN and MAX order their argument, so they render it in comparison
             // position exactly as an ORDER BY key does. COUNT, SUM and AVG reduce
             // without asking which of two values is larger, and are left alone — which
@@ -462,7 +472,7 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             outputs.put(outputKey(aggregate.outputName()), expr.get());
         }
         p.selectList = selectList;
-        p.groupBy = groupBy;
+        p.groupBy = grouped.get();
         p.renderer = aggregateOutputRenderer(outputs);
         // And the comparison renderer with it — above a γ the two are the same, because
         // an output already *is* the expression that produced it, and a string grouping
@@ -479,6 +489,59 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         p.bareScan = false;
         p.schema = schemaOf(node);
         return Optional.of(p);
+    }
+
+    /**
+     * The {@code GROUP BY} terms for {@code node}'s keys, rendered as {@code keys}: the
+     * keys themselves for an ordinary grouping, and for grouping sets
+     * {@code GROUPING SETS ((a, b), (a), ())} where the backend has it — PostgreSQL,
+     * DuckDB, SQL Server and Db2. MySQL has only {@code WITH ROLLUP}, so it takes the sets
+     * that are a rollup of the keys in order and declines the rest.
+     */
+    private static Optional<List<String>> groupBy(AggregationNode node, List<String> keys, Dialect dialect) {
+        if (!node.hasGroupingSets()) {
+            return Optional.of(keys);
+        }
+        List<List<Integer>> sets = node.groupingSets();
+        if (dialect == Dialect.MYSQL) {
+            boolean rollup = sets.size() == keys.size() + 1;
+            for (int i = 0; rollup && i < sets.size(); i++) {
+                rollup = sets.get(i).equals(java.util.stream.IntStream.range(0, keys.size() - i).boxed().toList());
+            }
+            if (!rollup) {
+                return Optional.empty();
+            }
+            List<String> terms = new ArrayList<>(keys);
+            terms.set(terms.size() - 1, terms.getLast() + " WITH ROLLUP");
+            return Optional.of(terms);
+        }
+        if (!(dialect == Dialect.POSTGRES || dialect == Dialect.DUCKDB || dialect == Dialect.SQLSERVER
+                || dialect == Dialect.DB2)) {
+            return Optional.empty();
+        }
+        return Optional.of(List.of("GROUPING SETS (" + sets.stream()
+                .map(set -> "(" + set.stream().map(keys::get).collect(java.util.stream.Collectors.joining(", ")) + ")")
+                .collect(java.util.stream.Collectors.joining(", ")) + ")"));
+    }
+
+    /**
+     * {@code GROUPING(k, …)} as SQL every dialect with grouping sets reads alike: one
+     * {@code GROUPING(k)} per key, weighted by its bit — SQL Server's {@code GROUPING}
+     * takes one key — or {@code 0} under an ordinary grouping, which rolls nothing up.
+     * The arguments were checked to be keys, and only plain-column keys push.
+     */
+    private static String groupingSql(AggregationNode node, AggregateFunction grouping, List<String> keys) {
+        if (!node.hasGroupingSets()) {
+            return "0";
+        }
+        List<Operand> named = grouping.groupingArguments();
+        List<String> terms = new ArrayList<>(named.size());
+        for (int i = 0; i < named.size(); i++) {
+            String term = "GROUPING(" + keys.get(node.groupingIndex(named.get(i)).orElseThrow()) + ")";
+            int shift = named.size() - 1 - i;
+            terms.add(shift == 0 ? term : term + " * " + (1L << shift));
+        }
+        return terms.size() == 1 ? terms.getFirst() : "(" + String.join(" + ", terms) + ")";
     }
 
     /**
