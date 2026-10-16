@@ -66,7 +66,8 @@ is the exact inverse, expanding that array back into rows.
 # Limitations:
 Produces nested (array-valued) columns, which do not push down to SQL and may
 need UNNEST (μ) to flatten again downstream. Order within the collected array is
-not guaranteed unless the input is ordered. Unlike the other aggregates, COLLECT
+not guaranteed unless the aggregate names one: `COLLECT(rep ORDER BY amount DESC)`,
+or SQL's `ARRAY_AGG(rep ORDER BY amount DESC)`, which is the same aggregate. Unlike the other aggregates, COLLECT
 **keeps NULLs** rather than skipping them (matching `array_agg` / `$push`), so the
 collected array always has one element per row in the group.
 

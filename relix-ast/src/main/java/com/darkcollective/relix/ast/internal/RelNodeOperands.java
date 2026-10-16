@@ -201,6 +201,7 @@ public final class RelNodeOperands {
                 for (AggregateFunction aggregate : n.aggregates()) {
                     onOperand.accept(aggregate.argument());
                     aggregate.yieldExpr().ifPresent(onOperand);
+                    aggregate.orderBy().forEach(s -> onOperand.accept(s.expression()));
                 }
             }
             case SortNode n -> n.sortSpecs().forEach(s -> onOperand.accept(s.expression()));
@@ -455,8 +456,9 @@ public final class RelNodeOperands {
                 List<AggregateFunction> aggs = mapList(n.aggregates(), a -> {
                     Operand arg   = onOperand.apply(a.argument());
                     Optional<Operand> yieldExpr = mapOptional(a.yieldExpr(), onOperand);
-                    return arg == a.argument() && yieldExpr == a.yieldExpr() ? a
-                            : new AggregateFunction(a.operator(), arg, yieldExpr, a.alias(), a.distinct());
+                    List<SortSpecification> orderBy = mapSortSpecs(a.orderBy(), onOperand);
+                    return arg == a.argument() && yieldExpr == a.yieldExpr() && orderBy == a.orderBy() ? a
+                            : new AggregateFunction(a.operator(), arg, yieldExpr, a.alias(), a.distinct(), orderBy);
                 });
                 yield keys == n.groupingKeys() && aggs == n.aggregates() ? n
                         : new AggregationNode(keys, aggs, n.input(), n.location());

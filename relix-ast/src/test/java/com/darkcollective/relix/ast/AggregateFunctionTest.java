@@ -121,4 +121,17 @@ final class AggregateFunctionTest {
         assertThatThrownBy(() -> AggregateFunction.of(AggregateOperator.SUM, null))
                 .isInstanceOf(NullPointerException.class);
     }
+
+    @Test
+    void distinctRefusedOnlyForTheArgPair() {
+        assertThatThrownBy(() -> new AggregateFunction(AggregateOperator.ARGMIN, attr("a"),
+                java.util.Optional.of(attr("y")), java.util.Optional.empty(), true))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AggregateFunction(AggregateOperator.ARGMAX, attr("a"),
+                java.util.Optional.of(attr("y")), java.util.Optional.empty(), true))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(distinctAgg(AggregateOperator.STRING_AGG, attr("a"), "s").distinct()).isTrue();
+        assertThat(orderedAgg(AggregateOperator.STRING_AGG, attr("a"), str(","), java.util.List.of(desc("b")), "s")
+                .orderBy()).containsExactly(desc("b"));
+    }
 }

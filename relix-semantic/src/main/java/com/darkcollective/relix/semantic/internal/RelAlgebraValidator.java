@@ -1989,6 +1989,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     "Aggregation γ " + agg.operator().name(), parameters);
             operandValidator.validateExpression(agg.argument());
             agg.yieldExpr().ifPresent(operandValidator::validateExpression);
+            agg.orderBy().forEach(s -> operandValidator.validateExpression(s.expression()));
         }
         return null;
     }

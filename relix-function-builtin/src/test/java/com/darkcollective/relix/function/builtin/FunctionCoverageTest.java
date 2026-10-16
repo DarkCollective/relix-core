@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.function.builtin;
 
+import com.darkcollective.relix.value.ArrayValue;
 import com.darkcollective.relix.value.DurationValue;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.TimestampValue;
@@ -195,6 +196,9 @@ final class FunctionCoverageTest {
             num("DATEDIFF", "0", s("day"), TS, TS),
             // ── Nested ──────────────────────────────────────────────────────────
             exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
+            exact("ARRAY_TO_STRING", "a-1-?", new ArrayValue(List.of(s("a"), n("1"), NullValue.INSTANCE)),
+                    s("-"), s("?")),
+            exact("ARRAY_TO_STRING", "NULL", NullValue.INSTANCE, s("-")),
             // ── Ordering ──────────────────────────────────────────────────────────
             num("LEAST", "2", n("5"), n("2"), n("8")),
             num("GREATEST", "8", n("5"), n("2"), n("8")));

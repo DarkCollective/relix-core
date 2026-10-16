@@ -37,6 +37,7 @@ import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.SortSpecification;
+import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.TopKNode;
@@ -446,7 +447,9 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             ColumnRenderer cols = ColumnRenderer.typed(ColumnRenderer.withComparing(aggregate.distinct() ? p.comparing
                     : ORDERING_AGGREGATES.contains(aggregate.operator()) ? p.ordering : p.renderer,
                     p.comparing, p.ordering), p.schema);
-            Optional<String> expr = aggregate.distinct()
+            Optional<String> expr = aggregate.operator() == AggregateOperator.STRING_AGG
+                    ? stringAggSql(aggregate, cols, p)
+                    : aggregate.distinct()
                     ? distinctAggregateSql(aggregate.operator(), aggregate.argument(), cols, p.dialect)
                     : aggregateSql(aggregate.operator(), aggregate.argument(), cols, p.dialect);
             if (expr.isEmpty()) {
@@ -740,6 +743,42 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         return functions.aggregate(operator.name())
                 .flatMap(reduction -> reduction.pushdown()
                         .render(dialect.pushdownTarget(), List.of(rendered.get())));
+    }
+
+    /**
+     * {@code STRING_AGG}, where a backend joins exactly as the engine does: PostgreSQL's
+     * and DuckDB's {@code STRING_AGG(x, sep ORDER BY …)} and SQL Server's
+     * {@code STRING_AGG(x, sep) WITHIN GROUP (ORDER BY …)}. Only text is joined there —
+     * a backend writes a number or a date its own way — under a literal separator, and
+     * never DISTINCT, which SQL Server lacks and PostgreSQL allows only when it orders by
+     * the value itself. MySQL's {@code GROUP_CONCAT} is declined: it silently cuts its
+     * result at {@code group_concat_max_len}.
+     */
+    private Optional<String> stringAggSql(AggregateFunction aggregate, ColumnRenderer cols, Pushed p) {
+        boolean ordersWithin = p.dialect == Dialect.SQLSERVER;
+        if (!(p.dialect == Dialect.POSTGRES || p.dialect == Dialect.DUCKDB || ordersWithin)
+                || aggregate.distinct()
+                || !(aggregate.yieldExpr().orElse(null) instanceof StringOperand)
+                || SqlExpressions.text(aggregate.argument(), cols, functions) != SqlExpressions.Text.STRING) {
+            return Optional.empty();
+        }
+        List<String> order = new ArrayList<>(aggregate.orderBy().size());
+        for (SortSpecification spec : aggregate.orderBy()) {
+            Optional<String> key = spec.columnName().flatMap(p.ordering::render);
+            if (key.isEmpty()) {
+                return Optional.empty();
+            }
+            order.addAll(p.dialect.orderByTerms(key.get(), spec.direction() == SortDirection.DESC,
+                    spec.nulls() == NullPlacement.NULLS_FIRST));
+        }
+        String orderBy = order.isEmpty() ? "" : "ORDER BY " + String.join(", ", order);
+        Optional<String> separator = SqlExpressions.operand(aggregate.yieldExpr().get(), cols, p.dialect,
+                functions);
+        return SqlExpressions.operand(aggregate.argument(), cols, p.dialect, functions)
+                .flatMap(value -> separator.map(sep -> "STRING_AGG(" + value + ", " + sep
+                        + (orderBy.isEmpty() ? ")"
+                        : ordersWithin ? ") WITHIN GROUP (" + orderBy + ")"
+                        : " " + orderBy + ")")));
     }
 
     /**

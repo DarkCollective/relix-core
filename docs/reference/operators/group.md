@@ -37,7 +37,8 @@ not just column names; each grouping key takes an optional `→ alias` (else the
 column name for a bare column, or an expression-derived name). Supported
 aggregates: SUM, AVG, COUNT, MIN, MAX, COLLECT (NEST → array), ARGMAX, ARGMIN, and
 the statistical STDDEV, STDDEV_SAMP, STDDEV_POP, VARIANCE, VAR_SAMP, VAR_POP, MEDIAN,
-PERCENTILE_CONT and PERCENTILE_DISC.
+PERCENTILE_CONT and PERCENTILE_DISC, and STRING_AGG (with its GROUP_CONCAT and
+LISTAGG spellings), which with COLLECT takes an `ORDER BY` inside its parentheses.
 All but ARGMAX and ARGMIN take SQL's `DISTINCT` after the parenthesis —
 `COUNT(DISTINCT session)` — and then read each distinct non-NULL value of the
 argument once per group (COLLECT keeps one NULL, as it keeps NULLs at all).

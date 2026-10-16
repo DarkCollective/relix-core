@@ -350,7 +350,8 @@ final class RelationFunctionInliner {
                                                                 Map<String, Operand> b) {
         return aggs.stream()
                 .map(ag -> new AggregateFunction(ag.operator(), substituteOperand(ag.argument(), b),
-                        ag.yieldExpr().map(y -> substituteOperand(y, b)), ag.alias(), ag.distinct()))
+                        ag.yieldExpr().map(y -> substituteOperand(y, b)), ag.alias(), ag.distinct(),
+                        ag.orderBy().stream().map(s -> s.withExpression(substituteOperand(s.expression(), b))).toList()))
                 .toList();
     }
 
