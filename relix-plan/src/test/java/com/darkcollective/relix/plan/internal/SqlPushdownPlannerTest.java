@@ -1029,6 +1029,45 @@ final class SqlPushdownPlannerTest {
     }
 
     @Nested
+    @DisplayName("a string aggregate (#128)")
+    class StringAgg {
+
+        private static final String SOURCE = "source S from db { table: \"s\", "
+                + "schema: { region: STRING, item: STRING, qty: NUMBER } };\n";
+
+        private Optional<String> pushed(String url, String query) {
+            return push("connection db from database { url: \"" + url + "\" };\n" + SOURCE
+                    + "query { " + query + " };").map(PhysicalNode.PushedScan::nativeQuery);
+        }
+
+        @Test
+        @DisplayName("is STRING_AGG with its ORDER BY inside on PostgreSQL, and WITHIN GROUP on SQL Server")
+        void spelled() {
+            assertThat(pushed("jdbc:postgresql://h/db", "γ region, STRING_AGG(item, ', ' ORDER BY qty DESC) → s (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("STRING_AGG(\"item\", ', ' ORDER BY \"qty\" DESC"));
+            assertThat(pushed("jdbc:sqlserver://h:1433", "γ region, STRING_AGG(item, ', ' ORDER BY qty) → s (S)"))
+                    .hasValueSatisfying(q -> assertThat(q)
+                            .contains("STRING_AGG([item], N', ') WITHIN GROUP (ORDER BY"));
+            assertThat(pushed("jdbc:postgresql://h/db", "γ STRING_AGG(item, '/') → s (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("STRING_AGG(\"item\", '/')"));
+            assertThat(pushed("jdbc:duckdb:", "γ STRING_AGG(item, '/' ORDER BY item) → s (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("STRING_AGG(\"item\", '/' ORDER BY"));
+        }
+
+        @Test
+        @DisplayName("stays in the engine for a number, DISTINCT, a computed separator or key, or MySQL")
+        void declined() {
+            assertThat(pushed("jdbc:postgresql://h/db", "γ STRING_AGG(qty, ',') → s (S)")).isEmpty();
+            assertThat(pushed("jdbc:postgresql://h/db", "γ STRING_AGG(DISTINCT item, ',') → s (S)")).isEmpty();
+            assertThat(pushed("jdbc:postgresql://h/db", "γ STRING_AGG(item, region) → s (S)")).isEmpty();
+            assertThat(pushed("jdbc:postgresql://h/db", "γ STRING_AGG(item, ',' ORDER BY qty + 1) → s (S)")).isEmpty();
+            assertThat(pushed("jdbc:mysql://h/db", "γ GROUP_CONCAT(item) → s (S)")).isEmpty();
+            assertThat(pushed("jdbc:h2:mem:db", "γ STRING_AGG(item, ',') → s (S)")).isEmpty();
+            assertThat(pushed("jdbc:postgresql://h/db", "γ STRING_AGG(INITCAP(item), ',') → s (S)")).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("an aggregate FILTER (#130)")
     class AggregateFilter {
 

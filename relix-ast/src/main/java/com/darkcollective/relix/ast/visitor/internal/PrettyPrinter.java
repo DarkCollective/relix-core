@@ -431,7 +431,9 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                             ? agg.yieldExpr().map(y -> y.accept(operandPrinter) + ", ").orElse("")
                                     + agg.argument().accept(operandPrinter)
                             : (agg.distinct() ? "DISTINCT " : "") + agg.argument().accept(operandPrinter)
-                                    + agg.yieldExpr().map(y -> ", " + y.accept(operandPrinter)).orElse("");
+                                    + agg.yieldExpr().map(y -> ", " + y.accept(operandPrinter)).orElse("")
+                                    + (agg.orderBy().isEmpty() ? "" : " ORDER BY " + agg.orderBy().stream()
+                                            .map(this::renderSortKey).collect(Collectors.joining(", ")));
                     String funcCall = funcName + "(" + args + ")";
                     return agg.alias()
                             .map(alias -> funcCall + " " + spelling.of("→") + " " + alias)

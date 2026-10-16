@@ -152,6 +152,7 @@ Collapse many rows into summary rows with `γ` (GROUP) and aggregate functions.
 | [MEDIAN](aggregates/median.md) | The middle value |
 | [PERCENTILE_CONT](aggregates/percentile_cont.md) | The value a fraction of the group lies below, interpolated |
 | [PERCENTILE_DISC](aggregates/percentile_disc.md) | The first value a fraction of the group reaches |
+| [STRING_AGG](aggregates/string_agg.md) | Join a group's values into one string (GROUP_CONCAT, LISTAGG) |
 | [FILTER](aggregates/filter.md) | `AGG(x) FILTER (WHERE c)` — aggregate only the rows where a condition holds |
 | [Window / Rolling](operators/rolling.md) | `ROLLING … OVER … ROWS` — sliding / cumulative aggregate added as a column (no row collapse) |
 | [Window / Ranking](operators/window-ranking.md) | `WINDOW ROW_NUMBER/RANK/DENSE_RANK/PERCENT_RANK/NTILE` — per-partition rank column added to every row |
@@ -313,7 +314,8 @@ argument).
 [FORMAT](functions/conversion/format.md)
 
 **Nested data** —
-[Entries](functions/nested/entries.md)
+[Entries](functions/nested/entries.md),
+[ARRAY_TO_STRING](functions/nested/array_to_string.md)
 
 ## 11. Advanced operators
 

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -53,30 +54,45 @@ import java.util.Optional;
  *                  ARGMAX/ARGMIN); never null
  * @param yieldExpr for ARGMAX/ARGMIN, the expression whose value is returned at the
  *                  extremal row; empty for every other operator
+ * <p>An aggregate whose result depends on the order it reads its rows in —
+ * {@code STRING_AGG}, {@code COLLECT} — may carry an {@linkplain #orderBy() ordering}:
+ * the group's rows are read in that order, as SQL's {@code STRING_AGG(x, ', ' ORDER BY y)}
+ * reads them. Every other aggregate has none.
+ *
  * @param alias     the optional output column name
  * @param distinct  whether the aggregate reads each distinct argument value once
+ * @param orderBy   the order the group's rows are read in; empty for the order they arrive in
  */
 public record AggregateFunction(
         AggregateOperator operator,
         Operand argument,
         Optional<Operand> yieldExpr,
         Optional<String> alias,
-        boolean distinct
+        boolean distinct,
+        List<SortSpecification> orderBy
 ) {
     public AggregateFunction {
         Objects.requireNonNull(operator, "operator");
         Objects.requireNonNull(argument, "argument");
         Objects.requireNonNull(yieldExpr, "yieldExpr");
         Objects.requireNonNull(alias, "alias");
+        Objects.requireNonNull(orderBy, "orderBy");
         alias.ifPresent(a -> {
             if (a.isBlank()) {
                 throw new IllegalArgumentException("alias cannot be blank");
             }
         });
-        if (distinct && yieldExpr.isPresent()) {
+        if (distinct && (operator == AggregateOperator.ARGMAX || operator == AggregateOperator.ARGMIN)) {
             throw new IllegalArgumentException(
                     operator + " ranks rows and has no distinct form");
         }
+        orderBy = List.copyOf(orderBy);
+    }
+
+    /** An aggregate read in the order its rows arrive in. */
+    public AggregateFunction(AggregateOperator operator, Operand argument,
+                             Optional<Operand> yieldExpr, Optional<String> alias, boolean distinct) {
+        this(operator, argument, yieldExpr, alias, distinct, List.of());
     }
 
     /**

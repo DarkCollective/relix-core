@@ -258,7 +258,13 @@ final class AggregateExecutor {
         Accumulator accumulator = reduction.accumulator(eval.functionContext());
         // DISTINCT: each value once, under the engine's equality (1 and 1.0 are one value).
         Set<List<Value>> seen = agg.distinct() ? new HashSet<>() : null;
-        for (Row row : rows) {
+        // An ordered aggregate — STRING_AGG(x, ', ' ORDER BY y) — reads its group in that order.
+        List<Row> ordered = rows;
+        if (!agg.orderBy().isEmpty()) {
+            ordered = new ArrayList<>(rows);
+            ordered.sort(rowComparator(agg.orderBy(), eval));
+        }
+        for (Row row : ordered) {
             List<Value> values = new ArrayList<>(arguments.size());
             boolean absent = false;
             for (Operand argument : arguments) {

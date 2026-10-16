@@ -385,7 +385,8 @@ aggregation       ::= ( "γ" | "GROUP" ) "BY"?
                       aggregate ( "," aggregate )* ","? input
 grouping_key      ::= operand ( arrow name )?
 aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" ) "(" "DISTINCT"? operand ")" agg_filter? ( arrow name )?
-                    | "COLLECT" "(" "DISTINCT"? operand ")" ( arrow name )?
+                    | ( "COLLECT" | "ARRAY_AGG" ) "(" "DISTINCT"? operand agg_order? ")" ( arrow name )?
+                    | string_agg agg_filter? ( arrow name )?
                     | "COUNT" "(" ( "DISTINCT"? operand | "*" ) ")" agg_filter? ( arrow name )?
                     | ( "ARGMAX" | "ARGMIN" ) "(" operand "," operand ")" agg_filter? ( arrow name )?
                     | statistic CALL_OPEN "DISTINCT"? operand ")" agg_filter? ( arrow name )?
@@ -396,6 +397,14 @@ aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" ) "(" "DISTINCT"? operand 
 /* Matched by their text, so none is reserved: a column may be called median. */
 statistic         ::= "STDDEV" | "STDDEV_SAMP" | "STDDEV_POP"
                     | "VARIANCE" | "VAR_SAMP" | "VAR_POP" | "MEDIAN"
+/* One aggregate in three engines' spellings, each matched by its text:
+   STRING_AGG(name, ', ' ORDER BY name), GROUP_CONCAT(name ORDER BY name SEPARATOR ', ')
+   and LISTAGG(name, ', ') WITHIN GROUP (ORDER BY name). */
+string_agg        ::= "STRING_AGG" CALL_OPEN "DISTINCT"? operand "," operand agg_order? ")"
+                    | "GROUP_CONCAT" CALL_OPEN "DISTINCT"? operand agg_order? ( "SEPARATOR" operand )? ")"
+                    | "LISTAGG" CALL_OPEN "DISTINCT"? operand ( "," operand )? ")"
+                      ( "WITHIN" ( "γ" | "GROUP" ) "(" agg_order ")" )?
+agg_order         ::= "ORDER" "BY" sort_key ( "," sort_key )*
 /* SUM(amount) FILTER (WHERE status = 'open'): only the rows where the condition holds. */
 agg_filter        ::= "FILTER" "(" "WHERE" predicate ")"
 
@@ -750,6 +759,10 @@ are easy to miss in the rules above.
   is Java's dialect; `MATCHES` is not reserved.
 - **A percentile's order runs one way.** `PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY x
   DESC)` is the fraction `1 - p` ascending; `PERCENTILE_DISC` takes `ASC` only.
+- **A string aggregate's separator has three defaults.** `STRING_AGG` names its
+  separator; `GROUP_CONCAT` joins with a comma unless it says `SEPARATOR`, as MySQL's
+  does, and `LISTAGG` with nothing, as Oracle's. Without an `ORDER BY` the values come
+  in the input's order.
 - **`AT TIME ZONE` binds before arithmetic.** `ts AT TIME ZONE z` is
   `TIMEZONE(z, ts)`; its three words are not reserved. `DATEDIFF(month, a, b)` reads
   a bare first word as the unit's name.

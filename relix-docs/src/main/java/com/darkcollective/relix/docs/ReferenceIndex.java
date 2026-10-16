@@ -322,6 +322,9 @@ final class ReferenceIndex {
               "percentile", "percentile_cont", "quantile", "within group"),
             e("aggregates/percentile_disc.md", "aggregate", "PERCENTILE_DISC", "PERCENTILE_DISC",
               "The first value a fraction of the group reaches", "percentile_disc"),
+            e("aggregates/string_agg.md", "aggregate", "STRING_AGG", "STRING_AGG",
+              "Join a group's values into one string",
+              "string_agg", "group_concat", "listagg", "string aggregate", "join strings", "array_agg"),
             e("aggregates/filter.md", "aggregate", "FILTER", "FILTER", "Aggregate only the rows where a condition holds",
               "filter", "aggregate filter", "filter where", "conditional aggregate", "count if", "sum if"),
 

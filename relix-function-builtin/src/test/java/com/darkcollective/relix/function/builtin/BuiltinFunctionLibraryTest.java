@@ -49,10 +49,10 @@ final class BuiltinFunctionLibraryTest {
      * {@code Pi} — the two built-ins that were never in the library the port started from
      * — {@code Mod}, and the multi-branch conditionals {@code Switch} and {@code Choose}.
      */
-    private static final int BUILTIN_COUNT = 118;
+    private static final int BUILTIN_COUNT = 119;
 
     /** The eight aggregates: five SQL reducers, one that gathers, two that pick a row. */
-    private static final int AGGREGATE_COUNT = 17;
+    private static final int AGGREGATE_COUNT = 18;
 
     private static final List<ScalarFunction> FUNCTIONS =
             new BuiltinFunctionLibrary().scalarFunctions();
@@ -88,7 +88,7 @@ final class BuiltinFunctionLibraryTest {
                     .containsExactlyInAnyOrder("count", "sum", "avg", "min", "max",
                             "collect", "argmax", "argmin", "stddev", "stddev_samp", "stddev_pop",
                             "variance", "var_samp", "var_pop", "percentile_cont", "percentile_disc",
-                            "median");
+                            "median", "string_agg");
         }
 
         @Test
@@ -134,7 +134,7 @@ final class BuiltinFunctionLibraryTest {
                     Map.entry("conditional", 6L),
                     Map.entry("typecheck", 2L),
                     Map.entry("conversion", 6L),
-                    Map.entry("nested", 1L),
+                    Map.entry("nested", 2L),
                     Map.entry("ordering", 2L));
         }
 

@@ -98,7 +98,7 @@
 7	relix-ast/src/test/java/com/darkcollective/relix/ast/TraceNodeTest.java
 4	relix-ast/src/test/java/com/darkcollective/relix/ast/RelNodeAssertTest.java
 5	relix-ast/src/test/java/com/darkcollective/relix/ast/TruthRelationNodeTest.java
-3	relix-ast/src/test/java/com/darkcollective/relix/ast/AggregateFunctionTest.java
+5	relix-ast/src/test/java/com/darkcollective/relix/ast/AggregateFunctionTest.java
 4	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstSourceTest.java
 2	relix-lang/src/test/java/com/darkcollective/relix/lang/ScriptCommentsTest.java
 2	relix-lang/src/test/java/com/darkcollective/relix/lang/ScriptCorpusRoundTripTest.java

@@ -328,6 +328,16 @@ final class RelationFunctionInlinerTest {
         }
 
         @Test
+        @DisplayName("an aggregate's second argument and its ORDER BY keys")
+        void orderedAggregate() {
+            assertFullyBound(bind(groupByKeys(List.of(key("col")),
+                    List.of(orderedAgg(com.darkcollective.relix.ast.AggregateOperator.STRING_AGG, attr("col"),
+                            attr("p"), List.of(sortKey(arith(attr("p"), ArithmeticOperator.PLUS, attr("col")),
+                                    com.darkcollective.relix.ast.SortDirection.DESC,
+                                    com.darkcollective.relix.ast.NullPlacement.NULLS_LAST)), "s")), A)));
+        }
+
+        @Test
         @DisplayName("all three window-function families")
         void windowFunctions() {
             var sort = List.of(new com.darkcollective.relix.ast.SortSpecification(
