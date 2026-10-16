@@ -63,7 +63,7 @@ query { π day, EXTRACT(YEAR FROM CAST(day AS DATE)) → yr,
 ```
 
 ```
- day           yr  iso_yr  wk  dow  q
+ day         yr    iso_yr  wk  dow  q
  ──────────  ────  ──────  ──  ───  ─
  2020-12-31  2020    2020  53    4  4
  2021-01-01  2021    2020  53    5  1
