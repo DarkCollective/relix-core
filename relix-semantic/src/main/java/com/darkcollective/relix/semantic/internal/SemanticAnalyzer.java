@@ -89,6 +89,7 @@ import java.util.Objects;
  *       in the symbol table, processing files in topological import order.</li>
  *   <li>Resolve import statements — pull exported symbols from imported files
  *       into the importing file's scope.</li>
+ *   <li>Reject views whose definitions reach themselves ({@link ViewCycles}).</li>
  *   <li>Infer schemas for relational-algebra expression bodies using a
  *       {@code SchemaInferenceVisitor}; annotate the per-node schema map.</li>
  *   <li>Assemble and validate the schema graph from {@code relate}
@@ -375,6 +376,8 @@ public final class SemanticAnalyzer {
      *   <li>Create an {@link InMemorySymbolTable} and register built-in symbols.</li>
      *   <li>Run {@link SymbolCollector} to register every declared symbol and
      *       resolve import statements in dependency-first order.</li>
+     *   <li>Run {@link ViewCycles} to reject a view that is defined in terms of
+     *       itself, directly or through other views.</li>
      *   <li>Run {@link SchemaInferenceEngine} to infer the output schema of every
      *       relational algebra expression body and annotate the node map.</li>
      *   <li>Run {@link SchemaGraphBuilder} to assemble the schema graph from
@@ -409,6 +412,9 @@ public final class SemanticAnalyzer {
         SymbolCollector collector = new SymbolCollector(graph, symbolTable, catalog, generators);
         collector.collect();
         errors.addAll(collector.errors());
+
+        // ── Phase 3.2: View cycles — a view that reaches itself has no expansion ─
+        errors.addAll(ViewCycles.check(symbolTable));
 
         // ── Phase 3.5: System catalog relations (relix.*) — ADR-0007 ──────────
         // Registered after collection (extent depends on the collected symbols)
