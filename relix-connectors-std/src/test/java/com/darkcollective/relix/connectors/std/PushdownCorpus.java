@@ -352,6 +352,7 @@ final class PushdownCorpus {
         groups.put("σ — arithmetic in the predicate", arithmetic());
         groups.put("σ — temporal columns and literals", temporal());
         groups.put("calendar months — a date moved by INTERVAL '1 month'", calendarIntervals());
+        groups.put("TIMESTAMPTZ — a literal with an offset, compared by its instant", zonedTimestamps());
         groups.put("σ — scalar functions the library spells for a backend", functions());
         groups.put("DATE_TRUNC — one truncation, spelled differently per dialect", dateTrunc());
         groups.put("NOW() — evaluated once here, and pushed as the value", clockCalls());
@@ -475,6 +476,19 @@ final class PushdownCorpus {
                 Case.of("σ placed + INTERVAL '1 month 2 hours' < TIMESTAMP '2024-02-01T00:00:00Z' (Orders)",
                         intervals),
                 Case.of("π oid, placed + INTERVAL '1 year 1 month' → due (Orders)", intervals));
+    }
+
+    /**
+     * A TIMESTAMPTZ literal against the timestamp columns (#143), compared by the instant
+     * it names: 2024-02-16T01:45:10+02:00 is order 2's 23:45:10 UTC. It folds where a
+     * literal keeps an offset — PostgreSQL, DuckDB and SQL Server's DATETIMEOFFSET.
+     */
+    private static List<Case> zonedTimestamps() {
+        Set<Dialect> zoned = EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLSERVER);
+        return List.of(
+                Case.of("σ placed = TIMESTAMPTZ '2024-02-16T01:45:10+02:00' (Orders)", zoned),
+                Case.of("σ placed < TIMESTAMPTZ '2024-02-15T18:45:10-05:00' (Orders)", zoned),
+                Case.of("σ stamped ≥ TIMESTAMPTZ '2024-02-29T00:00:00Z' (Orders)", zoned));
     }
 
     private static List<Case> functions() {

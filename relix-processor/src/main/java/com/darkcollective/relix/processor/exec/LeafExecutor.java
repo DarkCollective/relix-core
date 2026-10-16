@@ -268,7 +268,8 @@ final class LeafExecutor {
             case StringOperand    s -> new StringValue(s.value());
             case NumberOperand    n -> NumberValue.of(n.value());
             case BooleanOperand   b -> BooleanValue.of(b.value());
-            case TimestampOperand t -> new TimestampValue(t.value());
+            case TimestampOperand t -> t.isZoned() ? new com.darkcollective.relix.value.ZonedTimestampValue(t.atOffset())
+                    : new TimestampValue(t.value());
             case DateOperand      d -> new DateValue(d.value());
             case TimeOperand      t -> new TimeValue(t.value());
             case DurationOperand  d -> new DurationValue(d.months(), d.value());

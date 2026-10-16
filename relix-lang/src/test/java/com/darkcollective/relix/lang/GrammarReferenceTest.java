@@ -240,6 +240,10 @@ final class GrammarReferenceTest {
             "query { π 2e → a (R) };",
             "query { λ 1e3 (R) };",
             "Bad := \"a\"\"b\";",
+            // TIMESTAMPTZ in both spellings, as a CAST type, and as a name
+            "query { π TIMESTAMPTZ '2026-03-01T09:00:00+02:00' → a, TIMESTAMP WITH TIME ZONE '2026-03-01T09:00:00Z' → b,"
+                    + " CAST(x AS TIMESTAMPTZ) → c, CAST(x AS TIMESTAMP WITH TIME ZONE) → d, timestamptz → e (R) };",
+            "query { π TIMESTAMP WITH '2026-03-01T09:00:00Z' (R) };",
             // INTERVAL in each engine's spelling, and as a name
             "query { π d + INTERVAL '1 month' → a, d - INTERVAL 1 MONTH → b, INTERVAL '3' DAY → c,"
                     + " INTERVAL -2 year → e, DURATION 'P1Y2M' → f, interval → g (R) };",

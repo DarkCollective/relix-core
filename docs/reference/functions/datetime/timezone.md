@@ -20,6 +20,10 @@ reading. The zone's offset is the one in force at that instant, so the result fo
 the zone's daylight-saving changes. A NULL argument returns NULL; an unknown zone is
 an error. PURE, DETERMINISTIC.
 
+TIMEZONE(zone, tz: TIMESTAMPTZ) → TIMESTAMPTZ: the same instant at the zone's offset then,
+as SQL Server converts a `datetimeoffset`. `TIMEZONE('America/New_York',
+TIMESTAMPTZ '2026-03-01T09:00:00+02:00')` is `2026-03-01T02:00:00-05:00`.
+
 # Examples:
 Orders by local hour of day:
   γ HOUR(TIMEZONE('America/New_York', placed_at)) → local_hour, COUNT(*) → orders (Orders)
@@ -30,8 +34,9 @@ Runs in the engine: PostgreSQL's `AT TIME ZONE` converts in one direction for a
 cannot be told from here.
 
 # Limitations:
-Relix has one TIMESTAMP kind, an instant, so only the instant-to-local direction is
-offered: there is no conversion from a local reading back to an instant. A numeric
+A TIMESTAMP is an instant, so for one only the instant-to-local direction is offered:
+there is no conversion from a local reading back to an instant. To keep a local reading
+with its offset, use a TIMESTAMPTZ. A numeric
 offset such as `'UTC+2'` is refused, since POSIX and ISO count its sign oppositely;
 use a region name.
 

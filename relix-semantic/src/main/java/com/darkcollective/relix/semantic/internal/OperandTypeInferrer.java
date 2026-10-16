@@ -117,7 +117,7 @@ final class OperandTypeInferrer {
             case NullOperand              ignored -> ScalarType.ANY;
             case DateOperand              ignored -> ScalarType.DATE;
             case TimeOperand              ignored -> ScalarType.TIME;
-            case TimestampOperand         ignored -> ScalarType.TIMESTAMP;
+            case TimestampOperand         ts -> ts.isZoned() ? ScalarType.TIMESTAMPTZ : ScalarType.TIMESTAMP;
             case DurationOperand          ignored -> ScalarType.DURATION;
             case BinaryArithmeticExpression b ->
                     TemporalArithmetic.binary(

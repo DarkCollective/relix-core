@@ -701,6 +701,17 @@ public final class RelAlgebraParser {
         };
     }
 
+    /** Consumes SQL's {@code WITH TIME ZONE} after {@code TIMESTAMP}, if it is there. */
+    private boolean consumeWithTimeZone() {
+        if (current.type() == TokenType.WITH && peek(1).type() == TokenType.TIME && isWord(peek(2), "ZONE")) {
+            advance();
+            advance();
+            advance();
+            return true;
+        }
+        return false;
+    }
+
     /**
      * Whether SQL's {@code INTERVAL '…'} or {@code INTERVAL n unit} starts here. A signed
      * one needs its unit, so that {@code interval - 1} still subtracts from a column.
@@ -3227,6 +3238,9 @@ public final class RelAlgebraParser {
         if (startsIntervalLiteral()) {
             return parseIntervalLiteral();
         }
+        if (isWord(current, "TIMESTAMPTZ") && peek(1).type() == TokenType.STRING) {
+            return parseTemporalLiteral();
+        }
 
         return switch (current.type()) {
             case IDENTIFIER -> {
@@ -3314,10 +3328,17 @@ public final class RelAlgebraParser {
     private Operand parseTemporalLiteral() {
         Token keyword = current;
         advance();
+        // TIMESTAMPTZ '…', or the standard's TIMESTAMP WITH TIME ZONE '…'.
+        boolean zoned = keyword.type() != TokenType.TIMESTAMP ? keyword.type() == TokenType.IDENTIFIER
+                : consumeWithTimeZone();
+        String name = zoned ? "TIMESTAMPTZ" : keyword.lexeme();
         Token payload = expect(TokenType.STRING,
-                "Expected a quoted ISO-8601 string after '" + keyword.lexeme() + "'");
+                "Expected a quoted ISO-8601 string after '" + name + "'");
         String iso = payload.literal();
         try {
+            if (zoned) {
+                return TimestampOperand.zoned(TemporalLiterals.parseZonedTimestamp(iso), loc(keyword));
+            }
             return switch (keyword.type()) {
                 case DATE      -> new DateOperand(TemporalLiterals.parseDate(iso), loc(keyword));
                 case TIME      -> new TimeOperand(TemporalLiterals.parseTime(iso), loc(keyword));
@@ -3329,9 +3350,9 @@ public final class RelAlgebraParser {
                 default        -> throw error(keyword, "Unexpected temporal literal keyword");
             };
         } catch (DateTimeException e) {
-            throw error(payload, "Malformed " + keyword.lexeme() + " literal "
+            throw error(payload, "Malformed " + name + " literal "
                     + payload.lexeme() + ": not a valid ISO-8601 "
-                    + keyword.lexeme().toLowerCase(java.util.Locale.ROOT));
+                    + name.toLowerCase(java.util.Locale.ROOT));
         }
     }
 
@@ -3468,17 +3489,22 @@ public final class RelAlgebraParser {
             throw error(type, "Expected a type after 'AS'");
         }
         advance();
+        String typeName = type.lexeme().toUpperCase(java.util.Locale.ROOT);
+        if (typeName.equals("TIMESTAMP") && consumeWithTimeZone()) {
+            typeName = "TIMESTAMPTZ";
+        }
         expect(TokenType.RPAREN, "Expected ')' after the CAST type");
         SourceLocation at = loc(nameToken);
-        String conversion = switch (type.lexeme().toUpperCase(java.util.Locale.ROOT)) {
+        String conversion = switch (typeName) {
             case "DATE" -> "to_date";
             case "TIME" -> "to_time";
             case "TIMESTAMP" -> "to_timestamp";
+            case "TIMESTAMPTZ" -> "to_timestamptz";
             case "NUMBER" -> "CDbl";
             case "STRING" -> "CStr";
             case "BOOLEAN" -> "CBool";
             default -> throw error(type, "CAST has no type '" + type.lexeme()
-                    + "'; expected NUMBER, STRING, BOOLEAN, DATE, TIME or TIMESTAMP");
+                    + "'; expected NUMBER, STRING, BOOLEAN, DATE, TIME, TIMESTAMP or TIMESTAMPTZ");
         };
         FunctionCall converted = new FunctionCall(conversion, List.of(operand), at);
         if (conversion.startsWith("to_")) {

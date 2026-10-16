@@ -34,6 +34,8 @@ import java.util.List;
  * <pre>
  *   TIMESTAMP − TIMESTAMP            → DURATION
  *   TIMESTAMP ± DURATION             → TIMESTAMP
+ *   TIMESTAMPTZ − TIMESTAMPTZ        → DURATION   (and either against a TIMESTAMP)
+ *   TIMESTAMPTZ ± DURATION           → TIMESTAMPTZ (its months on its own calendar)
  *   DATE      − DATE                 → DURATION   (whole-day span)
  *   DATE      ± DURATION             → TIMESTAMP  (UTC start-of-day ± span)
  *   TIME      ± DURATION             → TIME       (wraps within 24h)
@@ -215,6 +217,10 @@ final class TemporalArithmetic {
         if (l == r) {
             return null;
         }
+        // Both name an instant, and SQL compares a TIMESTAMP WITH TIME ZONE as one.
+        if (pair(l, r, ScalarType.TIMESTAMP, ScalarType.TIMESTAMPTZ)) {
+            return null;
+        }
         // An untyped (STRING) cell against a temporal: coerced at runtime, not an error.
         if (l == ScalarType.STRING || r == ScalarType.STRING) {
             return null;
@@ -238,13 +244,16 @@ final class TemporalArithmetic {
         // Commutative: accept either operand order.
         if (l == ScalarType.DURATION && r == ScalarType.DURATION) return ScalarType.DURATION;
         if (pair(l, r, ScalarType.TIMESTAMP, ScalarType.DURATION)) return ScalarType.TIMESTAMP;
+        if (pair(l, r, ScalarType.TIMESTAMPTZ, ScalarType.DURATION)) return ScalarType.TIMESTAMPTZ;
         if (pair(l, r, ScalarType.DATE, ScalarType.DURATION))      return ScalarType.TIMESTAMP;
         if (pair(l, r, ScalarType.TIME, ScalarType.DURATION))      return ScalarType.TIME;
         return null;
     }
 
     private static ScalarType minus(ScalarType l, ScalarType r) {
-        if (l == ScalarType.TIMESTAMP && r == ScalarType.TIMESTAMP) return ScalarType.DURATION;
+        // Two instants, TIMESTAMP or TIMESTAMPTZ, are the span between them.
+        if (instant(l) && instant(r)) return ScalarType.DURATION;
+        if (l == ScalarType.TIMESTAMPTZ && r == ScalarType.DURATION) return ScalarType.TIMESTAMPTZ;
         if (l == ScalarType.DATE && r == ScalarType.DATE)           return ScalarType.DURATION;
         if (l == ScalarType.TIMESTAMP && r == ScalarType.DURATION)  return ScalarType.TIMESTAMP;
         if (l == ScalarType.DATE && r == ScalarType.DURATION)       return ScalarType.TIMESTAMP;
@@ -263,6 +272,11 @@ final class TemporalArithmetic {
         if (l == ScalarType.DURATION && r == ScalarType.NUMBER)   return ScalarType.DURATION;
         if (l == ScalarType.DURATION && r == ScalarType.DURATION) return ScalarType.NUMBER;
         return null;
+    }
+
+    /** Whether {@code t} names an instant: a TIMESTAMP, or a TIMESTAMPTZ. */
+    private static boolean instant(ScalarType t) {
+        return t == ScalarType.TIMESTAMP || t == ScalarType.TIMESTAMPTZ;
     }
 
     /** {@code true} if {@code {l, r}} equals {@code {a, b}} as an unordered pair. */
@@ -294,15 +308,15 @@ final class TemporalArithmetic {
     }
 
     /**
-     * Whether {@code t} is one of the four temporal types — the shared answer to
+     * Whether {@code t} is one of the five temporal types — the shared answer to
      * "is a temporal distance defined here?", read by the arithmetic table below
      * and by {@link RelAlgebraValidator}'s AS-OF {@code WITHIN} check.
      *
      * @param t the type to test
-     * @return {@code true} for DATE, TIME, TIMESTAMP and DURATION
+     * @return {@code true} for DATE, TIME, TIMESTAMP, TIMESTAMPTZ and DURATION
      */
     static boolean isTemporal(ScalarType t) {
         return t == ScalarType.DATE || t == ScalarType.TIME
-                || t == ScalarType.TIMESTAMP || t == ScalarType.DURATION;
+                || t == ScalarType.TIMESTAMP || t == ScalarType.TIMESTAMPTZ || t == ScalarType.DURATION;
     }
 }

@@ -287,7 +287,8 @@ public final class SqlExpressions {
             // date types declines them.
             case DateOperand d -> dialect.dateLiteral(d.value());
             case TimeOperand t -> dialect.timeLiteral(t.value());
-            case TimestampOperand ts -> dialect.timestampLiteral(ts.value());
+            case TimestampOperand ts -> ts.isZoned() ? dialect.zonedTimestampLiteral(ts.atOffset())
+                    : dialect.timestampLiteral(ts.value());
             case DurationOperand d -> dialect.durationLiteral(d.months(), d.value());
             case UnaryOperand u -> operand(u.operand(), cols, dialect, functions).map(o -> "(-" + o + ")");
             case BinaryArithmeticExpression e -> arithmetic(e, cols, dialect, functions);

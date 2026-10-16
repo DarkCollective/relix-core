@@ -76,6 +76,38 @@ public final class TemporalLiterals {
     }
 
     /**
+     * Parses a {@code TIMESTAMPTZ} payload, keeping its offset: ISO-8601 with an offset
+     * ({@code "2026-03-01T09:00:00+02:00"}, {@code "…Z"}), or with a region in brackets
+     * ({@code "2026-03-01T09:00:00[Europe/London]"}), which takes the region's offset at
+     * that moment. A payload with neither is at UTC, as a {@code TIMESTAMP} is read.
+     *
+     * @throws DateTimeParseException when the payload is not one
+     */
+    public static OffsetDateTime parseZonedTimestamp(String iso) {
+        try {
+            return OffsetDateTime.parse(iso);
+        } catch (DateTimeParseException notOffset) {
+            try {
+                int bracket = iso.indexOf('[');
+                if (bracket < 0 || !iso.endsWith("]")) {
+                    throw notOffset;
+                }
+                java.time.ZoneId region = java.time.ZoneId.of(iso.substring(bracket + 1, iso.length() - 1));
+                String head = iso.substring(0, bracket);
+                try {
+                    // An offset written before the region is the one kept.
+                    return OffsetDateTime.parse(head);
+                } catch (DateTimeParseException local) {
+                    // A local time in a region: the region's offset at that time.
+                    return LocalDateTime.parse(head).atZone(region).toOffsetDateTime();
+                }
+            } catch (DateTimeParseException notZoned) {
+                return LocalDateTime.parse(iso).atOffset(ZoneOffset.UTC);
+            }
+        }
+    }
+
+    /**
      * Parses an ISO-8601 duration payload that has no calendar months, e.g.
      * {@code "PT30M"} or {@code "P1DT2H"}, a day being 24 hours.
      *

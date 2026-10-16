@@ -732,6 +732,8 @@ public final class SymbolCollector {
                 Operand operand = switch (type) {
                     case ScalarType.NUMBER    -> new NumberOperand(cell);
                     case ScalarType.TIMESTAMP -> new TimestampOperand(TemporalLiterals.parseTimestamp(cell));
+                    case ScalarType.TIMESTAMPTZ -> TimestampOperand.zoned(TemporalLiterals.parseZonedTimestamp(cell),
+                            SourceLocation.UNKNOWN);
                     case ScalarType.DATE      -> new DateOperand(TemporalLiterals.parseDate(cell));
                     case ScalarType.TIME      -> new TimeOperand(TemporalLiterals.parseTime(cell));
                     case ScalarType.DURATION  -> {

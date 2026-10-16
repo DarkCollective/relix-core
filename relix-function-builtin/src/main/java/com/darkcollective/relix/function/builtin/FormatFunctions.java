@@ -73,6 +73,8 @@ final class FormatFunctions {
         String pattern = string(args.get(1), "TO_CHAR");
         return new StringValue(switch (args.get(0)) {
             case TimestampValue ts -> dateTime(LocalDateTime.ofInstant(ts.value(), ZoneOffset.UTC), pattern);
+            // A TIMESTAMPTZ is written in its own offset: the local time it was recorded at.
+            case com.darkcollective.relix.value.ZonedTimestampValue z -> dateTime(z.value().toLocalDateTime(), pattern);
             case DateValue d -> dateTime(d.value().atStartOfDay(), pattern);
             case NumberValue n -> numeric(n.value(), pattern);
             default -> throw reject("TO_CHAR: expected TIMESTAMP, DATE or NUMBER, got " + args.get(0).type());

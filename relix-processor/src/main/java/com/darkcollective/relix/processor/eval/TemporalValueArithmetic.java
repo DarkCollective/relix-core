@@ -25,6 +25,7 @@ import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.Value;
 
 import java.math.BigDecimal;
@@ -61,7 +62,7 @@ final class TemporalValueArithmetic {
 
     private static boolean isTemporal(Value v) {
         return v instanceof DateValue || v instanceof TimeValue
-                || v instanceof TimestampValue || v instanceof DurationValue;
+                || v instanceof TimestampValue || v instanceof DurationValue || v instanceof ZonedTimestampValue;
     }
 
     /** Evaluates {@code left <op> right} for a combination involving a temporal value. */
@@ -95,6 +96,7 @@ final class TemporalValueArithmetic {
         String s = sv.value();
         try {
             if (hint instanceof TimestampValue) return new TimestampValue(TemporalLiterals.parseTimestamp(s));
+            if (hint instanceof ZonedTimestampValue) return new ZonedTimestampValue(TemporalLiterals.parseZonedTimestamp(s));
             if (hint instanceof DateValue)      return new DateValue(TemporalLiterals.parseDate(s));
             if (hint instanceof TimeValue)      return new TimeValue(TemporalLiterals.parseTime(s));
             if (hint instanceof DurationValue)  return duration(TemporalLiterals.parseSpan(s));
@@ -214,6 +216,12 @@ final class TemporalValueArithmetic {
         l = coerceString(l, r);
         r = coerceString(r, l);
         // Commutative: normalise NUMBER×DURATION / DURATION operand orders.
+        if (l instanceof ZonedTimestampValue z && r instanceof DurationValue d) {
+            return shift(z, d, 1);
+        }
+        if (l instanceof DurationValue d && r instanceof ZonedTimestampValue z) {
+            return shift(z, d, 1);
+        }
         if (l instanceof TimestampValue ts && r instanceof DurationValue d) {
             return new TimestampValue(shift(ts.value(), d, 1));
         }
@@ -244,6 +252,14 @@ final class TemporalValueArithmetic {
         r = coerceString(r, l);
         if (l instanceof TimestampValue a && r instanceof TimestampValue b) {
             return new DurationValue(Duration.between(b.value(), a.value()));
+        }
+        // A TIMESTAMPTZ is its instant, against another or against a TIMESTAMP.
+        if ((l instanceof ZonedTimestampValue || r instanceof ZonedTimestampValue)
+                && instantOf(l) != null && instantOf(r) != null) {
+            return new DurationValue(Duration.between(instantOf(r), instantOf(l)));
+        }
+        if (l instanceof ZonedTimestampValue z && r instanceof DurationValue d) {
+            return shift(z, d, -1);
         }
         if (l instanceof DateValue a && r instanceof DateValue b) {
             return new DurationValue(Duration.ofDays(ChronoUnit.DAYS.between(b.value(), a.value())));
@@ -306,6 +322,25 @@ final class TemporalValueArithmetic {
     /** A duration from a literal's months and exact part. */
     private static DurationValue duration(TemporalLiterals.Span span) {
         return new DurationValue(span.months(), span.exact());
+    }
+
+    /** The instant a TIMESTAMP or a TIMESTAMPTZ names; null for any other value. */
+    private static Instant instantOf(Value v) {
+        return switch (v) {
+            case TimestampValue t -> t.value();
+            case ZonedTimestampValue z -> z.instant();
+            default -> null;
+        };
+    }
+
+    /**
+     * Moves a TIMESTAMPTZ by {@code d}, keeping its offset: its months on its own local
+     * calendar, as SQL Server's {@code DATEADD} moves a {@code datetimeoffset}, then its
+     * exact part.
+     */
+    private static ZonedTimestampValue shift(ZonedTimestampValue z, DurationValue d, int sign) {
+        java.time.OffsetDateTime moved = z.value().plusMonths(sign * d.months());
+        return new ZonedTimestampValue(sign > 0 ? moved.plus(d.value()) : moved.minus(d.value()));
     }
 
     /**

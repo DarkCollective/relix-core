@@ -3,7 +3,8 @@
 # Syntax:
 CAST(<operand> AS <type>)
 
-<type> ::= NUMBER | STRING | BOOLEAN | DATE | TIME | TIMESTAMP
+<type> ::= NUMBER | STRING | BOOLEAN | DATE | TIME | TIMESTAMP | TIMESTAMPTZ
+         | TIMESTAMP WITH TIME ZONE
 
 π id, CAST(amount_text AS NUMBER) → amount (Imports)
 
@@ -20,9 +21,10 @@ except that a missing value stays missing: `CAST(NULL AS NUMBER)` is NULL.
 | `NUMBER` | `CDbl(x)`: text is parsed, TRUE and FALSE are 1 and 0 |
 | `STRING` | `CStr(x)` |
 | `BOOLEAN` | `CBool(x)`: zero is FALSE, other numbers TRUE; `t`, `yes`, `on`, `1` and their opposites |
-| `DATE` | `to_date(x)`: ISO text, or a timestamp's date at UTC |
-| `TIME` | `to_time(x)`: ISO text, or a timestamp's time of day at UTC |
-| `TIMESTAMP` | `to_timestamp(x)`: ISO text, or a date's midnight at UTC |
+| `DATE` | `to_date(x)`: ISO text, a timestamp's date at UTC, or a TIMESTAMPTZ's local date |
+| `TIME` | `to_time(x)`: ISO text, a timestamp's time of day at UTC, or a TIMESTAMPTZ's local time |
+| `TIMESTAMP` | `to_timestamp(x)`: ISO text, a date's midnight at UTC, or a TIMESTAMPTZ's instant |
+| `TIMESTAMPTZ`, `TIMESTAMP WITH TIME ZONE` | `to_timestamptz(x)`: ISO text keeping its offset, or a timestamp at UTC |
 
 CStr, CDbl and CBool refuse a NULL, so a cast to NUMBER, STRING or BOOLEAN is written
 `IIf(x IS NULL, NULL, CDbl(x))` and prints back that way; the temporal conversions

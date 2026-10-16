@@ -138,6 +138,32 @@ final class JdbcDataSourceConnectorTest {
     }
 
     @Test
+    @DisplayName("a TIMESTAMP WITH TIME ZONE read as TIMESTAMPTZ keeps its offset; a zone-less one is at UTC (#143)")
+    void readsZonedTimestamps() throws SQLException {
+        String url = "jdbc:h2:mem:conn_zoned;DB_CLOSE_DELAY=-1";
+        try (Connection c = DriverManager.getConnection(url)) {
+            var st = c.createStatement();
+            st.execute("CREATE TABLE calls (id INT, tstz TIMESTAMP WITH TIME ZONE, ts TIMESTAMP)");
+            st.execute("INSERT INTO calls VALUES (1, TIMESTAMP WITH TIME ZONE '2026-03-01 09:00:00+02',"
+                    + " TIMESTAMP '2026-03-01 07:00:00'), (2, NULL, NULL)");
+        }
+        Schema schema = schema(col("id", ScalarType.NUMBER), col("tstz", ScalarType.TIMESTAMPTZ),
+                col("ts", ScalarType.TIMESTAMPTZ));
+        var connector = new JdbcDataSourceConnector(modelFor(url, "calls", "calls"));
+
+        List<Row> rows;
+        try (Stream<Row> s = connector.open("calls", schema)) {
+            rows = s.toList();
+        }
+
+        assertThat(rows.get(0).get("tstz").asDisplayString()).isEqualTo("2026-03-01T09:00:00+02:00");
+        assertThat(rows.get(0).get("ts").asDisplayString()).isEqualTo("2026-03-01T07:00:00Z");
+        assertThat(rows.get(0).get("tstz")).isEqualTo(rows.get(0).get("ts"));
+        assertThat(rows.get(1).get("tstz").isNull()).isTrue();
+        assertThat(rows.get(1).get("ts").isNull()).isTrue();
+    }
+
+    @Test
     @DisplayName("streams lazily — a partial read (findFirst) works and the stream closes cleanly")
     void streamsLazilyAndCloses() throws SQLException {
         String url = "jdbc:h2:mem:conn_lazy;DB_CLOSE_DELAY=-1";

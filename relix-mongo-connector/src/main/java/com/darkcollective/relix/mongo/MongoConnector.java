@@ -27,6 +27,7 @@ import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.StructValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.symbol.ArrayType;
@@ -175,7 +176,7 @@ public final class MongoConnector implements RelixConnector {
             case ANY     -> any(raw);
             // BSON Date is an instant; DATE/TIME columns are schema-declared, since
             // Mongo has only the instant Date (ADR-0013 slice 5).
-            case DATE, TIME, TIMESTAMP, DURATION -> temporal(raw, type);
+            case DATE, TIME, TIMESTAMP, DURATION, TIMESTAMPTZ -> temporal(raw, type);
         };
     }
 
@@ -238,6 +239,9 @@ public final class MongoConnector implements RelixConnector {
                         : LocalTime.parse(text(raw)));
                 case DURATION -> new DurationValue(raw instanceof Duration d
                         ? d : Duration.parse(text(raw)));
+                // A BSON Date has no offset, so it is at UTC; text keeps the one it carries.
+                case TIMESTAMPTZ -> new ZonedTimestampValue(instant != null
+                        ? instant.atOffset(ZoneOffset.UTC) : java.time.OffsetDateTime.parse(text(raw)));
                 default -> throw new IllegalStateException("not a temporal type: " + type);
             };
         } catch (DateTimeException e) {

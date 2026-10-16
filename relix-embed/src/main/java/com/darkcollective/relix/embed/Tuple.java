@@ -26,11 +26,13 @@ import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.StructValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.Value;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -229,14 +231,30 @@ public final class Tuple implements Row {
     }
 
     /**
-     * {@return the {@code TIMESTAMP} in {@code column}, or null when it is NULL}
+     * {@return the instant the {@code TIMESTAMP} or {@code TIMESTAMPTZ} in {@code column}
+     * names, or null when it is NULL}
      *
      * @param column the column name (case-insensitive); must exist
      * @throws RelixException if the value is not a timestamp
      * @since 1.0
      */
     public Instant instant(String column) {
+        if (get(column) instanceof ZonedTimestampValue zoned) {
+            return zoned.instant();
+        }
         return typed(column, TimestampValue.class, TimestampValue::value);
+    }
+
+    /**
+     * {@return the {@code TIMESTAMPTZ} in {@code column}, with the offset it was recorded
+     * at, or null when it is NULL}
+     *
+     * @param column the column name (case-insensitive); must exist
+     * @throws RelixException if the value is not a {@code TIMESTAMPTZ}
+     * @since 1.0
+     */
+    public OffsetDateTime offsetDateTime(String column) {
+        return typed(column, ZonedTimestampValue.class, ZonedTimestampValue::value);
     }
 
     /**

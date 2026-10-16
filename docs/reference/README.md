@@ -189,6 +189,7 @@ Writing constant values, including the first-class temporal types.
 | [DATE literal](literals/date-literal.md) | `DATE '2026-01-31'` |
 | [TIME literal](literals/time-literal.md) | `TIME '09:30:00'` |
 | [TIMESTAMP literal](literals/timestamp-literal.md) | `TIMESTAMP '2026-01-31T09:30:00Z'` |
+| [TIMESTAMPTZ literal](literals/timestamptz-literal.md) | `TIMESTAMPTZ '2026-01-31T09:30:00+02:00'`, which keeps its offset |
 | [DURATION literal](literals/duration-literal.md) | `DURATION 'PT90M'`, `DURATION 'P1M'`, `INTERVAL '1 month'` |
 | [Truth relations](literals/truth-relations.md) | `UNIT` / `EMPTY` (aliases `DEE` / `DUM`) — the two zero-column relations |
 
@@ -278,6 +279,7 @@ argument).
 [to_date](functions/datetime/to_date.md),
 [to_time](functions/datetime/to_time.md),
 [to_timestamp](functions/datetime/to_timestamp.md),
+[to_timestamptz](functions/datetime/to_timestamptz.md),
 [DOW](functions/datetime/dow.md),
 [ISODOW](functions/datetime/isodow.md),
 [DOY](functions/datetime/doy.md),

@@ -202,6 +202,7 @@ final class FunctionCoverageTest {
             exact("date_add",      "DATE_ADD(DATE '2024-01-31', INTERVAL 1 MONTH)", "2024-02-29"),
             exact("date_sub",      "DATE_SUB(DATE '2024-03-31', INTERVAL 1 MONTH)", "2024-02-29"),
             exact("age",           "AGE(DATE '2001-04-10', DATE '1957-06-13')",     "P43Y9MT648H"),
+            exact("to_timestamptz", "CAST('2026-03-01T09:00:00+02:00' AS TIMESTAMPTZ)", "2026-03-01T09:00:00+02:00"),
             // ── Nested data ─────────────────────────────────────────────────────
             // Its argument is a constructed struct, since no literal spells an object.
             exact("entries", "Entries({ us: 3, gb: 7 })",
