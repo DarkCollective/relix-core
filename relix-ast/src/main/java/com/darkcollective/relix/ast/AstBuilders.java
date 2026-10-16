@@ -147,6 +147,14 @@ public abstract class AstBuilders {
     }
 
     /**
+     * Builds a {@code TIMESTAMPTZ} {@link TimestampOperand} from an ISO-8601 string with an
+     * offset, e.g. {@code "2026-03-01T09:00:00+02:00"}, keeping the offset.
+     */
+    public static TimestampOperand timestamptz(String iso) {
+        return TimestampOperand.zoned(TemporalLiterals.parseZonedTimestamp(iso), SourceLocation.UNKNOWN);
+    }
+
+    /**
      * Builds a {@link DurationOperand} from an ISO-8601 duration string, e.g. {@code "PT30M"},
      * or with calendar months, {@code "P1M"}.
      */

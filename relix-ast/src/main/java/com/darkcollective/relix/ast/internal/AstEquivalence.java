@@ -159,7 +159,8 @@ public final class AstEquivalence {
             case NullOperand x -> b instanceof NullOperand;
             case DateOperand x -> b instanceof DateOperand y && x.value().equals(y.value());
             case TimeOperand x -> b instanceof TimeOperand y && x.value().equals(y.value());
-            case TimestampOperand x -> b instanceof TimestampOperand y && x.value().equals(y.value());
+            case TimestampOperand x -> b instanceof TimestampOperand y && x.value().equals(y.value())
+                    && x.offset().equals(y.offset());
             case DurationOperand x -> b instanceof DurationOperand y && x.months() == y.months()
                     && x.value().equals(y.value());
             case BinaryArithmeticExpression x -> b instanceof BinaryArithmeticExpression y

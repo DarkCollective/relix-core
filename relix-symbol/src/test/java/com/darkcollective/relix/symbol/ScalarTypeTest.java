@@ -104,14 +104,14 @@ final class ScalarTypeTest {
     }
 
     @Test
-    @DisplayName("Eight constants are defined (four scalar + four temporal)")
-    void eightConstantsDefined() {
-        assertThat(ScalarType.values()).hasSize(8);
+    @DisplayName("Nine constants are defined (four scalar + five temporal)")
+    void nineConstantsDefined() {
+        assertThat(ScalarType.values()).hasSize(9);
         assertThat(ScalarType.values())
                 .containsExactlyInAnyOrder(
                         ScalarType.ANY, ScalarType.STRING,
                         ScalarType.NUMBER, ScalarType.BOOLEAN,
                         ScalarType.DATE, ScalarType.TIME,
-                        ScalarType.TIMESTAMP, ScalarType.DURATION);
+                        ScalarType.TIMESTAMP, ScalarType.DURATION, ScalarType.TIMESTAMPTZ);
     }
 }

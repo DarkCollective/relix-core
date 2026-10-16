@@ -232,7 +232,8 @@ final class RecordBinding<T> {
         readers.put(int.class, new Reader(NUMBERS, RecordBinding::intValue));
         readers.put(Boolean.class, new Reader(Set.of(ScalarType.BOOLEAN), Tuple::booleanValue));
         readers.put(boolean.class, new Reader(Set.of(ScalarType.BOOLEAN), Tuple::booleanValue));
-        readers.put(Instant.class, new Reader(Set.of(ScalarType.TIMESTAMP), Tuple::instant));
+        readers.put(Instant.class, new Reader(Set.of(ScalarType.TIMESTAMP, ScalarType.TIMESTAMPTZ), Tuple::instant));
+        readers.put(java.time.OffsetDateTime.class, new Reader(Set.of(ScalarType.TIMESTAMPTZ), Tuple::offsetDateTime));
         readers.put(LocalDate.class, new Reader(Set.of(ScalarType.DATE), Tuple::date));
         readers.put(LocalTime.class, new Reader(Set.of(ScalarType.TIME), Tuple::time));
         readers.put(Duration.class, new Reader(Set.of(ScalarType.DURATION), Tuple::duration));

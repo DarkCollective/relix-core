@@ -117,6 +117,10 @@ final class LateralArgumentLiteralTest {
                             Liftable.LIFTS, TimestampOperand.class)),
             Map.entry("DurationValue",
                     new Case(new DurationValue(Duration.parse("PT30M")), Liftable.LIFTS, DurationOperand.class)),
+            Map.entry("ZonedTimestampValue",
+                    new Case(new com.darkcollective.relix.value.ZonedTimestampValue(
+                            java.time.OffsetDateTime.parse("2026-06-15T13:40:00+02:00")),
+                            Liftable.LIFTS, TimestampOperand.class)),
 
             // No literal denotes these, so they are refused rather than mis-lifted.
             Map.entry("NullValue",

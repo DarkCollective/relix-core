@@ -34,6 +34,7 @@ import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.ColumnDefinition;
@@ -257,6 +258,11 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
                 case POSTGRES, DUCKDB -> ts.value().atOffset(java.time.ZoneOffset.UTC);
                 default -> java.time.LocalDateTime.ofInstant(ts.value(), java.time.ZoneOffset.UTC);
             });
+            // An offset-bearing type takes the offset; a zone-less one the instant's UTC clock.
+            case ZonedTimestampValue z -> statement.setObject(index, switch (dialect) {
+                case POSTGRES, DUCKDB, SQLSERVER -> z.value();
+                default -> java.time.LocalDateTime.ofInstant(z.instant(), java.time.ZoneOffset.UTC);
+            });
             default -> throw new EvaluationException("A " + value.type()
                     + " value cannot be sent to a database as a query parameter");
         }
@@ -475,7 +481,7 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
             }
             case ANY -> mapObject(rs.getObject(name));
             // Typed temporal reads (ADR-0013 slice 5).
-            case DATE, TIME, TIMESTAMP, DURATION -> readTemporal(rs, name, type, name);
+            case DATE, TIME, TIMESTAMP, DURATION, TIMESTAMPTZ -> readTemporal(rs, name, type, name);
         };
     }
 
@@ -498,7 +504,7 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
             }
             case ANY -> mapObject(rs.getObject(index));
             // Typed temporal reads (ADR-0013 slice 5).
-            case DATE, TIME, TIMESTAMP, DURATION -> readTemporal(rs, index, type, col.name());
+            case DATE, TIME, TIMESTAMP, DURATION, TIMESTAMPTZ -> readTemporal(rs, index, type, col.name());
         };
     }
 
@@ -536,6 +542,19 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
                 java.time.LocalDateTime ldt = rs.getObject(idx, java.time.LocalDateTime.class);
                 yield ldt == null ? NullValue.INSTANCE
                         : new TimestampValue(ldt.toInstant(java.time.ZoneOffset.UTC));
+            }
+            case TIMESTAMPTZ -> {
+                // A TIMESTAMP WITH TIME ZONE keeps the offset it arrives with: SQL Server's
+                // datetimeoffset the one it was stored at, PostgreSQL's timestamptz the
+                // session's. A zone-less column declared TIMESTAMPTZ is at UTC.
+                int idx = key instanceof Integer i ? i : rs.findColumn((String) key);
+                if (carriesOffset(rs.getMetaData(), idx)) {
+                    java.time.OffsetDateTime odt = rs.getObject(idx, java.time.OffsetDateTime.class);
+                    yield odt == null ? NullValue.INSTANCE : new ZonedTimestampValue(odt);
+                }
+                java.time.LocalDateTime ldt = rs.getObject(idx, java.time.LocalDateTime.class);
+                yield ldt == null ? NullValue.INSTANCE
+                        : new ZonedTimestampValue(ldt.atOffset(java.time.ZoneOffset.UTC));
             }
             case DURATION -> {
                 Object raw = getObject(rs, key);

@@ -16,6 +16,11 @@ arithmetic, as in PostgreSQL, so `ts AT TIME ZONE 'UTC' + DURATION 'PT1H'` adds 
 hour to the converted time. `AT`, `TIME` and `ZONE` are matched by their text, so
 none is reserved. See TIMEZONE for the zones accepted and the direction converted.
 
+A [TIMESTAMPTZ](../literals/timestamptz-literal.md) keeps its offset, so it converts
+differently: `tz AT TIME ZONE 'Europe/London'` is a TIMESTAMPTZ for the same instant at
+London's offset then, as SQL Server converts a `datetimeoffset`. Its wall clock is the
+one PostgreSQL gives.
+
 # Examples:
 Local event times:
   π event_id, event_time AT TIME ZONE 'Europe/London' → local (Events)

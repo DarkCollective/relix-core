@@ -68,6 +68,32 @@ final class TemporalLiteralsTest {
     }
 
     @Test
+    void zonedTimestampsKeepTheirOffset() {
+        assertThat(TemporalLiterals.parseZonedTimestamp("2026-03-01T09:00:00+02:00"))
+                .isEqualTo(java.time.OffsetDateTime.parse("2026-03-01T09:00:00+02:00"));
+        assertThat(TemporalLiterals.parseZonedTimestamp("2026-07-01T09:00:00[Europe/London]"))
+                .isEqualTo(java.time.OffsetDateTime.parse("2026-07-01T09:00:00+01:00"));
+        assertThat(TemporalLiterals.parseZonedTimestamp("2026-03-01T09:00:00+02:00[Europe/Athens]"))
+                .isEqualTo(java.time.OffsetDateTime.parse("2026-03-01T09:00:00+02:00"));
+        assertThat(TemporalLiterals.parseZonedTimestamp("2026-03-01T09:00:00"))
+                .isEqualTo(java.time.OffsetDateTime.parse("2026-03-01T09:00:00Z"));
+        assertThatThrownBy(() -> TemporalLiterals.parseZonedTimestamp("noon")).isInstanceOf(DateTimeParseException.class);
+        assertThatThrownBy(() -> TemporalLiterals.parseZonedTimestamp("2026-03-01T09:00:00[Europe/London"))
+                .isInstanceOf(DateTimeParseException.class);
+        assertThatThrownBy(() -> TemporalLiterals.parseZonedTimestamp("2026-03-01T09:00:00[Nowhere/Atlantis]"))
+                .isInstanceOf(java.time.DateTimeException.class);
+        var zoned = AstBuilders.timestamptz("2026-03-01T09:00:00+02:00");
+        assertThat(zoned.isZoned()).isTrue();
+        assertThat(zoned.prettyPrint()).isEqualTo("TIMESTAMPTZ '2026-03-01T09:00:00+02:00'");
+        assertThat(AstBuilders.timestamp("2026-03-01T07:00:00Z").isZoned()).isFalse();
+        assertThat(AstBuilders.timestamp("2026-03-01T07:00:00Z").atOffset())
+                .isEqualTo(java.time.OffsetDateTime.parse("2026-03-01T07:00:00Z"));
+        // The same instant at another offset is another literal.
+        assertThat(AstEquivalence.equivalent(zoned, AstBuilders.timestamptz("2026-03-01T07:00:00Z"))).isFalse();
+        assertThat(AstEquivalence.equivalent(zoned, AstBuilders.timestamptz("2026-03-01T09:00:00+02:00"))).isTrue();
+    }
+
+    @Test
     void formatsAsDurationPrints() {
         assertThat(TemporalLiterals.formatSpan(0, Duration.ofMinutes(30))).isEqualTo("PT30M");
         assertThat(TemporalLiterals.formatSpan(14, Duration.ZERO)).isEqualTo("P1Y2M");

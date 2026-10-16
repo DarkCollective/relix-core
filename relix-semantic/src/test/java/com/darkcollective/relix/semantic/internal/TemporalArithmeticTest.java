@@ -82,6 +82,22 @@ final class TemporalArithmeticTest {
         @Test void durationDividedByNumberIsDuration() { assertThat(binary(DURATION, DIVIDE, NUMBER)).isEqualTo(DURATION); }
         @Test void durationDividedByDurationIsNumber() { assertThat(binary(DURATION, DIVIDE, DURATION)).isEqualTo(NUMBER); }
         @Test void numberPlusNumberStaysNumber()       { assertThat(binary(NUMBER, PLUS, NUMBER)).isEqualTo(NUMBER); }
+
+        @Test void zonedTimestampsAreInstantsThatKeepTheirType() {
+            ScalarType tz = ScalarType.TIMESTAMPTZ;
+            assertThat(binary(tz, PLUS, DURATION)).isEqualTo(tz);
+            assertThat(binary(DURATION, PLUS, tz)).isEqualTo(tz);
+            assertThat(binary(tz, MINUS, DURATION)).isEqualTo(tz);
+            assertThat(binary(tz, MINUS, tz)).isEqualTo(DURATION);
+            assertThat(binary(tz, MINUS, TIMESTAMP)).isEqualTo(DURATION);
+            assertThat(binary(TIMESTAMP, MINUS, tz)).isEqualTo(DURATION);
+            assertThat(binaryError(tz, MINUS, DATE)).contains("cannot subtract");
+            assertThat(binaryError(DATE, MINUS, tz)).contains("cannot subtract");
+            assertThat(binaryError(DURATION, MINUS, tz)).contains("cannot subtract");
+            assertThat(TemporalArithmetic.comparisonError(tz, TIMESTAMP)).isNull();
+            assertThat(TemporalArithmetic.comparisonError(TIMESTAMP, tz)).isNull();
+            assertThat(TemporalArithmetic.comparisonError(tz, DATE)).contains("cannot compare");
+        }
     }
 
     /** {@code +} concatenates strings, so a STRING operand types it STRING (#36). */

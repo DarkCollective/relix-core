@@ -63,8 +63,19 @@ public enum ScalarType implements Type {
      */
     TIMESTAMP,
 
-    /** An exact elapsed span — seconds and nanoseconds (backed by {@code java.time.Duration}). */
-    DURATION;
+    /**
+     * A span of time: calendar months and an exact part of seconds and nanoseconds
+     * (backed by a month count and a {@code java.time.Duration}).
+     */
+    DURATION,
+
+    /**
+     * A point on the timeline with the UTC offset it was recorded at, SQL's
+     * {@code TIMESTAMP WITH TIME ZONE} (backed by {@code java.time.OffsetDateTime}). It
+     * compares as the instant it names, as {@link #TIMESTAMP} does, and keeps the offset
+     * to tell the local time.
+     */
+    TIMESTAMPTZ;
 
     /** {@return the lower-cased type name, e.g. {@code "number"}} */
     @Override
@@ -76,7 +87,7 @@ public enum ScalarType implements Type {
      * Returns the compact type code used in the IR report and in
      * machine-readable (JSON) output: {@code N}umber, {@code S}tring,
      * {@code B}oolean, {@code ?}=any, and the temporal codes {@code D}=date,
-     * {@code T}=time, {@code TS}=timestamp, {@code DUR}=duration.
+     * {@code T}=time, {@code TS}=timestamp, {@code DUR}=duration, {@code TSZ}=timestamptz.
      *
      * @return the type code (one character for the scalar leaves, a short
      *         multi-letter token for the temporal types)
@@ -92,6 +103,7 @@ public enum ScalarType implements Type {
             case TIME      -> "T";
             case TIMESTAMP -> "TS";
             case DURATION  -> "DUR";
+            case TIMESTAMPTZ -> "TSZ";
         };
     }
 

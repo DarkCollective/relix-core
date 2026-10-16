@@ -200,6 +200,7 @@ final class FunctionCoverageTest {
             exact("DATE_ADD", "2026-08-08T13:40:30Z", TS, new DurationValue(1, Duration.ZERO)),
             exact("DATE_SUB", "2026-06-08T13:40:30Z", TS, new DurationValue(1, Duration.ZERO)),
             exact("AGE", "PT0S", TS, TS),
+            exact("to_timestamptz", "2026-07-08T13:40:30Z", TS),
             // ── Nested ──────────────────────────────────────────────────────────
             exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
             exact("ARRAY_TO_STRING", "a-1-?", new ArrayValue(List.of(s("a"), n("1"), NullValue.INSTANCE)),

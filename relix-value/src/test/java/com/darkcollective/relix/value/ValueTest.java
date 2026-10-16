@@ -207,6 +207,7 @@ final class ValueTest {
                     case TimeValue      ignored -> "time";
                     case TimestampValue ignored -> "timestamp";
                     case DurationValue  ignored -> "duration";
+                    case ZonedTimestampValue ignored -> "timestamptz";
                 };
                 assertThat(kind).isEqualTo(expected[i]);
             }

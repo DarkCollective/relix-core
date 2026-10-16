@@ -766,6 +766,21 @@ final class DialectTest {
         }
 
         @Test
+        @DisplayName("a TIMESTAMPTZ keeps its offset where a type holds one, and declines elsewhere (#143)")
+        void zonedTimestamps() {
+            java.time.OffsetDateTime athens = java.time.OffsetDateTime.parse("2026-03-01T09:00:00+02:00");
+            assertThat(Dialect.POSTGRES.zonedTimestampLiteral(athens))
+                    .contains("TIMESTAMP WITH TIME ZONE '2026-03-01T09:00:00+02:00'");
+            assertThat(Dialect.DUCKDB.zonedTimestampLiteral(athens))
+                    .contains("TIMESTAMP WITH TIME ZONE '2026-03-01T09:00:00+02:00'");
+            assertThat(Dialect.SQLSERVER.zonedTimestampLiteral(athens))
+                    .contains("CAST('2026-03-01T09:00:00+02:00' AS DATETIMEOFFSET)");
+            for (Dialect d : List.of(Dialect.GENERIC, Dialect.MYSQL, Dialect.SQLITE, Dialect.DB2)) {
+                assertThat(d.zonedTimestampLiteral(athens)).as(d.name()).isEmpty();
+            }
+        }
+
+        @Test
         @DisplayName("calendar months: ISO on postgres, to_months on duckdb, nowhere else (#142)")
         void calendarMonths() {
             assertThat(Dialect.POSTGRES.durationLiteral(14, halfHour)).contains("INTERVAL 'P1Y2MT30M'");

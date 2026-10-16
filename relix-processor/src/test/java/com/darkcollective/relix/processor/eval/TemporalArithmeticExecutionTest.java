@@ -406,4 +406,27 @@ final class TemporalArithmeticExecutionTest extends com.darkcollective.relix.pro
                     .hasMessageContaining("TIMESTAMP");
         }
     }
+
+    @Nested
+    @DisplayName("a TIMESTAMPTZ (#143)")
+    class Zoned {
+        @Test void movesKeepingItsOffset() {
+            assertThat(evalBin(timestamptz("2026-01-31T09:00:00+02:00"), ArithmeticOperator.PLUS, duration("P1M")))
+                    .hasToString("ZonedTimestampValue[value=2026-02-28T09:00+02:00]");
+            assertThat(evalBin(duration("PT1H"), ArithmeticOperator.PLUS, timestamptz("2026-01-31T09:00:00+02:00")).asDisplayString())
+                    .isEqualTo("2026-01-31T10:00:00+02:00");
+            assertThat(evalBin(timestamptz("2026-01-31T09:00:00+02:00"), ArithmeticOperator.MINUS, duration("PT1H")).asDisplayString())
+                    .isEqualTo("2026-01-31T08:00:00+02:00");
+            assertThat(evalBin(timestamptz("2026-01-31T09:00:00+02:00"), ArithmeticOperator.MINUS, timestamp("2026-01-31T06:00:00Z")))
+                    .isEqualTo(new DurationValue(Duration.ofHours(1)));
+        }
+
+        @Test void refusesWhatIsNotAnInstantOrADuration() {
+            Operand tz = timestamptz("2026-01-31T09:00:00+02:00");
+            Operand day = date("2026-01-31");
+            assertThatThrownBy(() -> evalBin(tz, ArithmeticOperator.PLUS, AstBuilders.num("1"))).isInstanceOf(EvaluationException.class);
+            assertThatThrownBy(() -> evalBin(day, ArithmeticOperator.MINUS, tz)).isInstanceOf(EvaluationException.class);
+            assertThatThrownBy(() -> evalBin(tz, ArithmeticOperator.MINUS, day)).isInstanceOf(EvaluationException.class);
+        }
+    }
 }

@@ -227,6 +227,7 @@ final class AstBuilderCoverageTest {
             .override("date", 0, "2026-01-01")
             .override("time", 0, "12:00:00")
             .override("timestamp", 0, "2026-01-01T12:00:00Z")
+            .override("timestamptz", 0, "2026-01-01T12:00:00+02:00")
             .override("duration", 0, "PT1H")
             // ρ rejects mixing positional names with old→new pairs, so exercise the pairs form.
             .override("rename", 1, java.util.List.of())

@@ -316,7 +316,8 @@ final class WindowExecutor {
                 if (value.isNull()) {
                     continue;
                 }
-                boolean temporal = value instanceof TimestampValue || value instanceof DateValue;
+                boolean temporal = value instanceof TimestampValue || value instanceof DateValue
+                        || value instanceof com.darkcollective.relix.value.ZonedTimestampValue;
                 if (temporal != temporalOffset || !(temporal || value instanceof NumberValue)) {
                     throw new EvaluationException("A RANGE frame measures a NUMBER sort key by a number"
                             + " and a DATE or TIMESTAMP key by a DURATION; got a " + value.type()
@@ -325,6 +326,8 @@ final class WindowExecutor {
                 BigDecimal at = switch (value) {
                     case NumberValue n -> n.value();
                     case TimestampValue t -> nanos(t.value().getEpochSecond(), t.value().getNano());
+                    case com.darkcollective.relix.value.ZonedTimestampValue z ->
+                            nanos(z.instant().getEpochSecond(), z.instant().getNano());
                     case DateValue d -> nanos(d.value().toEpochDay() * 86_400L, 0);
                     default -> throw new IllegalStateException("unreachable");
                 };

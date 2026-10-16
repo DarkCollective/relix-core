@@ -105,6 +105,9 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
 
     @Override
     public String visit(TimestampOperand node) {
+        if (node.isZoned()) {
+            return "TIMESTAMPTZ '" + java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(node.atOffset()) + "'";
+        }
         return "TIMESTAMP '" + node.value() + "'";
     }
 

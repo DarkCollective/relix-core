@@ -23,6 +23,7 @@ import com.darkcollective.relix.value.internal.CodePoints;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.Value;
 
 import java.util.Comparator;
@@ -69,6 +70,8 @@ final class ValueOrder implements Comparator<Value> {
             case TimeValue x when b instanceof TimeValue y -> x.value().compareTo(y.value());
             case TimestampValue x when b instanceof TimestampValue y ->
                     x.value().compareTo(y.value());
+            case ZonedTimestampValue x when b instanceof ZonedTimestampValue y ->
+                    x.instant().compareTo(y.instant());
             case DurationValue x when b instanceof DurationValue y ->
                     x.length().compareTo(y.length());
             default -> throw new IllegalArgumentException(

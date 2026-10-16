@@ -30,6 +30,7 @@ import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.symbol.ColumnDefinition;
@@ -310,7 +311,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
             }
             // Temporal-typed cells parse against ISO-8601 (empty → NULL above,
             // malformed → error, mirroring the NUMBER path).  ADR-0013 slice 5.
-            case DATE, TIME, TIMESTAMP, DURATION ->
+            case DATE, TIME, TIMESTAMP, DURATION, TIMESTAMPTZ ->
                     coerceTemporal(cell.strip(), type, colName, where, lineNumber);
         };
     }
@@ -323,6 +324,7 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
                 case DATE      -> new DateValue(TemporalLiterals.parseDate(cell));
                 case TIME      -> new TimeValue(TemporalLiterals.parseTime(cell));
                 case TIMESTAMP -> new TimestampValue(TemporalLiterals.parseTimestamp(cell));
+                case TIMESTAMPTZ -> new ZonedTimestampValue(TemporalLiterals.parseZonedTimestamp(cell));
                 case DURATION  -> {
                     TemporalLiterals.Span span = TemporalLiterals.parseInterval(cell);
                     yield new DurationValue(span.months(), span.exact());
