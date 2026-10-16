@@ -2175,6 +2175,26 @@ public final class RelAlgebraParser {
 
         expect(TokenType.RPAREN, "Expected ')' after aggregate function argument");
 
+        // SQL's AGG(x) FILTER (WHERE c): only the rows where c holds are read, written as
+        // the portable AGG(IIf(c, x, NULL)) — an aggregate skips a NULL, so COUNT is 0
+        // and the rest NULL over a group in which no row passes. ARGMAX/ARGMIN filter
+        // their ranking value, which they skip a NULL of too.
+        if (isWord(current, "FILTER") && peek(1).type() == TokenType.LPAREN && isWord(peek(2), "WHERE")) {
+            Token filterTok = current;
+            if (operator == AggregateOperator.COLLECT) {
+                throw ParseException.at("COLLECT keeps NULLs, so it takes no FILTER: filter the"
+                        + " rows first, as in γ k, COLLECT(x) (σ c (R))", lexer.input(), filterTok);
+            }
+            advance(); // FILTER
+            advance(); // (
+            advance(); // WHERE
+            Predicate condition = parsePredicate();
+            expect(TokenType.RPAREN, "Expected ')' after the FILTER condition");
+            SourceLocation at = loc(filterTok);
+            argument = new FunctionCall("IIf", List.of(new ConditionOperand(condition, at), argument,
+                    new NullOperand(at)), at);
+        }
+
         Optional<String> alias = Optional.empty();
         if (current.type() == TokenType.ARROW) {
             advance();

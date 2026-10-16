@@ -307,6 +307,8 @@ final class ReferenceIndex {
             e("aggregates/collect.md","aggregate", "COLLECT","COLLECT","Gather group values into an array","collect"),
             e("aggregates/argmax.md", "aggregate", "ARGMAX", "ARGMAX", "Yield value from row with max rank","argmax"),
             e("aggregates/argmin.md", "aggregate", "ARGMIN", "ARGMIN", "Yield value from row with min rank","argmin"),
+            e("aggregates/filter.md", "aggregate", "FILTER", "FILTER", "Aggregate only the rows where a condition holds",
+              "filter", "aggregate filter", "filter where", "conditional aggregate", "count if", "sum if"),
 
             // ── Advanced operators ───────────────────────────────────────────
             e("advanced/closure.md",        "advanced", "Closure",      "CLOSURE",
