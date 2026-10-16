@@ -130,5 +130,24 @@ final class TemporalValueTest {
             assertThatThrownBy(() -> new DurationValue(null))
                     .isInstanceOf(NullPointerException.class);
         }
+
+        @Test @DisplayName("calendar months are kept apart, and display as years and months")
+        void calendarMonths() {
+            DurationValue month = new DurationValue(1, Duration.ZERO);
+            assertThat(month.isExact()).isFalse();
+            assertThat(v.isExact()).isTrue();
+            assertThat(month.asDisplayString()).isEqualTo("P1M");
+            assertThat(new DurationValue(14, Duration.ofHours(3)).asDisplayString()).isEqualTo("P1Y2MT3H");
+            assertThat(new DurationValue(-1, Duration.ZERO).asDisplayString()).isEqualTo("P-1M");
+        }
+
+        @Test @DisplayName("a month is as long as 30 days, so P1M equals P30D, and both hash alike")
+        void monthsCompareAsThirtyDays() {
+            DurationValue month = new DurationValue(1, Duration.ZERO);
+            DurationValue thirtyDays = new DurationValue(Duration.ofDays(30));
+            assertThat(month.length()).isEqualTo(Duration.ofDays(30));
+            assertThat(month).isEqualTo(thirtyDays).hasSameHashCodeAs(thirtyDays);
+            assertThat(month).isNotEqualTo(new DurationValue(Duration.ofDays(31))).isNotEqualTo("P1M");
+        }
     }
 }

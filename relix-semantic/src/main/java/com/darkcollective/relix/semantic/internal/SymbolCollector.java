@@ -734,7 +734,10 @@ public final class SymbolCollector {
                     case ScalarType.TIMESTAMP -> new TimestampOperand(TemporalLiterals.parseTimestamp(cell));
                     case ScalarType.DATE      -> new DateOperand(TemporalLiterals.parseDate(cell));
                     case ScalarType.TIME      -> new TimeOperand(TemporalLiterals.parseTime(cell));
-                    case ScalarType.DURATION  -> new DurationOperand(TemporalLiterals.parseDuration(cell));
+                    case ScalarType.DURATION  -> {
+                        TemporalLiterals.Span span = TemporalLiterals.parseInterval(cell);
+                        yield new DurationOperand(span.months(), span.exact(), SourceLocation.UNKNOWN);
+                    }
                     default -> new StringOperand(cell);
                 };
                 rowMap.put(col, operand);

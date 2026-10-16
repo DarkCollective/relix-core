@@ -702,6 +702,50 @@ public final class RelAlgebraParser {
     }
 
     /**
+     * Whether SQL's {@code INTERVAL '…'} or {@code INTERVAL n unit} starts here. A signed
+     * one needs its unit, so that {@code interval - 1} still subtracts from a column.
+     */
+    private boolean startsIntervalLiteral() {
+        return isWord(current, "INTERVAL") && (peek(1).type() == TokenType.STRING
+                || peek(1).type() == TokenType.NUMBER
+                || peek(1).type() == TokenType.MINUS && peek(2).type() == TokenType.NUMBER && isNameToken(peek(3)));
+    }
+
+    /**
+     * Parses SQL's interval literal into a {@link DurationOperand}: PostgreSQL's
+     * {@code INTERVAL '1 month'} or {@code INTERVAL 'P1M'}, the standard's
+     * {@code INTERVAL '3' DAY}, and MySQL's {@code INTERVAL 1 MONTH}. The text is read
+     * by {@link TemporalLiterals#parseInterval}. {@code INTERVAL} is not reserved.
+     */
+    private Operand parseIntervalLiteral() {
+        Token keyword = current;
+        advance(); // INTERVAL
+        boolean negative = match(TokenType.MINUS);
+        Token payload = current;
+        advance();
+        String text = payload.type() == TokenType.STRING ? payload.literal() : payload.lexeme();
+        if (isNameToken(current) && (payload.type() == TokenType.NUMBER || isNumeral(text))) {
+            text = text.strip() + " " + current.lexeme();
+            advance();
+        } else if (payload.type() == TokenType.NUMBER) {
+            throw error(current, "Expected a unit after INTERVAL " + payload.lexeme()
+                    + ", as in INTERVAL " + payload.lexeme() + " MONTH");
+        }
+        try {
+            TemporalLiterals.Span span = TemporalLiterals.parseInterval(negative ? "-" + text : text);
+            return new DurationOperand(span.months(), span.exact(), loc(keyword));
+        } catch (DateTimeException e) {
+            throw error(payload, "Malformed INTERVAL " + payload.lexeme() + ": write a number and a unit,"
+                    + " as in INTERVAL '1 month' or INTERVAL '2 hours 30 minutes', or ISO-8601, 'P1M'");
+        }
+    }
+
+    /** Whether {@code text} is a plain number, as the standard's {@code INTERVAL '3' DAY} quotes one. */
+    private static boolean isNumeral(String text) {
+        return text.strip().matches("[+-]?\\d+(\\.\\d+)?");
+    }
+
+    /**
      * Shared logic for parsing a bare name token (IDENTIFIER or word-shaped keyword)
      * in relation position: handles dotted names, TVF calls, FIX recursive references,
      * and plain relation names.
@@ -1732,8 +1776,12 @@ public final class RelAlgebraParser {
             }
         } else if (current.type() == TokenType.DURATION && unit == WindowFrame.Unit.RANGE) {
             offset = parseTemporalLiteral();
-            if (((DurationOperand) offset).value().isNegative()) {
+            if (((DurationOperand) offset).value().isNegative() || ((DurationOperand) offset).months() < 0) {
                 throw error(offsetTok, "A frame offset cannot be negative");
+            }
+            if (!((DurationOperand) offset).isExact()) {
+                throw error(offsetTok, "A RANGE offset is an exact DURATION; a month has no fixed"
+                        + " length, so write it in days, as DURATION 'P30D'");
             }
         } else {
             throw error(current, unit == WindowFrame.Unit.ROWS
@@ -3176,6 +3224,10 @@ public final class RelAlgebraParser {
             return new UnaryOperand(parsePrimaryOperand(), loc(minusTok));
         }
 
+        if (startsIntervalLiteral()) {
+            return parseIntervalLiteral();
+        }
+
         return switch (current.type()) {
             case IDENTIFIER -> {
                 Token nameToken = current;
@@ -3270,7 +3322,10 @@ public final class RelAlgebraParser {
                 case DATE      -> new DateOperand(TemporalLiterals.parseDate(iso), loc(keyword));
                 case TIME      -> new TimeOperand(TemporalLiterals.parseTime(iso), loc(keyword));
                 case TIMESTAMP -> new TimestampOperand(TemporalLiterals.parseTimestamp(iso), loc(keyword));
-                case DURATION  -> new DurationOperand(TemporalLiterals.parseDuration(iso), loc(keyword));
+                case DURATION  -> {
+                    TemporalLiterals.Span span = TemporalLiterals.parseSpan(iso);
+                    yield new DurationOperand(span.months(), span.exact(), loc(keyword));
+                }
                 default        -> throw error(keyword, "Unexpected temporal literal keyword");
             };
         } catch (DateTimeException e) {
@@ -3301,8 +3356,10 @@ public final class RelAlgebraParser {
             if (sb.toString().equalsIgnoreCase("EXTRACT") && isNameToken(peek(1)) && isWord(peek(2), "FROM")) {
                 return parseExtract(nameToken);
             }
-            // SQL Server's DATEDIFF(month, a, b) names its unit as a bare word.
-            if (sb.toString().equalsIgnoreCase("DATEDIFF") && isNameToken(peek(1))
+            // SQL Server's DATEDIFF(month, a, b) and DATEADD(month, n, d), and MySQL's
+            // TIMESTAMPADD(MONTH, n, d), name their unit as a bare word.
+            if ((sb.toString().equalsIgnoreCase("DATEDIFF") || sb.toString().equalsIgnoreCase("DATEADD")
+                    || sb.toString().equalsIgnoreCase("TIMESTAMPADD")) && isNameToken(peek(1))
                     && peek(2).type() == TokenType.COMMA) {
                 advance(); // (
                 Token unit = current;

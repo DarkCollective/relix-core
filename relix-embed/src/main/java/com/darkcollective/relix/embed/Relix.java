@@ -1004,7 +1004,7 @@ public final class Relix implements AutoCloseable {
             case com.darkcollective.relix.ast.DateOperand o -> o.value().toString();
             case com.darkcollective.relix.ast.TimeOperand o -> o.value().toString();
             case com.darkcollective.relix.ast.TimestampOperand o -> o.value().toString();
-            case com.darkcollective.relix.ast.DurationOperand o -> o.value().toString();
+            case com.darkcollective.relix.ast.DurationOperand o -> o.iso();
             case Operand o -> throw new RelixException(
                     "no inline-table cell for a " + o.getClass().getSimpleName()
                             + " — an inline table holds literals, not expressions");

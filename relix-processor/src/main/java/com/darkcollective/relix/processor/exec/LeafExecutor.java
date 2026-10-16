@@ -271,7 +271,7 @@ final class LeafExecutor {
             case TimestampOperand t -> new TimestampValue(t.value());
             case DateOperand      d -> new DateValue(d.value());
             case TimeOperand      t -> new TimeValue(t.value());
-            case DurationOperand  d -> new DurationValue(d.value());
+            case DurationOperand  d -> new DurationValue(d.months(), d.value());
             default -> throw new EvaluationException(
                     "Inline row contains non-literal operand: " + operand.getClass().getSimpleName());
         };

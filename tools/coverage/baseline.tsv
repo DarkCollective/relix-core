@@ -38,7 +38,7 @@
 2	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/internal/ConnectionPool.java
 1	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/internal/CsvDataSourceConnector.java
 2	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/internal/DataSourceRegistry.java
-3	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/internal/HttpDataSourceConnector.java
+2	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/internal/HttpDataSourceConnector.java
 5	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/internal/JdbcDataSourceConnector.java
 1	relix-connectors-std/src/main/java/com/darkcollective/relix/connectors/std/internal/JsonFileDataSourceConnector.java
 1	relix-cost/src/main/java/com/darkcollective/relix/cost/CostEstimator.java

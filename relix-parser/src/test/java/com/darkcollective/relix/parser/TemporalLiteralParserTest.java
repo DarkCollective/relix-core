@@ -137,4 +137,51 @@ final class TemporalLiteralParserTest extends ParserTestSupport {
                     .hasMessageContaining("Expected a quoted ISO-8601 string after 'DATE'");
         }
     }
+
+    @Nested
+    class CalendarIntervals {
+
+        private static RelNode projectionOf(Operand operand) {
+            return project(List.of(projected(operand)), rel("R"));
+        }
+
+        @Test
+        void durationTakesCalendarMonths() {
+            assertParsesTo("π DURATION 'P1Y2M' (R)", projectionOf(duration("P14M")));
+            assertThat(parse("π DURATION 'P1Y2MT3H' (R)").prettyPrint()).isEqualTo("π DURATION 'P1Y2MT3H' (R)");
+        }
+
+        @Test
+        void intervalInEachEnginesSpelling() {
+            assertParsesTo("π INTERVAL '1 month' (R)", projectionOf(duration("P1M")));
+            assertParsesTo("π interval 'P1M' (R)", projectionOf(duration("P1M")));
+            assertParsesTo("π INTERVAL '3' DAY (R)", projectionOf(duration("P3D")));
+            assertParsesTo("π INTERVAL 2 YEARS (R)", projectionOf(duration("P2Y")));
+            assertParsesTo("π INTERVAL -1 MONTH (R)", projectionOf(duration("-P1M")));
+            assertParsesTo("π INTERVAL 1.5 month (R)", projectionOf(duration("P1MT360H")));
+            assertParsesTo("π d + INTERVAL '1 day' (R)",
+                    projectionOf(arith(attr("d"), ArithmeticOperator.PLUS, duration("P1D"))));
+            // Not reserved: a column may be called interval, and have a number taken from it.
+            assertParsesTo("π interval (R)", projectionOf(attr("interval")));
+            assertParsesTo("π interval - 1 (R)",
+                    projectionOf(arith(attr("interval"), ArithmeticOperator.MINUS, num("1"))));
+            assertParsesTo("π interval - x (R)",
+                    projectionOf(arith(attr("interval"), ArithmeticOperator.MINUS, attr("x"))));
+        }
+
+        @Test
+        void intervalErrors() {
+            assertParseError("π INTERVAL 1 (R)").hasMessageContaining("Expected a unit after INTERVAL 1");
+            assertParseError("π INTERVAL 'a while' (R)").hasMessageContaining("Malformed INTERVAL");
+            assertParseError("π INTERVAL '3' fortnight (R)").hasMessageContaining("Malformed INTERVAL");
+        }
+
+        @Test
+        void aRangeOffsetIsExact() {
+            assertParseError("ROLLING COUNT(x) OVER RANGE BETWEEN DURATION 'P1M' PRECEDING AND CURRENT ROW"
+                    + " SORT t AS n (R)").hasMessageContaining("A RANGE offset is an exact DURATION");
+            assertParseError("ROLLING COUNT(x) OVER RANGE BETWEEN DURATION '-P1M' PRECEDING AND CURRENT ROW"
+                    + " SORT t AS n (R)").hasMessageContaining("cannot be negative");
+        }
+    }
 }

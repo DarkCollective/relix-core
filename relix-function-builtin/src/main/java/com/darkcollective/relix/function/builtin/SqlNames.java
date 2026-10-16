@@ -86,7 +86,8 @@ final class SqlNames {
             Map.entry("RANDOM", "Rand"),
             Map.entry("REPLICATE", "REPEAT"),
             Map.entry("DATEFROMPARTS", "MAKE_DATE"),
-            Map.entry("EOMONTH", "LAST_DAY"));
+            Map.entry("EOMONTH", "LAST_DAY"),
+            Map.entry("TIMESTAMPADD", "DATEADD"));
 
     /**
      * Every alias here and the function it names, the ones of the SQL-named functions

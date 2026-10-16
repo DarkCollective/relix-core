@@ -20,6 +20,7 @@ import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.Operand;
+import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.TimeOperand;
 import com.darkcollective.relix.ast.TimestampOperand;
@@ -117,7 +118,7 @@ final class LateralExecutor {
             case DateValue      d -> new DateOperand(d.value());
             case TimeValue      t -> new TimeOperand(t.value());
             case TimestampValue t -> new TimestampOperand(t.value());
-            case DurationValue  d -> new DurationOperand(d.value());
+            case DurationValue  d -> new DurationOperand(d.months(), d.value(), SourceLocation.UNKNOWN);
             default -> throw new EvaluationException(
                     "LATERAL join argument evaluated to "
                     + value.getClass().getSimpleName()

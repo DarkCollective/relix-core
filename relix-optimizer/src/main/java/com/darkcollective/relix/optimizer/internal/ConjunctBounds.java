@@ -302,8 +302,9 @@ final class ConjunctBounds {
         if (a instanceof TimestampOperand x && b instanceof TimestampOperand y) {
             return x.value().compareTo(y.value());
         }
+        // As DURATION values compare: a month reads as 30 days.
         if (a instanceof DurationOperand x && b instanceof DurationOperand y) {
-            return x.value().compareTo(y.value());
+            return x.value().plusDays(x.months() * 30).compareTo(y.value().plusDays(y.months() * 30));
         }
         return null;
     }

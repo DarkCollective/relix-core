@@ -146,9 +146,13 @@ public abstract class AstBuilders {
         return new TimestampOperand(TemporalLiterals.parseTimestamp(iso));
     }
 
-    /** Builds a {@link DurationOperand} from an ISO-8601 duration string, e.g. {@code "PT30M"}. */
+    /**
+     * Builds a {@link DurationOperand} from an ISO-8601 duration string, e.g. {@code "PT30M"},
+     * or with calendar months, {@code "P1M"}.
+     */
     public static DurationOperand duration(String iso) {
-        return new DurationOperand(TemporalLiterals.parseDuration(iso));
+        TemporalLiterals.Span span = TemporalLiterals.parseSpan(iso);
+        return new DurationOperand(span.months(), span.exact(), SourceLocation.UNKNOWN);
     }
 
     /** A binary arithmetic expression, e.g. {@code price * qty}. */

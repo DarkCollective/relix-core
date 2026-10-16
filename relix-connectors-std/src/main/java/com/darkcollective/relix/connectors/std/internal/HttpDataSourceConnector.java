@@ -568,11 +568,17 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
                 case DATE -> new DateValue(TemporalLiterals.parseDate(text.strip()));
                 case TIME -> new TimeValue(TemporalLiterals.parseTime(text.strip()));
                 case TIMESTAMP -> new TimestampValue(TemporalLiterals.parseTimestamp(text.strip()));
-                case DURATION -> new DurationValue(TemporalLiterals.parseDuration(text.strip()));
+                case DURATION -> interval(text.strip());
             };
         } catch (NumberFormatException | DateTimeException e) {
             throw new EvaluationException(coercionError(relationName, text, col));
         }
+    }
+
+    /** A DURATION cell, as ISO-8601 or as interval text, with or without calendar months. */
+    private static DurationValue interval(String text) {
+        TemporalLiterals.Span span = TemporalLiterals.parseInterval(text);
+        return new DurationValue(span.months(), span.exact());
     }
 
     private static String coercionError(String relationName, String text, ColumnSpec col) {

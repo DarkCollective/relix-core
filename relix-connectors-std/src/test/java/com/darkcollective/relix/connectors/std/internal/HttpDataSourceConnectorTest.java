@@ -175,6 +175,35 @@ final class HttpDataSourceConnectorTest extends ProcessorTestSupport {
         }
 
         @Test
+        @DisplayName("a DURATION reads ISO-8601 or interval text, with calendar months (#142)")
+        void durationsWithMonths() {
+            var t = new RecordingTransport(200, "[ {\"term\": \"1 month\"}, {\"term\": \"P2D\"} ]");
+            var rows = exec("""
+                    source Plans from http {
+                        url: "https://x/plans",
+                        schema: { term: DURATION }
+                    };
+                    query Plans;
+                    """, t);
+
+            assertThat(rows.get(0)).hasValue("term", "P1M");
+            assertThat(rows.get(1)).hasValue("term", "PT48H");
+        }
+
+        @Test
+        @DisplayName("a cell that is not of its column's type is an error naming both")
+        void uncoercibleCell() {
+            var t = new RecordingTransport(200, "[ {\"term\": \"a while\"} ]");
+            assertThatThrownBy(() -> exec("""
+                    source Plans from http {
+                        url: "https://x/plans",
+                        schema: { term: DURATION }
+                    };
+                    query Plans;
+                    """, t)).hasMessageContaining("cannot parse 'a while' as duration for column 'term'");
+        }
+
+        @Test
         @DisplayName("a column with no binding reads the top-level field of its own name")
         void columnByName() {
             var t = new RecordingTransport(200, "[ {\"id\": 3, \"name\": \"Carol\"} ]");

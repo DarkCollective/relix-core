@@ -240,6 +240,10 @@ final class GrammarReferenceTest {
             "query { π 2e → a (R) };",
             "query { λ 1e3 (R) };",
             "Bad := \"a\"\"b\";",
+            // INTERVAL in each engine's spelling, and as a name
+            "query { π d + INTERVAL '1 month' → a, d - INTERVAL 1 MONTH → b, INTERVAL '3' DAY → c,"
+                    + " INTERVAL -2 year → e, DURATION 'P1Y2M' → f, interval → g (R) };",
+            "query { π INTERVAL 1 (R) };",
             // grouping sets, and the words they use as names
             "query { γ ROLLUP (a, b → x), CUBE (c), GROUPING SETS ((a), d, ()), GROUPING(a, x) → g (R) };",
             "query { γ rollup, cube, grouping, GROUPING_ID(rollup) (R) };",

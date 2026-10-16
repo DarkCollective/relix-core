@@ -101,7 +101,10 @@ final class ParameterValues {
                 case DATE -> new DateValue(TemporalLiterals.parseDate(text));
                 case TIME -> new TimeValue(TemporalLiterals.parseTime(text));
                 case TIMESTAMP -> new TimestampValue(TemporalLiterals.parseTimestamp(text));
-                case DURATION -> new DurationValue(TemporalLiterals.parseDuration(text));
+                case DURATION -> {
+                    TemporalLiterals.Span span = TemporalLiterals.parseInterval(text);
+                    yield new DurationValue(span.months(), span.exact());
+                }
                 case STRING, ANY -> new StringValue(text);
             };
             if (value != null) {
@@ -135,9 +138,11 @@ final class ParameterValues {
             case OffsetDateTime t -> new TimestampValue(t.toInstant());
             case ZonedDateTime t -> new TimestampValue(t.toInstant());
             case Duration d -> new DurationValue(d);
+            // A Period's years and months are calendar months; its days are exact, 24 hours each.
+            case java.time.Period p -> new DurationValue(p.toTotalMonths(), Duration.ofDays(p.getDays()));
             default -> throw new RelixException("parameter $" + name + " cannot hold a "
                     + value.getClass().getName() + " (" + value + "); a parameter holds a"
-                    + " number, string, boolean, date, time, instant or duration");
+                    + " number, string, boolean, date, time, instant, duration or period");
         };
     }
 

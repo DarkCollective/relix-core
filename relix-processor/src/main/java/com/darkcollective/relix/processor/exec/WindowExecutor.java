@@ -337,7 +337,9 @@ final class WindowExecutor {
         private static BigDecimal measure(Operand offset) {
             return switch (offset) {
                 case NumberOperand n -> new BigDecimal(n.value());
-                case DurationOperand d -> nanos(d.value().getSeconds(), d.value().getNano());
+                case DurationOperand d when d.isExact() -> nanos(d.value().getSeconds(), d.value().getNano());
+                case DurationOperand d -> throw new EvaluationException("A RANGE offset is an exact DURATION;"
+                        + " DURATION '" + d.iso() + "' has calendar months, which have no fixed length");
                 default -> throw new EvaluationException("A frame offset must be a number or a DURATION");
             };
         }
