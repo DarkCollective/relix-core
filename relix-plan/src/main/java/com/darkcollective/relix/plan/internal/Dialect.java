@@ -602,6 +602,32 @@ public enum Dialect {
      * @return the {@code INTERVAL} literal, or empty when this dialect has no spelling
      */
     public Optional<String> durationLiteral(Duration value) {
+        return durationLiteral(0, value);
+    }
+
+    /**
+     * The {@code INTERVAL} literal for a duration of {@code months} calendar months and an
+     * exact {@code value}, or empty where this dialect has no spelling for it.
+     *
+     * <p>PostgreSQL reads the whole of it as ISO-8601, {@code INTERVAL 'P1Y2MT3H'}, and moves
+     * a date by its months on the calendar, landing on a shorter month's last day as the
+     * engine does. DuckDB adds {@code to_months(n)} to the exact part's microseconds, and
+     * moves a date the same way. Every other dialect declines, as it does an exact one.
+     *
+     * @param months the calendar months
+     * @param value  the exact part; must not be null
+     * @return the {@code INTERVAL} literal, or empty when this dialect has no spelling
+     */
+    public Optional<String> durationLiteral(long months, Duration value) {
+        if (months != 0) {
+            return switch (this) {
+                case POSTGRES -> Optional.of("INTERVAL '"
+                        + com.darkcollective.relix.ast.internal.TemporalLiterals.formatSpan(months, value) + "'");
+                case DUCKDB -> value.isZero() ? Optional.of("to_months(" + months + ")")
+                        : durationLiteral(0, value).map(exact -> "(to_months(" + months + ") + " + exact + ")");
+                case GENERIC, MYSQL, SQLITE, SQLSERVER, DB2 -> Optional.empty();
+            };
+        }
         return switch (this) {
             case POSTGRES -> Optional.of("INTERVAL '" + value + "'");
             case DUCKDB -> value.getNano() % 1_000 == 0

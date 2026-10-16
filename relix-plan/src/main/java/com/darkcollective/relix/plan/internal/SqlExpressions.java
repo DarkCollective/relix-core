@@ -288,7 +288,7 @@ public final class SqlExpressions {
             case DateOperand d -> dialect.dateLiteral(d.value());
             case TimeOperand t -> dialect.timeLiteral(t.value());
             case TimestampOperand ts -> dialect.timestampLiteral(ts.value());
-            case DurationOperand d -> dialect.durationLiteral(d.value());
+            case DurationOperand d -> dialect.durationLiteral(d.months(), d.value());
             case UnaryOperand u -> operand(u.operand(), cols, dialect, functions).map(o -> "(-" + o + ")");
             case BinaryArithmeticExpression e -> arithmetic(e, cols, dialect, functions);
             case SetLiteralOperand s -> setLiteral(s, cols, dialect, functions);

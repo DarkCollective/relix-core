@@ -351,6 +351,7 @@ final class PushdownCorpus {
         groups.put("σ — membership and pattern", membershipAndPattern());
         groups.put("σ — arithmetic in the predicate", arithmetic());
         groups.put("σ — temporal columns and literals", temporal());
+        groups.put("calendar months — a date moved by INTERVAL '1 month'", calendarIntervals());
         groups.put("σ — scalar functions the library spells for a backend", functions());
         groups.put("DATE_TRUNC — one truncation, spelled differently per dialect", dateTrunc());
         groups.put("NOW() — evaluated once here, and pushed as the value", clockCalls());
@@ -455,6 +456,25 @@ final class PushdownCorpus {
                 Case.of("τ placed ASC, oid ASC (σ placed ≠ NULL (Orders))"),
                 Case.temporal("σ joined ≥ DATE '2021-01-01' (Customers)"),
                 Case.of("σ joined = NULL (Customers)"));
+    }
+
+    /**
+     * Calendar months in a DURATION (#142), over placed's leap day, its year's end and a
+     * mid-month value: a month from 29 February is 29 March, from 31 December is
+     * 31 January, and a year from the leap day is 28 February. Only PostgreSQL and DuckDB
+     * have an interval to push.
+     */
+    private static List<Case> calendarIntervals() {
+        Set<Dialect> intervals = EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB);
+        return List.of(
+                Case.of("σ placed + INTERVAL '1 month' ≥ TIMESTAMP '2024-03-29T00:00:00Z' (Orders)", intervals),
+                Case.of("σ placed - INTERVAL '1 month' < TIMESTAMP '2024-01-29T00:00:00Z' (Orders)", intervals),
+                Case.of("σ placed + DURATION 'P1Y' = TIMESTAMP '2025-02-28T00:00:00Z' (Orders)", intervals),
+                // A calendar month against 30 exact days: longer from January, shorter from February.
+                Case.of("σ placed + DURATION 'P1M' > placed + DURATION 'P30D' (Orders)", intervals),
+                Case.of("σ placed + INTERVAL '1 month 2 hours' < TIMESTAMP '2024-02-01T00:00:00Z' (Orders)",
+                        intervals),
+                Case.of("π oid, placed + INTERVAL '1 year 1 month' → due (Orders)", intervals));
     }
 
     private static List<Case> functions() {

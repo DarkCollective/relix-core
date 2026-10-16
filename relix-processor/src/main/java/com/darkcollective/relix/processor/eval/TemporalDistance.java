@@ -63,7 +63,7 @@ public final class TemporalDistance {
             return Optional.empty();
         }
         return difference instanceof DurationValue d
-                ? Optional.of(d.value().abs())
+                ? Optional.of(d.length().abs())
                 : Optional.empty();
     }
 }

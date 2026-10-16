@@ -323,7 +323,10 @@ public final class CsvDataSourceConnector implements DataSourceConnector {
                 case DATE      -> new DateValue(TemporalLiterals.parseDate(cell));
                 case TIME      -> new TimeValue(TemporalLiterals.parseTime(cell));
                 case TIMESTAMP -> new TimestampValue(TemporalLiterals.parseTimestamp(cell));
-                case DURATION  -> new DurationValue(TemporalLiterals.parseDuration(cell));
+                case DURATION  -> {
+                    TemporalLiterals.Span span = TemporalLiterals.parseInterval(cell);
+                    yield new DurationValue(span.months(), span.exact());
+                }
                 default -> throw new IllegalStateException("not a temporal type: " + type);
             };
         } catch (DateTimeException e) {

@@ -70,7 +70,7 @@ final class ValueOrder implements Comparator<Value> {
             case TimestampValue x when b instanceof TimestampValue y ->
                     x.value().compareTo(y.value());
             case DurationValue x when b instanceof DurationValue y ->
-                    x.value().compareTo(y.value());
+                    x.length().compareTo(y.length());
             default -> throw new IllegalArgumentException(
                     "Cannot compare " + a.type() + " with " + b.type());
         };

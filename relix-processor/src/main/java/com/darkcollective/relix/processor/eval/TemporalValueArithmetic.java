@@ -76,7 +76,7 @@ final class TemporalValueArithmetic {
 
     /** Negates a {@link DurationValue} (the only temporal type unary minus accepts). */
     static Value unaryMinus(DurationValue d) {
-        return new DurationValue(d.value().negated());
+        return new DurationValue(-d.months(), d.value().negated());
     }
 
     // ── string coercion ───────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ final class TemporalValueArithmetic {
             if (hint instanceof TimestampValue) return new TimestampValue(TemporalLiterals.parseTimestamp(s));
             if (hint instanceof DateValue)      return new DateValue(TemporalLiterals.parseDate(s));
             if (hint instanceof TimeValue)      return new TimeValue(TemporalLiterals.parseTime(s));
-            if (hint instanceof DurationValue)  return new DurationValue(TemporalLiterals.parseDuration(s));
+            if (hint instanceof DurationValue)  return duration(TemporalLiterals.parseSpan(s));
         } catch (DateTimeParseException ignored) { }
         return tryParseAsAnyTemporal(s).orElse(v);
     }
@@ -203,7 +203,7 @@ final class TemporalValueArithmetic {
         catch (DateTimeParseException ignored) { }
         try { return Optional.of(new TimeValue(TemporalLiterals.parseTime(s))); }
         catch (DateTimeParseException ignored) { }
-        try { return Optional.of(new DurationValue(TemporalLiterals.parseDuration(s))); }
+        try { return Optional.of(duration(TemporalLiterals.parseSpan(s))); }
         catch (DateTimeParseException ignored) { }
         return Optional.empty();
     }
@@ -215,17 +215,18 @@ final class TemporalValueArithmetic {
         r = coerceString(r, l);
         // Commutative: normalise NUMBER×DURATION / DURATION operand orders.
         if (l instanceof TimestampValue ts && r instanceof DurationValue d) {
-            return new TimestampValue(ts.value().plus(d.value()));
+            return new TimestampValue(shift(ts.value(), d, 1));
         }
         if (l instanceof DurationValue d && r instanceof TimestampValue ts) {
-            return new TimestampValue(ts.value().plus(d.value()));
+            return new TimestampValue(shift(ts.value(), d, 1));
         }
         if (l instanceof DateValue dt && r instanceof DurationValue d) {
-            return new TimestampValue(startOfDay(dt).plus(d.value()));
+            return new TimestampValue(shift(startOfDay(dt), d, 1));
         }
         if (l instanceof DurationValue d && r instanceof DateValue dt) {
-            return new TimestampValue(startOfDay(dt).plus(d.value()));
+            return new TimestampValue(shift(startOfDay(dt), d, 1));
         }
+        // A time of day has no month to move, so only the exact part reaches it, as in PostgreSQL.
         if (l instanceof TimeValue t && r instanceof DurationValue d) {
             return new TimeValue(t.value().plus(d.value()));
         }
@@ -233,7 +234,7 @@ final class TemporalValueArithmetic {
             return new TimeValue(t.value().plus(d.value()));
         }
         if (l instanceof DurationValue a && r instanceof DurationValue b) {
-            return new DurationValue(a.value().plus(b.value()));
+            return new DurationValue(Math.addExact(a.months(), b.months()), a.value().plus(b.value()));
         }
         throw illegal(l, "add", r);
     }
@@ -248,26 +249,26 @@ final class TemporalValueArithmetic {
             return new DurationValue(Duration.ofDays(ChronoUnit.DAYS.between(b.value(), a.value())));
         }
         if (l instanceof TimestampValue ts && r instanceof DurationValue d) {
-            return new TimestampValue(ts.value().minus(d.value()));
+            return new TimestampValue(shift(ts.value(), d, -1));
         }
         if (l instanceof DateValue dt && r instanceof DurationValue d) {
-            return new TimestampValue(startOfDay(dt).minus(d.value()));
+            return new TimestampValue(shift(startOfDay(dt), d, -1));
         }
         if (l instanceof TimeValue t && r instanceof DurationValue d) {
             return new TimeValue(t.value().minus(d.value()));
         }
         if (l instanceof DurationValue a && r instanceof DurationValue b) {
-            return new DurationValue(a.value().minus(b.value()));
+            return new DurationValue(Math.subtractExact(a.months(), b.months()), a.value().minus(b.value()));
         }
         throw illegal(l, "subtract", r);
     }
 
     private static Value multiply(Value l, Value r) {
         if (l instanceof DurationValue d && r instanceof NumberValue n) {
-            return new DurationValue(scale(d.value(), n.value()));
+            return scale(d, n.value());
         }
         if (l instanceof NumberValue n && r instanceof DurationValue d) {
-            return new DurationValue(scale(d.value(), n.value()));
+            return scale(d, n.value());
         }
         throw illegal(l, "multiply", r);
     }
@@ -277,15 +278,14 @@ final class TemporalValueArithmetic {
             if (n.value().compareTo(BigDecimal.ZERO) == 0) {
                 throw new EvaluationException("Division by zero");
             }
-            return new DurationValue(scale(d.value(), BigDecimal.ONE.divide(
-                    n.value(), 20, RoundingMode.HALF_UP)));
+            return scale(d, BigDecimal.ONE.divide(n.value(), 20, RoundingMode.HALF_UP));
         }
         if (l instanceof DurationValue a && r instanceof DurationValue b) {
-            BigDecimal divisor = totalNanos(b.value());
+            BigDecimal divisor = totalNanos(b.length());
             if (divisor.compareTo(BigDecimal.ZERO) == 0) {
                 throw new EvaluationException("Division by zero");
             }
-            return new NumberValue(totalNanos(a.value())
+            return new NumberValue(totalNanos(a.length())
                     .divide(divisor, 10, RoundingMode.HALF_UP)
                     .stripTrailingZeros());
         }
@@ -301,6 +301,34 @@ final class TemporalValueArithmetic {
     private static BigDecimal totalNanos(Duration d) {
         return new BigDecimal(BigInteger.valueOf(d.getSeconds()).multiply(NANOS_PER_SECOND)
                 .add(BigInteger.valueOf(d.getNano())));
+    }
+
+    /** A duration from a literal's months and exact part. */
+    private static DurationValue duration(TemporalLiterals.Span span) {
+        return new DurationValue(span.months(), span.exact());
+    }
+
+    /**
+     * Moves {@code instant} by {@code d} forwards ({@code sign} 1) or backwards (-1): its
+     * months first, on the calendar at UTC, then its exact part. A month from the 31st
+     * lands on the next month's last day when it has fewer, as in PostgreSQL.
+     */
+    private static Instant shift(Instant instant, DurationValue d, int sign) {
+        Instant moved = d.isExact() ? instant
+                : instant.atOffset(ZoneOffset.UTC).plusMonths(sign * d.months()).toInstant();
+        return sign > 0 ? moved.plus(d.value()) : moved.minus(d.value());
+    }
+
+    /**
+     * Scales a duration by a (possibly fractional) factor. Its months scale to whole
+     * months and a fraction of one, which becomes days at 30 a month, as PostgreSQL's
+     * {@code interval * number} does; its exact part scales in nanoseconds.
+     */
+    private static DurationValue scale(DurationValue d, BigDecimal factor) {
+        BigDecimal months = BigDecimal.valueOf(d.months()).multiply(factor);
+        long whole = months.setScale(0, RoundingMode.DOWN).longValueExact();
+        Duration spill = scale(Duration.ofDays(DurationValue.DAYS_PER_MONTH), months.subtract(BigDecimal.valueOf(whole)));
+        return new DurationValue(whole, scale(d.value(), factor).plus(spill));
     }
 
     /** Scales a duration by a (possibly fractional) factor, computed in nanoseconds. */

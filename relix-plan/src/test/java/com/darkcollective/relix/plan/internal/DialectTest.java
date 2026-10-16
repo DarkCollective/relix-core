@@ -764,6 +764,19 @@ final class DialectTest {
             assertThat(Dialect.GENERIC.durationLiteral(halfHour)).isEmpty();
             assertThat(Dialect.MYSQL.durationLiteral(halfHour)).isEmpty();
         }
+
+        @Test
+        @DisplayName("calendar months: ISO on postgres, to_months on duckdb, nowhere else (#142)")
+        void calendarMonths() {
+            assertThat(Dialect.POSTGRES.durationLiteral(14, halfHour)).contains("INTERVAL 'P1Y2MT30M'");
+            assertThat(Dialect.DUCKDB.durationLiteral(1, java.time.Duration.ZERO)).contains("to_months(1)");
+            assertThat(Dialect.DUCKDB.durationLiteral(-2, halfHour))
+                    .contains("(to_months(-2) + to_microseconds(1800000000))");
+            assertThat(Dialect.DUCKDB.durationLiteral(1, java.time.Duration.ofNanos(1))).isEmpty();
+            for (Dialect d : List.of(Dialect.GENERIC, Dialect.MYSQL, Dialect.SQLITE, Dialect.SQLSERVER, Dialect.DB2)) {
+                assertThat(d.durationLiteral(1, java.time.Duration.ZERO)).as(d.name()).isEmpty();
+            }
+        }
     }
 
     /**
