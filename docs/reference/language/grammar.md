@@ -384,9 +384,12 @@ aggregation       ::= ( "γ" | "GROUP" ) "BY"?
                       ( grouping_key ( "," grouping_key )* ","? )?
                       aggregate ( "," aggregate )* ","? input
 grouping_key      ::= operand ( arrow name )?
-aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" | "COLLECT" ) "(" "DISTINCT"? operand ")" ( arrow name )?
-                    | "COUNT" "(" ( "DISTINCT"? operand | "*" ) ")" ( arrow name )?
-                    | ( "ARGMAX" | "ARGMIN" ) "(" operand "," operand ")" ( arrow name )?
+aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" ) "(" "DISTINCT"? operand ")" agg_filter? ( arrow name )?
+                    | "COLLECT" "(" "DISTINCT"? operand ")" ( arrow name )?
+                    | "COUNT" "(" ( "DISTINCT"? operand | "*" ) ")" agg_filter? ( arrow name )?
+                    | ( "ARGMAX" | "ARGMIN" ) "(" operand "," operand ")" agg_filter? ( arrow name )?
+/* SUM(amount) FILTER (WHERE status = 'open'): only the rows where the condition holds. */
+agg_filter        ::= "FILTER" "(" "WHERE" predicate ")"
 
 /* τ amount DESC, name (Orders);  ORDER BY amount DESC (Orders);
    τ bonus DESC NULLS FIRST (Sales): NULLs go last unless a key says first. */

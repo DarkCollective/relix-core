@@ -442,8 +442,10 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             // A DISTINCT aggregate asks which values are equal, as a grouping key does,
             // so its argument is rendered as a key is: under a collation that tells 'a'
             // from 'A', where the engine does.
-            ColumnRenderer cols = aggregate.distinct() ? p.comparing
-                    : ORDERING_AGGREGATES.contains(aggregate.operator()) ? p.ordering : p.renderer;
+            // A condition inside the argument — FILTER's IIf — compares as a WHERE does.
+            ColumnRenderer cols = ColumnRenderer.typed(ColumnRenderer.withComparing(aggregate.distinct() ? p.comparing
+                    : ORDERING_AGGREGATES.contains(aggregate.operator()) ? p.ordering : p.renderer,
+                    p.comparing, p.ordering), p.schema);
             Optional<String> expr = aggregate.distinct()
                     ? distinctAggregateSql(aggregate.operator(), aggregate.argument(), cols, p.dialect)
                     : aggregateSql(aggregate.operator(), aggregate.argument(), cols, p.dialect);

@@ -143,6 +143,7 @@ Collapse many rows into summary rows with `γ` (GROUP) and aggregate functions.
 | [COLLECT](aggregates/collect.md) | Gather a group's values into an array (NEST) |
 | [ARGMAX](aggregates/argmax.md) | A value from the row with the maximum |
 | [ARGMIN](aggregates/argmin.md) | A value from the row with the minimum |
+| [FILTER](aggregates/filter.md) | `AGG(x) FILTER (WHERE c)` — aggregate only the rows where a condition holds |
 | [Window / Rolling](operators/rolling.md) | `ROLLING … OVER … ROWS` — sliding / cumulative aggregate added as a column (no row collapse) |
 | [Window / Ranking](operators/window-ranking.md) | `WINDOW ROW_NUMBER/RANK/DENSE_RANK/PERCENT_RANK/NTILE` — per-partition rank column added to every row |
 | [Window / Offset](operators/window-offset.md) | `WINDOW LAG/LEAD/FIRST_VALUE/LAST_VALUE` — adjacent / boundary row value added as a column (no row collapse) |

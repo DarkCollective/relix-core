@@ -1029,6 +1029,24 @@ final class SqlPushdownPlannerTest {
     }
 
     @Nested
+    @DisplayName("an aggregate FILTER (#130)")
+    class AggregateFilter {
+
+        @Test
+        @DisplayName("is SQL's portable CASE form in the GROUP BY")
+        void caseForm() {
+            String src = "connection db from database { url: \"jdbc:postgresql://h/db\" };\n"
+                    + "source S from db { table: \"s\", schema: { region: STRING, status: STRING, amount: NUMBER } };\n"
+                    + "query { γ region, COUNT(*) FILTER (WHERE status = 'open') → n, "
+                    + "SUM(amount) FILTER (WHERE status = 'open') → total (S) };";
+            assertThat(push(src).map(PhysicalNode.PushedScan::nativeQuery)).hasValueSatisfying(q -> assertThat(q)
+                    .contains("COUNT(CASE WHEN")
+                    .contains("SUM(CASE WHEN")
+                    .contains("GROUP BY"));
+        }
+    }
+
+    @Nested
     @DisplayName("a regular-expression match (#138)")
     class RegexMatch {
 
