@@ -110,7 +110,7 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
 
     @Override
     public String visit(DurationOperand node) {
-        return "DURATION '" + node.value() + "'";
+        return "DURATION '" + node.iso() + "'";
     }
 
     @Override

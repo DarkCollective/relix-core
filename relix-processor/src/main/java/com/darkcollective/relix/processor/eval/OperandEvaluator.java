@@ -265,7 +265,7 @@ public final class OperandEvaluator {
             case DateOperand      d -> new DateValue(d.value());
             case TimeOperand      t -> new TimeValue(t.value());
             case TimestampOperand ts -> new TimestampValue(ts.value());
-            case DurationOperand  du -> new DurationValue(du.value());
+            case DurationOperand  du -> new DurationValue(du.months(), du.value());
             case AttributeOperand a -> evaluateAttribute(a, row);
             case ParameterOperand p -> parameter(p);
             case UnaryOperand   u -> evaluateUnary(u, row);

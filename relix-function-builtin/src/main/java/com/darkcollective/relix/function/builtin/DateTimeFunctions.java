@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.function.builtin;
 
+import com.darkcollective.relix.function.Arity;
 import com.darkcollective.relix.function.PushdownSpelling;
 import com.darkcollective.relix.function.PushdownTarget;
 import com.darkcollective.relix.function.ScalarFunction;
@@ -214,6 +215,34 @@ final class DateTimeFunctions {
                         List.of(p("unit", STRING), p("ts", TIMESTAMP)),
                         DateTimeFunctions::dateTruncSpelling, DateTimeFunctions::dateTrunc),
 
+                // DATEADD(unit, n, d): SQL Server's, and MySQL's TIMESTAMPADD. A month from the
+                // 31st lands on a shorter month's last day, as d + INTERVAL does.
+                DATETIME.contextual("DATEADD", ANY, PURE_DETERMINISTIC,
+                        List.of(p("unit", STRING), p("n", NUMBER), p("d", ANY)), Arity.exactly(3),
+                        types -> temporalResult(types.get(2)), PushdownSpelling.NONE,
+                        (context, args) -> dateAdd(args)),
+
+                // ADD_MONTHS(d, n): Oracle's, whose last day of a month stays a last day.
+                DATETIME.contextual("ADD_MONTHS", ANY, PURE_DETERMINISTIC,
+                        List.of(p("d", ANY), p("n", NUMBER)), Arity.exactly(2),
+                        types -> temporalResult(types.get(0)), PushdownSpelling.NONE,
+                        (context, args) -> addMonths(args)),
+
+                // DATE_ADD(d, INTERVAL …) and DATE_SUB: MySQL's d + interval and d - interval,
+                // a DATE staying a DATE.
+                DATETIME.contextual("DATE_ADD", ANY, PURE_DETERMINISTIC,
+                        List.of(p("d", ANY), p("interval", DURATION)), Arity.exactly(2),
+                        types -> temporalResult(types.get(0)), PushdownSpelling.NONE,
+                        (context, args) -> dateAddInterval(args, "DATE_ADD", 1)),
+                DATETIME.contextual("DATE_SUB", ANY, PURE_DETERMINISTIC,
+                        List.of(p("d", ANY), p("interval", DURATION)), Arity.exactly(2),
+                        types -> temporalResult(types.get(0)), PushdownSpelling.NONE,
+                        (context, args) -> dateAddInterval(args, "DATE_SUB", -1)),
+
+                // AGE(end, start): PostgreSQL's, the years, months and days between them.
+                DATETIME.fn("AGE", DURATION, PURE_DETERMINISTIC, List.of(p("end", ANY), p("start", ANY)),
+                        DateTimeFunctions::age),
+
                 DATETIME.fn("MINUTES", NUMBER, PURE_DETERMINISTIC, List.of(p("d", DURATION)),
                         args -> measure(args, "MINUTES", Duration::toMinutes)),
 
@@ -308,7 +337,8 @@ final class DateTimeFunctions {
         if (!(value instanceof DurationValue duration)) {
             throw reject(function + ": expected DURATION, got " + value.type());
         }
-        return number(unit.applyAsLong(duration.value()));
+        // A month is measured as 30 days, as durations are compared.
+        return number(unit.applyAsLong(duration.length()));
     }
 
     /**
@@ -445,6 +475,127 @@ final class DateTimeFunctions {
         };
     }
 
+    /** A DATE or a TIMESTAMP stays what it is; anything else is known only when it runs. */
+    private static com.darkcollective.relix.symbol.ScalarType temporalResult(
+            com.darkcollective.relix.symbol.ScalarType argument) {
+        return argument == DATE || argument == TIMESTAMP ? argument : ANY;
+    }
+
+    /** A whole count, as SQL Server's DATEADD and Oracle's ADD_MONTHS take one: a fraction is cut off. */
+    private static long whole(Value value, String function) {
+        if (!(value instanceof NumberValue n)) {
+            throw reject(function + ": expected a NUMBER of units, got " + value.type());
+        }
+        return n.value().setScale(0, java.math.RoundingMode.DOWN).longValueExact();
+    }
+
+    /** A DATE or TIMESTAMP moved by {@code months} and {@code exact}, keeping its kind. */
+    private static Value moved(Value value, long months, Duration exact, String function) {
+        return switch (value) {
+            case DateValue d when exact.toNanos() % 86_400_000_000_000L == 0 ->
+                    new DateValue(d.value().plusMonths(months).plusDays(exact.toDays()));
+            case DateValue d -> throw reject(function + ": a DATE moved by part of a day is a"
+                    + " TIMESTAMP; write CAST(" + d.value() + " AS TIMESTAMP)");
+            case TimestampValue ts -> new TimestampValue(
+                    ts.value().atOffset(ZoneOffset.UTC).plusMonths(months).toInstant().plus(exact));
+            default -> throw reject(function + ": expected DATE or TIMESTAMP, got " + value.type());
+        };
+    }
+
+    /** {@code DATEADD(unit, n, d)}: {@code n} whole units added to {@code d}, read at UTC. */
+    private static Value dateAdd(List<Value> args) {
+        if (args.stream().anyMatch(Value::isNull)) {
+            return NullValue.INSTANCE;
+        }
+        String unit = string(args.get(0), "DATEADD").strip().toLowerCase(Locale.ROOT);
+        String canonical = DATEDIFF_UNITS.get(unit);
+        if (canonical == null) {
+            throw reject("DATEADD: unknown unit '" + unit
+                    + "' (expected year, quarter, month, week, day, hour, minute or second)");
+        }
+        long n = whole(args.get(1), "DATEADD");
+        return switch (canonical) {
+            case "year" -> moved(args.get(2), Math.multiplyExact(n, 12), Duration.ZERO, "DATEADD");
+            case "quarter" -> moved(args.get(2), Math.multiplyExact(n, 3), Duration.ZERO, "DATEADD");
+            case "month" -> moved(args.get(2), n, Duration.ZERO, "DATEADD");
+            case "week" -> moved(args.get(2), 0, Duration.ofDays(Math.multiplyExact(n, 7)), "DATEADD");
+            case "day" -> moved(args.get(2), 0, Duration.ofDays(n), "DATEADD");
+            case "hour" -> moved(args.get(2), 0, Duration.ofHours(n), "DATEADD");
+            case "minute" -> moved(args.get(2), 0, Duration.ofMinutes(n), "DATEADD");
+            default -> moved(args.get(2), 0, Duration.ofSeconds(n), "DATEADD");
+        };
+    }
+
+    /**
+     * {@code ADD_MONTHS(d, n)}: {@code d} moved {@code n} whole months, as Oracle moves it.
+     * A day the target month lacks becomes its last day, and so does the last day of a
+     * month: ADD_MONTHS of 28 February 2026 by one is 31 March.
+     */
+    private static Value addMonths(List<Value> args) {
+        if (args.stream().anyMatch(Value::isNull)) {
+            return NullValue.INSTANCE;
+        }
+        long n = whole(args.get(1), "ADD_MONTHS");
+        LocalDateTime at = moment(args.get(0), "ADD_MONTHS");
+        LocalDate date = at.toLocalDate();
+        LocalDate target = date.plusMonths(n);
+        if (date.getDayOfMonth() == date.lengthOfMonth()) {
+            target = target.withDayOfMonth(target.lengthOfMonth());
+        }
+        return args.get(0) instanceof DateValue ? new DateValue(target)
+                : new TimestampValue(target.atTime(at.toLocalTime()).toInstant(ZoneOffset.UTC));
+    }
+
+    /** {@code DATE_ADD(d, interval)} and {@code DATE_SUB}: {@code d} moved by the interval, keeping its kind. */
+    private static Value dateAddInterval(List<Value> args, String function, int sign) {
+        if (args.stream().anyMatch(Value::isNull)) {
+            return NullValue.INSTANCE;
+        }
+        if (!(args.get(1) instanceof DurationValue interval)) {
+            throw reject(function + ": expected a DURATION, as INTERVAL 1 MONTH, got " + args.get(1).type());
+        }
+        return moved(args.get(0), sign * interval.months(),
+                sign > 0 ? interval.value() : interval.value().negated(), function);
+    }
+
+    /**
+     * {@code AGE(end, start)}: the time from {@code start} to {@code end} in years, months
+     * and days, as PostgreSQL's {@code age} reckons it, both read at UTC. Each field is
+     * subtracted on its own and a negative one borrows from the next: a day borrows the
+     * length of the earlier argument's month, so from 13 June to 10 April is 9 months and
+     * 27 days. Earlier to later is negative throughout.
+     */
+    private static Value age(List<Value> args) {
+        if (args.stream().anyMatch(Value::isNull)) {
+            return NullValue.INSTANCE;
+        }
+        LocalDateTime end = moment(args.get(0), "AGE");
+        LocalDateTime start = moment(args.get(1), "AGE");
+        boolean backwards = end.isBefore(start);
+        LocalDateTime later = backwards ? start : end;
+        LocalDateTime earlier = backwards ? end : start;
+        long nanos = later.toLocalTime().toNanoOfDay() - earlier.toLocalTime().toNanoOfDay();
+        long days = later.getDayOfMonth() - earlier.getDayOfMonth();
+        long months = later.getMonthValue() - earlier.getMonthValue();
+        long years = later.getYear() - earlier.getYear();
+        if (nanos < 0) {
+            nanos += 86_400_000_000_000L;
+            days--;
+        }
+        if (days < 0) {
+            // PostgreSQL borrows the month of the argument on the borrowing side: the start's.
+            days += (backwards ? end : start).toLocalDate().lengthOfMonth();
+            months--;
+        }
+        if (months < 0) {
+            months += 12;
+            years--;
+        }
+        long totalMonths = years * 12 + months;
+        Duration exact = Duration.ofDays(days).plusNanos(nanos);
+        return backwards ? new DurationValue(-totalMonths, exact.negated()) : new DurationValue(totalMonths, exact);
+    }
+
     /** {@code LAST_DAY(d)}: the last day of the month {@code d} falls in. */
     private static Value lastDay(Value value) {
         if (value.isNull()) {
@@ -527,7 +678,7 @@ final class DateTimeFunctions {
             case TimestampValue ts -> seconds(ts.value().getEpochSecond(), ts.value().getNano());
             case DateValue d -> number(d.value().toEpochDay() * 86_400L);
             case TimeValue t -> seconds(t.value().toSecondOfDay(), t.value().getNano());
-            case DurationValue d -> seconds(d.value().getSeconds(), d.value().getNano());
+            case DurationValue d -> seconds(d.length().getSeconds(), d.length().getNano());
             default -> throw reject("EPOCH: expected TIMESTAMP, DATE, TIME or DURATION, got " + value.type());
         };
     }

@@ -264,12 +264,22 @@ public final class Tuple implements Row {
     /**
      * {@return the {@code DURATION} in {@code column}, or null when it is NULL}
      *
+     * <p>A duration of calendar months, such as {@code P1M}, has no exact length and is
+     * not a {@link Duration}; read it with {@link #get(String)}, whose
+     * {@link DurationValue} holds its months and its exact part apart.
+     *
      * @param column the column name (case-insensitive); must exist
-     * @throws RelixException if the value is not a duration
+     * @throws RelixException if the value is not a duration, or has calendar months
      * @since 1.0
      */
     public Duration duration(String column) {
-        return typed(column, DurationValue.class, DurationValue::value);
+        return typed(column, DurationValue.class, d -> {
+            if (!d.isExact()) {
+                throw new RelixException("column '" + column + "' holds " + d.asDisplayString()
+                        + ", which has calendar months and so no exact length; read it with get(\"" + column + "\")");
+            }
+            return d.value();
+        });
     }
 
     /**

@@ -194,6 +194,12 @@ final class FunctionCoverageTest {
             exact("LAST_DAY", "2026-07-31", TS),
             exact("EOMONTH", "2026-07-31", TS),
             num("DATEDIFF", "0", s("day"), TS, TS),
+            exact("DATEADD", "2026-08-08T13:40:30Z", s("month"), n("1"), TS),
+            exact("TIMESTAMPADD", "2027-07-08T13:40:30Z", s("year"), n("1"), TS),
+            exact("ADD_MONTHS", "2026-09-08T13:40:30Z", TS, n("2")),
+            exact("DATE_ADD", "2026-08-08T13:40:30Z", TS, new DurationValue(1, Duration.ZERO)),
+            exact("DATE_SUB", "2026-06-08T13:40:30Z", TS, new DurationValue(1, Duration.ZERO)),
+            exact("AGE", "PT0S", TS, TS),
             // ── Nested ──────────────────────────────────────────────────────────
             exact("Entries", "[{key: us, value: 3}]", object("us", n("3"))),
             exact("ARRAY_TO_STRING", "a-1-?", new ArrayValue(List.of(s("a"), n("1"), NullValue.INSTANCE)),

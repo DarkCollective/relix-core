@@ -24,7 +24,8 @@ than `+` as it does in PostgreSQL, so `'n = ' || n + 1` adds before it joins.
 The arithmetic is exact decimal: `0.1 + 0.2` is `0.3`. Division keeps ten places and
 drops trailing zeros, and dividing by zero is an error. A NULL on either side makes
 the result NULL, as in SQL. `+`, `-`, `*` and `/` also apply to dates, times and
-durations; see the duration literal page.
+durations, a month added on the calendar, so `DATE '2026-01-31' + INTERVAL '1 month'`
+is 28 February; see the duration literal page.
 
 `a || b` parses to `a + b`, so it is the same expression from then on and is printed
 back as `+`. It joins two strings and adds two numbers. To join a number to text,

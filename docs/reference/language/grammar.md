@@ -641,7 +641,11 @@ literal           ::= STRING
                     | null_word                  /* the missing value: IIf(c, NULL, x) */
                     | ( "DATE" | "TIME" | "TIMESTAMP" | "DURATION" ) STRING
                       /* ISO-8601 text: DATE '2026-03-01', TIMESTAMP '2026-03-01T09:30:00Z',
-                         TIME '09:30', DURATION 'PT30M' */
+                         TIME '09:30', DURATION 'PT30M', DURATION 'P1M' */
+                    | interval_literal
+/* SQL's interval, a DURATION, matched by its text: INTERVAL '1 month',
+   INTERVAL '3' DAY, INTERVAL 1 MONTH. A unit follows a quoted number only. */
+interval_literal  ::= "INTERVAL" ( STRING name? | "-"? NUMBER name )
 
 /* {id, total: amount * 2}: a struct.  {id} is short for {id: id}. */
 struct_construction ::= "{" ( IDENTIFIER ( ":" operand )? ( "," IDENTIFIER ( ":" operand )? )* )? "}"

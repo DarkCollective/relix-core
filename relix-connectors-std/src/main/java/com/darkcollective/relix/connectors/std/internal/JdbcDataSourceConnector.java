@@ -542,7 +542,10 @@ public final class JdbcDataSourceConnector implements DataSourceConnector {
                 if (raw == null) yield NullValue.INSTANCE;
                 if (raw instanceof Duration d) yield new DurationValue(d);
                 try {
-                    yield new DurationValue(TemporalLiterals.parseDuration(raw.toString()));
+                    // An INTERVAL column arrives as the driver's own object; its text is
+                    // PostgreSQL's interval output, "1 years 2 mons 3 days 04:05:06".
+                    TemporalLiterals.Span span = TemporalLiterals.parseInterval(raw.toString());
+                    yield new DurationValue(span.months(), span.exact());
                 } catch (DateTimeException e) {
                     throw new EvaluationException(
                             "JDBC: cannot read column '" + colName + "' as DURATION (got '"

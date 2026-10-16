@@ -990,6 +990,11 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     + "NUMBER or DURATION literal");
             return;
         }
+        if (threshold instanceof DurationOperand gap && !gap.isExact()) {
+            error(node.location(), "Sessionize SESSIONIZE: GAP threshold must be an exact DURATION;"
+                    + " DURATION '" + gap.iso() + "' has calendar months, which have no fixed length");
+            return;
+        }
         if (orderType == null || orderType == ScalarType.ANY) {
             return;
         }
@@ -1716,10 +1721,13 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      *                {@code null} when the condition shape was already rejected
      */
     private void validateAsOfTolerance(AsOfJoinNode node, ComparisonPredicate matchOn) {
-        if (!(node.tolerance().get() instanceof DurationOperand)) {
+        if (!(node.tolerance().get() instanceof DurationOperand tolerance)) {
             error(node.location(),
                   "AS-OF join: WITHIN tolerance must be a DURATION literal, "
                   + "e.g. WITHIN DURATION 'PT1H'");
+        } else if (!tolerance.isExact()) {
+            error(node.location(), "AS-OF join: WITHIN tolerance must be an exact DURATION;"
+                    + " DURATION '" + tolerance.iso() + "' has calendar months, which have no fixed length");
         }
         if (matchOn == null) return;
         Optional<Schema> leftOpt  = annotations.get(node.left());

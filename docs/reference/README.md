@@ -189,7 +189,7 @@ Writing constant values, including the first-class temporal types.
 | [DATE literal](literals/date-literal.md) | `DATE '2026-01-31'` |
 | [TIME literal](literals/time-literal.md) | `TIME '09:30:00'` |
 | [TIMESTAMP literal](literals/timestamp-literal.md) | `TIMESTAMP '2026-01-31T09:30:00Z'` |
-| [DURATION literal](literals/duration-literal.md) | `DURATION 'PT90M'` |
+| [DURATION literal](literals/duration-literal.md) | `DURATION 'PT90M'`, `DURATION 'P1M'`, `INTERVAL '1 month'` |
 | [Truth relations](literals/truth-relations.md) | `UNIT` / `EMPTY` (aliases `DEE` / `DUM`) — the two zero-column relations |
 
 ## 10. Built-in functions
@@ -288,7 +288,12 @@ argument).
 [TIMEZONE](functions/datetime/timezone.md),
 [MAKE_DATE](functions/datetime/make_date.md),
 [LAST_DAY](functions/datetime/last_day.md),
-[DATEDIFF](functions/datetime/datediff.md)
+[DATEDIFF](functions/datetime/datediff.md),
+[DATEADD](functions/datetime/dateadd.md),
+[ADD_MONTHS](functions/datetime/add_months.md),
+[DATE_ADD](functions/datetime/date_add.md),
+[DATE_SUB](functions/datetime/date_sub.md),
+[AGE](functions/datetime/age.md)
 
 **Conditional** —
 [IIf](functions/conditional/iif.md),

@@ -22,8 +22,9 @@ Items older than 90 days:
   σ DAYS(NOW() - created_at) > 90 (Items)
 
 # Limitations:
-Argument must be a DURATION. Whole days (truncated). NULL in → NULL out. For
-calendar-aware month/year spans, compute from DATE parts instead.
+Argument must be a DURATION. Whole days (truncated). NULL in → NULL out. A calendar
+month in the duration counts as 30 days, as durations are compared; for the years,
+months and days between two dates, use AGE.
 
 # Alternatives:
 MINUTES / SECONDS for finer units.

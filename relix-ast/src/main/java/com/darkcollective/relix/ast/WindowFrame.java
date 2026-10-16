@@ -177,7 +177,7 @@ public sealed interface WindowFrame
         public static String literal(Operand offset) {
             return switch (offset) {
                 case NumberOperand n -> n.value();
-                case DurationOperand d -> "DURATION '" + d.value() + "'";
+                case DurationOperand d -> "DURATION '" + d.iso() + "'";
                 default -> String.valueOf(offset);
             };
         }

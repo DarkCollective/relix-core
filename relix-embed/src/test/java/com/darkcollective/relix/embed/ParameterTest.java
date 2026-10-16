@@ -292,7 +292,7 @@ final class ParameterTest {
                 "σ DATE '2026-02-01' < $p (Orders)                | 03/01/2026 | DATE",
                 "σ TIME '12:00:00' < $p (Orders)                  | noon     | TIME",
                 "σ TIMESTAMP '2026-01-01T00:00:00Z' < $p (Orders) | 2026-01-01 | TIMESTAMP",
-                "σ DURATION 'PT10M' < $p (Orders)                 | 15 minutes | DURATION"})
+                "σ DURATION 'PT10M' < $p (Orders)                 | a while  | DURATION"})
         @DisplayName("text that is not a literal of the type is refused, naming it")
         void refuses(String query, String text, String type) {
             try (Relix relix = orders()) {

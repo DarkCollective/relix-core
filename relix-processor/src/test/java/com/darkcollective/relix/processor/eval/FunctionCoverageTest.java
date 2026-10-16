@@ -196,6 +196,12 @@ final class FunctionCoverageTest {
             exact("last_day",      "LAST_DAY(DATE '2024-02-10')",                   "2024-02-29"),
             exact("eomonth",       "EOMONTH(DATE '2024-02-10')",                    "2024-02-29"),
             num  ("datediff",      "DATEDIFF(month, DATE '2024-01-31', DATE '2024-02-01')", "1"),
+            exact("dateadd",       "DATEADD(month, 1, DATE '2024-01-31')",          "2024-02-29"),
+            exact("timestampadd",  "TIMESTAMPADD(QUARTER, 1, DATE '2024-11-30')",   "2025-02-28"),
+            exact("add_months",    "ADD_MONTHS(DATE '2024-02-29', 1)",              "2024-03-31"),
+            exact("date_add",      "DATE_ADD(DATE '2024-01-31', INTERVAL 1 MONTH)", "2024-02-29"),
+            exact("date_sub",      "DATE_SUB(DATE '2024-03-31', INTERVAL 1 MONTH)", "2024-02-29"),
+            exact("age",           "AGE(DATE '2001-04-10', DATE '1957-06-13')",     "P43Y9MT648H"),
             // ── Nested data ─────────────────────────────────────────────────────
             // Its argument is a constructed struct, since no literal spells an object.
             exact("entries", "Entries({ us: 3, gb: 7 })",

@@ -173,7 +173,7 @@ public final class ValueComparator implements Comparator<Value> {
             case DateValue      x when cb instanceof DateValue      y -> x.value().equals(y.value());
             case TimeValue      x when cb instanceof TimeValue      y -> x.value().equals(y.value());
             case TimestampValue x when cb instanceof TimestampValue y -> x.value().equals(y.value());
-            case DurationValue  x when cb instanceof DurationValue  y -> x.value().equals(y.value());
+            case DurationValue  x when cb instanceof DurationValue  y -> x.equals(y);
             // Nested values compare structurally (record equality).
             case StructValue x when cb instanceof StructValue y -> x.equals(y);
             case ArrayValue  x when cb instanceof ArrayValue  y -> x.equals(y);
@@ -247,7 +247,7 @@ public final class ValueComparator implements Comparator<Value> {
             case TimestampValue sa when cb instanceof TimestampValue sb ->
                     sa.value().compareTo(sb.value());
             case DurationValue  da when cb instanceof DurationValue  db ->
-                    da.value().compareTo(db.value());
+                    da.length().compareTo(db.length());
             default -> throw new EvaluationException(unorderable(ca, aColumn, cb, bColumn));
         };
     }
