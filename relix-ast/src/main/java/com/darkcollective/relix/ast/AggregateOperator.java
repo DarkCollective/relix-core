@@ -56,5 +56,30 @@ public enum AggregateOperator {
      * yields the {@code yield} column value from the row whose {@code rank} column
      * is smallest.
      */
-    ARGMIN
+    ARGMIN,
+    /** Sample standard deviation, as SQL's {@code STDDEV}; NULL for fewer than two values. */
+    STDDEV,
+    /** Sample standard deviation. */
+    STDDEV_SAMP,
+    /** Population standard deviation. */
+    STDDEV_POP,
+    /** Sample variance, as SQL's {@code VARIANCE}; NULL for fewer than two values. */
+    VARIANCE,
+    /** Sample variance. */
+    VAR_SAMP,
+    /** Population variance. */
+    VAR_POP,
+    /**
+     * The continuous percentile: the value at a fraction of the way through the sorted
+     * values, interpolated. Its {@link AggregateFunction#yieldExpr() second argument} is
+     * the fraction.
+     */
+    PERCENTILE_CONT,
+    /**
+     * The discrete percentile: the first sorted value whose place reaches a fraction. Its
+     * {@link AggregateFunction#yieldExpr() second argument} is the fraction.
+     */
+    PERCENTILE_DISC,
+    /** The median: the continuous percentile at one half. */
+    MEDIAN
 }

@@ -52,7 +52,7 @@ final class BuiltinFunctionLibraryTest {
     private static final int BUILTIN_COUNT = 118;
 
     /** The eight aggregates: five SQL reducers, one that gathers, two that pick a row. */
-    private static final int AGGREGATE_COUNT = 8;
+    private static final int AGGREGATE_COUNT = 17;
 
     private static final List<ScalarFunction> FUNCTIONS =
             new BuiltinFunctionLibrary().scalarFunctions();
@@ -78,7 +78,7 @@ final class BuiltinFunctionLibraryTest {
         }
 
         @Test
-        @DisplayName("offers the eight aggregates, each once")
+        @DisplayName("offers the aggregates, each once")
         void aggregates() {
             List<String> names = new BuiltinFunctionLibrary().aggregateFunctions().stream()
                     .map(fn -> fn.signature().canonicalName())
@@ -86,7 +86,9 @@ final class BuiltinFunctionLibraryTest {
 
             assertThat(names).hasSize(AGGREGATE_COUNT).doesNotHaveDuplicates()
                     .containsExactlyInAnyOrder("count", "sum", "avg", "min", "max",
-                            "collect", "argmax", "argmin");
+                            "collect", "argmax", "argmin", "stddev", "stddev_samp", "stddev_pop",
+                            "variance", "var_samp", "var_pop", "percentile_cont", "percentile_disc",
+                            "median");
         }
 
         @Test

@@ -30,7 +30,7 @@ import java.util.Set;
 
 /**
  * The functions relix ships with: the scalars — string, similarity, numeric, temporal,
- * conditional, type-check, conversion and nested-data — and the eight aggregates.
+ * conditional, type-check, conversion and nested-data — and the aggregates.
  *
  * <p>It is an ordinary {@link FunctionLibrary}, discovered the same way any other is and
  * built out of the same published seam. Nothing about it is privileged: a library that
@@ -48,7 +48,7 @@ public final class BuiltinFunctionLibrary implements FunctionLibrary {
 
     private static final List<ScalarFunction> SCALARS = scalars();
 
-    private static final List<AggregateFunction> AGGREGATES = AggregateFunctions.all();
+    private static final List<AggregateFunction> AGGREGATES = aggregates();
 
     /**
      * The documentation keys this library will answer for: exactly the ones its own
@@ -104,6 +104,12 @@ public final class BuiltinFunctionLibrary implements FunctionLibrary {
         SCALARS.forEach(fn -> fn.signature().docKey().ifPresent(keys::add));
         AGGREGATES.forEach(fn -> fn.signature().docKey().ifPresent(keys::add));
         return Set.copyOf(keys);
+    }
+
+    private static List<AggregateFunction> aggregates() {
+        List<AggregateFunction> all = new ArrayList<>(AggregateFunctions.all());
+        all.addAll(StatisticalAggregates.all());
+        return List.copyOf(all);
     }
 
     private static List<ScalarFunction> scalars() {

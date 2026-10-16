@@ -388,6 +388,14 @@ aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" ) "(" "DISTINCT"? operand 
                     | "COLLECT" "(" "DISTINCT"? operand ")" ( arrow name )?
                     | "COUNT" "(" ( "DISTINCT"? operand | "*" ) ")" agg_filter? ( arrow name )?
                     | ( "ARGMAX" | "ARGMIN" ) "(" operand "," operand ")" agg_filter? ( arrow name )?
+                    | statistic CALL_OPEN "DISTINCT"? operand ")" agg_filter? ( arrow name )?
+                    | ( "PERCENTILE_CONT" | "PERCENTILE_DISC" ) CALL_OPEN operand
+                      ( "," operand ")"
+                      | ")" "WITHIN" ( "γ" | "GROUP" ) "(" "ORDER" "BY" sort_key ")" )
+                      agg_filter? ( arrow name )?
+/* Matched by their text, so none is reserved: a column may be called median. */
+statistic         ::= "STDDEV" | "STDDEV_SAMP" | "STDDEV_POP"
+                    | "VARIANCE" | "VAR_SAMP" | "VAR_POP" | "MEDIAN"
 /* SUM(amount) FILTER (WHERE status = 'open'): only the rows where the condition holds. */
 agg_filter        ::= "FILTER" "(" "WHERE" predicate ")"
 
@@ -484,6 +492,10 @@ per_names         ::= "PER" name ( "," name )*
 
 /* ROLLING AVG(price) OVER 3 ROWS SORT ts PER ticker AS avg3 (Trades) */
 rolling           ::= "ROLLING" ( "SUM" | "AVG" | "COUNT" | "MIN" | "MAX" ) "(" operand ")"
+                      "OVER" ( INTEGER | "ALL" ) "ROWS"
+                      ( "τ" | "SORT" ) sort_key ( "," sort_key )* per_names? "AS" name input
+                    | "ROLLING" ( "STDDEV" | "STDDEV_SAMP" | "STDDEV_POP" | "VARIANCE" | "VAR_SAMP" | "VAR_POP" )
+                      CALL_OPEN operand ")"
                       "OVER" ( INTEGER | "ALL" ) "ROWS"
                       ( "τ" | "SORT" ) sort_key ( "," sort_key )* per_names? "AS" name input
 
@@ -736,6 +748,8 @@ are easy to miss in the rules above.
 - **A regular-expression match is a test.** `s ~ p` is `REGEXP_LIKE(s, p) = TRUE`,
   `~*` ignores case, and `!~`, `!~*` and `NOT MATCHES` compare with FALSE. The pattern
   is Java's dialect; `MATCHES` is not reserved.
+- **A percentile's order runs one way.** `PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY x
+  DESC)` is the fraction `1 - p` ascending; `PERCENTILE_DISC` takes `ASC` only.
 - **`AT TIME ZONE` binds before arithmetic.** `ts AT TIME ZONE z` is
   `TIMEZONE(z, ts)`; its three words are not reserved. `DATEDIFF(month, a, b)` reads
   a bare first word as the unit's name.
