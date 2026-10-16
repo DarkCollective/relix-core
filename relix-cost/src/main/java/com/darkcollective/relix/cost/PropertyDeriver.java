@@ -280,8 +280,10 @@ public final class PropertyDeriver {
             case EmptyRelationNode ignored -> RelationProperties.wholeRow();
 
             // ── Establish a candidate key from grouping columns ─────────────────
-            case AggregationNode a -> RelationProperties.key(
-                    a.groupingKeys().stream().map(GroupingKey::outputName).toList());
+            // Not over grouping sets: a set's rolled-up NULL may match a NULL in the data,
+            // and a set listed twice gives its rows twice.
+            case AggregationNode a -> a.hasGroupingSets() ? RelationProperties.none()
+                    : RelationProperties.key(a.groupingKeys().stream().map(GroupingKey::outputName).toList());
             case UniversalNode u   -> RelationProperties.key(u.groupingAttributes());
 
             // ── Preserve the input's distinctness ───────────────────────────────

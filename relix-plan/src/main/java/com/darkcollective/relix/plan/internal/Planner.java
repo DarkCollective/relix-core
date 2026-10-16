@@ -1093,11 +1093,12 @@ public final class Planner {
         // Only a grouping entirely over plain columns can be matched against the
         // input's delivered ordering to stream; a derived key (e.g. YEAR(ts)) forces
         // the hash-grouped path.
-        boolean streaming = GroupingKey.plainColumns(node.groupingKeys())
+        // Grouping sets group every row several ways, so they read the input whole.
+        boolean streaming = !node.hasGroupingSets() && GroupingKey.plainColumns(node.groupingKeys())
                 .map(cols -> input.deliveredOrdering().groupsBy(cols))
                 .orElse(false);
-        return new PhysicalNode.Aggregate(
-                schemaOf(node), node.groupingKeys(), node.aggregates(), streaming, input);
+        return new PhysicalNode.Aggregate(schemaOf(node), node.groupingKeys(), node.groupingSets(),
+                node.aggregates(), streaming, input);
     }
 
     // ── joins ─────────────────────────────────────────────────────────────────

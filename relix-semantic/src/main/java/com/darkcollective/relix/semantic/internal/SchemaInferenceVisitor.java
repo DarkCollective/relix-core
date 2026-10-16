@@ -1454,6 +1454,10 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
      * validator is what reports the name.
      */
     private Type aggregateResultType(AggregateFunction agg, Schema input) {
+        // GROUPING is the engine's, not a library's: a whole number of rolled-up keys.
+        if (agg.operator() == AggregateOperator.GROUPING) {
+            return ScalarType.NUMBER;
+        }
         List<Type> argumentTypes = new ArrayList<>(2);
         argumentTypes.add(inferOperandType(agg.argument(), input));
         agg.yieldExpr().ifPresent(yield -> argumentTypes.add(inferOperandType(yield, input)));

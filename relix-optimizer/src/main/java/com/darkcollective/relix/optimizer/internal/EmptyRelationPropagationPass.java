@@ -203,8 +203,9 @@ final class EmptyRelationPropagationPass {
             case UnnestNode n     -> isEmpty(n.input());
 
             // Grouping operators only when they group: a scalar aggregate over an
-            // empty input is one row (COUNT = 0), and a no-key ∀ is vacuously true.
-            case AggregationNode n -> !n.groupingKeys().isEmpty() && isEmpty(n.input());
+            // empty input is one row (COUNT = 0), as is an empty grouping set — the grand
+            // total of a ROLLUP — and a no-key ∀ is vacuously true.
+            case AggregationNode n -> !n.producesRowOverEmptyInput() && isEmpty(n.input());
             case UniversalNode n   -> !n.groupingAttributes().isEmpty() && isEmpty(n.input());
 
             // Joins where either side being empty empties the result.

@@ -244,4 +244,31 @@ final class RedundantGroupingPassTest {
             assertThat(fired()).isTrue();
         }
     }
+
+    @Nested
+    @DisplayName("AGG-001 — not over grouping sets (#125)")
+    class GroupingSets {
+
+        @Test
+        @DisplayName("an inner ROLLUP's rows need not be distinct: its subtotal's NULL can match the data's")
+        void innerRollup() {
+            var inner = AstBuilders.groupingSets(com.darkcollective.relix.ast.GroupingKey.columns(List.of("a")),
+                    List.of(List.of(0), List.of()), List.of(sum("x")), rel("R"));
+            var outer = agg(List.of("a", "sum_x"), List.of(), inner);
+
+            assertThat(apply(outer)).isSameAs(outer);
+            assertThat(fired()).isFalse();
+        }
+
+        @Test
+        @DisplayName("an outer ROLLUP groups its rows several ways, so it is not the inner γ")
+        void outerRollup() {
+            var inner = agg(List.of("a", "b"), List.of(), rel("R"));
+            var outer = AstBuilders.groupingSets(com.darkcollective.relix.ast.GroupingKey.columns(List.of("a", "b")),
+                    List.of(List.of(0, 1), List.of(0)), List.of(), inner);
+
+            assertThat(apply(outer)).isSameAs(outer);
+            assertThat(fired()).isFalse();
+        }
+    }
 }

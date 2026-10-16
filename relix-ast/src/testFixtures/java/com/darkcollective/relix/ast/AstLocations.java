@@ -377,7 +377,8 @@ public final class AstLocations {
                     .map(AstLocations::stripGroupingKey).toList();
             List<AggregateFunction> aggs = node.aggregates().stream()
                     .map(AstLocations::stripAgg).toList();
-            return new AggregationNode(keys, aggs, node.input().accept(this), SourceLocation.UNKNOWN);
+            return new AggregationNode(keys, node.groupingSets(), aggs, node.input().accept(this),
+                    SourceLocation.UNKNOWN);
         }
 
         @Override

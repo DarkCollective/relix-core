@@ -461,7 +461,7 @@ public final class RelNodeOperands {
                             : new AggregateFunction(a.operator(), arg, yieldExpr, a.alias(), a.distinct(), orderBy);
                 });
                 yield keys == n.groupingKeys() && aggs == n.aggregates() ? n
-                        : new AggregationNode(keys, aggs, n.input(), n.location());
+                        : n.withKeysAndAggregates(keys, aggs);
             }
             case SortNode n -> {
                 List<SortSpecification> specs = mapSortSpecs(n.sortSpecs(), onOperand);

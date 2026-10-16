@@ -327,6 +327,9 @@ final class ReferenceIndex {
               "string_agg", "group_concat", "listagg", "string aggregate", "join strings", "array_agg"),
             e("aggregates/filter.md", "aggregate", "FILTER", "FILTER", "Aggregate only the rows where a condition holds",
               "filter", "aggregate filter", "filter where", "conditional aggregate", "count if", "sum if"),
+            e("aggregates/grouping.md", "aggregate", "GROUPING", "GROUPING",
+              "Which keys a ROLLUP, CUBE or GROUPING SETS row rolled up",
+              "grouping", "grouping_id", "rollup", "cube", "grouping sets", "subtotal", "grand total"),
 
             // ── Advanced operators ───────────────────────────────────────────
             e("advanced/closure.md",        "advanced", "Closure",      "CLOSURE",

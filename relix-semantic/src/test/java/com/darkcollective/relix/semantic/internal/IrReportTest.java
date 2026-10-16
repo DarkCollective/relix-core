@@ -1853,5 +1853,16 @@ final class IrReportTest {
                     """);
             assertThat(bare).contains("[cust]").doesNotContain("cust→");
         }
+
+        @Test
+        @DisplayName("a γ with grouping sets lists the sets by key name")
+        void groupingSets() {
+            String report = report("""
+                    source Orders from database { url: "${DB}", table: "orders",
+                        schema: { region: STRING, cust: NUMBER, amount: NUMBER } };
+                    Totals := { γ ROLLUP (region, cust), SUM(amount) → total (Orders) };
+                    """);
+            assertThat(report).contains("[region, cust] SETS (region, cust) (region) () SUM");
+        }
     }
 }

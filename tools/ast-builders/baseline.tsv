@@ -109,3 +109,4 @@
 1	relix-function/src/test/java/com/darkcollective/relix/function/AggregateFunctionTest.java
 3	relix-connectors-std/src/test/java/com/darkcollective/relix/connectors/std/internal/FileResolverTest.java
 1	relix-ast/src/test/java/com/darkcollective/relix/ast/UsingJoinNodeTest.java
+1	relix-ast/src/test/java/com/darkcollective/relix/ast/GroupingSetsTest.java

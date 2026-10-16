@@ -1139,6 +1139,59 @@ final class SqlPushdownPlannerTest {
     }
 
     @Nested
+    @DisplayName("grouping sets (#125)")
+    class GroupingSets {
+
+        private String src(String url, String query) {
+            return "connection db from database { url: \"" + url + "\" };\n"
+                    + "source S from db { table: \"s\", schema: { region: STRING, product: STRING, amount: NUMBER } };\n"
+                    + "query { " + query + " };";
+        }
+
+        @Test
+        @DisplayName("are GROUPING SETS on PostgreSQL, with GROUPING one bit per key")
+        void postgres() {
+            assertThat(push(src("jdbc:postgresql://h/db", "γ CUBE (region, product), SUM(amount) → t, "
+                    + "GROUPING(region, product) → g, GROUPING(product) → p (S)"))
+                    .map(PhysicalNode.PushedScan::nativeQuery)).hasValueSatisfying(q -> assertThat(q)
+                    .contains("GROUP BY GROUPING SETS ((\"region\", \"product\"), (\"region\"), (\"product\"), ())")
+                    .contains("(GROUPING(\"region\") * 2 + GROUPING(\"product\"))")
+                    .contains(", GROUPING(\"product\")"));
+        }
+
+        @Test
+        @DisplayName("are GROUPING SETS on DuckDB, SQL Server and Db2 too")
+        void theOthers() {
+            for (String url : List.of("jdbc:duckdb:", "jdbc:sqlserver://h:1433", "jdbc:db2://h:50000/sample")) {
+                assertThat(push(src(url, "γ GROUPING SETS ((region), ()), COUNT(*) → n (S)"))
+                        .map(PhysicalNode.PushedScan::nativeQuery)).as(url)
+                        .hasValueSatisfying(q -> assertThat(q).contains("GROUP BY GROUPING SETS ("));
+            }
+        }
+
+        @Test
+        @DisplayName("are WITH ROLLUP on MySQL, which takes only a rollup of the keys in order")
+        void mysql() {
+            assertThat(push(src("jdbc:mysql://h/db", "γ ROLLUP (region, product), SUM(amount) → t (S)"))
+                    .map(PhysicalNode.PushedScan::nativeQuery)).hasValueSatisfying(q -> assertThat(q)
+                    .contains("GROUP BY CONVERT(`region` USING utf8mb4)")
+                    .endsWith("COLLATE utf8mb4_0900_bin WITH ROLLUP"));
+            assertThat(push(src("jdbc:mysql://h/db", "γ CUBE (region, product), SUM(amount) → t (S)"))).isEmpty();
+            assertThat(push(src("jdbc:mysql://h/db", "γ GROUPING SETS ((region, product), (product)), "
+                    + "SUM(amount) → t (S)"))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("run in the engine on a backend without them, and GROUPING of an ordinary grouping is 0")
+        void elsewhere() {
+            assertThat(push(src("jdbc:sqlite:/tmp/x.db", "γ ROLLUP (region), SUM(amount) → t (S)"))).isEmpty();
+            assertThat(push(src("jdbc:postgresql://h/db", "γ region, SUM(amount) → t, GROUPING(region) → g (S)"))
+                    .map(PhysicalNode.PushedScan::nativeQuery)).hasValueSatisfying(q -> assertThat(q)
+                    .contains(", 0 FROM").contains("GROUP BY \"region\""));
+        }
+    }
+
+    @Nested
     @DisplayName("a regular-expression match (#138)")
     class RegexMatch {
 

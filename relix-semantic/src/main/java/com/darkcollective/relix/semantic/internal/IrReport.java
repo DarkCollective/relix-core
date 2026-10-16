@@ -530,6 +530,13 @@ public final class IrReport {
                         : "[" + a.groupingKeys().stream()
                                 .map(IrReport::groupingKeyLabel)
                                 .collect(Collectors.joining(", ")) + "] ";
+                if (a.hasGroupingSets()) {
+                    grp += "SETS " + a.groupingSets().stream()
+                            .map(set -> "(" + set.stream()
+                                    .map(i -> a.groupingKeys().get(i).outputName())
+                                    .collect(Collectors.joining(", ")) + ")")
+                            .collect(Collectors.joining(" ")) + " ";
+                }
                 String aggs = a.aggregates().stream()
                         .map(ag -> {
                             String args = ag.argument().accept(OPND)

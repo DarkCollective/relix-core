@@ -17,6 +17,7 @@ package com.darkcollective.relix.optimizer.internal;
 
 import com.darkcollective.relix.optimizer.OptimizationCode;
 import com.darkcollective.relix.ast.AggregateFunction;
+import com.darkcollective.relix.ast.AggregateOperator;
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.DistinctNode;
 import com.darkcollective.relix.ast.FunctionCall;
@@ -141,7 +142,7 @@ public final class DistinctEliminationPass {
                     }
                 }
                 yield ni != a.input()
-                        ? new AggregationNode(a.groupingKeys(), a.aggregates(), ni, a.location())
+                        ? a.withInput(ni)
                         : a;
             }
 
@@ -170,8 +171,10 @@ public final class DistinctEliminationPass {
     private static boolean duplicateInsensitive(AggregationNode node, FunctionCatalog functions) {
         for (AggregateFunction aggregate : node.aggregates()) {
             // A DISTINCT aggregate reads each value once, so a duplicated row cannot
-            // reach it twice, whatever the aggregate itself declares.
-            boolean declared = aggregate.distinct() || functions.aggregate(aggregate.operator().name())
+            // reach it twice, whatever the aggregate itself declares. GROUPING reads no
+            // rows at all.
+            boolean declared = aggregate.distinct()
+                    || aggregate.operator() == AggregateOperator.GROUPING || functions.aggregate(aggregate.operator().name())
                     .map(reduction -> reduction.signature()
                             .has(AggregateProperty.DUPLICATE_INSENSITIVE))
                     .orElse(false);
