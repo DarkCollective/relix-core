@@ -23,5 +23,8 @@ A bar of stars:
 SQL: `REPEAT(…)` on PostgreSQL, MySQL and DuckDB. SQL Server's REPLICATE returns
 NULL for a negative count, so there and elsewhere it runs in the engine.
 
+# SQL names:
+`REPLICATE` is the same function by SQL Server's name.
+
 # See Also:
 [lpad](lpad.md), [rpad](rpad.md)

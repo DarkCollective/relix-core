@@ -31,5 +31,8 @@ on MySQL; in the engine elsewhere.
 # Alternatives:
 Round for the nearest value, Int and Ceil for the floor and ceiling.
 
+# SQL names:
+`TRUNCATE` is the same function by MySQL's name.
+
 # See Also:
 [fix](fix.md), [round](round.md), [int](int.md), [ceil](ceil.md)
