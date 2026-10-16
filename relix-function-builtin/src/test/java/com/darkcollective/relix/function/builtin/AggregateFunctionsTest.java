@@ -310,6 +310,9 @@ final class AggregateFunctionsTest {
                     .isEqualTo("9");
             assertThat(display(merged("COLLECT", single(s("a")), single(s("b")))))
                     .isEqualTo("[a, b]");
+            assertThat(display(merged("STRING_AGG", List.of(List.of(s("a"), s("-"))),
+                    List.of(List.of(s("b"), s("+")), List.of(NullValue.INSTANCE, s("!")), List.of(n("3"), NullValue.INSTANCE)))))
+                    .isEqualTo("a+b3");
             assertThat(display(merged("ARGMAX",
                     List.of(List.of(n("1"), s("low"))),
                     List.of(List.of(n("9"), s("high"))))))

@@ -2088,16 +2088,20 @@ public final class RelAlgebraParser {
      * names is reserved: a column may still be called {@code median}. Each is an
      * aggregate only where it is called, written directly before its parenthesis.
      */
-    private static final java.util.Map<String, AggregateOperator> NAMED_AGGREGATES = java.util.Map.of(
-            "STDDEV", AggregateOperator.STDDEV,
-            "STDDEV_SAMP", AggregateOperator.STDDEV_SAMP,
-            "STDDEV_POP", AggregateOperator.STDDEV_POP,
-            "VARIANCE", AggregateOperator.VARIANCE,
-            "VAR_SAMP", AggregateOperator.VAR_SAMP,
-            "VAR_POP", AggregateOperator.VAR_POP,
-            "PERCENTILE_CONT", AggregateOperator.PERCENTILE_CONT,
-            "PERCENTILE_DISC", AggregateOperator.PERCENTILE_DISC,
-            "MEDIAN", AggregateOperator.MEDIAN);
+    private static final java.util.Map<String, AggregateOperator> NAMED_AGGREGATES = java.util.Map.ofEntries(
+            java.util.Map.entry("STDDEV", AggregateOperator.STDDEV),
+            java.util.Map.entry("STDDEV_SAMP", AggregateOperator.STDDEV_SAMP),
+            java.util.Map.entry("STDDEV_POP", AggregateOperator.STDDEV_POP),
+            java.util.Map.entry("VARIANCE", AggregateOperator.VARIANCE),
+            java.util.Map.entry("VAR_SAMP", AggregateOperator.VAR_SAMP),
+            java.util.Map.entry("VAR_POP", AggregateOperator.VAR_POP),
+            java.util.Map.entry("PERCENTILE_CONT", AggregateOperator.PERCENTILE_CONT),
+            java.util.Map.entry("PERCENTILE_DISC", AggregateOperator.PERCENTILE_DISC),
+            java.util.Map.entry("MEDIAN", AggregateOperator.MEDIAN),
+            java.util.Map.entry("STRING_AGG", AggregateOperator.STRING_AGG),
+            java.util.Map.entry("GROUP_CONCAT", AggregateOperator.STRING_AGG),
+            java.util.Map.entry("LISTAGG", AggregateOperator.STRING_AGG),
+            java.util.Map.entry("ARRAY_AGG", AggregateOperator.COLLECT));
 
     /** The named aggregates that roll over a window frame: the variance family. */
     private static final java.util.Set<AggregateOperator> ROLLING_STATISTICS = java.util.EnumSet.of(
@@ -2204,6 +2208,10 @@ public final class RelAlgebraParser {
             argument = parseOperand();
         }
 
+        if (operator == AggregateOperator.STRING_AGG) {
+            return parseStringAgg(nameTok, argument, distinct);
+        }
+
         // ARGMAX/ARGMIN take a second expression: ARGMAX(rank, yield).
         boolean isArg = operator == AggregateOperator.ARGMAX || operator == AggregateOperator.ARGMIN;
         Optional<Operand> yieldExpr = Optional.empty();
@@ -2211,9 +2219,63 @@ public final class RelAlgebraParser {
             expect(TokenType.COMMA, "Expected ',' — ARGMAX/ARGMIN take two arguments: (rank, yield)");
             yieldExpr = Optional.of(parseOperand());
         }
+        // COLLECT(x ORDER BY y), SQL's array_agg ordering.
+        List<SortSpecification> orderBy = operator == AggregateOperator.COLLECT ? parseAggregateOrder() : List.of();
 
         expect(TokenType.RPAREN, "Expected ')' after aggregate function argument");
-        return finishAggregate(operator, argument, yieldExpr, distinct);
+        return finishAggregate(operator, argument, yieldExpr, distinct, orderBy);
+    }
+
+    /** An {@code ORDER BY} inside an aggregate's parentheses, or none. */
+    private List<SortSpecification> parseAggregateOrder() {
+        if (current.type() != TokenType.ORDER) {
+            return List.of();
+        }
+        advance();
+        expect(TokenType.BY, "Expected 'BY' after 'ORDER'");
+        return parseSortSpecificationList();
+    }
+
+    /**
+     * Parses the rest of a string aggregate, in each engine's spelling, after its value:
+     * PostgreSQL's and SQL Server's {@code STRING_AGG(x, sep [ORDER BY …])}, MySQL's
+     * {@code GROUP_CONCAT(x [ORDER BY …] [SEPARATOR sep])} with a comma by default, and
+     * Oracle's {@code LISTAGG(x [, sep]) [WITHIN GROUP (ORDER BY …)]} with nothing by
+     * default. All three are {@link AggregateOperator#STRING_AGG}.
+     */
+    private AggregateFunction parseStringAgg(Token nameTok, Operand argument, boolean distinct) {
+        String name = nameTok.lexeme().toUpperCase(java.util.Locale.ROOT);
+        SourceLocation at = loc(nameTok);
+        Operand separator;
+        List<SortSpecification> orderBy;
+        switch (name) {
+            case "GROUP_CONCAT" -> {
+                orderBy = parseAggregateOrder();
+                separator = matchWord("SEPARATOR") ? parseOperand() : new StringOperand(",", at);
+                expect(TokenType.RPAREN, "Expected ')' after the GROUP_CONCAT arguments");
+            }
+            case "LISTAGG" -> {
+                separator = match(TokenType.COMMA) ? parseOperand() : new StringOperand("", at);
+                expect(TokenType.RPAREN, "Expected ')' after the LISTAGG arguments");
+                orderBy = List.of();
+                if (current.type() == TokenType.WITHIN) {
+                    advance();
+                    expect(TokenType.AGGREGATION, "Expected 'GROUP' after 'WITHIN'");
+                    expect(TokenType.LPAREN, "Expected '(' after 'WITHIN GROUP'");
+                    expect(TokenType.ORDER, "Expected 'ORDER BY' in WITHIN GROUP (…)");
+                    expect(TokenType.BY, "Expected 'BY' after 'ORDER'");
+                    orderBy = parseSortSpecificationList();
+                    expect(TokenType.RPAREN, "Expected ')' after the WITHIN GROUP ordering");
+                }
+            }
+            default -> {
+                expect(TokenType.COMMA, "Expected ',' and a separator: STRING_AGG(x, ', ')");
+                separator = parseOperand();
+                orderBy = parseAggregateOrder();
+                expect(TokenType.RPAREN, "Expected ')' after the STRING_AGG arguments");
+            }
+        }
+        return finishAggregate(AggregateOperator.STRING_AGG, argument, Optional.of(separator), distinct, orderBy);
     }
 
     /**
@@ -2221,7 +2283,8 @@ public final class RelAlgebraParser {
      * optional {@code → alias}.
      */
     private AggregateFunction finishAggregate(AggregateOperator operator, Operand argument,
-                                              Optional<Operand> yieldExpr, boolean distinct) {
+                                              Optional<Operand> yieldExpr, boolean distinct,
+                                              List<SortSpecification> orderBy) {
         // SQL's AGG(x) FILTER (WHERE c): only the rows where c holds are read, written as
         // the portable AGG(IIf(c, x, NULL)) — an aggregate skips a NULL, so COUNT is 0
         // and the rest NULL over a group in which no row passes. ARGMAX/ARGMIN filter
@@ -2248,7 +2311,7 @@ public final class RelAlgebraParser {
             alias = Optional.of(expectName("Expected alias name after '→'").lexeme());
         }
 
-        return new AggregateFunction(operator, argument, yieldExpr, alias, distinct);
+        return new AggregateFunction(operator, argument, yieldExpr, alias, distinct, orderBy);
     }
 
     /**
@@ -2286,7 +2349,7 @@ public final class RelAlgebraParser {
                         ArithmeticOperator.MINUS, fraction, loc(nameTok));
             }
         }
-        return finishAggregate(operator, argument, Optional.of(fraction), false);
+        return finishAggregate(operator, argument, Optional.of(fraction), false, List.of());
     }
 
     private boolean startsRenameAttributeList() {

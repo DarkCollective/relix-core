@@ -244,6 +244,11 @@ final class GrammarReferenceTest {
             "query { γ k, COUNT(*) FILTER (WHERE s = 1) → n, SUM(x) filter (where y > 0) (R) };",
             "query { γ COLLECT(x) FILTER (WHERE y = 1) (R) };",
             "query { γ SUM(x) FILTER (y = 1) (R) };",
+            // string aggregates
+            "query { γ STRING_AGG(DISTINCT x, ', ' ORDER BY y DESC) → a, GROUP_CONCAT(x ORDER BY y SEPARATOR ';') → b,"
+                    + " LISTAGG(x, '-') WITHIN GROUP (ORDER BY y) → c, ARRAY_AGG(x ORDER BY y) → d (R) };",
+            "query { γ GROUP_CONCAT(x), LISTAGG(x), COLLECT(x ORDER BY y) (R) };",
+            "query { γ STRING_AGG(x) (R) };",
             // AT TIME ZONE and DATEDIFF's unit
             "query { π ts AT TIME ZONE 'Europe/London' AT TIME ZONE z → a, -ts at time zone 'UTC' + d → b (R) };",
             "query { π DATEDIFF(month, a, b) → m, DATEDIFF('day', a, b) → d, DATEDIFF(x) → e (R) };",

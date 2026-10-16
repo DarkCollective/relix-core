@@ -445,6 +445,7 @@ public final class ColumnPruningPass {
         for (AggregateFunction fn : a.aggregates()) {
             collectInto(fn.argument(), columns);
             fn.yieldExpr().ifPresent(y -> collectInto(y, columns));
+            fn.orderBy().forEach(s -> collectInto(s.expression(), columns));
         }
         return columns;
     }

@@ -396,6 +396,7 @@ public final class RenameEliminationPass {
                 for (AggregateFunction fn : a.aggregates()) {
                     collect(fn.argument(), into);
                     fn.yieldExpr().ifPresent(y -> collect(y, into));
+                    fn.orderBy().forEach(s -> collect(s.expression(), into));
                 }
             }
             case SortNode t -> {

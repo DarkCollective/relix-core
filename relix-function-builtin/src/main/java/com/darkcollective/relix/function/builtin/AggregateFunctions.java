@@ -30,6 +30,7 @@ import com.darkcollective.relix.symbol.Type;
 import com.darkcollective.relix.value.ArrayValue;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.NumberValue;
+import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.Value;
 
 import java.math.BigDecimal;
@@ -104,6 +105,12 @@ final class AggregateFunctions {
                 extremum("MAX", sqlCall("MAX"), false),
 
                 new Collect(),
+                // STRING_AGG reads its group in order, so it is order-sensitive, and it
+                // keeps a repeated value, so it is not duplicate-insensitive. Its backend
+                // spelling depends on its ORDER BY, which the planner writes itself.
+                new Reducer(signature("STRING_AGG", ScalarType.STRING,
+                        List.of(value("value"), value("separator")), Set.of(), false),
+                        PushdownSpelling.NONE, context -> new Join(), argumentTypes -> ScalarType.STRING),
                 new ArgExtremum("ARGMAX", false),
                 new ArgExtremum("ARGMIN", true));
     }
@@ -373,6 +380,48 @@ final class AggregateFunctions {
         @Override
         public Value finish() {
             return new ArrayValue(List.copyOf(gathered));
+        }
+    }
+
+    /**
+     * {@code STRING_AGG(value, separator)}: the values' text, each after the separator
+     * its own row gives, as PostgreSQL's {@code string_agg} reads one. A NULL value is
+     * skipped with its separator, a NULL separator joins with nothing, and a group with
+     * no values is NULL.
+     */
+    private static final class Join implements Accumulator {
+
+        private final List<String> separators = new ArrayList<>();
+        private final List<String> values = new ArrayList<>();
+
+        @Override
+        public void accumulate(List<Value> arguments) {
+            Value value = arguments.get(0);
+            if (value.isNull()) {
+                return;
+            }
+            Value separator = arguments.get(1);
+            separators.add(separator.isNull() ? "" : separator.asDisplayString());
+            values.add(value.asDisplayString());
+        }
+
+        @Override
+        public void merge(Accumulator other) {
+            Join that = (Join) other;
+            separators.addAll(that.separators);
+            values.addAll(that.values);
+        }
+
+        @Override
+        public Value finish() {
+            if (values.isEmpty()) {
+                return NullValue.INSTANCE;
+            }
+            StringBuilder joined = new StringBuilder(values.get(0));
+            for (int i = 1; i < values.size(); i++) {
+                joined.append(separators.get(i)).append(values.get(i));
+            }
+            return new StringValue(joined.toString());
         }
     }
 

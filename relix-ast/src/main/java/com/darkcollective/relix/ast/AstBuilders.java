@@ -332,6 +332,17 @@ public abstract class AstBuilders {
                 Optional.of(alias));
     }
 
+    /**
+     * An aliased aggregate that reads its group in an order, e.g.
+     * {@code STRING_AGG(name, ', ' ORDER BY name) → names}.
+     */
+    public static AggregateFunction orderedAgg(AggregateOperator operator, Operand argument,
+                                               Operand yieldExpr, List<SortSpecification> orderBy,
+                                               String alias) {
+        return new AggregateFunction(operator, argument, Optional.of(yieldExpr), Optional.of(alias),
+                false, orderBy);
+    }
+
     /** A grouping key on a bare column. */
     public static GroupingKey key(String column) {
         return GroupingKey.column(column);

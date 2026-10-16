@@ -717,4 +717,32 @@ final class AggregationParserTest extends ParserTestSupport {
                         new WindowFrame.BoundedFrame(3), "s", AstBuilders.rel("R")));
         assertParseError("ROLLING MEDIAN(x) OVER 3 ROWS SORT t AS s (R)").hasMessageContaining("Expected a window aggregate");
     }
+
+    // ==================== string aggregates (#128) ====================
+
+    @org.junit.jupiter.api.Test
+    public void stringAggregatesInEachEnginesSpelling() {
+        AggregationNode node = (AggregationNode) parse("γ STRING_AGG(DISTINCT x, ', ' ORDER BY y DESC, z) → s (R)");
+        AggregateFunction agg = node.aggregates().get(0);
+        org.assertj.core.api.Assertions.assertThat(agg.operator()).isEqualTo(AggregateOperator.STRING_AGG);
+        org.assertj.core.api.Assertions.assertThat(agg.distinct()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(agg.orderBy()).extracting(s -> s.columnName().orElseThrow())
+                .containsExactly("y", "z");
+        org.assertj.core.api.Assertions.assertThat(parse("γ STRING_AGG(x, ', ' ORDER BY y DESC) → s (R)").prettyPrint())
+                .isEqualTo("γ STRING_AGG(x, \", \" ORDER BY y DESC) → s (R)");
+        assertParsesTo("γ group_concat(x order by y separator ';') → s (R)",
+                parse("γ STRING_AGG(x, ';' ORDER BY y) → s (R)"));
+        parse("γ customer_id, GROUP_CONCAT(status ORDER BY order_date SEPARATOR ' / ') → history (Orders)");
+        assertParsesTo("γ GROUP_CONCAT(x) → s (R)", parse("γ STRING_AGG(x, ',') → s (R)"));
+        assertParsesTo("γ LISTAGG(x, '-') WITHIN GROUP (ORDER BY y) → s (R)",
+                parse("γ STRING_AGG(x, '-' ORDER BY y) → s (R)"));
+        assertParsesTo("γ listagg(x) → s (R)", parse("γ STRING_AGG(x, '') → s (R)"));
+        assertParsesTo("γ ARRAY_AGG(x ORDER BY y) → a (R)", parse("γ COLLECT(x ORDER BY y) → a (R)"));
+        // Not reserved: a column may still be called listagg.
+        org.assertj.core.api.Assertions.assertThat(((AggregationNode) parse("γ listagg, COUNT(*) (R)"))
+                .groupingKeys()).hasSize(1);
+        assertParseError("γ STRING_AGG(x) (R)").hasMessageContaining("STRING_AGG(x, ', ')");
+        assertParseError("γ LISTAGG(x) WITHIN GROUP (y) (R)").hasMessageContaining("ORDER BY");
+        assertParseError("γ SUM(x ORDER BY y) (R)");
+    }
 }

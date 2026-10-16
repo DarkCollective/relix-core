@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.function.builtin;
 
+import com.darkcollective.relix.function.Arity;
 import com.darkcollective.relix.function.ScalarFunction;
 import com.darkcollective.relix.value.ArrayValue;
 import com.darkcollective.relix.value.NullValue;
@@ -30,6 +31,7 @@ import java.util.Map;
 import static com.darkcollective.relix.function.builtin.Category.PURE_DETERMINISTIC;
 import static com.darkcollective.relix.function.builtin.Category.p;
 import static com.darkcollective.relix.symbol.ScalarType.ANY;
+import static com.darkcollective.relix.symbol.ScalarType.STRING;
 
 /**
  * The nested-data built-ins: reaching into a value whose shape the heading does not
@@ -63,7 +65,40 @@ final class NestedFunctions {
                 // different value, so the call stays in the engine until a $map renames
                 // them.
                 NESTED.fn("Entries", ANY, PURE_DETERMINISTIC, List.of(p("object", ANY)),
-                        args -> entries(args.get(0))));
+                        args -> entries(args.get(0))),
+
+                // An array's elements are written as the engine displays them, which no
+                // backend matches for numbers and dates, so this runs here only.
+                NESTED.fn("ARRAY_TO_STRING", STRING, PURE_DETERMINISTIC,
+                        List.of(p("array", ANY), p("separator", STRING), p("null_text", STRING)),
+                        Arity.between(2, 3), NestedFunctions::arrayToString));
+    }
+
+    /**
+     * {@code ARRAY_TO_STRING(array, separator [, null_text])}: the elements' text joined
+     * by the separator, as PostgreSQL's {@code array_to_string}. A NULL element is left
+     * out, or written as {@code null_text} where one is given; a NULL array or separator
+     * is a NULL result.
+     */
+    private static Value arrayToString(List<Value> args) {
+        Value array = args.get(0);
+        Value separator = args.get(1);
+        if (array.isNull() || separator.isNull()) {
+            return NullValue.INSTANCE;
+        }
+        if (!(array instanceof ArrayValue elements)) {
+            throw Arguments.reject("ARRAY_TO_STRING: expected an array, got " + array.type());
+        }
+        Value nullText = args.size() > 2 ? args.get(2) : NullValue.INSTANCE;
+        List<String> parts = new ArrayList<>(elements.elements().size());
+        for (Value element : elements.elements()) {
+            if (!element.isNull()) {
+                parts.add(element.asDisplayString());
+            } else if (!nullText.isNull()) {
+                parts.add(nullText.asDisplayString());
+            }
+        }
+        return new StringValue(String.join(separator.asDisplayString(), parts));
     }
 
     /**

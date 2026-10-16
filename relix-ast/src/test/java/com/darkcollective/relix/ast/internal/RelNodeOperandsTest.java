@@ -127,6 +127,19 @@ final class RelNodeOperandsTest extends AstTestSupport {
         }
 
         @Test
+        @DisplayName("γ reports an aggregate's ORDER BY keys, and rebuilds it when only they change")
+        void orderedAggregate() {
+            var ordered = orderedAgg(AggregateOperator.STRING_AGG, attr("name"), str(", "),
+                    List.of(desc("amount")), "names");
+            var node = groupByKeys(List.of(key("region")), List.of(ordered), A);
+            assertThat(operandsOf(node)).containsExactly(attr("region"), attr("name"), str(", "), attr("amount"));
+            var mapped = (AggregationNode) RelNodeOperands.map(node,
+                    o -> o.equals(attr("amount")) ? attr("total") : o, p -> p);
+            assertThat(mapped.aggregates().get(0).orderBy()).containsExactly(desc("total"));
+            assertThat(mapped.aggregates().get(0).argument()).isSameAs(ordered.argument());
+        }
+
+        @Test
         @DisplayName("an ungrouped γ carries a null key list and still reports its aggregates")
         void ungroupedAggregation() {
             List<String> noKeys = null;

@@ -81,5 +81,11 @@ public enum AggregateOperator {
      */
     PERCENTILE_DISC,
     /** The median: the continuous percentile at one half. */
-    MEDIAN
+    MEDIAN,
+    /**
+     * A group's values joined into one string, with a separator — its
+     * {@link AggregateFunction#yieldExpr() second argument} — and an optional ordering.
+     * SQL's {@code STRING_AGG}, {@code GROUP_CONCAT} and {@code LISTAGG}.
+     */
+    STRING_AGG
 }
