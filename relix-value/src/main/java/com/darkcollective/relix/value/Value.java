@@ -32,7 +32,8 @@ import com.darkcollective.relix.symbol.ScalarType;
  *   <li>{@link DateValue} — {@code DATE} (a {@link java.time.LocalDate})</li>
  *   <li>{@link TimeValue} — {@code TIME} (a {@link java.time.LocalTime})</li>
  *   <li>{@link TimestampValue} — {@code TIMESTAMP} (a UTC {@link java.time.Instant})</li>
- *   <li>{@link DurationValue} — {@code DURATION} (a {@link java.time.Duration})</li>
+ *   <li>{@link DurationValue} — {@code DURATION} (calendar months and a {@link java.time.Duration})</li>
+ *   <li>{@link ZonedTimestampValue} — {@code TIMESTAMPTZ} (an {@link java.time.OffsetDateTime})</li>
  * </ul>
  *
  * <p>Pattern matching over the sealed subtypes is the preferred way to
@@ -52,7 +53,7 @@ import com.darkcollective.relix.symbol.ScalarType;
  */
 public sealed interface Value
         permits StringValue, NumberValue, BooleanValue, NullValue, StructValue, ArrayValue,
-                DateValue, TimeValue, TimestampValue, DurationValue {
+                DateValue, TimeValue, TimestampValue, DurationValue, ZonedTimestampValue {
 
     /**
      * Returns {@code true} if this value is null (absent).

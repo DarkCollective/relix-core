@@ -135,7 +135,7 @@ final class FormatAndCalendarTest {
         assertThatThrownBy(() -> call("TIMEZONE", s("UTC+2"), ts("2026-01-01T00:00:00Z")))
                 .hasMessageStartingWith("TIMEZONE: unknown time zone 'UTC+2'");
         assertThatThrownBy(() -> call("TIMEZONE", s("UTC"), date("2026-01-01")))
-                .hasMessage("TIMEZONE: expected TIMESTAMP, got DATE");
+                .hasMessage("TIMEZONE: expected TIMESTAMP or TIMESTAMPTZ, got DATE");
     }
 
     @Test

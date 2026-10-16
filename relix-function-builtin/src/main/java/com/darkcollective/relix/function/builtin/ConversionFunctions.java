@@ -26,6 +26,7 @@ import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.StructValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.Value;
 
 import java.math.BigDecimal;
@@ -131,6 +132,7 @@ final class ConversionFunctions {
             case TimeValue ignored -> throw reject(function + ": cannot convert a temporal value");
             case TimestampValue ignored -> throw reject(function + ": cannot convert a temporal value");
             case DurationValue ignored -> throw reject(function + ": cannot convert a temporal value");
+            case ZonedTimestampValue ignored -> throw reject(function + ": cannot convert a temporal value");
         };
     }
 }

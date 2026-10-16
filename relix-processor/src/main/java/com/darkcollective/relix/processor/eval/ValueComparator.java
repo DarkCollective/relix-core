@@ -27,6 +27,7 @@ import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.StructValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.Value;
 
 import java.util.Comparator;
@@ -142,6 +143,9 @@ public final class ValueComparator implements Comparator<Value> {
      * column of dates would start returning {@code DATE}s.
      */
     public static Value canonical(Value v) {
+        // A TIMESTAMPTZ is the instant it names, as SQL compares it: 09:00+02:00 is 07:00Z,
+        // and meets a TIMESTAMP holding that instant.
+        if (v instanceof ZonedTimestampValue z) return new TimestampValue(z.instant());
         if (!(v instanceof StringValue s)) return v;
         String t = s.value().trim();
         if (t.equalsIgnoreCase("true"))  return BooleanValue.TRUE;
@@ -274,6 +278,7 @@ public final class ValueComparator implements Comparator<Value> {
     }
 
     private static boolean isTemporal(Value v) {
+        // A TIMESTAMPTZ never reaches here: canonical() has made it the TIMESTAMP it names.
         return v instanceof DateValue || v instanceof TimeValue
                 || v instanceof TimestampValue || v instanceof DurationValue;
     }

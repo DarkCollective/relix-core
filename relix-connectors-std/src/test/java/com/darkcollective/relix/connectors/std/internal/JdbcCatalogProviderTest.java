@@ -64,7 +64,7 @@ final class JdbcCatalogProviderTest {
         assertThat(s.column("d").orElseThrow().type()).isEqualTo(ScalarType.DATE);
         assertThat(s.column("t").orElseThrow().type()).isEqualTo(ScalarType.TIME);
         assertThat(s.column("ts").orElseThrow().type()).isEqualTo(ScalarType.TIMESTAMP);
-        assertThat(s.column("tstz").orElseThrow().type()).isEqualTo(ScalarType.TIMESTAMP);
+        assertThat(s.column("tstz").orElseThrow().type()).isEqualTo(ScalarType.TIMESTAMPTZ);
     }
 
     @Test
@@ -72,7 +72,7 @@ final class JdbcCatalogProviderTest {
     void offsetBearingTypeName() {
         // mssql-jdbc reports DATETIMEOFFSET as -155, a code java.sql.Types does not name,
         // so the code alone would leave it ANY — a string once read.
-        assertThat(JdbcCatalogProvider.mapSqlType(-155, "datetimeoffset")).isEqualTo(ScalarType.TIMESTAMP);
+        assertThat(JdbcCatalogProvider.mapSqlType(-155, "datetimeoffset")).isEqualTo(ScalarType.TIMESTAMPTZ);
         assertThat(JdbcCatalogProvider.mapSqlType(-155, "something else")).isEqualTo(ScalarType.ANY);
         assertThat(JdbcCatalogProvider.mapSqlType(java.sql.Types.DATE, null)).isEqualTo(ScalarType.DATE);
     }

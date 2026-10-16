@@ -184,4 +184,36 @@ final class TemporalLiteralParserTest extends ParserTestSupport {
                     + " SORT t AS n (R)").hasMessageContaining("cannot be negative");
         }
     }
+
+    @Nested
+    class ZonedTimestamps {
+
+        @Test
+        void bothSpellingsKeepTheOffset() {
+            RelNode expected = project(List.of(projected(timestamptz("2026-03-01T09:00:00+02:00"))), rel("R"));
+            assertParsesTo("π TIMESTAMPTZ '2026-03-01T09:00:00+02:00' (R)", expected);
+            assertParsesTo("π timestamp with time zone '2026-03-01T09:00:00+02:00' (R)", expected);
+            assertThat(parse("π TIMESTAMPTZ '2026-03-01T09:00:00+02:00' (R)").prettyPrint())
+                    .isEqualTo("π TIMESTAMPTZ '2026-03-01T09:00:00+02:00' (R)");
+            // Not reserved: a column may be called timestamptz.
+            assertParsesTo("π timestamptz (R)", project(List.of(projected(attr("timestamptz"))), rel("R")));
+        }
+
+        @Test
+        void castTakesBothSpellings() {
+            RelNode expected = project(List.of(projected(func("to_timestamptz", attr("x")))), rel("R"));
+            assertParsesTo("π CAST(x AS TIMESTAMPTZ) (R)", expected);
+            assertParsesTo("π CAST(x AS TIMESTAMP WITH TIME ZONE) (R)", expected);
+            assertParseError("π CAST(x AS INTERVAL) (R)").hasMessageContaining("TIMESTAMPTZ");
+            // WITH TIME without ZONE, and WITH without TIME, are not the type.
+            assertParseError("π CAST(x AS TIMESTAMP WITH TIME y) (R)");
+            assertParseError("π CAST(x AS TIMESTAMP WITH y) (R)");
+        }
+
+        @Test
+        void malformedPayloadNamesTheType() {
+            assertParseError("π TIMESTAMPTZ 'noon' (R)").hasMessageContaining("Malformed TIMESTAMPTZ literal");
+            assertParseError("π TIMESTAMP WITH TIME ZONE 'noon' (R)").hasMessageContaining("Malformed TIMESTAMPTZ literal");
+        }
+    }
 }

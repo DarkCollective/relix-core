@@ -304,7 +304,7 @@ public final class JdbcCatalogProvider implements CatalogProvider {
     static ScalarType mapSqlType(int sqlType, String typeName) {
         if (typeName != null && JdbcDataSourceConnector.OFFSET_BEARING_TYPE_NAMES
                 .contains(typeName.toLowerCase(java.util.Locale.ROOT))) {
-            return ScalarType.TIMESTAMP;
+            return ScalarType.TIMESTAMPTZ;
         }
         return mapSqlType(sqlType);
     }
@@ -321,7 +321,9 @@ public final class JdbcCatalogProvider implements CatalogProvider {
             // A zone-less SQL TIMESTAMP is read as a UTC instant (Decision 2).
             case Types.DATE -> ScalarType.DATE;
             case Types.TIME -> ScalarType.TIME;
-            case Types.TIMESTAMP, Types.TIMESTAMP_WITH_TIMEZONE -> ScalarType.TIMESTAMP;
+            case Types.TIMESTAMP -> ScalarType.TIMESTAMP;
+            // A TIMESTAMP WITH TIME ZONE keeps the offset it is read with.
+            case Types.TIMESTAMP_WITH_TIMEZONE -> ScalarType.TIMESTAMPTZ;
             default -> ScalarType.ANY;
         };
     }

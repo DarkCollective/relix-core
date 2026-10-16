@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.value;
 
+import com.darkcollective.relix.symbol.ScalarType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -148,6 +149,33 @@ final class TemporalValueTest {
             assertThat(month.length()).isEqualTo(Duration.ofDays(30));
             assertThat(month).isEqualTo(thirtyDays).hasSameHashCodeAs(thirtyDays);
             assertThat(month).isNotEqualTo(new DurationValue(Duration.ofDays(31))).isNotEqualTo("P1M");
+        }
+    }
+
+    @Nested
+    @DisplayName("ZonedTimestampValue")
+    class ZonedTimestamps {
+
+        private final ZonedTimestampValue athens =
+                new ZonedTimestampValue(java.time.OffsetDateTime.parse("2026-03-01T09:00:00+02:00"));
+
+        @Test @DisplayName("keeps its offset, displays it, and names an instant")
+        void keepsItsOffset() {
+            assertThat(athens.type()).isEqualTo(ScalarType.TIMESTAMPTZ);
+            assertThat(athens.isNull()).isFalse();
+            assertThat(athens.asDisplayString()).isEqualTo("2026-03-01T09:00:00+02:00");
+            assertThat(athens.instant()).isEqualTo(java.time.Instant.parse("2026-03-01T07:00:00Z"));
+            assertThat(new ZonedTimestampValue(java.time.OffsetDateTime.parse("2026-03-01T07:00:00.5Z"))
+                    .asDisplayString()).isEqualTo("2026-03-01T07:00:00.5Z");
+        }
+
+        @Test @DisplayName("is the same value as another offset of the same instant, and hashes alike")
+        void sameInstantSameValue() {
+            ZonedTimestampValue utc = new ZonedTimestampValue(java.time.OffsetDateTime.parse("2026-03-01T07:00:00Z"));
+            assertThat(athens).isEqualTo(utc).hasSameHashCodeAs(utc);
+            assertThat(athens).isNotEqualTo(new ZonedTimestampValue(java.time.OffsetDateTime.parse("2026-03-01T09:00:00Z")))
+                    .isNotEqualTo(new TimestampValue(athens.instant()));
+            assertThatThrownBy(() -> new ZonedTimestampValue(null)).isInstanceOf(NullPointerException.class);
         }
     }
 }

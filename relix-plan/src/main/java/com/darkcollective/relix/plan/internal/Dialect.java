@@ -564,6 +564,25 @@ public enum Dialect {
      * @param value the instant; must not be null
      * @return the literal, or empty when this dialect declines it
      */
+    /**
+     * Renders a {@code TIMESTAMPTZ} literal, keeping its offset, or empty where this
+     * dialect has no type for one. PostgreSQL and DuckDB read it as the instant it names
+     * and keep no offset of their own, so a value read back is at the session's; SQL
+     * Server's {@code DATETIMEOFFSET} keeps it. MySQL, Db2 and SQLite have no
+     * offset-bearing type, and decline.
+     *
+     * @param value the moment and its offset; must not be null
+     * @return the literal, or empty when this dialect has no spelling
+     */
+    public Optional<String> zonedTimestampLiteral(java.time.OffsetDateTime value) {
+        String iso = java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(value);
+        return switch (this) {
+            case POSTGRES, DUCKDB -> Optional.of("TIMESTAMP WITH TIME ZONE '" + iso + "'");
+            case SQLSERVER        -> Optional.of("CAST('" + iso + "' AS DATETIMEOFFSET)");
+            case GENERIC, MYSQL, DB2, SQLITE -> Optional.empty();
+        };
+    }
+
     public Optional<String> timestampLiteral(Instant value) {
         String utc = TIMESTAMP_UTC.format(LocalDateTime.ofInstant(value, ZoneOffset.UTC));
         return switch (this) {

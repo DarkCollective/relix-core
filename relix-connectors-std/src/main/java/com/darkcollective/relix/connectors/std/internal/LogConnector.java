@@ -261,7 +261,7 @@ public final class LogConnector implements RelixConnector, FileBacked {
                 case STRING -> new StringValue(raw);
                 case NUMBER -> new NumberValue(new BigDecimal(raw.strip()));
                 case TIMESTAMP -> new TimestampValue(TemporalLiterals.parseTimestamp(raw.strip()));
-                case DATE, TIME, DURATION, BOOLEAN, ANY -> throw new DateTimeException("unsupported");
+                case DATE, TIME, DURATION, TIMESTAMPTZ, BOOLEAN, ANY -> throw new DateTimeException("unsupported");
             };
         } catch (NumberFormatException | DateTimeException e) {
             throw new EvaluationException("line " + line + " of " + file + ": cannot read '" + raw

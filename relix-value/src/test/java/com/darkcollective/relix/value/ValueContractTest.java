@@ -106,7 +106,9 @@ final class ValueContractTest {
             new Kind(TimestampValue.class, ScalarType.TIMESTAMP,
                     () -> new TimestampValue(Instant.parse("2026-01-02T03:04:05Z")), null),
             new Kind(DurationValue.class, ScalarType.DURATION,
-                    () -> new DurationValue(Duration.ofMinutes(90)), null));
+                    () -> new DurationValue(Duration.ofMinutes(90)), null),
+            new Kind(ZonedTimestampValue.class, ScalarType.TIMESTAMPTZ,
+                    () -> new ZonedTimestampValue(java.time.OffsetDateTime.parse("2026-01-02T03:04:05+02:00")), null));
 
     /**
      * The kinds with no {@code json} above, named here so the omission is a decision
@@ -117,7 +119,8 @@ final class ValueContractTest {
      * would therefore be asserting a conversion this module does not perform.
      */
     private static final Set<Class<? extends Value>> NOT_SPELLABLE_IN_JSON = Set.of(
-            DateValue.class, TimeValue.class, TimestampValue.class, DurationValue.class);
+            DateValue.class, TimeValue.class, TimestampValue.class, DurationValue.class,
+            ZonedTimestampValue.class);
 
     static List<Kind> corpus() {
         return CORPUS;

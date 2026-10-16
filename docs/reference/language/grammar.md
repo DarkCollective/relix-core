@@ -216,7 +216,7 @@ type              ::= scalar_type
                     | "{" ( column_name ":" type ","? )+ "}"
                     | "[" type "]"
 scalar_type       ::= "NUMBER" | "STRING" | "BOOLEAN" | "ANY"
-                    | "DATE" | "TIME" | "TIMESTAMP" | "DURATION"
+                    | "DATE" | "TIME" | "TIMESTAMP" | "DURATION" | "TIMESTAMPTZ"
 boolean_literal   ::= "true" | "false"
 ```
 
@@ -619,6 +619,7 @@ function_call     ::= ( operand_name - "CAST" ) ( "." name )* CALL_OPEN ( argume
 datediff_call     ::= "DATEDIFF" CALL_OPEN name "," argument ( "," argument )* ")"
 cast_call         ::= "CAST" CALL_OPEN operand "AS" cast_type ")"
 cast_type         ::= "NUMBER" | "STRING" | "BOOLEAN" | "DATE" | "TIME" | "TIMESTAMP"
+                    | "TIMESTAMPTZ" | "TIMESTAMP" "WITH" "TIME" "ZONE"
 extract_call      ::= "EXTRACT" CALL_OPEN extract_field "FROM" operand ")"
 /* SUBSTRING(s FROM 2 FOR 3) is SUBSTRING(s, 2, 3); POSITION('@' IN s) is STRPOS(s, '@'). */
 substring_call    ::= "SUBSTRING" CALL_OPEN operand
@@ -643,6 +644,10 @@ literal           ::= STRING
                       /* ISO-8601 text: DATE '2026-03-01', TIMESTAMP '2026-03-01T09:30:00Z',
                          TIME '09:30', DURATION 'PT30M', DURATION 'P1M' */
                     | interval_literal
+                    | timestamptz_literal
+/* A timestamp that keeps its offset: TIMESTAMPTZ '2026-03-01T09:00:00+02:00', and the
+   standard's TIMESTAMP WITH TIME ZONE '…'. TIMESTAMPTZ is matched by its text. */
+timestamptz_literal ::= ( "TIMESTAMPTZ" | "TIMESTAMP" "WITH" "TIME" "ZONE" ) STRING
 /* SQL's interval, a DURATION, matched by its text: INTERVAL '1 month',
    INTERVAL '3' DAY, INTERVAL 1 MONTH. A unit follows a quoted number only. */
 interval_literal  ::= "INTERVAL" ( STRING name? | "-"? NUMBER name )

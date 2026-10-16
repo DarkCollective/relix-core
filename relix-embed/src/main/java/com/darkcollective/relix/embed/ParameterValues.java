@@ -101,6 +101,8 @@ final class ParameterValues {
                 case DATE -> new DateValue(TemporalLiterals.parseDate(text));
                 case TIME -> new TimeValue(TemporalLiterals.parseTime(text));
                 case TIMESTAMP -> new TimestampValue(TemporalLiterals.parseTimestamp(text));
+                case TIMESTAMPTZ -> new com.darkcollective.relix.value.ZonedTimestampValue(
+                        TemporalLiterals.parseZonedTimestamp(text));
                 case DURATION -> {
                     TemporalLiterals.Span span = TemporalLiterals.parseInterval(text);
                     yield new DurationValue(span.months(), span.exact());

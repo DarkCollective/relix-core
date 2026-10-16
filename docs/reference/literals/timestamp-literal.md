@@ -37,8 +37,9 @@ Add a window to an instant (TIMESTAMP ± DURATION → TIMESTAMP):
   π id, (started + DURATION 'PT30M') → expires (Sessions)
 
 # Limitations:
-Stored as a UTC instant — there is no separate time-zone field; a local offset is
-folded into UTC at parse time. Comparisons must be against another TIMESTAMP.
+Stored as a UTC instant, with no time-zone field: a local offset is folded into UTC at
+parse time. To keep the offset, use a [TIMESTAMPTZ](timestamptz-literal.md). Comparisons
+are against another TIMESTAMP, or a TIMESTAMPTZ by instant.
 
 # Alternatives:
 DATE for a calendar day only; TIME for a clock time only; to_timestamp(str) to

@@ -118,6 +118,7 @@ final class LateralExecutor {
             case DateValue      d -> new DateOperand(d.value());
             case TimeValue      t -> new TimeOperand(t.value());
             case TimestampValue t -> new TimestampOperand(t.value());
+            case com.darkcollective.relix.value.ZonedTimestampValue z -> TimestampOperand.zoned(z.value(), SourceLocation.UNKNOWN);
             case DurationValue  d -> new DurationOperand(d.months(), d.value(), SourceLocation.UNKNOWN);
             default -> throw new EvaluationException(
                     "LATERAL join argument evaluated to "

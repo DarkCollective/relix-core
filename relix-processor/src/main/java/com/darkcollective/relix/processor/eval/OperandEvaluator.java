@@ -44,6 +44,7 @@ import com.darkcollective.relix.value.BooleanValue;
 import com.darkcollective.relix.value.DateValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.DurationValue;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.NumberValue;
@@ -264,7 +265,8 @@ public final class OperandEvaluator {
             case NullOperand ignored -> NullValue.INSTANCE;
             case DateOperand      d -> new DateValue(d.value());
             case TimeOperand      t -> new TimeValue(t.value());
-            case TimestampOperand ts -> new TimestampValue(ts.value());
+            case TimestampOperand ts -> ts.isZoned() ? new ZonedTimestampValue(ts.atOffset())
+                    : new TimestampValue(ts.value());
             case DurationOperand  du -> new DurationValue(du.months(), du.value());
             case AttributeOperand a -> evaluateAttribute(a, row);
             case ParameterOperand p -> parameter(p);

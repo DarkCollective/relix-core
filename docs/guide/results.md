@@ -77,6 +77,21 @@ Ada
 false
 ```
 
+A `TIMESTAMPTZ` keeps the offset it was recorded at. `offsetDateTime` reads it with that
+offset, and `instant` reads the moment it names, as it reads a `TIMESTAMP`:
+
+```java
+Tuple stamp = relix.relation("π TIMESTAMPTZ '2026-03-01T09:00:00+02:00' → at (UNIT)").toList().getFirst();
+
+System.out.println(stamp.offsetDateTime("at"));
+System.out.println(stamp.instant("at"));
+```
+
+```
+2026-03-01T09:00+02:00
+2026-03-01T07:00:00Z
+```
+
 An accessor that meets a value of another type **refuses** rather than coercing:
 
 ```java

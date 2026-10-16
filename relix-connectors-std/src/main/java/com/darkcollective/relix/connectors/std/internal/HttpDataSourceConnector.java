@@ -52,6 +52,7 @@ import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.StructValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.value.internal.ValuePath;
 import com.darkcollective.relix.semantic.SemanticModel;
@@ -538,7 +539,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
             case NUMBER -> raw instanceof NumberValue ? raw : coerceString(relationName, raw.asDisplayString(), col);
             case BOOLEAN -> raw instanceof BooleanValue ? raw : coerceString(relationName, raw.asDisplayString(), col);
             case STRING -> raw instanceof StringValue ? raw : new StringValue(raw.asDisplayString());
-            case DATE, TIME, TIMESTAMP, DURATION -> coerceString(relationName, raw.asDisplayString(), col);
+            case DATE, TIME, TIMESTAMP, DURATION, TIMESTAMPTZ -> coerceString(relationName, raw.asDisplayString(), col);
         };
     }
 
@@ -569,6 +570,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
                 case TIME -> new TimeValue(TemporalLiterals.parseTime(text.strip()));
                 case TIMESTAMP -> new TimestampValue(TemporalLiterals.parseTimestamp(text.strip()));
                 case DURATION -> interval(text.strip());
+                case TIMESTAMPTZ -> new ZonedTimestampValue(TemporalLiterals.parseZonedTimestamp(text.strip()));
             };
         } catch (NumberFormatException | DateTimeException e) {
             throw new EvaluationException(coercionError(relationName, text, col));

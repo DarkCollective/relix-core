@@ -25,6 +25,7 @@ import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.TimeValue;
 import com.darkcollective.relix.value.TimestampValue;
+import com.darkcollective.relix.value.ZonedTimestampValue;
 import com.darkcollective.relix.value.Value;
 
 import java.math.BigDecimal;
@@ -58,6 +59,7 @@ import static com.darkcollective.relix.symbol.ScalarType.NUMBER;
 import static com.darkcollective.relix.symbol.ScalarType.STRING;
 import static com.darkcollective.relix.symbol.ScalarType.TIME;
 import static com.darkcollective.relix.symbol.ScalarType.TIMESTAMP;
+import static com.darkcollective.relix.symbol.ScalarType.TIMESTAMPTZ;
 
 /**
  * The temporal built-ins: the current instant, component extraction, truncation,
@@ -194,8 +196,12 @@ final class DateTimeFunctions {
 
                 // ts AT TIME ZONE zone: the wall-clock time in the zone at the instant ts,
                 // as a TIMESTAMP that reads it at UTC. PostgreSQL's timezone(zone, ts).
-                DATETIME.fn("TIMEZONE", TIMESTAMP, PURE_DETERMINISTIC,
-                        List.of(p("zone", STRING), p("ts", TIMESTAMP)), DateTimeFunctions::timezone),
+                // TIMEZONE(zone, ts) is ts AT TIME ZONE zone: a TIMESTAMP's wall clock in the
+                // zone, or a TIMESTAMPTZ's instant at the zone's offset.
+                DATETIME.contextual("TIMEZONE", TIMESTAMP, PURE_DETERMINISTIC,
+                        List.of(p("zone", STRING), p("ts", ANY)), Arity.exactly(2),
+                        types -> types.get(1) == TIMESTAMPTZ ? TIMESTAMPTZ : TIMESTAMP, PushdownSpelling.NONE,
+                        (context, args) -> timezone(args)),
 
                 DATETIME.fn("MAKE_DATE", DATE, PURE_DETERMINISTIC,
                         List.of(p("year", NUMBER), p("month", NUMBER), p("day", NUMBER)),
@@ -211,9 +217,11 @@ final class DateTimeFunctions {
                         List.of(p("unit", STRING), p("start", ANY), p("end", ANY)),
                         DateTimeFunctions::dateDiffSpelling, DateTimeFunctions::dateDiff),
 
-                DATETIME.fn("DATE_TRUNC", TIMESTAMP, PURE_DETERMINISTIC,
-                        List.of(p("unit", STRING), p("ts", TIMESTAMP)),
-                        DateTimeFunctions::dateTruncSpelling, DateTimeFunctions::dateTrunc),
+                // A TIMESTAMPTZ is truncated on its own clock and keeps its offset.
+                DATETIME.contextual("DATE_TRUNC", TIMESTAMP, PURE_DETERMINISTIC,
+                        List.of(p("unit", STRING), p("ts", TIMESTAMP)), Arity.exactly(2),
+                        types -> types.get(1) == TIMESTAMPTZ ? TIMESTAMPTZ : TIMESTAMP,
+                        DateTimeFunctions::dateTruncSpelling, (context, args) -> dateTrunc(args)),
 
                 // DATEADD(unit, n, d): SQL Server's, and MySQL's TIMESTAMPADD. A month from the
                 // 31st lands on a shorter month's last day, as d + INTERVAL does.
@@ -262,7 +270,11 @@ final class DateTimeFunctions {
                         args -> convert(args, "to_timestamp", "timestamp", DateTimeFunctions::toTimestamp)),
 
                 DATETIME.fn("to_time", TIME, PURE_DETERMINISTIC, List.of(p("s", ANY)),
-                        args -> convert(args, "to_time", "time", DateTimeFunctions::toTime)));
+                        args -> convert(args, "to_time", "time", DateTimeFunctions::toTime)),
+
+                // CAST(x AS TIMESTAMPTZ): text keeps its offset, an instant is at UTC.
+                DATETIME.fn("to_timestamptz", TIMESTAMPTZ, PURE_DETERMINISTIC, List.of(p("s", ANY)),
+                        args -> convert(args, "to_timestamptz", "timestamptz", DateTimeFunctions::toTimestamptz)));
     }
 
     // ── Implementations ───────────────────────────────────────────────────────
@@ -281,6 +293,7 @@ final class DateTimeFunctions {
         LocalDate date = switch (value) {
             case DateValue d -> d.value();
             case TimestampValue ts -> LocalDate.ofInstant(ts.value(), ZoneOffset.UTC);
+            case ZonedTimestampValue z -> z.value().toLocalDate();
             default -> throw reject(
                     function + ": expected DATE or TIMESTAMP, got " + value.type());
         };
@@ -297,6 +310,7 @@ final class DateTimeFunctions {
         LocalTime time = switch (value) {
             case TimeValue t -> t.value();
             case TimestampValue ts -> LocalTime.ofInstant(ts.value(), ZoneOffset.UTC);
+            case ZonedTimestampValue z -> z.value().toLocalTime();
             default -> throw reject(
                     function + ": expected TIME or TIMESTAMP, got " + value.type());
         };
@@ -310,10 +324,11 @@ final class DateTimeFunctions {
         if (value.isNull()) {
             return NullValue.INSTANCE;
         }
-        if (!(value instanceof TimestampValue ts)) {
-            throw reject("DATE_TRUNC: expected TIMESTAMP, got " + value.type());
-        }
-        LocalDateTime moment = LocalDateTime.ofInstant(ts.value(), ZoneOffset.UTC);
+        LocalDateTime moment = switch (value) {
+            case TimestampValue ts -> LocalDateTime.ofInstant(ts.value(), ZoneOffset.UTC);
+            case ZonedTimestampValue z -> z.value().toLocalDateTime();
+            default -> throw reject("DATE_TRUNC: expected TIMESTAMP, got " + value.type());
+        };
         LocalDateTime truncated = switch (unit) {
             case "year" -> moment.toLocalDate().withDayOfYear(1).atStartOfDay();
             case "month" -> moment.toLocalDate().withDayOfMonth(1).atStartOfDay();
@@ -324,7 +339,9 @@ final class DateTimeFunctions {
             default -> throw reject("DATE_TRUNC: unknown unit '" + unit
                     + "' (expected year, month, day, hour, minute, or second)");
         };
-        return new TimestampValue(truncated.toInstant(ZoneOffset.UTC));
+        return value instanceof ZonedTimestampValue z
+                ? new ZonedTimestampValue(truncated.atOffset(z.value().getOffset()))
+                : new TimestampValue(truncated.toInstant(ZoneOffset.UTC));
     }
 
     /** Measures a {@code DURATION} as a whole number of the given unit. */
@@ -365,6 +382,7 @@ final class DateTimeFunctions {
         return switch (value) {
             case DateValue d -> d;
             case TimestampValue ts -> new DateValue(LocalDate.ofInstant(ts.value(), ZoneOffset.UTC));
+            case ZonedTimestampValue z -> new DateValue(z.value().toLocalDate());
             case com.darkcollective.relix.value.StringValue text -> {
                 try {
                     yield new DateValue(LocalDate.parse(text.value()));
@@ -380,6 +398,7 @@ final class DateTimeFunctions {
     private static Value toTimestamp(Value value) {
         return switch (value) {
             case TimestampValue ts -> ts;
+            case ZonedTimestampValue z -> new TimestampValue(z.instant());
             case DateValue d -> new TimestampValue(d.value().atStartOfDay().toInstant(ZoneOffset.UTC));
             case com.darkcollective.relix.value.StringValue text -> {
                 try {
@@ -397,9 +416,49 @@ final class DateTimeFunctions {
         return switch (value) {
             case TimeValue t -> t;
             case TimestampValue ts -> new TimeValue(LocalTime.ofInstant(ts.value(), ZoneOffset.UTC));
+            case ZonedTimestampValue z -> new TimeValue(z.value().toLocalTime());
             case com.darkcollective.relix.value.StringValue text -> new TimeValue(LocalTime.parse(text.value()));
             default -> throw new ClassCastException();
         };
+    }
+
+    /**
+     * {@code CAST(x AS TIMESTAMPTZ)}: a TIMESTAMPTZ as it is, text with the offset it
+     * carries (at UTC without one), a TIMESTAMP at UTC, and a DATE at its UTC midnight.
+     */
+    private static Value toTimestamptz(Value value) {
+        return switch (value) {
+            case ZonedTimestampValue z -> z;
+            case TimestampValue ts -> new ZonedTimestampValue(ts.value().atOffset(ZoneOffset.UTC));
+            case DateValue d -> new ZonedTimestampValue(d.value().atStartOfDay().atOffset(ZoneOffset.UTC));
+            case com.darkcollective.relix.value.StringValue text -> new ZonedTimestampValue(zoned(text.value()));
+            default -> throw new ClassCastException();
+        };
+    }
+
+    /** ISO-8601 text with an offset, or a bracketed region, or neither and so at UTC. */
+    private static OffsetDateTime zoned(String text) {
+        try {
+            return OffsetDateTime.parse(text);
+        } catch (DateTimeParseException notOffset) {
+            try {
+                int bracket = text.indexOf('[');
+                if (bracket < 0 || !text.endsWith("]")) {
+                    throw notOffset;
+                }
+                java.time.ZoneId region = java.time.ZoneId.of(text.substring(bracket + 1, text.length() - 1));
+                String head = text.substring(0, bracket);
+                try {
+                    // An offset written before the region is the one kept.
+                    return OffsetDateTime.parse(head);
+                } catch (DateTimeParseException local) {
+                    // A local time in a region: the region's offset at that time.
+                    return LocalDateTime.parse(head).atZone(region).toOffsetDateTime();
+                }
+            } catch (DateTimeParseException notZoned) {
+                return LocalDateTime.parse(text).atOffset(ZoneOffset.UTC);
+            }
+        }
     }
 
     /** Time-zone names in any letter case, as PostgreSQL reads them: the IANA regions, and UTC. */
@@ -428,10 +487,12 @@ final class DateTimeFunctions {
         if (zone == null) {
             throw reject("TIMEZONE: unknown time zone '" + name + "'; use a region name such as 'Europe/London', or 'UTC'");
         }
-        if (!(args.get(1) instanceof TimestampValue ts)) {
-            throw reject("TIMEZONE: expected TIMESTAMP, got " + args.get(1).type());
-        }
-        return new TimestampValue(LocalDateTime.ofInstant(ts.value(), zone).toInstant(ZoneOffset.UTC));
+        return switch (args.get(1)) {
+            case TimestampValue ts -> new TimestampValue(LocalDateTime.ofInstant(ts.value(), zone).toInstant(ZoneOffset.UTC));
+            // The same instant, at the zone's offset then, as SQL Server converts a datetimeoffset.
+            case ZonedTimestampValue z -> new ZonedTimestampValue(z.value().atZoneSameInstant(zone).toOffsetDateTime());
+            default -> throw reject("TIMEZONE: expected TIMESTAMP or TIMESTAMPTZ, got " + args.get(1).type());
+        };
     }
 
     /** {@code MAKE_DATE(year, month, day)}: the date, refusing one the calendar does not have. */
@@ -471,6 +532,7 @@ final class DateTimeFunctions {
         return switch (value) {
             case DateValue d -> d.value().atStartOfDay();
             case TimestampValue ts -> LocalDateTime.ofInstant(ts.value(), ZoneOffset.UTC);
+            case ZonedTimestampValue z -> z.value().toLocalDateTime();
             default -> throw reject(function + ": expected DATE or TIMESTAMP, got " + value.type());
         };
     }
@@ -478,7 +540,7 @@ final class DateTimeFunctions {
     /** A DATE or a TIMESTAMP stays what it is; anything else is known only when it runs. */
     private static com.darkcollective.relix.symbol.ScalarType temporalResult(
             com.darkcollective.relix.symbol.ScalarType argument) {
-        return argument == DATE || argument == TIMESTAMP ? argument : ANY;
+        return argument == DATE || argument == TIMESTAMP || argument == TIMESTAMPTZ ? argument : ANY;
     }
 
     /** A whole count, as SQL Server's DATEADD and Oracle's ADD_MONTHS take one: a fraction is cut off. */
@@ -498,6 +560,7 @@ final class DateTimeFunctions {
                     + " TIMESTAMP; write CAST(" + d.value() + " AS TIMESTAMP)");
             case TimestampValue ts -> new TimestampValue(
                     ts.value().atOffset(ZoneOffset.UTC).plusMonths(months).toInstant().plus(exact));
+            case ZonedTimestampValue z -> new ZonedTimestampValue(z.value().plusMonths(months).plus(exact));
             default -> throw reject(function + ": expected DATE or TIMESTAMP, got " + value.type());
         };
     }
@@ -542,8 +605,11 @@ final class DateTimeFunctions {
         if (date.getDayOfMonth() == date.lengthOfMonth()) {
             target = target.withDayOfMonth(target.lengthOfMonth());
         }
-        return args.get(0) instanceof DateValue ? new DateValue(target)
-                : new TimestampValue(target.atTime(at.toLocalTime()).toInstant(ZoneOffset.UTC));
+        return switch (args.get(0)) {
+            case DateValue ignored -> new DateValue(target);
+            case ZonedTimestampValue z -> new ZonedTimestampValue(target.atTime(at.toLocalTime()).atOffset(z.value().getOffset()));
+            default -> new TimestampValue(target.atTime(at.toLocalTime()).toInstant(ZoneOffset.UTC));
+        };
     }
 
     /** {@code DATE_ADD(d, interval)} and {@code DATE_SUB}: {@code d} moved by the interval, keeping its kind. */
@@ -676,6 +742,7 @@ final class DateTimeFunctions {
         return switch (value) {
             case NullValue ignored -> NullValue.INSTANCE;
             case TimestampValue ts -> seconds(ts.value().getEpochSecond(), ts.value().getNano());
+            case ZonedTimestampValue z -> seconds(z.instant().getEpochSecond(), z.instant().getNano());
             case DateValue d -> number(d.value().toEpochDay() * 86_400L);
             case TimeValue t -> seconds(t.value().toSecondOfDay(), t.value().getNano());
             case DurationValue d -> seconds(d.length().getSeconds(), d.length().getNano());
