@@ -10,6 +10,7 @@ GROUP BY dept, SUM(salary) -> total (Employees)   -- same AST as the γ form abo
 γ YEAR(order_date) → yr, SUM(amount) → revenue (Orders)   -- derived grouping key
 γ SUM(amount) → grand_total (Orders)        -- no grouping = whole-relation total
 γ user_id, COUNT(DISTINCT url) → pages (Clicks)   -- each distinct value once
+γ region, COUNT(*) FILTER (WHERE status = 'open') → open_n (Orders)   -- only some rows
 
 # Description:
 Group is how you summarise data: collapse many rows into one row per group and
@@ -142,7 +143,7 @@ To keep the actual rows that achieve a maximum per group (not just one value),
 use TOP k … PER. To test a condition across a whole group, use ∀ (FORALL).
 
 # See Also:
-[sum](../aggregates/sum.md), [avg](../aggregates/avg.md), [count](../aggregates/count.md), [min](../aggregates/min.md), [max](../aggregates/max.md), [collect](../aggregates/collect.md), [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [top](../advanced/top.md), [forall](forall.md), [sort](sort.md)
+[sum](../aggregates/sum.md), [avg](../aggregates/avg.md), [count](../aggregates/count.md), [min](../aggregates/min.md), [max](../aggregates/max.md), [collect](../aggregates/collect.md), [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [filter](../aggregates/filter.md), [top](../advanced/top.md), [forall](forall.md), [sort](sort.md)
 
 # Notes:
 When the planner can prove the input is already sorted on the grouping keys it

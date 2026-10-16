@@ -655,6 +655,25 @@ final class AggregationParserTest extends ParserTestSupport {
     public void starFollowedByAnythingElseIsStillRejected() {
         assertParseError("γ dept, COUNT(* + 1) → x (Employees)");
     }
+
+    // ==================== FILTER (WHERE …) (#130) ====================
+
+    @org.junit.jupiter.api.Test
+    public void filterIsTheArgumentUnderIIf() {
+        assertParsesTo("γ k, COUNT(*) FILTER (WHERE s = 'open') → n (R)",
+                parse("γ k, COUNT(IIf(s = 'open', 1, NULL)) → n (R)"));
+        assertParsesTo("γ SUM(DISTINCT x) filter (where y > 1) (R)",
+                parse("γ SUM(DISTINCT IIf(y > 1, x, NULL)) (R)"));
+        assertParsesTo("γ ARGMAX(a, b) FILTER (WHERE c = 1) → w (R)",
+                parse("γ ARGMAX(IIf(c = 1, a, NULL), b) → w (R)"));
+    }
+
+    @org.junit.jupiter.api.Test
+    public void filterErrors() {
+        assertParseError("γ COLLECT(x) FILTER (WHERE y = 1) (R)").hasMessageContaining("COLLECT keeps NULLs");
+        assertParseError("γ SUM(x) FILTER (WHERE y = 1 (R)").hasMessageContaining("Expected ')' after the FILTER condition");
+        // FILTER not followed by (WHERE is no clause.
+        assertParseError("γ SUM(x) FILTER (R)");
+        assertParseError("γ SUM(x) FILTER WHERE y = 1 (R)");
+    }
 }
-
-

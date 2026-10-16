@@ -240,6 +240,10 @@ final class GrammarReferenceTest {
             "query { π 2e → a (R) };",
             "query { λ 1e3 (R) };",
             "Bad := \"a\"\"b\";",
+            // aggregate FILTER
+            "query { γ k, COUNT(*) FILTER (WHERE s = 1) → n, SUM(x) filter (where y > 0) (R) };",
+            "query { γ COLLECT(x) FILTER (WHERE y = 1) (R) };",
+            "query { γ SUM(x) FILTER (y = 1) (R) };",
             // AT TIME ZONE and DATEDIFF's unit
             "query { π ts AT TIME ZONE 'Europe/London' AT TIME ZONE z → a, -ts at time zone 'UTC' + d → b (R) };",
             "query { π DATEDIFF(month, a, b) → m, DATEDIFF('day', a, b) → d, DATEDIFF(x) → e (R) };",
