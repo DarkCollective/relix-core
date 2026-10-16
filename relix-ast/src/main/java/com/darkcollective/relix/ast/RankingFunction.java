@@ -34,5 +34,10 @@ public enum RankingFunction {
     /** Relative rank {@code (rank − 1) / (rows − 1)} in {@code [0.0, 1.0]}. */
     PERCENT_RANK,
     /** Distributes rows into {@code n} buckets as evenly as possible. */
-    NTILE
+    NTILE,
+    /**
+     * Cumulative distribution: the fraction of the partition's rows that sort before
+     * the current row or tie with it, in {@code (0, 1]}.
+     */
+    CUME_DIST
 }

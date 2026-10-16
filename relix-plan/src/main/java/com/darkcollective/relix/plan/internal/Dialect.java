@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.WindowFrame;
 import com.darkcollective.relix.function.PushdownTarget;
 import com.darkcollective.relix.lang.ast.ConnectionDeclaration;
@@ -1019,38 +1020,51 @@ public enum Dialect {
      * Renders the {@code OVER (…)} clause for a SQL window function, given already-
      * rendered partition and sort expressions.
      *
-     * <p>The ANSI SQL:2003 syntax produced here is identical across
-     * {@link #GENERIC}, {@link #POSTGRES}, and {@link #MYSQL} (8.0+):
+     * <p>The ANSI SQL:2003 syntax produced here is identical across every dialect that
+     * {@link #supportsWindowFunctions()}:
      * {@code OVER (PARTITION BY k1, k2 ORDER BY col ASC ROWS BETWEEN n PRECEDING AND CURRENT ROW)}.
-     * Only call this method after verifying {@link #supportsWindowFunctions()}.
      *
      * @param partitionCols already-quoted partition-key column expressions; may be empty
-     * @param orderByExprs  already-rendered {@code col [ASC|DESC]} expressions; must not be empty
-     * @param frame         the row scope ({@link WindowFrame.BoundedFrame},
-     *                      {@link WindowFrame.CumulativeFrame}, or
-     *                      {@link WindowFrame.PartitionFrame}); never null
+     * @param orderByExprs  already-rendered {@code col [ASC|DESC]} expressions; may be empty
+     * @param frame         the row scope, rendered by {@link #frameClause}; never null
      * @return the complete {@code OVER (…)} string, starting with a space
      */
     public String windowOverClause(List<String> partitionCols, List<String> orderByExprs, WindowFrame frame) {
-        StringBuilder over = new StringBuilder(" OVER (");
+        return windowOverClause(partitionCols, orderByExprs, frameClause(frame, WindowFrame.Bound::literal));
+    }
+
+    /**
+     * Renders the {@code OVER (…)} clause with a frame clause already written — empty
+     * for none, which SQL reads as the whole partition without an {@code ORDER BY} and as
+     * {@code RANGE UNBOUNDED PRECEDING} to the current row's last peer with one.
+     */
+    public String windowOverClause(List<String> partitionCols, List<String> orderByExprs, String frameClause) {
+        StringJoiner over = new StringJoiner(" ", " OVER (", ")");
         if (!partitionCols.isEmpty()) {
-            StringJoiner partBy = new StringJoiner(", ");
-            partitionCols.forEach(partBy::add);
-            over.append("PARTITION BY ").append(partBy).append(' ');
+            over.add("PARTITION BY " + String.join(", ", partitionCols));
         }
-        over.append("ORDER BY ");
-        StringJoiner orderBy = new StringJoiner(", ");
-        orderByExprs.forEach(orderBy::add);
-        over.append(orderBy);
-        switch (frame) {
-            case WindowFrame.BoundedFrame b ->
-                over.append(" ROWS BETWEEN ").append(b.n() - 1).append(" PRECEDING AND CURRENT ROW");
-            case WindowFrame.CumulativeFrame f ->
-                over.append(" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW");
-            case WindowFrame.PartitionFrame f -> { /* no frame clause — full partition */ }
+        if (!orderByExprs.isEmpty()) {
+            over.add("ORDER BY " + String.join(", ", orderByExprs));
         }
-        over.append(')');
+        if (!frameClause.isEmpty()) {
+            over.add(frameClause);
+        }
         return over.toString();
+    }
+
+    /**
+     * SQL's frame clause for a frame — {@code ROWS BETWEEN 2 PRECEDING AND CURRENT ROW} —
+     * with each offset written by {@code offsets}; empty for the whole partition, which is
+     * left to the caller because SQL's default frame depends on whether there is an order.
+     */
+    public static String frameClause(WindowFrame frame, java.util.function.Function<Operand, String> offsets) {
+        return switch (frame) {
+            case WindowFrame.BoundedFrame b -> "ROWS BETWEEN " + (b.n() - 1) + " PRECEDING AND CURRENT ROW";
+            case WindowFrame.CumulativeFrame f -> "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW";
+            case WindowFrame.Between b -> b.unit() + " BETWEEN " + b.start().render(offsets)
+                    + " AND " + b.end().render(offsets);
+            case WindowFrame.PartitionFrame f -> "";
+        };
     }
 
     /**

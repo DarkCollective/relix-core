@@ -148,6 +148,9 @@ final class PushdownCorpus {
      * The dialects that execute a pushed {@code OVER} clause — see
      * {@code Dialect.supportsWindowFunctions}. MySQL is excluded there and so here.
      */
+    /** The dialects a RANGE frame with an offset is pushed to — see {@code SqlPushdownPlanner.frameSql}. */
+    private static final Set<Dialect> MEASURES_RANGE = EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB);
+
     private static final Set<Dialect> FOLDS_WINDOWS =
             EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE,
                     Dialect.SQLSERVER, Dialect.DB2);
@@ -1071,7 +1074,32 @@ final class PushdownCorpus {
                 // database was handed `SELECT oid, rk FROM orders` and refused it, while
                 // the engine returned rows.
                 Case.declined("π oid, rk (WINDOW ROW_NUMBER() SORT oid ASC AS rk (Orders))"),
-                Case.declined("π oid, run (ROLLING SUM(amount) OVER 2 ROWS SORT oid AS run (Orders))"));
+                Case.declined("π oid, run (ROLLING SUM(amount) OVER 2 ROWS SORT oid AS run (Orders))"),
+                // SQL's frames (#129), over amount's tie at 100, its gap to 250 and its NULL.
+                Case.of("ROLLING SUM(amount) OVER ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING SORT oid AS s (Orders)",
+                        FOLDS_WINDOWS),
+                Case.of("ROLLING COUNT(oid) OVER ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING "
+                        + "SORT oid AS n (Orders)", FOLDS_WINDOWS),
+                Case.of("ROLLING SUM(qty) OVER RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW "
+                        + "SORT amount DESC AS s (Orders)", FOLDS_WINDOWS),
+                // A RANGE offset needs the single ORDER BY term only NULLS LAST spells.
+                Case.of("ROLLING COUNT(oid) OVER RANGE BETWEEN 100 PRECEDING AND 50 FOLLOWING "
+                        + "SORT amount AS n (Orders)", MEASURES_RANGE),
+                Case.of("ROLLING SUM(qty) OVER RANGE BETWEEN 100 PRECEDING AND CURRENT ROW "
+                        + "SORT amount DESC AS s (Orders)", MEASURES_RANGE),
+                Case.of("ROLLING COUNT(oid) OVER RANGE BETWEEN 200 FOLLOWING AND UNBOUNDED FOLLOWING "
+                        + "SORT amount AS n (Orders)", MEASURES_RANGE),
+                Case.of("ROLLING COUNT(oid) OVER RANGE BETWEEN DURATION 'P31D' PRECEDING AND CURRENT ROW "
+                        + "SORT placed AS n (Orders)", EnumSet.of(Dialect.POSTGRES)),
+                // A whole-partition total, with no order and with one.
+                Case.of("ROLLING SUM(amount) OVER PARTITION PER region AS total (Orders)", FOLDS_WINDOWS),
+                Case.of("ROLLING MAX(amount) OVER PARTITION SORT oid AS top (Orders)", FOLDS_WINDOWS),
+                Case.of("WINDOW CUME_DIST() SORT amount AS c (Orders)", FOLDS_WINDOWS),
+                // SQL Server has no NTH_VALUE. It and LAST_VALUE read the whole partition,
+                // which SQL's default frame does not.
+                Case.of("WINDOW NTH_VALUE(amount, 2) SORT oid PER region AS v (Orders)",
+                        EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLITE, Dialect.DB2)),
+                Case.of("WINDOW LAST_VALUE(amount) SORT oid PER region AS v (Orders)", FOLDS_WINDOWS));
     }
 
     private static List<Case> stringComparison() {

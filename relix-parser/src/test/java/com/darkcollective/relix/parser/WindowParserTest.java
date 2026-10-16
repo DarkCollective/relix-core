@@ -374,4 +374,81 @@ final class WindowParserTest extends ParserTestSupport {
                         List.of("region"), List.of(desc("rev")), "qtile", rel("Sales")),
                 "WINDOW NTILE(4) SORT rev DESC PER region AS qtile (Sales)");
     }
+
+    // ==================== SQL frames, CUME_DIST and NTH_VALUE (#129) ====================
+
+    private static WindowFrame frameOf(String query) {
+        return ((WindowNode) parse(query)).frame();
+    }
+
+    @Test
+    void parsesRowsAndRangeFrames() {
+        WindowFrame.Between rows = (WindowFrame.Between) frameOf(
+                "ROLLING AVG(x) OVER ROWS BETWEEN 2 PRECEDING AND 1 FOLLOWING SORT t AS a (R)");
+        org.assertj.core.api.Assertions.assertThat(rows.unit()).isEqualTo(WindowFrame.Unit.ROWS);
+        org.assertj.core.api.Assertions.assertThat(rows.start()).hasToString("2 PRECEDING");
+        org.assertj.core.api.Assertions.assertThat(rows.end()).hasToString("1 FOLLOWING");
+        org.assertj.core.api.Assertions.assertThat(rows.measuresKey()).isFalse();
+        WindowFrame.Between range = (WindowFrame.Between) frameOf(
+                "rolling sum(x) over range between unbounded preceding and current row sort t as a (R)");
+        org.assertj.core.api.Assertions.assertThat(range.toString())
+                .isEqualTo("RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW");
+        org.assertj.core.api.Assertions.assertThat(range.measuresKey()).isFalse();
+        org.assertj.core.api.Assertions.assertThat(((WindowFrame.Between) frameOf(
+                "ROLLING SUM(x) OVER RANGE BETWEEN CURRENT ROW AND 5 FOLLOWING SORT t AS a (R)")).measuresKey()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(frameOf(
+                "ROLLING COUNT(x) OVER RANGE BETWEEN DURATION 'P7D' PRECEDING AND UNBOUNDED FOLLOWING SORT t AS a (R)")
+                .toString()).isEqualTo("RANGE BETWEEN DURATION 'PT168H' PRECEDING AND UNBOUNDED FOLLOWING");
+        // The short form ends at the current row.
+        assertParsesTo("ROLLING SUM(x) OVER ROWS 3 PRECEDING SORT t AS a (R)",
+                parse("ROLLING SUM(x) OVER ROWS BETWEEN 3 PRECEDING AND CURRENT ROW SORT t AS a (R)"));
+        org.assertj.core.api.Assertions.assertThat(parse("ROLLING SUM(x) OVER RANGE BETWEEN 2.5 PRECEDING AND 1 FOLLOWING SORT t DESC PER k AS a (R)").prettyPrint())
+                .isEqualTo("ROLLING SUM(x) OVER RANGE BETWEEN 2.5 PRECEDING AND 1 FOLLOWING SORT t DESC PER k AS a (R)");
+    }
+
+    @Test
+    void parsesPartitionTotalsWithOrWithoutSort() {
+        WindowNode total = (WindowNode) parse("ROLLING SUM(x) OVER PARTITION PER k AS t (R)");
+        org.assertj.core.api.Assertions.assertThat(total.frame()).isInstanceOf(WindowFrame.PartitionFrame.class);
+        org.assertj.core.api.Assertions.assertThat(total.sortSpecs()).isEmpty();
+        org.assertj.core.api.Assertions.assertThat(total.prettyPrint()).isEqualTo("ROLLING SUM(x) OVER PARTITION PER k AS t (R)");
+        org.assertj.core.api.Assertions.assertThat(parse("ROLLING MAX(x) OVER PARTITION SORT t AS m (R)").prettyPrint())
+                .isEqualTo("ROLLING MAX(x) OVER PARTITION SORT t AS m (R)");
+    }
+
+    @Test
+    void rejectsMalformedFrames() {
+        assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN 1 FOLLOWING AND 1 PRECEDING SORT t AS a (R)")
+                .hasMessageContaining("cannot end before it starts");
+        assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED FOLLOWING SORT t AS a (R)")
+                .hasMessageContaining("cannot start at UNBOUNDED FOLLOWING");
+        assertParseError("ROLLING SUM(x) OVER ROWS 1.5 PRECEDING SORT t AS a (R)").hasMessageContaining("whole number");
+        assertParseError("ROLLING SUM(x) OVER ROWS DURATION 'P1D' PRECEDING SORT t AS a (R)")
+                .hasMessageContaining("Expected a frame bound");
+        assertParseError("ROLLING SUM(x) OVER RANGE x PRECEDING SORT t AS a (R)").hasMessageContaining("Expected a frame bound");
+        assertParseError("ROLLING SUM(x) OVER RANGE DURATION '-P1D' PRECEDING SORT t AS a (R)")
+                .hasMessageContaining("cannot be negative");
+        assertParseError("ROLLING SUM(x) OVER RANGE 1 PRECEDING SORT t, u AS a (R)").hasMessageContaining("one sort key");
+        assertParseError("ROLLING SUM(x) OVER ROWS 1 BEFORE SORT t AS a (R)").hasMessageContaining("'PRECEDING' or 'FOLLOWING'");
+        assertParseError("ROLLING SUM(x) OVER ROWS UNBOUNDED t AS a (R)").hasMessageContaining("after 'UNBOUNDED'");
+        assertParseError("ROLLING SUM(x) OVER ROWS CURRENT t AS a (R)").hasMessageContaining("'ROW' after 'CURRENT'");
+        assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN CURRENT ROW 1 FOLLOWING SORT t AS a (R)")
+                .hasMessageContaining("'AND'");
+        assertParseError("ROLLING SUM(x) OVER LAST ROWS SORT t AS a (R)").hasMessageContaining("PARTITION");
+        assertParseError("ROLLING SUM(x) OVER 3 ROWS PER k AS a (R)").hasMessageContaining("SORT");
+    }
+
+    @Test
+    void parsesCumeDistAndNthValue() {
+        org.assertj.core.api.Assertions.assertThat(parse("window cume_dist() sort x per k as c (R)").prettyPrint())
+                .isEqualTo("WINDOW CUME_DIST() SORT x PER k AS c (R)");
+        WindowNode nth = (WindowNode) parse("WINDOW NTH_VALUE(v, 2) SORT t AS second (R)");
+        org.assertj.core.api.Assertions.assertThat(nth.function()).isInstanceOfSatisfying(WindowFunction.OffsetWindow.class,
+                o -> {
+                    org.assertj.core.api.Assertions.assertThat(o.function()).isEqualTo(OffsetFunction.NTH_VALUE);
+                    org.assertj.core.api.Assertions.assertThat(o.offset().map(WindowFrame.Bound::literal)).contains("2");
+                });
+        org.assertj.core.api.Assertions.assertThat(nth.prettyPrint()).isEqualTo("WINDOW NTH_VALUE(v, 2) SORT t AS second (R)");
+        assertParseError("WINDOW NTH_VALUE(v) SORT t AS s (R)").hasMessageContaining("NTH_VALUE(x, n)");
+    }
 }

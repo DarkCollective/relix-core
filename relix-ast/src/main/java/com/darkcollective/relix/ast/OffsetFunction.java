@@ -32,5 +32,7 @@ public enum OffsetFunction {
     /** The expression's value in the first row of the partition's sort order. */
     FIRST_VALUE,
     /** The expression's value in the last row of the partition's sort order. */
-    LAST_VALUE
+    LAST_VALUE,
+    /** The expression's value in the {@code n}th row of the partition's sort order, from 1. */
+    NTH_VALUE
 }
