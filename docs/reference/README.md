@@ -143,6 +143,15 @@ Collapse many rows into summary rows with `γ` (GROUP) and aggregate functions.
 | [COLLECT](aggregates/collect.md) | Gather a group's values into an array (NEST) |
 | [ARGMAX](aggregates/argmax.md) | A value from the row with the maximum |
 | [ARGMIN](aggregates/argmin.md) | A value from the row with the minimum |
+| [STDDEV](aggregates/stddev.md) | Standard deviation, of a sample |
+| [STDDEV_SAMP](aggregates/stddev_samp.md) | Sample standard deviation |
+| [STDDEV_POP](aggregates/stddev_pop.md) | Population standard deviation |
+| [VARIANCE](aggregates/variance.md) | Variance, of a sample |
+| [VAR_SAMP](aggregates/var_samp.md) | Sample variance |
+| [VAR_POP](aggregates/var_pop.md) | Population variance |
+| [MEDIAN](aggregates/median.md) | The middle value |
+| [PERCENTILE_CONT](aggregates/percentile_cont.md) | The value a fraction of the group lies below, interpolated |
+| [PERCENTILE_DISC](aggregates/percentile_disc.md) | The first value a fraction of the group reaches |
 | [FILTER](aggregates/filter.md) | `AGG(x) FILTER (WHERE c)` — aggregate only the rows where a condition holds |
 | [Window / Rolling](operators/rolling.md) | `ROLLING … OVER … ROWS` — sliding / cumulative aggregate added as a column (no row collapse) |
 | [Window / Ranking](operators/window-ranking.md) | `WINDOW ROW_NUMBER/RANK/DENSE_RANK/PERCENT_RANK/NTILE` — per-partition rank column added to every row |

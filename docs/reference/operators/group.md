@@ -35,7 +35,9 @@ its group. Both grouping keys and aggregate arguments are full operand
 expressions (e.g. group by `DATE_TRUNC('day', ts)`, aggregate `SUM(price*qty)`),
 not just column names; each grouping key takes an optional `→ alias` (else the
 column name for a bare column, or an expression-derived name). Supported
-aggregates: SUM, AVG, COUNT, MIN, MAX, COLLECT (NEST → array), ARGMAX, ARGMIN.
+aggregates: SUM, AVG, COUNT, MIN, MAX, COLLECT (NEST → array), ARGMAX, ARGMIN, and
+the statistical STDDEV, STDDEV_SAMP, STDDEV_POP, VARIANCE, VAR_SAMP, VAR_POP, MEDIAN,
+PERCENTILE_CONT and PERCENTILE_DISC.
 All but ARGMAX and ARGMIN take SQL's `DISTINCT` after the parenthesis —
 `COUNT(DISTINCT session)` — and then read each distinct non-NULL value of the
 argument once per group (COLLECT keeps one NULL, as it keeps NULLs at all).
@@ -143,7 +145,7 @@ To keep the actual rows that achieve a maximum per group (not just one value),
 use TOP k … PER. To test a condition across a whole group, use ∀ (FORALL).
 
 # See Also:
-[sum](../aggregates/sum.md), [avg](../aggregates/avg.md), [count](../aggregates/count.md), [min](../aggregates/min.md), [max](../aggregates/max.md), [collect](../aggregates/collect.md), [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [filter](../aggregates/filter.md), [top](../advanced/top.md), [forall](forall.md), [sort](sort.md)
+[sum](../aggregates/sum.md), [avg](../aggregates/avg.md), [count](../aggregates/count.md), [min](../aggregates/min.md), [max](../aggregates/max.md), [collect](../aggregates/collect.md), [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [filter](../aggregates/filter.md), [stddev](../aggregates/stddev.md), [percentile](../aggregates/percentile_cont.md), [top](../advanced/top.md), [forall](forall.md), [sort](sort.md)
 
 # Notes:
 When the planner can prove the input is already sorted on the grouping keys it

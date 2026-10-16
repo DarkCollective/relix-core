@@ -424,8 +424,14 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String aggregates = node.aggregates().stream()
                 .map(agg -> {
                     String funcName = agg.operator().name();
-                    String args = (agg.distinct() ? "DISTINCT " : "") + agg.argument().accept(operandPrinter)
-                            + agg.yieldExpr().map(y -> ", " + y.accept(operandPrinter)).orElse("");
+                    // A percentile is written with its fraction first: PERCENTILE_CONT(p, x).
+                    boolean fractionFirst = agg.operator() == AggregateOperator.PERCENTILE_CONT
+                            || agg.operator() == AggregateOperator.PERCENTILE_DISC;
+                    String args = fractionFirst
+                            ? agg.yieldExpr().map(y -> y.accept(operandPrinter) + ", ").orElse("")
+                                    + agg.argument().accept(operandPrinter)
+                            : (agg.distinct() ? "DISTINCT " : "") + agg.argument().accept(operandPrinter)
+                                    + agg.yieldExpr().map(y -> ", " + y.accept(operandPrinter)).orElse("");
                     String funcCall = funcName + "(" + args + ")";
                     return agg.alias()
                             .map(alias -> funcCall + " " + spelling.of("→") + " " + alias)

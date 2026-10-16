@@ -676,4 +676,45 @@ final class AggregationParserTest extends ParserTestSupport {
         assertParseError("γ SUM(x) FILTER (R)");
         assertParseError("γ SUM(x) FILTER WHERE y = 1 (R)");
     }
+
+    // ==================== statistical aggregates (#127) ====================
+
+    @org.junit.jupiter.api.Test
+    public void statisticalAggregatesAreNamedByText() {
+        AggregationNode node = (AggregationNode) parse("γ k, stddev(x) → s, MEDIAN(DISTINCT x) (R)");
+        org.assertj.core.api.Assertions.assertThat(node.aggregates()).extracting(AggregateFunction::operator)
+                .containsExactly(AggregateOperator.STDDEV, AggregateOperator.MEDIAN);
+        org.assertj.core.api.Assertions.assertThat(node.aggregates().get(1).distinct()).isTrue();
+        // A grouping key called median, followed by a comma, is still a key.
+        AggregationNode keyed = (AggregationNode) parse("γ median, SUM(x) (R)");
+        org.assertj.core.api.Assertions.assertThat(keyed.groupingKeys()).hasSize(1);
+        // Not reserved: a column called median, and a call written apart from its name.
+        assertParsesTo("π median (R)", AstBuilders.project(java.util.List.of(
+                AstBuilders.projected(AstBuilders.attr("median"))), AstBuilders.rel("R")));
+    }
+
+    @org.junit.jupiter.api.Test
+    public void percentilesInBothSpellings() {
+        assertParsesTo("γ PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) → p (R)",
+                parse("γ PERCENTILE_CONT(0.5, x) → p (R)"));
+        assertParsesTo("γ PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY x DESC) → p (R)",
+                parse("γ PERCENTILE_CONT(1 - 0.25, x) → p (R)"));
+        assertParsesTo("γ percentile_disc(0.5) within group (order by x asc) (R)",
+                parse("γ PERCENTILE_DISC(0.5, x) (R)"));
+        org.assertj.core.api.Assertions.assertThat(parse("γ PERCENTILE_CONT(0.5, x) → p (R)").prettyPrint())
+                .isEqualTo("γ PERCENTILE_CONT(0.5, x) → p (R)");
+        assertParseError("γ PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x DESC) (R)")
+                .hasMessageContaining("PERCENTILE_DISC takes an ascending order");
+        assertParseError("γ PERCENTILE_CONT(0.5) (R)").hasMessageContaining("WITHIN GROUP (ORDER BY");
+        assertParseError("γ PERCENTILE_CONT(0.5, x (R)").hasMessageContaining("Expected ')' after the PERCENTILE_CONT argument");
+    }
+
+    @org.junit.jupiter.api.Test
+    public void varianceRolls() {
+        assertParsesTo("ROLLING STDDEV_POP(x) OVER 3 ROWS SORT t AS s (R)",
+                AstBuilders.window(new WindowFunction.AggregateWindow(AggregateOperator.STDDEV_POP, AstBuilders.attr("x")),
+                        java.util.List.of(), java.util.List.of(AstBuilders.asc("t")),
+                        new WindowFrame.BoundedFrame(3), "s", AstBuilders.rel("R")));
+        assertParseError("ROLLING MEDIAN(x) OVER 3 ROWS SORT t AS s (R)").hasMessageContaining("Expected a window aggregate");
+    }
 }

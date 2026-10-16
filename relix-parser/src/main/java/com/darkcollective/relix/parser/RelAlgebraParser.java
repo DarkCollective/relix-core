@@ -1596,15 +1596,18 @@ public final class RelAlgebraParser {
         Token opTok = current;
         expect(TokenType.ROLLING, "Expected 'ROLLING'");
 
-        AggregateOperator operator = switch (current.type()) {
+        // The variance family rolls as the five reducers do; a percentile is an
+        // ordered-set aggregate, which SQL does not run over a window frame either.
+        Optional<AggregateOperator> named = namedAggregate().filter(ROLLING_STATISTICS::contains);
+        AggregateOperator operator = named.orElseGet(() -> switch (current.type()) {
             case SUM -> AggregateOperator.SUM;
             case AVG -> AggregateOperator.AVG;
             case COUNT -> AggregateOperator.COUNT;
             case MIN -> AggregateOperator.MIN;
             case MAX -> AggregateOperator.MAX;
-            default -> throw error(current,
-                    "Expected a window aggregate (SUM, AVG, COUNT, MIN, MAX) after 'ROLLING'");
-        };
+            default -> throw error(current, "Expected a window aggregate (SUM, AVG, COUNT, MIN, MAX,"
+                    + " STDDEV, STDDEV_SAMP, STDDEV_POP, VARIANCE, VAR_SAMP or VAR_POP) after 'ROLLING'");
+        });
         advance();
         expect(TokenType.LPAREN, "Expected '(' after the ROLLING aggregate name");
         Operand argument = parseOperand();
@@ -2062,7 +2065,7 @@ public final class RelAlgebraParser {
     private List<GroupingKey> parseGroupingKeys() {
         List<GroupingKey> keys = new ArrayList<>();
 
-        while (!isAggregateFunctionKeyword(current) && current.type() != TokenType.LPAREN) {
+        while (!startsAggregateFunction() && current.type() != TokenType.LPAREN) {
             Operand expression = parseOperand();
             Optional<String> alias = Optional.empty();
             if (match(TokenType.ARROW)) {
@@ -2080,8 +2083,39 @@ public final class RelAlgebraParser {
         return keys;
     }
 
-    private boolean isAggregateFunctionKeyword(Token token) {
-        return token.type() == TokenType.SUM ||
+    /**
+     * The aggregates named by an ordinary word rather than a keyword, so that none of the
+     * names is reserved: a column may still be called {@code median}. Each is an
+     * aggregate only where it is called, written directly before its parenthesis.
+     */
+    private static final java.util.Map<String, AggregateOperator> NAMED_AGGREGATES = java.util.Map.of(
+            "STDDEV", AggregateOperator.STDDEV,
+            "STDDEV_SAMP", AggregateOperator.STDDEV_SAMP,
+            "STDDEV_POP", AggregateOperator.STDDEV_POP,
+            "VARIANCE", AggregateOperator.VARIANCE,
+            "VAR_SAMP", AggregateOperator.VAR_SAMP,
+            "VAR_POP", AggregateOperator.VAR_POP,
+            "PERCENTILE_CONT", AggregateOperator.PERCENTILE_CONT,
+            "PERCENTILE_DISC", AggregateOperator.PERCENTILE_DISC,
+            "MEDIAN", AggregateOperator.MEDIAN);
+
+    /** The named aggregates that roll over a window frame: the variance family. */
+    private static final java.util.Set<AggregateOperator> ROLLING_STATISTICS = java.util.EnumSet.of(
+            AggregateOperator.STDDEV, AggregateOperator.STDDEV_SAMP, AggregateOperator.STDDEV_POP,
+            AggregateOperator.VARIANCE, AggregateOperator.VAR_SAMP, AggregateOperator.VAR_POP);
+
+    /** The aggregate the current word names where it is called, as in {@code MEDIAN(x)}; empty otherwise. */
+    private Optional<AggregateOperator> namedAggregate() {
+        if (peek(1).type() != TokenType.LPAREN || !opensCall(current, peek(1))) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(NAMED_AGGREGATES.get(current.lexeme().toUpperCase(java.util.Locale.ROOT)));
+    }
+
+    private boolean startsAggregateFunction() {
+        Token token = current;
+        return namedAggregate().isPresent() ||
+               token.type() == TokenType.SUM ||
                token.type() == TokenType.AVG ||
                token.type() == TokenType.COUNT ||
                token.type() == TokenType.MIN ||
@@ -2102,7 +2136,7 @@ public final class RelAlgebraParser {
             } else {
                 break;
             }
-        } while (isAggregateFunctionKeyword(current));
+        } while (startsAggregateFunction());
 
         if (aggregates.isEmpty()) {
             throw error(current, "Expected at least one aggregate function");
@@ -2112,7 +2146,8 @@ public final class RelAlgebraParser {
     }
 
     private AggregateFunction parseAggregateFunction() {
-        AggregateOperator operator = switch (current.type()) {
+        Token nameTok = current;
+        AggregateOperator operator = namedAggregate().orElseGet(() -> switch (current.type()) {
             case SUM -> AggregateOperator.SUM;
             case AVG -> AggregateOperator.AVG;
             case COUNT -> AggregateOperator.COUNT;
@@ -2123,8 +2158,12 @@ public final class RelAlgebraParser {
             case ARGMIN -> AggregateOperator.ARGMIN;
             default -> throw error(current,
                 "Expected aggregate function (SUM, AVG, COUNT, MIN, MAX, COLLECT, ARGMAX, or ARGMIN)");
-        };
+        });
         advance();
+
+        if (operator == AggregateOperator.PERCENTILE_CONT || operator == AggregateOperator.PERCENTILE_DISC) {
+            return parsePercentile(operator, nameTok);
+        }
 
         expect(TokenType.LPAREN, "Expected '(' after aggregate function name");
 
@@ -2174,7 +2213,15 @@ public final class RelAlgebraParser {
         }
 
         expect(TokenType.RPAREN, "Expected ')' after aggregate function argument");
+        return finishAggregate(operator, argument, yieldExpr, distinct);
+    }
 
+    /**
+     * The rest of an aggregate after its parenthesis: an optional {@code FILTER} and an
+     * optional {@code → alias}.
+     */
+    private AggregateFunction finishAggregate(AggregateOperator operator, Operand argument,
+                                              Optional<Operand> yieldExpr, boolean distinct) {
         // SQL's AGG(x) FILTER (WHERE c): only the rows where c holds are read, written as
         // the portable AGG(IIf(c, x, NULL)) — an aggregate skips a NULL, so COUNT is 0
         // and the rest NULL over a group in which no row passes. ARGMAX/ARGMIN filter
@@ -2202,6 +2249,44 @@ public final class RelAlgebraParser {
         }
 
         return new AggregateFunction(operator, argument, yieldExpr, alias, distinct);
+    }
+
+    /**
+     * Parses a percentile: SQL's {@code PERCENTILE_CONT(p) WITHIN GROUP (ORDER BY x)}, or
+     * the shorter {@code PERCENTILE_CONT(p, x)}. The tree holds {@code x} as the argument
+     * and the fraction {@code p} as the second one. A descending order reads the
+     * fraction from the other end, which for the continuous percentile is the fraction
+     * {@code 1 - p}; the discrete one has no such reading, and is refused.
+     */
+    private AggregateFunction parsePercentile(AggregateOperator operator, Token nameTok) {
+        String name = nameTok.lexeme();
+        expect(TokenType.LPAREN, "Expected '(' after " + name);
+        Operand fraction = parseOperand();
+        Operand argument;
+        if (match(TokenType.COMMA)) {
+            argument = parseOperand();
+            expect(TokenType.RPAREN, "Expected ')' after the " + name + " argument");
+        } else {
+            expect(TokenType.RPAREN, "Expected ')' after the " + name + " fraction");
+            expect(TokenType.WITHIN, "Expected 'WITHIN GROUP (ORDER BY …)' after " + name + "(…),"
+                    + " or write the value second: " + name + "(p, x)");
+            expect(TokenType.AGGREGATION, "Expected 'GROUP' after 'WITHIN'");
+            expect(TokenType.LPAREN, "Expected '(' after 'WITHIN GROUP'");
+            expect(TokenType.ORDER, "Expected 'ORDER BY' in WITHIN GROUP (…)");
+            expect(TokenType.BY, "Expected 'BY' after 'ORDER'");
+            SortSpecification key = parseSortSpecification();
+            expect(TokenType.RPAREN, "Expected ')' after the WITHIN GROUP ordering");
+            argument = key.expression();
+            if (key.direction() == SortDirection.DESC) {
+                if (operator == AggregateOperator.PERCENTILE_DISC) {
+                    throw error(nameTok, "PERCENTILE_DISC takes an ascending order;"
+                            + " ask for the fraction from the other end instead");
+                }
+                fraction = new BinaryArithmeticExpression(new NumberOperand("1", loc(nameTok)),
+                        ArithmeticOperator.MINUS, fraction, loc(nameTok));
+            }
+        }
+        return finishAggregate(operator, argument, Optional.of(fraction), false);
     }
 
     private boolean startsRenameAttributeList() {
