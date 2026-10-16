@@ -16,7 +16,11 @@
 package com.darkcollective.relix.processor.exec;
 
 import com.darkcollective.relix.ast.AggregateFunction;
+import com.darkcollective.relix.ast.DurationOperand;
+import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.Operand;
+import com.darkcollective.relix.ast.SortDirection;
+import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
 import com.darkcollective.relix.ast.WindowFunction;
 import com.darkcollective.relix.plan.PhysicalNode;
@@ -24,8 +28,10 @@ import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.EvaluationException;
 import com.darkcollective.relix.processor.eval.OperandEvaluator;
+import com.darkcollective.relix.value.DateValue;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.NumberValue;
+import com.darkcollective.relix.value.TimestampValue;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.symbol.Schema;
 
@@ -73,7 +79,9 @@ final class WindowExecutor {
 
     Stream<Row> executeWindow(PhysicalNode.Window node, EvalCtx ctx) {
         List<String> partitionKeys = node.partitionKeys();
-        Comparator<Row> comparator = rowComparator(node.sortSpecs(), ctx.operandEval());
+        // A whole-partition total may have no sort, and then every row is a peer.
+        Comparator<Row> comparator = node.sortSpecs().isEmpty()
+                ? (a, b) -> 0 : rowComparator(node.sortSpecs(), ctx.operandEval());
         Schema inputSchema = node.input().schema();
         Schema outputSchema = node.schema();
         OperandEvaluator eval = ctx.operandEval();
@@ -108,9 +116,9 @@ final class WindowExecutor {
             case WindowFunction.AggregateWindow a -> {
                 AggregateFunction agg = AggregateFunction.of(a.operator(), a.argument());
                 List<Value> values = new ArrayList<>(partition.size());
+                Frames frames = new Frames(partition, node.frame(), node.sortSpecs(), comparator, eval);
                 for (int i = 0; i < partition.size(); i++) {
-                    values.add(AggregateExecutor.computeAggregate(
-                            agg, frameRows(partition, i, node.frame()), eval));
+                    values.add(AggregateExecutor.computeAggregate(agg, frames.rows(i), eval));
                 }
                 yield values;
             }
@@ -138,6 +146,7 @@ final class WindowExecutor {
                 case LEAD -> i + n;
                 case FIRST_VALUE -> 0;
                 case LAST_VALUE -> size - 1;
+                case NTH_VALUE -> n - 1;
             };
             if (target >= 0 && target < size) {
                 values.add(eval.evaluate(offset.expression(), partition.get(target)));
@@ -167,17 +176,176 @@ final class WindowExecutor {
         return n;
     }
 
-    /** The rows in {@code current}'s frame within its sorted partition. */
-    private static List<Row> frameRows(List<Row> partition, int current, WindowFrame frame) {
-        int start = switch (frame) {
-            case WindowFrame.BoundedFrame b -> Math.max(0, current - b.n() + 1);
-            case WindowFrame.CumulativeFrame ignored -> 0;
-            case WindowFrame.PartitionFrame ignored -> 0;
-        };
-        int endExclusive = frame instanceof WindowFrame.PartitionFrame
-                ? partition.size()
-                : current + 1;
-        return partition.subList(start, endExclusive);
+    /**
+     * The frame of each row of a sorted partition.
+     *
+     * <p>A ROWS bound counts positions. A RANGE bound is a position too, found from the
+     * sort key: {@code CURRENT ROW} is the edge of the current row's peers, and an offset
+     * the edge of the rows whose key lies within it, as PostgreSQL measures one. The key
+     * is read along the sort's direction, so a descending sort's {@code PRECEDING} is the
+     * larger values. A NULL key lies beyond every value on the side its sort puts it, as
+     * PostgreSQL places one: a row with a NULL key sees its NULL peers through an
+     * offset, and a row with a value reaches the NULLs only by a bound that runs past
+     * every value toward them.
+     */
+    private static final class Frames {
+
+        private final List<Row> partition;
+        private final WindowFrame frame;
+        private final Comparator<Row> comparator;
+        private final BigDecimal[] position;
+
+        Frames(List<Row> partition, WindowFrame frame, List<SortSpecification> sortSpecs,
+               Comparator<Row> comparator, OperandEvaluator eval) {
+            this.partition = partition;
+            this.frame = frame;
+            this.comparator = comparator;
+            this.position = frame instanceof WindowFrame.Between b && b.measuresKey()
+                    ? positions(partition, b, sortSpecs.get(0), eval) : null;
+        }
+
+        /** The rows in the frame of the row at {@code current}. */
+        List<Row> rows(int current) {
+            int last = partition.size() - 1;
+            int start;
+            int end;
+            switch (frame) {
+                case WindowFrame.BoundedFrame b -> {
+                    start = current - b.n() + 1;
+                    end = current;
+                }
+                case WindowFrame.CumulativeFrame ignored -> {
+                    start = 0;
+                    end = current;
+                }
+                case WindowFrame.PartitionFrame ignored -> {
+                    start = 0;
+                    end = last;
+                }
+                case WindowFrame.Between b -> {
+                    start = edge(b, b.start(), current, true);
+                    end = edge(b, b.end(), current, false);
+                }
+            }
+            start = Math.max(start, 0);
+            end = Math.min(end, last);
+            return start > end ? List.of() : partition.subList(start, end + 1);
+        }
+
+        /** Where a bound puts the frame's first ({@code first}) or last row. */
+        private int edge(WindowFrame.Between frame, WindowFrame.Bound bound, int current, boolean first) {
+            return switch (bound.kind()) {
+                case UNBOUNDED_PRECEDING -> 0;
+                case UNBOUNDED_FOLLOWING -> partition.size() - 1;
+                default -> frame.unit() == WindowFrame.Unit.ROWS
+                        ? current + rowsOffset(bound)
+                        : position == null || position[current] == null
+                        ? peerEdge(current, first)
+                        : measuredEdge(position[current].add(signedOffset(bound)), first);
+            };
+        }
+
+        private int rowsOffset(WindowFrame.Bound bound) {
+            int n = bound.offset().map(o -> new BigDecimal(((NumberOperand) o).value()))
+                    .map(BigDecimal::intValueExact).orElse(0);
+            return bound.kind() == WindowFrame.Bound.Kind.PRECEDING ? -n : n;
+        }
+
+        private BigDecimal signedOffset(WindowFrame.Bound bound) {
+            BigDecimal n = bound.offset().map(Frames::measure).orElse(BigDecimal.ZERO);
+            return bound.kind() == WindowFrame.Bound.Kind.PRECEDING ? n.negate() : n;
+        }
+
+        /** The first or last row tied with the current one on every sort key. */
+        private int peerEdge(int current, boolean first) {
+            int i = current;
+            int step = first ? -1 : 1;
+            while (i + step >= 0 && i + step < partition.size()
+                    && comparator.compare(partition.get(i + step), partition.get(current)) == 0) {
+                i += step;
+            }
+            return i;
+        }
+
+        /**
+         * The first row whose key reaches {@code limit}, or the last within it; past the
+         * keyed rows when none does, so that the frame comes out empty. A sort keeps the
+         * NULL keys together at one end, so every row between the first and last keyed
+         * ones has a key.
+         */
+        private int measuredEdge(BigDecimal limit, boolean first) {
+            int firstKeyed = -1;
+            int lastKeyed = -1;
+            for (int j = 0; j < position.length; j++) {
+                if (position[j] == null) {
+                    continue;
+                }
+                if (firstKeyed < 0) {
+                    firstKeyed = j;
+                }
+                lastKeyed = j;
+            }
+            if (first) {
+                for (int j = firstKeyed; j <= lastKeyed; j++) {
+                    if (position[j].compareTo(limit) >= 0) {
+                        return j;
+                    }
+                }
+                return lastKeyed + 1;
+            }
+            for (int j = lastKeyed; j >= firstKeyed; j--) {
+                if (position[j].compareTo(limit) <= 0) {
+                    return j;
+                }
+            }
+            return firstKeyed - 1;
+        }
+
+        /**
+         * Each row's sort key as a distance along the sort — negated for a descending
+         * one, so that "preceding" is always smaller — or null for a NULL key.
+         */
+        private static BigDecimal[] positions(List<Row> partition, WindowFrame.Between frame,
+                                              SortSpecification key, OperandEvaluator eval) {
+            boolean temporalOffset = java.util.stream.Stream.of(frame.start(), frame.end())
+                    .flatMap(b -> b.offset().stream())
+                    .anyMatch(o -> o instanceof DurationOperand);
+            BigDecimal[] positions = new BigDecimal[partition.size()];
+            for (int j = 0; j < positions.length; j++) {
+                Value value = eval.evaluate(key.expression(), partition.get(j));
+                if (value.isNull()) {
+                    continue;
+                }
+                boolean temporal = value instanceof TimestampValue || value instanceof DateValue;
+                if (temporal != temporalOffset || !(temporal || value instanceof NumberValue)) {
+                    throw new EvaluationException("A RANGE frame measures a NUMBER sort key by a number"
+                            + " and a DATE or TIMESTAMP key by a DURATION; got a " + value.type()
+                            + " key and a " + (temporalOffset ? "DURATION" : "number") + " offset");
+                }
+                BigDecimal at = switch (value) {
+                    case NumberValue n -> n.value();
+                    case TimestampValue t -> nanos(t.value().getEpochSecond(), t.value().getNano());
+                    case DateValue d -> nanos(d.value().toEpochDay() * 86_400L, 0);
+                    default -> throw new IllegalStateException("unreachable");
+                };
+                positions[j] = key.direction() == SortDirection.DESC ? at.negate() : at;
+            }
+            return positions;
+        }
+
+        /** A RANGE offset's length: a number as itself, a duration in nanoseconds. */
+        private static BigDecimal measure(Operand offset) {
+            return switch (offset) {
+                case NumberOperand n -> new BigDecimal(n.value());
+                case DurationOperand d -> nanos(d.value().getSeconds(), d.value().getNano());
+                default -> throw new EvaluationException("A frame offset must be a number or a DURATION");
+            };
+        }
+
+        private static BigDecimal nanos(long seconds, int nanos) {
+            return BigDecimal.valueOf(seconds).multiply(BigDecimal.valueOf(1_000_000_000L))
+                    .add(BigDecimal.valueOf(nanos));
+        }
     }
 
     /**
@@ -217,6 +385,21 @@ final class WindowExecutor {
                     BigDecimal pr = BigDecimal.valueOf(rank - 1L)
                             .divide(denominator, PERCENT_RANK_CONTEXT);
                     values.add(new NumberValue(pr));
+                }
+            }
+            case CUME_DIST -> {
+                // The rows up to and including the current row's last peer, over all of them.
+                BigDecimal rows = BigDecimal.valueOf(size);
+                int end = size;
+                BigDecimal[] fractions = new BigDecimal[size];
+                for (int i = size - 1; i >= 0; i--) {
+                    if (i < size - 1 && comparator.compare(partition.get(i), partition.get(i + 1)) != 0) {
+                        end = i + 1;
+                    }
+                    fractions[i] = BigDecimal.valueOf(end).divide(rows, PERCENT_RANK_CONTEXT);
+                }
+                for (BigDecimal fraction : fractions) {
+                    values.add(new NumberValue(fraction));
                 }
             }
             case NTILE -> {

@@ -499,22 +499,31 @@ downsample        ::= "DOWNSAMPLE" name "BY" NONBLANK_STRING "USING"
                       per_names? ( "FOR" POSITIVE_INTEGER "ROWS" )? input
 per_names         ::= "PER" name ( "," name )*
 
-/* ROLLING AVG(price) OVER 3 ROWS SORT ts PER ticker AS avg3 (Trades) */
-rolling           ::= "ROLLING" ( "SUM" | "AVG" | "COUNT" | "MIN" | "MAX" ) "(" operand ")"
-                      "OVER" ( INTEGER | "ALL" ) "ROWS"
-                      ( "τ" | "SORT" ) sort_key ( "," sort_key )* per_names? "AS" name input
-                    | "ROLLING" ( "STDDEV" | "STDDEV_SAMP" | "STDDEV_POP" | "VARIANCE" | "VAR_SAMP" | "VAR_POP" )
-                      CALL_OPEN operand ")"
-                      "OVER" ( INTEGER | "ALL" ) "ROWS"
-                      ( "τ" | "SORT" ) sort_key ( "," sort_key )* per_names? "AS" name input
+/* ROLLING AVG(price) OVER 3 ROWS SORT ts PER ticker AS avg3 (Trades);
+   ROLLING AVG(price) OVER ROWS BETWEEN 2 PRECEDING AND 2 FOLLOWING SORT ts AS centred (Trades);
+   ROLLING SUM(amount) OVER PARTITION PER region AS region_total (Orders) */
+rolling           ::= "ROLLING" ( ( "SUM" | "AVG" | "COUNT" | "MIN" | "MAX" ) "(" operand ")"
+                                | ( "STDDEV" | "STDDEV_SAMP" | "STDDEV_POP" | "VARIANCE" | "VAR_SAMP" | "VAR_POP" )
+                                  CALL_OPEN operand ")" )
+                      "OVER" ( ( ( INTEGER | "ALL" ) "ROWS" | frame_clause ) window_sort
+                             | "PARTITION" window_sort? )
+                      per_names? "AS" name input
+window_sort       ::= ( "τ" | "SORT" ) sort_key ( "," sort_key )*
+/* The words of a frame are matched by their text; none is reserved. A RANGE offset
+   measures the one sort key: a number for a NUMBER, a DURATION for a date or time. */
+frame_clause      ::= ( "ROWS" | "RANGE" ) ( "BETWEEN" frame_bound "AND" frame_bound | frame_bound )
+frame_bound       ::= "UNBOUNDED" ( "PRECEDING" | "FOLLOWING" )
+                    | "CURRENT" "ROW"
+                    | ( NUMBER | "DURATION" STRING ) ( "PRECEDING" | "FOLLOWING" )
 
 /* WINDOW RANK() SORT amount DESC PER customer_id AS rnk (Orders) */
 window            ::= "WINDOW" window_function
                       ( "τ" | "SORT" ) sort_key ( "," sort_key )* per_names? "AS" name input
-window_function   ::= ( "ROW_NUMBER" | "RANK" | "DENSE_RANK" | "PERCENT_RANK" ) "(" ")"
+window_function   ::= ( "ROW_NUMBER" | "RANK" | "DENSE_RANK" | "PERCENT_RANK" | "CUME_DIST" ) "(" ")"
                     | "NTILE" "(" operand ")"
                     | ( "LAG" | "LEAD" ) "(" operand ( "," operand ( "," operand )? )? ")"
                     | ( "FIRST_VALUE" | "LAST_VALUE" ) "(" operand ")"
+                    | "NTH_VALUE" "(" operand "," operand ")"
 
 /* SESSIONIZE ts GAP DURATION 'PT30M' PER user_id AS session (Events) */
 sessionize        ::= "SESSIONIZE" name "GAP" operand per_names? "AS" name input

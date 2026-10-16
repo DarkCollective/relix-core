@@ -183,6 +183,16 @@ public final class AstLocations {
                 .toList();
     }
 
+    private static WindowFrame stripFrame(WindowFrame frame) {
+        return frame instanceof WindowFrame.Between b
+                ? new WindowFrame.Between(b.unit(), stripBound(b.start()), stripBound(b.end()))
+                : frame;
+    }
+
+    private static WindowFrame.Bound stripBound(WindowFrame.Bound bound) {
+        return new WindowFrame.Bound(bound.kind(), bound.offset().map(AstLocations::stripLocations));
+    }
+
     private static WindowFunction stripWindowFunction(WindowFunction fn) {
         return switch (fn) {
             case WindowFunction.AggregateWindow a ->
@@ -525,7 +535,7 @@ public final class AstLocations {
         @Override
         public RelNode visit(WindowNode node) {
             return new WindowNode(stripWindowFunction(node.function()), node.partitionKeys(),
-                    stripSpecs(node.sortSpecs()), node.frame(), node.outputColumn(),
+                    stripSpecs(node.sortSpecs()), stripFrame(node.frame()), node.outputColumn(),
                     node.input().accept(this), SourceLocation.UNKNOWN);
         }
 

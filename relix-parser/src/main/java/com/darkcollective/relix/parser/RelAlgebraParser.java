@@ -1614,10 +1614,19 @@ public final class RelAlgebraParser {
         expect(TokenType.RPAREN, "Expected ')' after the ROLLING aggregate argument");
 
         expect(TokenType.OVER, "Expected 'OVER' before the ROLLING frame specification");
+        Token frameTok = current;
         WindowFrame frame = parseWindowFrame();
 
-        expect(TokenType.SORT, "Expected 'SORT' before the ROLLING ordering");
-        List<SortSpecification> sortSpecs = parseSortSpecificationList();
+        // A whole-partition total reads no order, so its SORT may be left out.
+        List<SortSpecification> sortSpecs = List.of();
+        if (!(frame instanceof WindowFrame.PartitionFrame) || current.type() == TokenType.SORT) {
+            expect(TokenType.SORT, "Expected 'SORT' before the ROLLING ordering");
+            sortSpecs = parseSortSpecificationList();
+        }
+        if (frame instanceof WindowFrame.Between between && between.measuresKey() && sortSpecs.size() != 1) {
+            throw error(frameTok, "A RANGE frame with an offset measures one sort key; got "
+                    + sortSpecs.size());
+        }
 
         List<String> partitionKeys = parseOptionalPartition();
 
@@ -1637,6 +1646,12 @@ public final class RelAlgebraParser {
      * column name elsewhere.  The current token is the first token after {@code OVER}.
      */
     private WindowFrame parseWindowFrame() {
+        if (matchWord("PARTITION")) {
+            return new WindowFrame.PartitionFrame();
+        }
+        if (current.type() == TokenType.ROWS || isWord(current, "RANGE")) {
+            return parseFrameClause();
+        }
         WindowFrame frame;
         if (current.type() == TokenType.NUMBER) {
             Token nTok = current;
@@ -1655,11 +1670,85 @@ public final class RelAlgebraParser {
             advance();
             frame = new WindowFrame.CumulativeFrame();
         } else {
-            throw error(current,
-                    "Expected a frame size (<n> ROWS) or 'ALL ROWS' after 'OVER'");
+            throw error(current, "Expected a frame after 'OVER': <n> ROWS, ALL ROWS,"
+                    + " ROWS or RANGE BETWEEN … AND …, or PARTITION");
         }
         expect(TokenType.ROWS, "Expected 'ROWS' after the window frame size");
         return frame;
+    }
+
+    /**
+     * Parses SQL's frame clause, {@code ROWS | RANGE BETWEEN <bound> AND <bound>}, or its
+     * short form {@code ROWS | RANGE <bound>}, which ends at the current row. A bound is
+     * {@code UNBOUNDED PRECEDING | FOLLOWING}, {@code CURRENT ROW}, or an offset and
+     * {@code PRECEDING | FOLLOWING}: a whole number of rows, or for RANGE a number or a
+     * {@code DURATION} along the sort key. None of the words is reserved.
+     */
+    private WindowFrame parseFrameClause() {
+        WindowFrame.Unit unit = current.type() == TokenType.ROWS ? WindowFrame.Unit.ROWS : WindowFrame.Unit.RANGE;
+        advance();
+        WindowFrame.Bound start;
+        WindowFrame.Bound end;
+        if (matchWord("BETWEEN")) {
+            start = parseFrameBound(unit);
+            expect(TokenType.AND, "Expected 'AND' between the frame's bounds");
+            end = parseFrameBound(unit);
+        } else {
+            start = parseFrameBound(unit);
+            end = WindowFrame.Bound.currentRow();
+        }
+        Token at = current;
+        try {
+            return new WindowFrame.Between(unit, start, end);
+        } catch (IllegalArgumentException e) {
+            throw error(at, e.getMessage());
+        }
+    }
+
+    private WindowFrame.Bound parseFrameBound(WindowFrame.Unit unit) {
+        if (matchWord("UNBOUNDED")) {
+            if (matchWord("PRECEDING")) {
+                return WindowFrame.Bound.unboundedPreceding();
+            }
+            if (matchWord("FOLLOWING")) {
+                return WindowFrame.Bound.unboundedFollowing();
+            }
+            throw error(current, "Expected 'PRECEDING' or 'FOLLOWING' after 'UNBOUNDED'");
+        }
+        if (matchWord("CURRENT")) {
+            if (!matchWord("ROW")) {
+                throw error(current, "Expected 'ROW' after 'CURRENT'");
+            }
+            return WindowFrame.Bound.currentRow();
+        }
+        Token offsetTok = current;
+        Operand offset;
+        if (current.type() == TokenType.NUMBER) {
+            advance();
+            offset = new NumberOperand(offsetTok.lexeme(), loc(offsetTok));
+            boolean whole = offsetTok.lexeme().chars().allMatch(Character::isDigit);
+            if (unit == WindowFrame.Unit.ROWS && !whole) {
+                throw error(offsetTok, "A ROWS offset is a whole number of rows, got '" + offsetTok.lexeme() + "'");
+            }
+        } else if (current.type() == TokenType.DURATION && unit == WindowFrame.Unit.RANGE) {
+            offset = parseTemporalLiteral();
+            if (((DurationOperand) offset).value().isNegative()) {
+                throw error(offsetTok, "A frame offset cannot be negative");
+            }
+        } else {
+            throw error(current, unit == WindowFrame.Unit.ROWS
+                    ? "Expected a frame bound: UNBOUNDED PRECEDING, <n> PRECEDING, CURRENT ROW,"
+                            + " <n> FOLLOWING or UNBOUNDED FOLLOWING"
+                    : "Expected a frame bound: UNBOUNDED PRECEDING, a number or DURATION and"
+                            + " PRECEDING or FOLLOWING, CURRENT ROW, or UNBOUNDED FOLLOWING");
+        }
+        if (matchWord("PRECEDING")) {
+            return WindowFrame.Bound.preceding(offset);
+        }
+        if (matchWord("FOLLOWING")) {
+            return WindowFrame.Bound.following(offset);
+        }
+        throw error(current, "Expected 'PRECEDING' or 'FOLLOWING' after the frame offset");
     }
 
     /**
@@ -1714,13 +1803,13 @@ public final class RelAlgebraParser {
     private WindowFunction parseWindowFunction(Token fnTok) {
         String name = fnTok.lexeme().toUpperCase(java.util.Locale.ROOT);
         return switch (name) {
-            case "ROW_NUMBER", "RANK", "DENSE_RANK", "PERCENT_RANK", "NTILE" ->
+            case "ROW_NUMBER", "RANK", "DENSE_RANK", "PERCENT_RANK", "NTILE", "CUME_DIST" ->
                     parseRankingWindow(RankingFunction.valueOf(name));
-            case "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE" ->
+            case "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE", "NTH_VALUE" ->
                     parseOffsetWindow(OffsetFunction.valueOf(name));
             default -> throw error(fnTok, "Unknown window function '" + fnTok.lexeme()
-                    + "'; expected ROW_NUMBER, RANK, DENSE_RANK, PERCENT_RANK, NTILE, "
-                    + "LAG, LEAD, FIRST_VALUE, or LAST_VALUE");
+                    + "'; expected ROW_NUMBER, RANK, DENSE_RANK, PERCENT_RANK, NTILE, CUME_DIST, "
+                    + "LAG, LEAD, FIRST_VALUE, LAST_VALUE, or NTH_VALUE");
         };
     }
 
@@ -1752,7 +1841,10 @@ public final class RelAlgebraParser {
         Operand expression = parseOperand();
         Optional<Operand> offset = Optional.empty();
         Optional<Operand> defaultValue = Optional.empty();
-        if (fn == OffsetFunction.LAG || fn == OffsetFunction.LEAD) {
+        if (fn == OffsetFunction.NTH_VALUE) {
+            expect(TokenType.COMMA, "Expected ',' and a row number: NTH_VALUE(x, n)");
+            offset = Optional.of(parseOperand());
+        } else if (fn == OffsetFunction.LAG || fn == OffsetFunction.LEAD) {
             if (match(TokenType.COMMA)) {
                 offset = Optional.of(parseOperand());
                 if (match(TokenType.COMMA)) {

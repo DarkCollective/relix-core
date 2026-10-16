@@ -37,6 +37,9 @@ import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.SortSpecification;
+import com.darkcollective.relix.ast.WindowFrame;
+import com.darkcollective.relix.ast.DurationOperand;
+import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.StringOperand;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
@@ -859,7 +862,11 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             orderExprs.addAll(p.dialect.orderByTerms(col.get(), spec.direction() == SortDirection.DESC,
                     spec.nulls() == NullPlacement.NULLS_FIRST));
         }
-        String overClause = p.dialect.windowOverClause(partitionCols, orderExprs, node.frame());
+        Optional<String> frame = frameSql(node, orderExprs.size(), p.dialect);
+        if (frame.isEmpty()) {
+            return Optional.empty();
+        }
+        String overClause = p.dialect.windowOverClause(partitionCols, orderExprs, frame.get());
         String windowExpr = fnSql.get() + overClause + " AS " + p.dialect.quote(node.outputColumn());
         List<String> newSelectList = new ArrayList<>(p.selectList);
         newSelectList.add(windowExpr);
@@ -869,6 +876,54 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         p.bareScan = false;
         p.schema = schemaOf(node);
         return Optional.of(p);
+    }
+
+    /**
+     * The frame clause a window is pushed with, empty for none; or nothing, where the
+     * backend cannot be told the frame the engine computes.
+     *
+     * <p>SQL's default frame is not the engine's. With an {@code ORDER BY} it runs from
+     * the partition's start to the current row's last <em>peer</em>, so a whole-partition
+     * aggregate over a sort, and {@code FIRST_VALUE}, {@code LAST_VALUE} and
+     * {@code NTH_VALUE}, which the engine reads across the whole partition, say so. The
+     * ranking functions and {@code LAG}/{@code LEAD} take no frame, and SQL Server
+     * refuses one on them.
+     *
+     * <p>A RANGE offset needs the single {@code ORDER BY} term that PostgreSQL's and
+     * DuckDB's {@code NULLS LAST} keeps it to — every other dialect spells the NULL
+     * placement as a second term — and a whole number, since PostgreSQL measures an
+     * integer column only by an integer. A duration offset is PostgreSQL's
+     * {@code INTERVAL}.
+     */
+    private static Optional<String> frameSql(WindowNode node, int orderTerms, Dialect dialect) {
+        String whole = "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING";
+        return switch (node.function()) {
+            case WindowFunction.RankingWindow r -> Optional.of("");
+            case WindowFunction.OffsetWindow o -> Optional.of(
+                    o.function() == OffsetFunction.LAG || o.function() == OffsetFunction.LEAD ? "" : whole);
+            case WindowFunction.AggregateWindow a -> switch (node.frame()) {
+                case WindowFrame.PartitionFrame f -> Optional.of(orderTerms == 0 ? "" : whole);
+                case WindowFrame.Between b when b.measuresKey() -> {
+                    boolean measurable = orderTerms == 1
+                            && (dialect == Dialect.POSTGRES || dialect == Dialect.DUCKDB);
+                    List<Optional<String>> offsets = new ArrayList<>();
+                    String clause = Dialect.frameClause(b, offset -> {
+                        Optional<String> sql = switch (offset) {
+                            case NumberOperand n when n.value().chars().allMatch(Character::isDigit) ->
+                                    Optional.of(n.value());
+                            case DurationOperand d when dialect == Dialect.POSTGRES ->
+                                    dialect.durationLiteral(d.value());
+                            default -> Optional.empty();
+                        };
+                        offsets.add(sql);
+                        return sql.orElse("");
+                    });
+                    yield measurable && offsets.stream().allMatch(Optional::isPresent)
+                            ? Optional.of(clause) : Optional.empty();
+                }
+                default -> Optional.of(Dialect.frameClause(node.frame(), WindowFrame.Bound::literal));
+            };
+        };
     }
 
     /**
@@ -913,6 +968,7 @@ final class SqlPushdownPlanner implements PushdownRenderer {
                     case RANK        -> "RANK";
                     case DENSE_RANK  -> "DENSE_RANK";
                     case PERCENT_RANK -> "PERCENT_RANK";
+                    case CUME_DIST   -> "CUME_DIST";
                     case NTILE       -> "NTILE"; // handled above
                 };
                 yield Optional.of(name + "()");
@@ -927,7 +983,12 @@ final class SqlPushdownPlanner implements PushdownRenderer {
                     case LEAD        -> "LEAD";
                     case FIRST_VALUE -> "FIRST_VALUE";
                     case LAST_VALUE  -> "LAST_VALUE";
+                    case NTH_VALUE   -> "NTH_VALUE";
                 };
+                // SQL Server has every offset function but this one.
+                if (o.function() == OffsetFunction.NTH_VALUE && dialect == Dialect.SQLSERVER) {
+                    yield Optional.empty();
+                }
                 StringBuilder args = new StringBuilder(expr.get());
                 if (o.offset().isPresent()) {
                     Optional<String> offset = SqlExpressions.operand(o.offset().get(), cols, dialect, functions);
