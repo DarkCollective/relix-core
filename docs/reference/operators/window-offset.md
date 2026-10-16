@@ -1,10 +1,11 @@
-# Name: Window — offset functions (WINDOW LAG / LEAD / FIRST_VALUE / LAST_VALUE)
+# Name: Window — offset functions (WINDOW LAG / LEAD / FIRST_VALUE / LAST_VALUE / NTH_VALUE)
 
 # Syntax:
 WINDOW LAG(<expr> [, <offset> [, <default>]])  SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 WINDOW LEAD(<expr> [, <offset> [, <default>]]) SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 WINDOW FIRST_VALUE(<expr>)                     SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 WINDOW LAST_VALUE(<expr>)                      SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
+WINDOW NTH_VALUE(<expr>, <n>)                  SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 
 WINDOW LAG(revenue, 1)   SORT month ASC PER region     AS prev_revenue (MonthlyRevenue)
 WINDOW LEAD(event_time)  SORT event_time ASC PER user_id AS next_time   (ClickEvents)
@@ -13,7 +14,7 @@ WINDOW FIRST_VALUE(price) SORT trade_time ASC PER session_id AS open_price (Trad
 # Description:
 An offset window reads a value from **another row** within the same ordered
 partition and **adds it as a new column without collapsing or filtering any
-rows**. The four functions differ only in which row they read:
+rows**. The five functions differ only in which row they read:
 
 - `LAG(expr, n, default)` — the value of `expr` `n` rows **before** the current
   row in the sort order. At the partition's leading edge (no such row) it emits
@@ -24,6 +25,8 @@ rows**. The four functions differ only in which row they read:
   repeated for every row.
 - `LAST_VALUE(expr)` — the value of `expr` in the **last** row of the partition,
   repeated for every row.
+- `NTH_VALUE(expr, n)` — the value of `expr` in the partition's `n`th row,
+  counting from 1, repeated for every row; `NULL` when the partition is shorter.
 
 For `LAG`/`LEAD` the offset `n` defaults to `1` (the immediately adjacent row) and
 must be a positive integer literal. `FIRST_VALUE`/`LAST_VALUE` take only the value
@@ -52,7 +55,12 @@ offset window is folded into the SQL scan:
 A `σ` immediately above an offset window over a pushed source is evaluated
 in-engine. MongoDB sources evaluate windows in-engine.
 
-`LAG`/`LEAD` require a constant, positive-integer offset (no column references).
+`FIRST_VALUE`, `LAST_VALUE` and `NTH_VALUE` read the whole partition, which SQL's
+default frame does not — with an `ORDER BY` it stops at the current row's last
+peer — so they are pushed with `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED
+FOLLOWING`. SQL Server has no `NTH_VALUE`, so there it runs in the engine.
+
+`LAG`/`LEAD`/`NTH_VALUE` require a constant, positive-integer offset (no column references).
 The default value, when given, is evaluated against the partition's first row
 (constants are the typical case).
 

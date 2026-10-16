@@ -1,10 +1,11 @@
-# Name: Window — ranking functions (WINDOW ROW_NUMBER / RANK / DENSE_RANK / PERCENT_RANK / NTILE)
+# Name: Window — ranking functions (WINDOW ROW_NUMBER / RANK / DENSE_RANK / PERCENT_RANK / CUME_DIST / NTILE)
 
 # Syntax:
 WINDOW ROW_NUMBER()    SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 WINDOW RANK()          SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 WINDOW DENSE_RANK()    SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 WINDOW PERCENT_RANK()  SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
+WINDOW CUME_DIST()     SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 WINDOW NTILE(<n>)      SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 
 WINDOW RANK()    SORT units_sold DESC PER category_id AS rnk   (Products)
@@ -13,7 +14,7 @@ WINDOW NTILE(4)  SORT ytd_revenue DESC PER region      AS qtile (Sales)
 # Description:
 A ranking window assigns each row a number based on its position within an ordered
 partition and **adds it as a new column without collapsing or filtering any rows**.
-All five functions share the same structure — partition by the optional `PER`
+All six functions share the same structure — partition by the optional `PER`
 keys, order each partition by the `SORT` keys, then number the rows:
 
 - `ROW_NUMBER()` — a unique, sequential 1-based integer per partition (`1, 2, 3,
@@ -24,6 +25,9 @@ keys, order each partition by the `SORT` keys, then number the rows:
   (`1, 1, 2, …`).
 - `PERCENT_RANK()` — the relative rank `(rank − 1) / (rows − 1)` as a fraction in
   `[0.0, 1.0]`; fixed at `0.0` for a single-row partition.
+- `CUME_DIST()` — the cumulative distribution: the fraction of the partition's
+  rows that sort before the current row or tie with it, in `(0, 1]`. Over sort
+  keys 10, 10, 20, 50 it is 0.5, 0.5, 0.75, 1 — the tied rows both count each other.
 - `NTILE(n)` — divides the partition into `n` buckets as evenly as possible and
   assigns each row its bucket number `1..n`. When the partition does not divide
   evenly, the leftover rows go to the **lower** buckets (bucket 1 first).

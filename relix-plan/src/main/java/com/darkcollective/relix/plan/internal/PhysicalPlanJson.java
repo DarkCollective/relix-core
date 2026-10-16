@@ -517,6 +517,7 @@ public final class PhysicalPlanJson {
         return switch (frame) {
             case WindowFrame.BoundedFrame b -> b.n() + " ROWS";
             case WindowFrame.CumulativeFrame ignored -> "ALL ROWS";
+            case WindowFrame.Between between -> between.toString();
             case WindowFrame.PartitionFrame ignored -> "PARTITION";
         };
     }

@@ -1029,6 +1029,59 @@ final class SqlPushdownPlannerTest {
     }
 
     @Nested
+    @DisplayName("a window frame, CUME_DIST and NTH_VALUE (#129)")
+    class WindowFrames {
+
+        private static final String SOURCE = "source S from db { table: \"s\", "
+                + "schema: { k: STRING, t: NUMBER, ts: TIMESTAMP, x: NUMBER } };\n";
+
+        private Optional<String> pushed(String url, String query) {
+            return push("connection db from database { url: \"" + url + "\" };\n" + SOURCE
+                    + "query { " + query + " };").map(PhysicalNode.PushedScan::nativeQuery);
+        }
+
+        @Test
+        @DisplayName("is SQL's frame clause, and the whole partition where the engine reads it")
+        void frames() {
+            assertThat(pushed("jdbc:h2:mem:x", "ROLLING SUM(x) OVER ROWS BETWEEN 2 PRECEDING AND 1 FOLLOWING SORT t AS s (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("ROWS BETWEEN 2 PRECEDING AND 1 FOLLOWING)"));
+            assertThat(pushed("jdbc:postgresql://h/db",
+                    "ROLLING SUM(x) OVER RANGE BETWEEN 5 PRECEDING AND CURRENT ROW SORT t AS s (S)"))
+                    .hasValueSatisfying(q -> assertThat(q)
+                            .contains("ORDER BY \"t\" ASC NULLS LAST RANGE BETWEEN 5 PRECEDING AND CURRENT ROW)"));
+            assertThat(pushed("jdbc:postgresql://h/db",
+                    "ROLLING COUNT(x) OVER RANGE BETWEEN DURATION 'P1D' PRECEDING AND CURRENT ROW SORT ts AS s (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("RANGE BETWEEN INTERVAL 'PT24H' PRECEDING"));
+            assertThat(pushed("jdbc:h2:mem:x", "ROLLING SUM(x) OVER PARTITION PER k AS s (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("SUM(x) OVER (PARTITION BY k) AS s"));
+            assertThat(pushed("jdbc:h2:mem:x", "ROLLING SUM(x) OVER PARTITION SORT t AS s (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"));
+            assertThat(pushed("jdbc:h2:mem:x", "WINDOW LAST_VALUE(x) SORT t AS v (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"));
+            assertThat(pushed("jdbc:h2:mem:x", "WINDOW NTH_VALUE(x, 2) SORT t AS v (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("NTH_VALUE(x, 2) OVER"));
+            assertThat(pushed("jdbc:sqlserver://h:1433", "WINDOW LAG(x) SORT t AS c (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("LAG([x]) OVER").doesNotContain("ROWS"));
+            assertThat(pushed("jdbc:sqlserver://h:1433", "WINDOW LEAD(x) SORT t AS c (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("LEAD([x]) OVER").doesNotContain("ROWS"));
+            assertThat(pushed("jdbc:sqlserver://h:1433", "WINDOW CUME_DIST() SORT t AS c (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("CUME_DIST() OVER").doesNotContain("ROWS"));
+        }
+
+        @Test
+        @DisplayName("stays in the engine where the backend could not be told the same frame")
+        void declined() {
+            // H2's NULL placement is a second ORDER BY term, which a RANGE offset cannot measure.
+            assertThat(pushed("jdbc:h2:mem:x", "ROLLING SUM(x) OVER RANGE 5 PRECEDING SORT t AS s (S)")).isEmpty();
+            assertThat(pushed("jdbc:postgresql://h/db", "ROLLING SUM(x) OVER RANGE 2.5 PRECEDING SORT t AS s (S)"))
+                    .isEmpty();
+            assertThat(pushed("jdbc:duckdb:", "ROLLING COUNT(x) OVER RANGE DURATION 'P1D' PRECEDING SORT ts AS s (S)"))
+                    .isEmpty();
+            assertThat(pushed("jdbc:sqlserver://h:1433", "WINDOW NTH_VALUE(x, 2) SORT t AS v (S)")).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("a string aggregate (#128)")
     class StringAgg {
 

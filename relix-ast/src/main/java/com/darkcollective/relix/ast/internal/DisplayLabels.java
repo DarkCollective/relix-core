@@ -149,6 +149,7 @@ public final class DisplayLabels {
         return switch (frame) {
             case WindowFrame.BoundedFrame b -> " OVER " + b.n() + " ROWS";
             case WindowFrame.CumulativeFrame ignored -> " OVER ALL ROWS";
+            case WindowFrame.Between between -> " OVER " + between;
             case WindowFrame.PartitionFrame ignored -> "";
         };
     }
@@ -178,9 +179,11 @@ public final class DisplayLabels {
                 fn instanceof WindowFunction.AggregateWindow ? "ROLLING" : "WINDOW")
                 .append(' ')
                 .append(windowFunction(fn))
-                .append(windowFrame(frame))
-                .append(" SORT ")
-                .append(sortKeys(sortSpecs));
+                .append(fn instanceof WindowFunction.AggregateWindow && frame instanceof WindowFrame.PartitionFrame
+                        ? " OVER PARTITION" : windowFrame(frame));
+        if (!sortSpecs.isEmpty()) {
+            sb.append(" SORT ").append(sortKeys(sortSpecs));
+        }
         if (!partitionKeys.isEmpty()) {
             sb.append(" PER ").append(String.join(", ", partitionKeys));
         }

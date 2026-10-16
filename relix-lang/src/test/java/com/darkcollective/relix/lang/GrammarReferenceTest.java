@@ -244,6 +244,18 @@ final class GrammarReferenceTest {
             "query { γ k, COUNT(*) FILTER (WHERE s = 1) → n, SUM(x) filter (where y > 0) (R) };",
             "query { γ COLLECT(x) FILTER (WHERE y = 1) (R) };",
             "query { γ SUM(x) FILTER (y = 1) (R) };",
+            // window frames, CUME_DIST and NTH_VALUE
+            "query { ROLLING AVG(p) OVER ROWS BETWEEN 2 PRECEDING AND 1 FOLLOWING SORT t AS a (R) };",
+            "query { ROLLING sum(p) over range between duration 'P7D' preceding and current row sort t per k as a (R) };",
+            "query { ROLLING COUNT(p) OVER RANGE UNBOUNDED PRECEDING SORT t AS a (R) };",
+            "query { ROLLING STDDEV(p) OVER ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING SORT t AS a (R) };",
+            "query { ROLLING SUM(p) OVER PARTITION PER k AS a (R) };",
+            "query { ROLLING SUM(p) OVER PARTITION τ t AS a (R) };",
+            "query { WINDOW CUME_DIST() SORT t AS c (R) };",
+            "query { WINDOW NTH_VALUE(v, 2) SORT t AS c (R) };",
+            "query { ROLLING SUM(p) OVER ROWS BETWEEN 1 PRECEDING SORT t AS a (R) };",
+            "query { ROLLING SUM(p) OVER 3 ROWS AS a (R) };",
+            "query { WINDOW NTH_VALUE(v) SORT t AS c (R) };",
             // string aggregates
             "query { γ STRING_AGG(DISTINCT x, ', ' ORDER BY y DESC) → a, GROUP_CONCAT(x ORDER BY y SEPARATOR ';') → b,"
                     + " LISTAGG(x, '-') WITHIN GROUP (ORDER BY y) → c, ARRAY_AGG(x ORDER BY y) → d (R) };",
