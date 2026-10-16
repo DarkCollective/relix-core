@@ -170,7 +170,7 @@ public final class AstLocations {
 
     private static AggregateFunction stripAgg(AggregateFunction a) {
         return new AggregateFunction(a.operator(), stripLocations(a.argument()),
-                a.yieldExpr().map(AstLocations::stripLocations), a.alias());
+                a.yieldExpr().map(AstLocations::stripLocations), a.alias(), a.distinct());
     }
 
     private static GroupingKey stripGroupingKey(GroupingKey k) {

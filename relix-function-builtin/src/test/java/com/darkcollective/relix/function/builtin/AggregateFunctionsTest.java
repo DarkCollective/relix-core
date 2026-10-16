@@ -120,7 +120,9 @@ final class AggregateFunctionsTest {
 
             // COLLECT gathers in row order and the ARG pair resolves a tie to the first
             // row, so all three would notice a reordering of the input.
-            assertThat(insensitive).containsExactly("AVG", "COUNT", "MAX", "MIN", "SUM");
+            assertThat(insensitive).containsExactly("AVG", "COUNT", "MAX", "MEDIAN", "MIN",
+                    "PERCENTILE_CONT", "PERCENTILE_DISC", "STDDEV", "STDDEV_POP", "STDDEV_SAMP", "SUM",
+                    "VARIANCE", "VAR_POP", "VAR_SAMP");
         }
 
         @Test
