@@ -43,16 +43,17 @@ query { OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(cost) <= 50 (Backlog) };
 ```
 
 ```
- feature       value  cost
- ────────────  ─────  ────
- SearchRevamp     60    10
- Dashboards      120    30
- DarkMode         40     5
-(3 rows)
+ feature     value  cost
+ ──────────  ─────  ────
+ MobileSync    100    20
+ Dashboards    120    30
+(2 rows)
 ```
 
 `SUM(value)` is what to maximise; `SUM(cost) <= 50` is the limit. The solver evaluates
-every feasible subset — you describe *what optimal means*, not how to search.
+every feasible subset — you describe *what optimal means*, not how to search. Two
+subsets reach 220 here (SearchRevamp, Dashboards and DarkMode is the other), and
+`OPTIMIZE` returns the one with fewer rows.
 
 **A separate problem per group** is `PER`. Give each team its own budget in one
 statement:
@@ -93,9 +94,10 @@ query { OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(cost) <= 30 PER team (TeamBa
 
 - **A constraint is required.** `OPTIMIZE MAXIMIZE SUM(value)` with no `SUBJECT TO` is
   an error — unbounded "maximise" has no answer. There is always a limit; name it.
-- **Ties are the solver's choice.** When two subsets reach the same optimum, which one
-  comes back is not specified. If you need a particular winner, break the tie in the
-  objective (`MAXIMIZE SUM(value) - SUM(cost)`).
+- **A tie is settled by rule, not by preference.** When two subsets reach the same
+  optimum, `OPTIMIZE` returns the one with the fewest rows, and among those the one
+  whose rows come earliest in the input. If a particular winner matters, say why in
+  the objective (`MAXIMIZE SUM(value) - SUM(cost)` prefers the cheaper subset).
 - **An infeasible group yields no rows, silently.** If a group's constraints cannot be
   met, it is logged and skipped rather than failing the query — so a missing group is
   not necessarily a bug in your data. Check for groups you expected but did not get.

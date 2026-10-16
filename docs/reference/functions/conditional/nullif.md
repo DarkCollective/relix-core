@@ -44,7 +44,7 @@ query { τ sensor (γ sensor, AVG(value) → naive, AVG(NULLIF(value, -999)) →
 ```
 
 ```
- sensor            naive  mean  readings
+ sensor  naive            mean  readings
  ──────  ───────────────  ────  ────────
  a       -318.3333333333    22         2
  b                -490.5    18         1

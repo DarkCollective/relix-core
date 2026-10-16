@@ -189,7 +189,7 @@ query {
 ```
 
 ```
- region  month  revenue         centred  region_total
+ region  month  revenue  centred         region_total
  ──────  ─────  ───────  ──────────────  ────────────
  East        1      100             110           310
  East        2      120  103.3333333333           310
