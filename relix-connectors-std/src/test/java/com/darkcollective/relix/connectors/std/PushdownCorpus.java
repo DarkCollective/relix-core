@@ -364,6 +364,7 @@ final class PushdownCorpus {
         groups.put("π and δ", projectionAndDistinct());
         groups.put("γ — every aggregate, over a column that holds a NULL", aggregates());
         groups.put("γ — an extremum over a string, which orders it", stringExtremum());
+        groups.put("γ — grouping sets, over keys that hold a NULL of their own", groupingSets());
         groups.put("τ and λ", sortAndLimit());
         groups.put("τ on a string key — ordering is what no collation fixes", sortOnStrings());
         groups.put("∀ — a group survives only when every row satisfies the condition", universal());
@@ -739,6 +740,29 @@ final class PushdownCorpus {
                 "γ SUM(amount) → total (Orders)",
                 "γ region, qty, COUNT(*) → n (Orders)",
                 "γ region, SUM(amount * qty) → weighted (Orders)");
+    }
+
+    /**
+     * ROLLUP, CUBE and GROUPING SETS (#125), with GROUPING telling a subtotal's NULL from
+     * one in the data. MySQL has only {@code WITH ROLLUP}, so it takes a rollup of the
+     * keys in order; H2 and SQLite have none of them.
+     */
+    private static List<Case> groupingSets() {
+        Set<Dialect> groupingSets = EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLSERVER, Dialect.DB2);
+        Set<Dialect> rollup = EnumSet.copyOf(groupingSets);
+        rollup.add(Dialect.MYSQL);
+        return List.of(
+                Case.of("γ ROLLUP (region, qty), SUM(amount) → total, COUNT(*) → n (Orders)", rollup),
+                Case.of("γ ROLLUP (region), MIN(amount) → lo, GROUPING(region) → g (Orders)", rollup),
+                Case.of("γ CUBE (region, qty), COUNT(amount) → n, GROUPING(region, qty) → g (Orders)",
+                        groupingSets),
+                Case.of("γ GROUPING SETS ((region), (qty), ()), MAX(amount) → hi, GROUPING(qty) → gq (Orders)",
+                        groupingSets),
+                Case.of("γ region, ROLLUP (qty), SUM(amount) → total (Orders)", groupingSets),
+                // A HAVING over the subtotals, and one on a rolled-up key, which keeps its NULL.
+                Case.of("σ total > 100 (γ ROLLUP (region), SUM(amount) → total (Orders))", rollup),
+                Case.of("σ qty ≠ 2 (γ ROLLUP (qty), COUNT(*) → n (Orders))", rollup),
+                Case.of("γ GROUPING SETS ((region), (region)), COUNT(*) → n (Orders)", groupingSets));
     }
 
     /**

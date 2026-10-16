@@ -699,7 +699,19 @@ public final class CostEstimator {
         List<String> statNames = node.groupingKeys().stream()
                 .map(k -> k.columnName().orElseGet(k::outputName))
                 .toList();
-        return groupedRows(statNames, node.input(), depth);
+        if (!node.hasGroupingSets()) {
+            return groupedRows(statNames, node.input(), depth);
+        }
+        // Each grouping set groups the same rows its own way: the sum of the sets.
+        long total = 0;
+        for (List<Integer> set : node.groupingSets()) {
+            OptionalLong rows = groupedRows(set.stream().map(statNames::get).toList(), node.input(), depth);
+            if (rows.isEmpty()) {
+                return OptionalLong.empty();
+            }
+            total += Math.min(rows.getAsLong(), Long.MAX_VALUE - total);   // saturating
+        }
+        return OptionalLong.of(total);
     }
 
     /**

@@ -452,6 +452,15 @@ public abstract class AstBuilders {
         return new AggregationNode(groupingKeys, aggregates, input, SourceLocation.UNKNOWN);
     }
 
+    /**
+     * γ — aggregation by several grouping sets of its keys, SQL's {@code GROUPING SETS};
+     * each set is a list of indexes into {@code groupingKeys}.
+     */
+    public static AggregationNode groupingSets(List<GroupingKey> groupingKeys, List<List<Integer>> sets,
+                                               List<AggregateFunction> aggregates, RelNode input) {
+        return new AggregationNode(groupingKeys, sets, aggregates, input, SourceLocation.UNKNOWN);
+    }
+
     /** τ — sort. */
     public static SortNode sort(List<SortSpecification> sortSpecs, RelNode input) {
         return new SortNode(sortSpecs, input);

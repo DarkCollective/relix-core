@@ -379,10 +379,17 @@ rename_list       ::= name ( "," name )*
 /* γ customer_id, SUM(amount) → total, COUNT(*) → orders (Orders)
    Grouping keys come first as a plain list; at least one aggregate is required.
    With no keys the whole input is one group. A key is an operand, so {k} is a
-   struct and groups by a one-field struct rather than by the column k. */
+   struct and groups by a one-field struct rather than by the column k.
+   γ ROLLUP (region, product), SUM(amount) → total (Sales) groups by several sets of
+   the keys at once; elements combine, one set from each, as SQL's do. */
 aggregation       ::= ( "γ" | "GROUP" ) "BY"?
-                      ( grouping_key ( "," grouping_key )* ","? )?
+                      ( grouping_element ( "," grouping_element )* ","? )?
                       aggregate ( "," aggregate )* ","? input
+grouping_element  ::= ( "ROLLUP" | "CUBE" ) "(" grouping_key ( "," grouping_key )* ")"
+                    | "GROUPING" "SETS" "(" grouping_set ( "," grouping_set )* ")"
+                    | grouping_key
+grouping_set      ::= "(" ( grouping_key ( "," grouping_key )* )? ")"
+                    | grouping_key
 grouping_key      ::= operand ( arrow name )?
 aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" ) "(" "DISTINCT"? operand ")" agg_filter? ( arrow name )?
                     | ( "COLLECT" | "ARRAY_AGG" ) "(" "DISTINCT"? operand agg_order? ")" ( arrow name )?
@@ -390,6 +397,7 @@ aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" ) "(" "DISTINCT"? operand 
                     | "COUNT" "(" ( "DISTINCT"? operand | "*" ) ")" agg_filter? ( arrow name )?
                     | ( "ARGMAX" | "ARGMIN" ) "(" operand "," operand ")" agg_filter? ( arrow name )?
                     | statistic CALL_OPEN "DISTINCT"? operand ")" agg_filter? ( arrow name )?
+                    | ( "GROUPING" | "GROUPING_ID" ) CALL_OPEN operand ( "," operand )* ")" ( arrow name )?
                     | ( "PERCENTILE_CONT" | "PERCENTILE_DISC" ) CALL_OPEN operand
                       ( "," operand ")"
                       | ")" "WITHIN" ( "γ" | "GROUP" ) "(" "ORDER" "BY" sort_key ")" )

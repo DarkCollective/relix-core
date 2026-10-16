@@ -20,6 +20,7 @@ import com.darkcollective.relix.ast.*;
 import com.darkcollective.relix.ast.internal.DisplayLabels;
 import com.darkcollective.relix.ast.internal.*;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -415,7 +416,9 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     public String visit(AggregationNode node) {
         // Format: γ [grouping_keys,] aggregate_funcs (input)
         String grouping = "";
-        if (!node.groupingKeys().isEmpty()) {
+        if (node.hasGroupingSets()) {
+            grouping = renderGroupingSets(node) + ", ";
+        } else if (!node.groupingKeys().isEmpty()) {
             grouping = node.groupingKeys().stream()
                     .map(this::renderGroupingKey)
                     .collect(Collectors.joining(", ")) + ", ";
@@ -427,7 +430,10 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                     // A percentile is written with its fraction first: PERCENTILE_CONT(p, x).
                     boolean fractionFirst = agg.operator() == AggregateOperator.PERCENTILE_CONT
                             || agg.operator() == AggregateOperator.PERCENTILE_DISC;
-                    String args = fractionFirst
+                    String args = agg.operator() == AggregateOperator.GROUPING
+                            ? agg.groupingArguments().stream().map(k -> k.accept(operandPrinter))
+                                    .collect(Collectors.joining(", "))
+                            : fractionFirst
                             ? agg.yieldExpr().map(y -> y.accept(operandPrinter) + ", ").orElse("")
                                     + agg.argument().accept(operandPrinter)
                             : (agg.distinct() ? "DISTINCT " : "") + agg.argument().accept(operandPrinter)
@@ -463,6 +469,26 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String weight = node.weight().map(w -> " BY " + w.accept(operandPrinter)).orElse("");
         String seed = node.seed().map(s -> " SEED " + s).orElse("");
         return "ROLL" + weight + seed + " (" + print(node.input()) + ")";
+    }
+
+    /**
+     * Renders grouping sets as {@code GROUPING SETS ((a → x, b), (a), ())}, each key's
+     * alias where it is first named. The sets name the keys first in the order they are
+     * listed, so this parses back to the same keys.
+     */
+    private String renderGroupingSets(AggregationNode node) {
+        boolean[] named = new boolean[node.groupingKeys().size()];
+        List<String> sets = new java.util.ArrayList<>();
+        for (List<Integer> set : node.groupingSets()) {
+            List<String> keys = new java.util.ArrayList<>(set.size());
+            for (int index : set) {
+                GroupingKey key = node.groupingKeys().get(index);
+                keys.add(named[index] ? key.expression().accept(operandPrinter) : renderGroupingKey(key));
+                named[index] = true;
+            }
+            sets.add("(" + String.join(", ", keys) + ")");
+        }
+        return "GROUPING SETS (" + String.join(", ", sets) + ")";
     }
 
     /** Renders a grouping key as {@code expression [→ alias]}. */

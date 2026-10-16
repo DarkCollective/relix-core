@@ -86,6 +86,10 @@ public record AggregateFunction(
             throw new IllegalArgumentException(
                     operator + " ranks rows and has no distinct form");
         }
+        if (operator == AggregateOperator.GROUPING
+                && (distinct || yieldExpr.isPresent() || !orderBy.isEmpty())) {
+            throw new IllegalArgumentException("GROUPING names grouping keys and takes nothing else");
+        }
         orderBy = List.copyOf(orderBy);
     }
 
@@ -168,6 +172,32 @@ public record AggregateFunction(
         return new AggregateFunction(operator, argument, Optional.empty(), Optional.of(alias));
     }
 
+    /**
+     * SQL's {@code GROUPING(k, …)}: which of {@code keys} a row has rolled up, one bit
+     * each, the last the lowest.
+     *
+     * @param keys  the grouping keys it reports on, as written in the grouping
+     * @param alias the output column name
+     * @return the aggregate function
+     */
+    public static AggregateFunction grouping(List<Operand> keys, String alias) {
+        return new AggregateFunction(AggregateOperator.GROUPING,
+                new ArrayConstruction(keys, SourceLocation.UNKNOWN), Optional.empty(), Optional.of(alias));
+    }
+
+    /**
+     * The keys a {@link AggregateOperator#GROUPING GROUPING} reports on, in the order
+     * written; empty for every other operator.
+     *
+     * @return the keys
+     */
+    public List<Operand> groupingArguments() {
+        if (operator != AggregateOperator.GROUPING) {
+            return List.of();
+        }
+        return argument instanceof ArrayConstruction keys ? keys.elements() : List.of(argument);
+    }
+
     // ── Derived output naming ────────────────────────────────────────────────────
 
     /**
@@ -190,7 +220,9 @@ public record AggregateFunction(
      * function name, and any other expression uses {@code "expr"}.
      */
     private String argumentName() {
-        return switch (argument) {
+        // GROUPING(region) is named for its key, as SUM(region) would be.
+        Operand named = groupingArguments().size() == 1 ? groupingArguments().getFirst() : argument;
+        return switch (named) {
             case AttributeOperand a -> a.unqualifiedName();
             case FunctionCall fn -> fn.functionName();
             default              -> "expr";

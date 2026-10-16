@@ -240,6 +240,12 @@ final class GrammarReferenceTest {
             "query { π 2e → a (R) };",
             "query { λ 1e3 (R) };",
             "Bad := \"a\"\"b\";",
+            // grouping sets, and the words they use as names
+            "query { γ ROLLUP (a, b → x), CUBE (c), GROUPING SETS ((a), d, ()), GROUPING(a, x) → g (R) };",
+            "query { γ rollup, cube, grouping, GROUPING_ID(rollup) (R) };",
+            "query { γ GROUPING SETS (), COUNT(*) (R) };",
+            "query { γ ROLLUP (), COUNT(*) (R) };",
+            "query { γ GROUPING (a), COUNT(*) (R) };",
             // aggregate FILTER
             "query { γ k, COUNT(*) FILTER (WHERE s = 1) → n, SUM(x) filter (where y > 0) (R) };",
             "query { γ COLLECT(x) FILTER (WHERE y = 1) (R) };",

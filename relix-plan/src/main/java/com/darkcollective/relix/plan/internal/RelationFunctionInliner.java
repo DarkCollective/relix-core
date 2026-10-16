@@ -226,8 +226,8 @@ final class RelationFunctionInliner {
             case ProjectionNode p ->
                     new ProjectionNode(substituteProjected(p.attributes(), b), p.input(), p.location());
             case AggregationNode a ->
-                    new AggregationNode(substituteGroupingKeys(a.groupingKeys(), b),
-                            substituteAggregates(a.aggregates(), b), a.input(), a.location());
+                    a.withKeysAndAggregates(substituteGroupingKeys(a.groupingKeys(), b),
+                            substituteAggregates(a.aggregates(), b));
             case ConditionalJoinNode j ->
                     j.rebuild(j.left(), j.right(), substitute(j.condition(), b));
             case AsOfJoinNode j ->

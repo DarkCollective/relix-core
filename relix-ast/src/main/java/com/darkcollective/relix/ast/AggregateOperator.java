@@ -87,5 +87,16 @@ public enum AggregateOperator {
      * {@link AggregateFunction#yieldExpr() second argument} — and an optional ordering.
      * SQL's {@code STRING_AGG}, {@code GROUP_CONCAT} and {@code LISTAGG}.
      */
-    STRING_AGG
+    STRING_AGG,
+    /**
+     * SQL's {@code GROUPING(k, …)}: which of the named grouping keys a row has rolled up.
+     * A key a row's grouping set leaves out is NULL in that row, as a NULL in the data
+     * may be too, and this is how the two are told apart. Each named key is one bit,
+     * the last the lowest, set when the key is rolled up, so {@code GROUPING(region)} is
+     * 1 in a subtotal over every region and 0 elsewhere. Its
+     * {@link AggregateFunction#argument() argument} is an {@link ArrayConstruction} of
+     * the keys. It reads no rows: the engine computes it from the grouping set, and it
+     * is not in a function library.
+     */
+    GROUPING
 }

@@ -270,8 +270,7 @@ public sealed interface RelNode permits
             }
             case AggregationNode n -> {
                 RelNode in = f.apply(n.input());
-                yield in == n.input() ? n
-                        : new AggregationNode(n.groupingKeys(), n.aggregates(), in, n.location());
+                yield in == n.input() ? n : n.withInput(in);
             }
             case SortNode n -> {
                 RelNode in = f.apply(n.input());

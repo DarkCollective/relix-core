@@ -504,10 +504,15 @@ public final class SelectionPushdownPass {
         // AggregationNode is the one node whose list field may be null (ungrouped).
         if (keys == null || keys.isEmpty()) return null;
 
-        Set<String> pushableColumns = keys.stream()
-                .filter(GroupingKey::isPlainColumn)
-                .map(k -> k.outputName().toLowerCase(Locale.ROOT))
-                .collect(Collectors.toSet());
+        // A key some grouping set rolls up is NULL in that set's rows, so a condition on
+        // it above the γ removes those rows, while below it keeps them: only a key in
+        // every grouping set can be filtered first.
+        Set<String> pushableColumns = new java.util.HashSet<>();
+        for (int i = 0; i < keys.size(); i++) {
+            if (keys.get(i).isPlainColumn() && a.inEverySet(i)) {
+                pushableColumns.add(keys.get(i).outputName().toLowerCase(Locale.ROOT));
+            }
+        }
         if (pushableColumns.isEmpty()) return null;
 
         List<Predicate> pushable = new ArrayList<>();
@@ -528,7 +533,7 @@ public final class SelectionPushdownPass {
         RelNode newInner = rewriteNode(
                 new SelectionNode(Predicates.conjoin(pushable), a.input(), s.location()),
                 queryName, schemas, ctx);
-        RelNode newAgg = new AggregationNode(a.groupingKeys(), a.aggregates(), newInner, a.location());
+        RelNode newAgg = a.withInput(newInner);
         return residual.isEmpty()
                 ? newAgg
                 : new SelectionNode(Predicates.conjoin(residual), newAgg, s.location());

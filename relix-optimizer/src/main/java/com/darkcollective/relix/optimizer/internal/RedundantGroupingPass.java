@@ -110,13 +110,17 @@ public final class RedundantGroupingPass {
             case AggregationNode a -> {
                 RelNode newInput = rewriteNode(a.input(), queryName, schemas, ctx);
                 AggregationNode current = (newInput != a.input())
-                        ? new AggregationNode(a.groupingKeys(), a.aggregates(),
-                                              newInput, a.location())
+                        ? a.withInput(newInput)
                         : a;
 
                 // AGG-001: γ cols [] (γ keys, aggs (R)) → γ keys, aggs (R)
+                // Grouping sets on either side are outside the rule: the outer one groups
+                // its rows several ways, and the inner one's rows need not be distinct —
+                // a subtotal's rolled-up NULL can match a NULL in the data.
                 if (current.aggregates().isEmpty()
+                        && !current.hasGroupingSets()
                         && current.input() instanceof AggregationNode inner
+                        && !inner.hasGroupingSets()
                         && current.groupingKeys().stream()
                                 .map(GroupingKey::outputName)
                                 .collect(java.util.stream.Collectors.toSet())

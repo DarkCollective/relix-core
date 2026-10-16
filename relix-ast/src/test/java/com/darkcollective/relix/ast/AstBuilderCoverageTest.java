@@ -209,6 +209,8 @@ final class AstBuilderCoverageTest {
             // Optional<E> takes its element from here too: SOLVE's WITHIN and MAX … ROUNDS.
             .ofListElement(java.math.BigDecimal.class, i -> java.math.BigDecimal.valueOf(i + 1))
             .ofListElement(Integer.class, i -> i + 1)
+            // A grouping set: a list of key indexes.
+            .ofListElement(List.class, i -> List.of(i))
             .ofListElement(String.class, i -> "c" + i)
             .ofListElement(Operand.class, i -> AstBuilders.attr("a" + i))
             .ofListElement(Predicate.class, i -> AstBuilders.nullPred(AstBuilders.attr("p" + i), true))
@@ -228,6 +230,8 @@ final class AstBuilderCoverageTest {
             .override("duration", 0, "PT1H")
             // ρ rejects mixing positional names with old→new pairs, so exercise the pairs form.
             .override("rename", 1, java.util.List.of())
+            // Grouping sets index the keys, and the one key a sample list holds: a rollup of it.
+            .override("groupingSets", 1, java.util.List.of(java.util.List.of(0), java.util.List.of()))
             .ofListElement(ProduceBound.class, i -> AstBuilders.produceBound("n" + i, ComparisonOperator.LESS, AstBuilders.num("10")));
     }
 

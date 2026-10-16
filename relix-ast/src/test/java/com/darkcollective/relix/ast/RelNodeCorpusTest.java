@@ -109,7 +109,11 @@ final class RelNodeCorpusTest {
         Map<String, List<String>> allowedEmpty = Map.of(
                 // ρ rejects positional attributes and from->to pairs together, so the
                 // corpus takes the positional form and leaves pairs empty.
-                "RenameNode", List.of("pairs"));
+                "RenameNode", List.of("pairs"),
+                // No grouping sets is the ordinary grouping, the general case every per-kind
+                // table here describes (a key, a blocking read); a γ with grouping sets has
+                // neither, and GroupingSetsTest and its equivalence test cover it.
+                "AggregationNode", List.of("groupingSets"));
 
         List<String> empties = new ArrayList<>();
         for (RelNode node : RelNodeCorpus.everyKind()) {

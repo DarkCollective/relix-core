@@ -1134,8 +1134,9 @@ final class SemanticValidationTest {
             // something a sliding frame cannot accumulate incrementally — a nested array,
             // or a value from a *different* row than the one being ranked — and each has
             // to be named or it slips through as a silently wrong window.
+            // GROUPING too: it reports on a γ's grouping sets, and a window has none.
             for (AggregateOperator op : List.of(AggregateOperator.COLLECT,
-                    AggregateOperator.ARGMAX, AggregateOperator.ARGMIN)) {
+                    AggregateOperator.ARGMAX, AggregateOperator.ARGMIN, AggregateOperator.GROUPING)) {
                 RelNode tree = rolling(op, attr("amount"),
                         List.of("user_id"), "amount", "run");
                 assertThat(inferAndValidate(tree))
