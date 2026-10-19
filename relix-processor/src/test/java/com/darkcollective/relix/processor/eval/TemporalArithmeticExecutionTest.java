@@ -177,10 +177,12 @@ final class TemporalArithmeticExecutionTest extends com.darkcollective.relix.pro
                     .isEqualTo(new DurationValue(Duration.ofMinutes(40)));
         }
 
-        @Test void isoDurationStringTimesNumberYieldsDuration() {
+        @Test void isoDurationStringIsNotScaled() {
+            // × and ÷ read no STRING (#163): a duration held as text is CAST first.
             Row d = row(schema(col("d", ScalarType.STRING)), str("PT10M"));
-            assertThat(eval.evaluate(arith(attr("d"), ArithmeticOperator.MULTIPLY, AstBuilders.num("3")), d))
-                    .isEqualTo(new DurationValue(Duration.ofMinutes(30)));
+            assertThatThrownBy(() -> eval.evaluate(
+                    arith(attr("d"), ArithmeticOperator.MULTIPLY, AstBuilders.num("3")), d))
+                    .hasMessageContaining("CAST(… AS NUMBER)");
         }
 
         @Test void isoDurationStringNegates() {
