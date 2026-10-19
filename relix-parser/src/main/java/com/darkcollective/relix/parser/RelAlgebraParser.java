@@ -895,6 +895,15 @@ public final class RelAlgebraParser {
     }
 
     /**
+     * Whether a temporal keyword here starts a literal: its quoted string follows, or
+     * {@code WITH}, for SQL's {@code TIMESTAMP WITH TIME ZONE '…'}.
+     */
+    private boolean startsTemporalLiteral() {
+        return peek(1).type() == TokenType.STRING
+                || current.type() == TokenType.TIMESTAMP && peek(1).type() == TokenType.WITH;
+    }
+
+    /**
      * Whether SQL's {@code INTERVAL '…'} or {@code INTERVAL n unit} starts here. A signed
      * one needs its unit, so that {@code interval - 1} still subtracts from a column.
      */
@@ -3531,7 +3540,16 @@ public final class RelAlgebraParser {
                 advance();
                 yield new NumberOperand(value, loc(numTok));
             }
-            case DATE, TIME, TIMESTAMP, DURATION -> parseTemporalLiteral();
+            // A literal always has its string next (TIME '12:00'); without one, the word
+            // is a column named date, time, timestamp or duration.
+            case DATE, TIME, TIMESTAMP, DURATION -> {
+                if (startsTemporalLiteral()) {
+                    yield parseTemporalLiteral();
+                }
+                Token nameToken = current;
+                advance();
+                yield parseOperandFromNameToken(nameToken);
+            }
             case TRUE -> {
                 Token trueTok = current;
                 advance();
