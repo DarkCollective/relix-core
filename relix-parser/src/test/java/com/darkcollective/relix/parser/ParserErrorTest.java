@@ -19,6 +19,7 @@ import com.darkcollective.relix.ast.AntiJoinNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.UnionNode;
+import com.darkcollective.relix.ast.UsingJoinNode;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
@@ -339,6 +340,71 @@ final class ParserErrorTest extends ParserTestSupport {
                 .hasMessageContaining(": A SEMI x ∉ (1, 2) B")
                 .at(1, 12);
         assertParseError("A ANTI B (x IS NULL) ∪ C").hasMessageContaining(": A ANTI x IS NULL B");
+    }
+
+    @Test
+    @DisplayName("SQL's ON after a join's right input is reported at ON, with the join rewritten")
+    public void reportsOnClause() {
+        assertThatThrownBy(() -> parse("loans JOIN members ON loans.member_id = members.member_id"))
+                .hasMessage("'JOIN' takes no condition; to join on one, use >< with the condition"
+                        + " between the two relations, not after them with ON: write"
+                        + " loans >< loans.member_id = members.member_id members at line 1, column 20");
+        assertThatThrownBy(() -> parse("members LJOIN loans ON members.member_id = loans.member_id"))
+                .hasMessage("'LJOIN' takes its condition between the two relations, not after"
+                        + " them with ON: write members LJOIN members.member_id = loans.member_id"
+                        + " loans at line 1, column 21");
+        assertParseError("loans >< members ON loans.member_id = members.member_id")
+                .hasMessageContaining(": write loans >< loans.member_id = members.member_id members")
+                .at(1, 18);
+        for (String op : List.of("RJOIN", "FJOIN", "SEMI", "ANTI", "⟕", "▷", "⨝", "ASOF")) {
+            assertParseError("A " + op + " B on A.id = B.a_id")
+                    .hasMessageContaining("'" + op + "' takes its condition between the two relations")
+                    .hasMessageContaining(": write A " + op + " A.id = B.a_id B");
+        }
+        assertParseError("A ⋈ B ON x = y").hasMessageContaining(": write A ⨝ x = y B");
+        assertParseError("A × B ON x = y").hasMessageContaining(": write A >< x = y B");
+        assertParseError("(A ∪ C) LJOIN (σ z > 1 (B)) ON x = y AND p < q")
+                .hasMessageContaining(": write (A ∪ C) LJOIN x = y AND p < q (σ z > 1 (B))");
+        assertParseError("A JOIN B ON")
+                .as("no condition after ON")
+                .hasMessageContaining(": write A >< condition B")
+                .at(1, 10);
+        assertThat(parse("loans >< loans.member_id = members.member_id members"))
+                .as("the rewrite the message offers parses")
+                .isNode(ThetaJoinNode.class);
+    }
+
+    @Test
+    @DisplayName("SQL's two-word joins are reported at the first word, naming the Relix operator")
+    public void reportsSqlJoinKeywords() {
+        assertThatThrownBy(() -> parse("members LEFT JOIN loans ON members.member_id = loans.member_id"))
+                .hasMessage("'LEFT JOIN' is SQL's spelling of LJOIN, which takes its condition"
+                        + " between the two relations, not after them with ON: write members LJOIN"
+                        + " members.member_id = loans.member_id loans at line 1, column 9");
+        assertParseError("loans INNER JOIN members ON loans.member_id = members.member_id")
+                .hasMessageContaining("'INNER JOIN' is SQL's spelling of ><, which takes its"
+                        + " condition between the two relations, not after them with ON: write"
+                        + " loans >< loans.member_id = members.member_id members")
+                .at(1, 7);
+        assertParseError("A right outer join B ON x = y")
+                .hasMessageContaining("'right outer join' is SQL's spelling of RJOIN")
+                .hasMessageContaining(": write A RJOIN x = y B")
+                .at(1, 3);
+        assertParseError("A FULL OUTER JOIN B ON x = y").hasMessageContaining(": write A FJOIN x = y B");
+        assertParseError("A FULL JOIN B ON x = y").hasMessageContaining(": write A FJOIN x = y B");
+        assertParseError("A CROSS JOIN B")
+                .hasMessageContaining("'CROSS JOIN' is SQL's spelling of ×: write A × B")
+                .at(1, 3);
+        assertParseError("A NATURAL JOIN B").hasMessageContaining(": write A JOIN B, or A >< condition B");
+        assertParseError("A INNER JOIN B").hasMessageContaining(": write A JOIN B, or A >< condition B");
+        assertParseError("A LEFT JOIN B").hasMessageContaining(": write A LJOIN condition B");
+        assertParseError("A LEFT JOIN B USING (id)")
+                .hasMessageContaining("'LEFT JOIN' is SQL's spelling of LJOIN: write A LJOIN B USING (id)");
+        assertParseError("A INNER JOIN B USING (id, k)").hasMessageContaining(": write A JOIN B USING (id, k)");
+        assertParseError("A ∪ B LEFT JOIN C ON x = y").hasMessageContaining(": write B LJOIN x = y C");
+        assertParseError("A LEFT JOIN").hasMessageContaining(": write A LJOIN condition B").at(1, 3);
+        assertThat(parse("A LJOIN B USING (id)")).as("the USING rewrite parses").isNode(UsingJoinNode.class);
+        assertThat(parse("left ⋈ B")).as("a relation named left").isNode(NaturalJoinNode.class);
     }
 
     @Test
