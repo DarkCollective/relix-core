@@ -2288,7 +2288,9 @@ public final class RelAlgebraParser {
 
     /** One grouping key: an expression and an optional {@code → alias}. */
     private GroupingKey parseGroupingKey() {
+        int start = consumed.size();
         Operand expression = parseOperand();
+        rejectForeignAlias(start, this::parseAggregateOrOperand);
         Optional<String> alias = Optional.empty();
         Token arrow = current;
         if (match(TokenType.ARROW)) {
@@ -2445,12 +2447,22 @@ public final class RelAlgebraParser {
         List<AggregateFunction> aggregates = new ArrayList<>();
 
         do {
+            int start = consumed.size();
             aggregates.add(parseAggregateFunction());
+            rejectForeignAlias(start, this::parseAggregateOrOperand);
 
             if (current.type() == TokenType.COMMA) {
                 advance();
             } else {
                 break;
+            }
+            // GROUP k, COUNT(*) -> n, total = SUM(x): a name before '=' or ':' ends the
+            // list, so the rename is refused here rather than at the name.
+            if (isNameToken(current) && !startsAggregateFunction()
+                    && (peek(1).type() == TokenType.EQUAL || peek(1).type() == TokenType.COLON)) {
+                int name = consumed.size();
+                advance();
+                rejectForeignAlias(name, this::parseAggregateOrOperand);
             }
         } while (startsAggregateFunction());
 
@@ -2459,6 +2471,33 @@ public final class RelAlgebraParser {
         }
 
         return aggregates;
+    }
+
+    /**
+     * The tokens consumed from {@code consumed[start]} on, spaced as the reader wrote
+     * them: a space wherever the source had any, between tokens or across a line.
+     */
+    private String writtenFrom(int start) {
+        StringBuilder text = new StringBuilder();
+        Token previous = null;
+        for (Token token : consumed.subList(start, consumed.size())) {
+            if (previous != null && (token.line() != previous.line()
+                    || token.column() > previous.column() + previous.lexeme().length())) {
+                text.append(' ');
+            }
+            text.append(token.lexeme());
+            previous = token;
+        }
+        return text.toString();
+    }
+
+    /** An aggregate where one starts, else a scalar expression: what a renamed item in GROUP is. */
+    private void parseAggregateOrOperand() {
+        if (startsAggregateFunction()) {
+            parseAggregateFunction();
+        } else {
+            parseOperand();
+        }
     }
 
     private AggregateFunction parseAggregateFunction() {
@@ -2758,7 +2797,9 @@ public final class RelAlgebraParser {
     }
 
     private ProjectedAttribute parseProjectedAttribute() {
+        int start = consumed.size();
         Operand expression = parseOperand();
+        rejectForeignAlias(start, this::parseOperand);
 
         if (match(TokenType.ARROW)) {
             Token aliasToken = expectName("Expected alias after '→'");
@@ -2766,6 +2807,35 @@ public final class RelAlgebraParser {
         }
 
         return ProjectedAttribute.simple(expression);
+    }
+
+    /**
+     * Refuses a column named in another language's spelling, after the item read from
+     * {@code consumed[start]} on: SQL's {@code expr AS name}, and {@code name = expr} or
+     * {@code name: expr} where the item is one name. None of them parses, and the
+     * message the next token would get describes the list it ends, not the rename, so
+     * the error names the {@code expr -> name} to write, in the reader's own text.
+     * {@code value} reads what follows {@code =} or {@code :}.
+     */
+    private void rejectForeignAlias(int start, Runnable value) {
+        Token sign = current;
+        if (sign.type() == TokenType.AS && isNameToken(peek(1))) {
+            String item = writtenFrom(start);
+            throw ParseException.at("a column is named with expr -> name, and AS is SQL's"
+                    + " spelling of '->': write " + item + " -> " + peek(1).lexeme(),
+                    lexer.input(), sign);
+        }
+        if ((sign.type() == TokenType.EQUAL || sign.type() == TokenType.COLON)
+                && consumed.size() - start == 1 && isNameToken(consumed.get(start))) {
+            String name = consumed.get(start).lexeme();
+            advance();
+            int from = consumed.size();
+            value.run();
+            String item = writtenFrom(from);
+            String written = sign.type() == TokenType.EQUAL ? "name = expr" : "name: expr";
+            throw ParseException.at("a column is named with expr -> name, not " + written
+                    + ": write " + item + " -> " + name, lexer.input(), sign);
+        }
     }
 
     // =========================================================================

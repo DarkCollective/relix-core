@@ -415,6 +415,31 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("a column renamed with =, : or AS in PROJECT or GROUP is one error, at the sign, naming expr -> name")
+        void foreignAliasDiagnosed() {
+            String tables = "loans := [| loan_id | member_id | name |\n| 1 | 2 | 3 |];\n";
+            String[][] cases = {
+                    {"PROJECT loan_id, days = loan_id * 2 (loans)", "23", "write loan_id * 2 -> days"},
+                    {"PROJECT member_id, book_name: name (loans)", "29", "write name -> book_name"},
+                    {"PROJECT member_id, name AS book_name (loans)", "25", "write name -> book_name"},
+                    {"GROUP member_id, n = COUNT(*) (loans)", "20", "write COUNT(*) -> n"},
+                    {"GROUP member_id, COUNT(*) AS n (loans)", "27", "write COUNT(*) -> n"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + "Q := { " + c[0] + " };\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .startsWith("Syntax error in RA expression: a column is named with expr -> name")
+                            .endsWith(c[2]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0]).isEqualTo(3);
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
+                }
+            }
+        }
+
+        @Test
         @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
         void parseFailurePositionStatedOnce() {
             String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";
