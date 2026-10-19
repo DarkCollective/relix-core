@@ -2289,7 +2289,15 @@ public final class RelAlgebraParser {
     private GroupingKey parseGroupingKey() {
         Operand expression = parseOperand();
         Optional<String> alias = Optional.empty();
+        Token arrow = current;
         if (match(TokenType.ARROW)) {
+            // GROUP k -> COUNT(*) -> n: the arrow would make COUNT the key's name, and the
+            // parenthesis after it the error, so say what was meant at the arrow instead.
+            if (startsAggregateFunction() && peek(1).type() == TokenType.LPAREN) {
+                throw error(arrow, "a grouping key's alias must be a plain name; to add an aggregate, "
+                        + "separate it with a comma: GROUP " + expression.prettyPrint() + ", "
+                        + current.lexeme() + "(…) -> name (…)");
+            }
             alias = Optional.of(expectName("Expected alias name after '→'").lexeme());
         }
         return new GroupingKey(expression, alias);
