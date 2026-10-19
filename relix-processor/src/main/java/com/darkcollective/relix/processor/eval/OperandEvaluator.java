@@ -342,9 +342,10 @@ public final class OperandEvaluator {
         Value right = evaluate(expr.right(), row);
         if (left.isNull() || right.isNull()) return NullValue.INSTANCE;
         // An untyped ISO-8601 cell is read as the temporal it denotes, as in comparison,
-        // so `ts - prev_ts` over an inline column is the DURATION between them. Only
-        // STRING + STRING is left alone: that is concatenation.
-        if (!isConcatenation(left, expr.operator(), right)) {
+        // so `ts - prev_ts` over an inline column is the DURATION between them. STRING +
+        // STRING is left alone, since that is concatenation, and so is any STRING beside
+        // × or ÷, which analysis refuses: text there is more often a number (#163).
+        if (!isConcatenation(left, expr.operator(), right) && !isScaling(expr.operator())) {
             left  = TemporalValueArithmetic.coerceString(left, right);
             right = TemporalValueArithmetic.coerceString(right, left);
         }
@@ -358,6 +359,10 @@ public final class OperandEvaluator {
             case MULTIPLY -> multiply(left, right);
             case DIVIDE   -> divide(left, right);
         };
+    }
+
+    private static boolean isScaling(ArithmeticOperator op) {
+        return op == ArithmeticOperator.MULTIPLY || op == ArithmeticOperator.DIVIDE;
     }
 
     private static boolean isConcatenation(Value left, ArithmeticOperator op, Value right) {
@@ -500,8 +505,10 @@ public final class OperandEvaluator {
 
     private static BigDecimal requireNumber(Value v, String context) {
         if (!(v instanceof NumberValue nv)) {
+            String hint = v instanceof StringValue
+                    ? "; write CAST(… AS NUMBER) for text that holds a number" : "";
             throw new EvaluationException(
-                    "Operator '" + context + "' requires NUMBER, got " + v.type());
+                    "Operator '" + context + "' requires NUMBER, got " + v.type() + hint);
         }
         return nv.value();
     }

@@ -27,6 +27,14 @@ the result NULL, as in SQL. `+`, `-`, `*` and `/` also apply to dates, times and
 durations, a month added on the calendar, so `DATE '2026-01-31' + INTERVAL '1 month'`
 is 28 February; see the duration literal page.
 
+Text is not read as a number. A column of an inline table, CSV or JSON source whose
+cells are not all numbers is a STRING, and `+` and `-` read such a cell as the date,
+time, timestamp or duration it holds, so `ts - prev_ts` over ISO timestamps is the
+span between them. `*` and `/` take no STRING at all: analysis refuses
+`SUBSTRING(b FROM 1 FOR 2) * 1` and names the conversion to write,
+`CAST(… AS NUMBER)` for text that holds a number or `CAST(… AS DURATION)` for one
+that holds a duration.
+
 `a || b` parses to `a + b`, so it is the same expression from then on and is printed
 back as `+`. It joins two strings and adds two numbers. To join a number to text,
 convert it first: `'#' || CStr(id)`.

@@ -51,6 +51,12 @@ import java.util.List;
  * <p>Arithmetic with no temporal operand is {@code NUMBER}, except {@code +} with a
  * {@code STRING} operand, which concatenates and is {@code STRING}.
  *
+ * <p>{@code ×} and {@code ÷} take no {@code STRING} operand. The one temporal they scale
+ * is a {@code DURATION}, while text beside them is far more often a number, which is
+ * never read from a {@code STRING}: accepting it as a possible duration let
+ * {@code SUBSTRING(b FROM 1 FOR 2) * 1} validate and then fail when run (#163). The
+ * error names the {@code CAST} that says which was meant.
+ *
  * <p>Any other {@code STRING} operand is read as the temporal value it holds, the way
  * {@link #comparisonError comparison} reads one: inline-table, CSV and JSON columns type
  * every non-numeric cell {@code STRING}, and the executor parses an ISO-8601 cell into
@@ -104,6 +110,10 @@ final class TemporalArithmetic {
         // the one result + can produce.
         if (isConcatenation(l, op, r)) {
             return Result.ok(ScalarType.STRING);
+        }
+        // × and ÷ scale only a DURATION, and text there is more often a number: say which.
+        if (isScaling(op) && (l == ScalarType.STRING || r == ScalarType.STRING)) {
+            return Result.error(scalingMessage(op, l, r));
         }
         // Any other STRING operand is an untyped cell, read as the temporal it holds.
         if (l == ScalarType.STRING || r == ScalarType.STRING) {
@@ -286,6 +296,16 @@ final class TemporalArithmetic {
 
     private static String binaryMessage(ArithmeticOperator op, ScalarType l, ScalarType r) {
         return cannot(op, l, r) + "; see ADR-0013 for the legal temporal arithmetic combinations";
+    }
+
+    private static boolean isScaling(ArithmeticOperator op) {
+        return op == ArithmeticOperator.MULTIPLY || op == ArithmeticOperator.DIVIDE;
+    }
+
+    private static String scalingMessage(ArithmeticOperator op, ScalarType l, ScalarType r) {
+        return cannot(op, l == null ? ScalarType.ANY : l, r == null ? ScalarType.ANY : r)
+                + "; * and / do not read a STRING as a number: write CAST(… AS NUMBER) for text"
+                + " that holds a number, or CAST(… AS DURATION) for one that holds a duration";
     }
 
     private static String untypedMessage(ArithmeticOperator op, ScalarType l, ScalarType r) {
