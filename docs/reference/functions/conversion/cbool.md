@@ -33,5 +33,9 @@ for it instead.
 A comparison, `open_tickets > 0`, says the same as CBool of a count, and IsNumeric
 asks whether text holds a number.
 
+# SQL names:
+SQL's `CAST(x AS BOOLEAN)` is this function, except that the cast returns NULL for a
+NULL.
+
 # See Also:
 [cstr](cstr.md), [cdbl](cdbl.md), [cint](cint.md), [CAST](../../language/cast.md)

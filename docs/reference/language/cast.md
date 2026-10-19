@@ -85,5 +85,16 @@ The six types above. There is no cast to DURATION, to a nested type, or to SQL's
 sized types such as `VARCHAR(10)` or `DECIMAL(10, 2)`: use NUMBER and STRING, and
 Round for a number of places.
 
+# SQL names:
+SQL's dialects convert under other names, and each is written as a CAST here.
+`TO_NUMBER(x)`, `PARSE(x AS type)`, `CONVERT(type, x)` and a spreadsheet's `VALUE(x)`
+are `CAST(x AS NUMBER)` or the cast to the type they name, so `'45%'` is a number by
+`CAST(Replace(battery, '%', '') AS NUMBER)`. There is no TO_NUMBER, PARSE or CONVERT
+function. `TO_DATE`, `TO_TIMESTAMP` and `TO_CHAR` are functions of their own
+([to_date](../functions/datetime/to_date.md),
+[to_timestamp](../functions/datetime/to_timestamp.md),
+[to_char](../functions/conversion/to_char.md)), and Db2's `VALUE(a, b)`, which is
+`COALESCE`, is [Nz](../functions/conditional/nz.md).
+
 # See Also:
 [cdbl](../functions/conversion/cdbl.md), [cstr](../functions/conversion/cstr.md), [cbool](../functions/conversion/cbool.md), [to_date](../functions/datetime/to_date.md), [to_time](../functions/datetime/to_time.md), [to_timestamp](../functions/datetime/to_timestamp.md), [EXTRACT](extract.md)

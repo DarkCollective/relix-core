@@ -129,6 +129,27 @@ final class ReferenceLookupTest {
         }
 
         @Test
+        @DisplayName("SQL's names for a conversion find CAST, or the function of that name (#168)")
+        void sqlConversionNames() {
+            for (String name : new String[] {"TO_NUMBER", "CONVERT", "PARSE", "VALUE"}) {
+                assertThat(INSTALLED.entry(name)).as(name).map(ReferencePage::path)
+                        .contains("language/cast.md");
+            }
+            // A conversion Relix has as a function keeps its own page, which names CAST.
+            for (String name : new String[] {"TO_DATE", "TO_TIMESTAMP"}) {
+                ReferencePage page = INSTALLED.entry(name).orElseThrow();
+                assertThat(page.category()).as(name).isEqualTo(ReferenceLookup.FUNCTION_CATEGORY);
+                assertThat(INSTALLED.page(page).orElseThrow()).as(name).contains("CAST(x AS");
+            }
+            assertThat(INSTALLED.lookup("cast").orElseThrow())
+                    .contains("TO_NUMBER", "TO_DATE", "PARSE", "CONVERT", "VALUE");
+            for (String name : new String[] {"CDbl", "CInt"}) {
+                assertThat(INSTALLED.page(INSTALLED.function(name).orElseThrow()).orElseThrow())
+                        .as(name).contains("TO_NUMBER", "CAST");
+            }
+        }
+
+        @Test
         @DisplayName("nothing is found by a word no page has, nor is a page not in the index read")
         void nothing() {
             assertThat(INSTALLED.lookup("no-such-thing")).isEmpty();
