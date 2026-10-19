@@ -169,7 +169,10 @@ cycles:   []
 
 `Stale` is defined and referenced by nothing, which is what `relix.unused` is for; the
 top-level outputs appear there too, by construction. `relix.impact` is the blast radius of
-a change — everything that would have to be re-checked if `Orders` moved.
+a change — everything that would have to be re-checked if `Orders` moved. `relix.cycles`
+is empty, and always will be here: analysis refuses a view that reaches itself before any
+catalog relation is built, so a circular definition is reported as that error rather than
+as a row.
 
 ## The installed functions
 
