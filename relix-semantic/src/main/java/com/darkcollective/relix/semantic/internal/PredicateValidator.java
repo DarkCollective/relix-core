@@ -178,10 +178,11 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                     + " value with IS NULL (x IS NULL, x IS NOT NULL)");
             return null;
         }
-        // Temporal values compare only with the same temporal type (ADR-0013).
-        String cmpError = TemporalArithmetic.comparisonError(
-                typeInferrer.infer(node.left(), schema),
-                typeInferrer.infer(node.right(), schema));
+        // Temporal values compare only with the same temporal type (ADR-0013), and a
+        // NUMBER never with a STRING (#176).
+        String cmpError = ComparisonTypes.comparisonError(
+                node.left(), typeInferrer.infer(node.left(), schema), node.operator(),
+                node.right(), typeInferrer.infer(node.right(), schema));
         if (cmpError != null) {
             error(node.location(), cmpError);
         }
@@ -198,6 +199,14 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
     public Void visit(ElementOfPredicate node) {
         validateOperand(node.element());
         validateOperand(node.setExpression());
+        if (node.setExpression() instanceof SetLiteralOperand set) {
+            String setError = ComparisonTypes.membershipError(
+                    node.element(), typeInferrer.infer(node.element(), schema), set.elements(),
+                    set.elements().stream().map(e -> typeInferrer.infer(e, schema)).toList());
+            if (setError != null) {
+                error(node.location(), setError);
+            }
+        }
         return null;
     }
 
