@@ -116,7 +116,7 @@ try {
 ```
 
 ```
-Undefined relation: 'NoSuchRelation'
+Undefined relation: 'NoSuchRelation' (defined: Orders, OpenOrders, Shipped)
 ```
 
 A query assembled from someone *else's* input is a different situation. There an error is
