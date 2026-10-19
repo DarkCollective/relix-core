@@ -112,7 +112,7 @@ final class TemporalArithmeticTest {
         @DisplayName("only + concatenates, and only a STRING with a STRING or an unknown")
         void onlyPlusConcatenates() {
             assertThat(binary(STRING, MINUS, STRING)).isNotEqualTo(STRING);
-            assertThat(binary(STRING, MULTIPLY, ANY)).isNotEqualTo(STRING);
+            assertThat(binaryError(STRING, MULTIPLY, ANY)).contains("cannot multiply STRING by ANY");
             assertThat(binaryError(STRING, PLUS, NUMBER)).contains("cannot add NUMBER to STRING");
         }
 
@@ -164,30 +164,64 @@ final class TemporalArithmeticTest {
         }
 
         @Test
-        @DisplayName("when every legal reading agrees, the expression has that type")
-        void agreedReading() {
-            // Only a DURATION can be scaled, so the string must hold one.
-            assertThat(binary(STRING, MULTIPLY, NUMBER)).isEqualTo(DURATION);
-            assertThat(binary(NUMBER, MULTIPLY, STRING)).isEqualTo(DURATION);
-            assertThat(binary(STRING, DIVIDE, NUMBER)).isEqualTo(DURATION);
-            // Only a DURATION divides by one, and the ratio is a NUMBER.
-            assertThat(binary(STRING, DIVIDE, DURATION)).isEqualTo(NUMBER);
+        @DisplayName("× and ÷ take no STRING, in either position, naming the CAST that says which was meant (#163)")
+        void scalingRefusesAString() {
+            for (ScalarType other : List.of(NUMBER, DURATION, STRING, ANY)) {
+                assertThat(binaryError(STRING, MULTIPLY, other)).contains("cannot multiply STRING by " + other);
+                assertThat(binaryError(other, MULTIPLY, STRING)).contains("cannot multiply " + other + " by STRING");
+                assertThat(binaryError(STRING, DIVIDE, other)).contains("cannot divide STRING by " + other);
+                assertThat(binaryError(other, DIVIDE, STRING)).contains("cannot divide " + other + " by STRING");
+            }
+            assertThat(binaryError(STRING, MULTIPLY, NUMBER))
+                    .contains("write CAST(… AS NUMBER) for text that holds a number")
+                    .contains("CAST(… AS DURATION) for one that holds a duration");
+        }
+
+        @Test
+        @DisplayName("analysis refuses STRING × NUMBER, which would fail when run")
+        void scalingThroughAnalysis() {
+            assertThat(analyze("""
+                    T := [
+                    | b   |
+                    |-----|
+                    | 45% |
+                    ];
+                    query { PROJECT SUBSTRING(b FROM 1 FOR 2) * 1 -> n (T) };
+                    """)).hasErrorContaining("cannot multiply STRING by NUMBER")
+                    .hasErrorContaining("CAST(… AS NUMBER)");
+            assertThat(analyze("""
+                    T := [
+                    | b   |
+                    |-----|
+                    | 45% |
+                    ];
+                    query { PROJECT 2 / b -> n (T) };
+                    """)).hasErrorContaining("cannot divide NUMBER by STRING");
+            assertThat(analyze("""
+                    T := [
+                    | b   |
+                    |-----|
+                    | 45% |
+                    ];
+                    query { PROJECT CAST(Replace(b, '%', '') AS NUMBER) * 1 -> n (T) };
+                    """)).hasNoErrors();
         }
 
         @Test
         @DisplayName("an unknown partner leaves it undecided")
         void unknownPartner() {
             assertThat(binary(STRING, MINUS, ANY)).isEqualTo(ANY);
-            assertThat(binary(ANY, DIVIDE, STRING)).isEqualTo(ANY);
+            assertThat(binary(ANY, MINUS, STRING)).isEqualTo(ANY);
+            assertThat(binary(ANY, PLUS, STRING)).isEqualTo(STRING);
+            assertThat(TemporalArithmetic.binary(STRING, MINUS, array(TIMESTAMP)).type()).isEqualTo(ANY);
         }
 
         @Test
         @DisplayName("a combination no reading makes legal is an error")
         void noLegalReading() {
-            assertThat(binaryError(STRING, MULTIPLY, TIMESTAMP))
-                    .contains("cannot multiply STRING by TIMESTAMP")
+            assertThat(binaryError(STRING, MINUS, TIME))
+                    .contains("cannot subtract TIME from STRING")
                     .contains("arithmetic needs NUMBER or a temporal type");
-            assertThat(binaryError(NUMBER, DIVIDE, STRING)).contains("cannot divide NUMBER by STRING");
             assertThat(binaryError(STRING, MINUS, NUMBER)).contains("cannot subtract NUMBER from STRING");
             assertThat(binaryError(BOOLEAN, PLUS, STRING)).contains("cannot add STRING to BOOLEAN");
         }
@@ -365,7 +399,7 @@ final class TemporalArithmeticTest {
 
             assertThat(TemporalArithmetic.binary(STRING, PLUS, struct).type()).isEqualTo(STRING);
             assertThat(TemporalArithmetic.binary(struct, MINUS, STRING).type()).isEqualTo(ANY);
-            assertThat(TemporalArithmetic.binary(STRING, MULTIPLY, array).type()).isEqualTo(ANY);
+            assertThat(TemporalArithmetic.binary(STRING, MULTIPLY, array).isError()).isTrue();
         }
     }
 

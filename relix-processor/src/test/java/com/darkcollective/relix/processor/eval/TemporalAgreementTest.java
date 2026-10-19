@@ -56,7 +56,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>STRING is not in the matrix</b>, because its verdict depends on the cell rather
  * than the type: the evaluator reads an ISO-8601 string as the temporal it denotes, and
- * inference accepts a STRING operand when some such reading is legal (#118). The property
+ * inference accepts a STRING operand when some such reading is legal (#118), except beside
+ * × or ÷, which both layers refuse a STRING (#163). The property
  * that survives is one-sided, and {@link #stringCellsAgree()} states it: whatever a STRING
  * cell computes, analysis accepted, with a type the value has.
  */
@@ -108,6 +109,19 @@ final class TemporalAgreementTest extends ProcessorTestSupport {
                                 m.rootQueries().getFirst().target()).expression()))
                 .flatMap(sc -> sc.column("r"))
                 .map(c -> c.type() instanceof ScalarType st ? st : ScalarType.ANY);
+    }
+
+    @Test
+    @DisplayName("× and ÷ read no STRING, even one holding a duration, and say what to CAST (#163)")
+    void scalingReadsNoString() {
+        Row row = row(schema(col("dummy", ScalarType.NUMBER)), num(0));
+        for (ArithmeticOperator op : List.of(ArithmeticOperator.MULTIPLY, ArithmeticOperator.DIVIDE)) {
+            assertThat(evaluated(AstBuilders.str("PT2H"), op, AstBuilders.num("2"))).isEmpty();
+            assertThat(evaluated(AstBuilders.num("2"), op, AstBuilders.str("45"))).isEmpty();
+        }
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new OperandEvaluator()
+                        .evaluate(arith(AstBuilders.str("45"), ArithmeticOperator.MULTIPLY, AstBuilders.num("1")), row))
+                .hasMessageContaining("CAST(… AS NUMBER)");
     }
 
     /** The type of the value {@code a <op> b} actually evaluates to, or empty if it raises. */
