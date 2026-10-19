@@ -25,6 +25,7 @@ import com.darkcollective.relix.symbol.ParameterDefinition;
 import com.darkcollective.relix.symbol.Symbol;
 import com.darkcollective.relix.symbol.function.RelationFunctionSymbol;
 import com.darkcollective.relix.symbol.function.ScalarFunctionSymbol;
+import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.relation.QueryRelationSymbol;
 import com.darkcollective.relix.symbol.relation.RelationSymbol;
 import com.darkcollective.relix.symbol.table.SymbolTable;
@@ -32,6 +33,7 @@ import com.darkcollective.relix.symbol.table.SymbolTable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -69,14 +71,28 @@ public final class SemanticValidator {
     private final SymbolTable             symbolTable;
     private final SchemaAnnotations       annotations;
     private final FunctionCatalog         functions;
+    private final Map<String, RelationStatistics> statistics;
     private final List<SemanticError>     errors = new ArrayList<>();
 
     SemanticValidator(SymbolTable symbolTable,
                       SchemaAnnotations annotations,
                       FunctionCatalog functions) {
+        this(symbolTable, annotations, functions, Map.of());
+    }
+
+    /**
+     * @param statistics the collected statistics, by canonical relation name, whose
+     *                   candidate keys tell a natural join that matches on more than
+     *                   a key
+     */
+    SemanticValidator(SymbolTable symbolTable,
+                      SchemaAnnotations annotations,
+                      FunctionCatalog functions,
+                      Map<String, RelationStatistics> statistics) {
         this.symbolTable = Objects.requireNonNull(symbolTable,  "symbolTable");
         this.annotations = Objects.requireNonNull(annotations,  "annotations");
         this.functions   = Objects.requireNonNull(functions,    "functions");
+        this.statistics  = Objects.requireNonNull(statistics,   "statistics");
     }
 
     // =========================================================================
@@ -153,7 +169,8 @@ public final class SemanticValidator {
 
     /** Runs a {@link RelAlgebraValidator} over a single RA expression tree. */
     private void validateTree(com.darkcollective.relix.ast.RelNode root, String filePath) {
-        var validator = new RelAlgebraValidator(symbolTable, annotations, functions, errors, filePath);
+        var validator = new RelAlgebraValidator(symbolTable, annotations, functions, errors, filePath,
+                Set.of(), statistics);
         root.accept(validator);
     }
 
@@ -177,7 +194,8 @@ public final class SemanticValidator {
                 .map(n -> n.toLowerCase(Locale.ROOT))
                 .collect(Collectors.toUnmodifiableSet());
         String ctx = sfs.namespace() + "." + sfs.declaredName();
-        var validator = new RelAlgebraValidator(symbolTable, annotations, functions, errors, ctx, params);
+        var validator = new RelAlgebraValidator(symbolTable, annotations, functions, errors, ctx, params,
+                statistics);
         validator.validateScalarFunctionBody(body);
     }
 
@@ -191,7 +209,7 @@ public final class SemanticValidator {
                 .collect(Collectors.toUnmodifiableSet());
         String ctx = rfs.namespace() + "." + rfs.declaredName();
         var validator = new RelAlgebraValidator(ParameterScope.of(symbolTable, rfs), annotations,
-                functions, errors, ctx, params);
+                functions, errors, ctx, params, statistics);
         rfs.body().accept(validator);
     }
 }

@@ -114,6 +114,7 @@ import com.darkcollective.relix.function.FunctionCatalog;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.relation.RelationSymbol;
 import com.darkcollective.relix.symbol.ParameterDefinition;
+import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Type;
 import com.darkcollective.relix.symbol.Schema;
@@ -188,6 +189,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      */
     private final Set<String>             parameters;
 
+    /** The collected statistics, by canonical relation name: the candidate keys a natural join is checked against. */
+    private final Map<String, RelationStatistics> statistics;
+
     RelAlgebraValidator(SymbolTable symbolTable,
                         SchemaAnnotations annotations,
                         FunctionCatalog functions,
@@ -202,6 +206,17 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                         List<SemanticError> errors,
                         String filePath,
                         Set<String> parameters) {
+        this(symbolTable, annotations, functions, errors, filePath, parameters, Map.of());
+    }
+
+    RelAlgebraValidator(SymbolTable symbolTable,
+                        SchemaAnnotations annotations,
+                        FunctionCatalog functions,
+                        List<SemanticError> errors,
+                        String filePath,
+                        Set<String> parameters,
+                        Map<String, RelationStatistics> statistics) {
+        this.statistics  = Objects.requireNonNull(statistics,    "statistics");
         this.symbolTable = Objects.requireNonNull(symbolTable,  "symbolTable");
         this.annotations = Objects.requireNonNull(annotations,  "annotations");
         this.functions   = Objects.requireNonNull(functions,    "functions");
@@ -1522,7 +1537,12 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     + " (left: " + columnListString(left)
                     + ", right: " + columnListString(right)
                     + "); use × (CROSS) for a Cartesian product");
+            return;
         }
+        SourceLocation loc = node.location();
+        NaturalJoinChecks.warning(node.left(), node.right(), left, right, symbolTable, statistics)
+                .ifPresent(message -> errors.add(
+                        SemanticError.warning(loc.filePath(), loc.line(), loc.column(), message)));
     }
 
     private static String columnListString(Schema schema) {

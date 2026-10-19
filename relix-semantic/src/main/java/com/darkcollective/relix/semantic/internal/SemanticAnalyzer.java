@@ -450,7 +450,8 @@ public final class SemanticAnalyzer {
         errors.addAll(graphBuilder.errors());
 
         // ── Phase 5: Validation — structural and semantic constraints ─────────
-        SemanticValidator validator = new SemanticValidator(symbolTable, annotations, functions);
+        SemanticValidator validator = new SemanticValidator(symbolTable, annotations, functions,
+                collector.statistics());
         validator.validate(collector.rootQueries());
         errors.addAll(validator.errors());
 
