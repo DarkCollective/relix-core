@@ -32,5 +32,10 @@ does not truncate) — use Fix/Int for directional rounding.
 # Alternatives:
 CDbl keeps the fractional part; Round/Int/Fix for explicit rounding behaviour.
 
+# SQL names:
+SQL's `CAST(x AS INTEGER)` is `CInt(x)`, which rounds half away from zero as
+PostgreSQL's does; CAST has no INTEGER type here. SQL's `TO_NUMBER(x)` keeps the
+fractional part, and is `CAST(x AS NUMBER)`, which is CDbl.
+
 # See Also:
-[cdbl](cdbl.md), [cstr](cstr.md), [round](../math/round.md), [int](../math/int.md), [fix](../math/fix.md), [isnumeric](../typecheck/isnumeric.md)
+[CAST](../../language/cast.md), [cdbl](cdbl.md), [cstr](cstr.md), [round](../math/round.md), [int](../math/int.md), [fix](../math/fix.md), [isnumeric](../typecheck/isnumeric.md)

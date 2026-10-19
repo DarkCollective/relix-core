@@ -30,5 +30,9 @@ canonical display form.
 CInt / CDbl convert toward numbers; to_date / to_timestamp / to_time parse a
 string into a real temporal value.
 
+# SQL names:
+SQL's `CAST(x AS VARCHAR)` and `CONVERT(VARCHAR, x)` are `CAST(x AS STRING)`, which is
+this function. To format with a pattern, use [to_char](to_char.md).
+
 # See Also:
-[cint](cint.md), [cdbl](cdbl.md), [to_date](../datetime/to_date.md), [nz](../conditional/nz.md)
+[CAST](../../language/cast.md), [cint](cint.md), [cdbl](cdbl.md), [to_date](../datetime/to_date.md), [nz](../conditional/nz.md)
