@@ -147,7 +147,36 @@ final class Suggestions {
         return " (relations in scope: " + String.join(", ", relations) + ")";
     }
 
-    /** Upper bound on columns listed in a {@link #columnHint} availability fallback. */
+    /**
+     * Returns the suffix for an undefined relation, matching {@link #columnHint}: the
+     * closest relation in scope, else the relations the script defines, else that it
+     * defines none and how to declare one.
+     *
+     * @param target    the unknown relation name the user typed
+     * @param inScope   every relation a reference could resolve to, built-in and
+     *                  namespaced ones included, spelled as a reference would spell them
+     * @param declared  the relations and views the script itself defines, in order
+     * @return a suggestion, listing or declaration hint; {@code ""} for a dotted name
+     *         with no close match
+     */
+    static String relationHint(String target, Collection<String> inScope, Collection<String> declared) {
+        String suggestion = didYouMean(target, inScope);
+        if (!suggestion.isEmpty() || target.indexOf('.') > 0) {
+            // A dotted name is a connection's table or a namespace's relation, which its
+            // own diagnostic explains; the script's relations are no help there.
+            return suggestion;
+        }
+        if (declared.isEmpty()) {
+            return ": this script declares no relations; declare it first, as an inline table ("
+                    + target + " := [| … |];), a source or a connection";
+        }
+        int shown = Math.min(declared.size(), MAX_AVAILABLE_LISTED);
+        String list = declared.stream().limit(shown).collect(java.util.stream.Collectors.joining(", "));
+        String ellipsis = declared.size() > shown ? ", …" : "";
+        return " (defined: " + list + ellipsis + ")";
+    }
+
+    /** Upper bound on names listed in a {@link #columnHint} or {@link #relationHint} fallback. */
     private static final int MAX_AVAILABLE_LISTED = 12;
 
     /**

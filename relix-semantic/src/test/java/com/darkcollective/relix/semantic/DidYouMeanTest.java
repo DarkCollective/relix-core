@@ -135,4 +135,63 @@ final class DidYouMeanTest {
                         .doesNotContain("did you mean")
                         .contains("available: id, name"));
     }
+
+    // ── Undefined relations: the same hints a column gets ─────────────────────
+
+    private static final String RELATIONS = """
+            R := [| id | seconds |
+                  | 1  | 1200    |];
+            results := [| runner_id | place |
+                        | 1         | 2     |];
+            Finished := { σ seconds > 1000 (R) };
+            """;
+
+    private static String relationError(String script) {
+        return SemanticFixtures.errorMessages(analyze(script)).stream()
+                .filter(m -> m.startsWith("Undefined relation"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no undefined-relation error for: " + script));
+    }
+
+    @Test
+    @DisplayName("a misspelt relation suggests the closest defined one")
+    void relationTypoSuggestsRelation() {
+        assertThat(relationError(RELATIONS + "query { σ id > 0 (Rr) };"))
+                .isEqualTo("Undefined relation: 'Rr' — did you mean 'R'?");
+        assertThat(relationError(RELATIONS + "query { σ place > 0 (result) };"))
+                .isEqualTo("Undefined relation: 'result' — did you mean 'results'?");
+        assertThat(relationError(RELATIONS + "query { Finishd };"))
+                .isEqualTo("Undefined relation: 'Finishd' — did you mean 'Finished'?");
+        assertThat(relationError(RELATIONS + "query { R >< R.id = reslts.runner_id reslts };"))
+                .isEqualTo("Undefined relation: 'reslts' — did you mean 'results'?");
+    }
+
+    @Test
+    @DisplayName("a misspelt relix.* relation is suggested by its qualified name")
+    void systemRelationTypoSuggestsQualifiedName() {
+        assertThat(relationError(RELATIONS + "query { relix.relatons };"))
+                .isEqualTo("Undefined relation: 'relix.relatons' — did you mean 'relix.relations'?");
+    }
+
+    @Test
+    @DisplayName("a relation with no close match lists the defined relations")
+    void relationWithNoCloseMatchListsDefined() {
+        assertThat(relationError(RELATIONS + "query { σ id > 0 (orders) };"))
+                .isEqualTo("Undefined relation: 'orders' (defined: R, results, Finished)");
+    }
+
+    @Test
+    @DisplayName("a relation in a script that declares none says so")
+    void relationInEmptyScriptSaysNoneDeclared() {
+        String expected = "Undefined relation: 'loans': this script declares no relations;"
+                + " declare it first, as an inline table (loans := [| … |];), a source or a connection";
+        assertThat(relationError("query { loans };")).isEqualTo(expected);
+        assertThat(relationError("query { σ seconds > 1000 (loans) };")).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("a relation named in another case still resolves")
+    void relationInAnotherCaseResolves() {
+        assertThat(analyze(RELATIONS + "query { σ place > 0 (RESULTS) };").errors()).isEmpty();
+    }
 }
