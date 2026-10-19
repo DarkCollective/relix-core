@@ -27,7 +27,12 @@ Errors on NULL, nested, or temporal values, and on non-numeric strings. Unlike
 CInt it does not round to a whole number.
 
 # Alternatives:
-CInt rounds to an integer; CStr converts toward text.
+CInt rounds to an integer; CStr converts toward text. `CAST(x AS NUMBER)` is CDbl
+that returns NULL for a NULL.
+
+# SQL names:
+SQL's `TO_NUMBER(x)`, and a spreadsheet's `VALUE(x)`, are `CAST(x AS NUMBER)`, which is
+this function. There is no TO_NUMBER function.
 
 # See Also:
-[cint](cint.md), [cstr](cstr.md), [isnumeric](../typecheck/isnumeric.md)
+[CAST](../../language/cast.md), [cint](cint.md), [cstr](cstr.md), [isnumeric](../typecheck/isnumeric.md)
