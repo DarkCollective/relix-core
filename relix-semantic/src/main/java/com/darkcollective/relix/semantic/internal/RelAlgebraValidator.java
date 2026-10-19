@@ -2300,8 +2300,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             case ComparisonPredicate c -> {
                 validateTemporalRules(c.left(), schema, inferrer);
                 validateTemporalRules(c.right(), schema, inferrer);
-                String cmpError = TemporalArithmetic.comparisonError(
-                        inferrer.infer(c.left(), schema), inferrer.infer(c.right(), schema));
+                String cmpError = ComparisonTypes.comparisonError(
+                        c.left(), inferrer.infer(c.left(), schema), c.operator(),
+                        c.right(), inferrer.infer(c.right(), schema));
                 if (cmpError != null) {
                     error(c.location(), "Projection π: " + cmpError);
                 }
@@ -2319,6 +2320,14 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             case ElementOfPredicate e -> {
                 validateTemporalRules(e.element(), schema, inferrer);
                 validateTemporalRules(e.setExpression(), schema, inferrer);
+                if (e.setExpression() instanceof SetLiteralOperand set) {
+                    String setError = ComparisonTypes.membershipError(
+                            e.element(), inferrer.infer(e.element(), schema), set.elements(),
+                            set.elements().stream().map(m -> inferrer.infer(m, schema)).toList());
+                    if (setError != null) {
+                        error(e.location(), "Projection π: " + setError);
+                    }
+                }
             }
             case PatternPredicate pp -> {
                 validateTemporalRules(pp.operand(), schema, inferrer);
