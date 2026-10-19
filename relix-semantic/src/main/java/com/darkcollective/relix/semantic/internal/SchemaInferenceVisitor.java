@@ -97,6 +97,8 @@ import com.darkcollective.relix.function.FunctionCatalog;
 import com.darkcollective.relix.symbol.ArrayType;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ColumnProvenance;
+import com.darkcollective.relix.symbol.Provenance;
+import com.darkcollective.relix.symbol.Symbol;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.StructType;
@@ -206,7 +208,7 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
                     node.location().filePath(),
                     node.location().line(),
                     node.location().column(),
-                    "Undefined relation: '" + node.name() + "'"));
+                    "Undefined relation: '" + node.name() + "'" + relationHint(node.name())));
             return Optional.empty();
         }
         Schema schema = sym.get().schema();
@@ -1482,6 +1484,32 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
      */
     private Optional<RelationSymbol> lookupRelation(String name) {
         return symbolTable.resolveRelation(name);
+    }
+
+    /**
+     * The did-you-mean, list of defined relations, or note that none are declared, for
+     * an undefined relation. Built-in and namespaced relations ({@code relix.relations},
+     * an import's) can be suggested, as they resolve; the list names only the script's own.
+     */
+    private static final Set<String> UNQUALIFIED_NAMESPACES = Set.of("default", "builtin");
+
+    private String relationHint(String name) {
+        List<String> inScope = new ArrayList<>();
+        List<String> declared = new ArrayList<>();
+        for (Symbol symbol : symbolTable.allSymbols()) {
+            if (!(symbol instanceof RelationSymbol)) {
+                continue;
+            }
+            // The default and builtin namespaces resolve by the bare name; any other by ns.name.
+            String ns = symbol.namespace();
+            String spelled = UNQUALIFIED_NAMESPACES.contains(ns.toLowerCase(Locale.ROOT))
+                    ? symbol.declaredName() : ns + "." + symbol.declaredName();
+            inScope.add(spelled);
+            if (symbol.provenance() == Provenance.USER) {
+                declared.add(spelled);
+            }
+        }
+        return Suggestions.relationHint(name, inScope, declared);
     }
 
     /** Returns the first table-valued function overload registered under {@code name}. */
