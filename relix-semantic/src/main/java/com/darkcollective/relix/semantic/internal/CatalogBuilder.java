@@ -750,8 +750,9 @@ public final class CatalogBuilder {
      * {@code name} reachable from itself through the dependency edge.  Computed as
      * the diagonal of the transitive closure of {@code relix.dependencies} — the
      * edges whose two endpoints coincide ({@code dependent = depends_on}).  Empty
-     * for a well-formed (acyclic) script; a non-empty result flags a definition
-     * cycle the engine would otherwise reject only on execution.
+     * for every script it can be asked of: {@link ViewCycles} refuses a view that
+     * reaches itself before the catalog is built, so a script with a cycle never
+     * analyses far enough to have one.
      *
      * <pre>δ π dependent→name (σ dependent = depends_on
      *        (CLOSURE dependent, depends_on (relix.dependencies)))</pre>

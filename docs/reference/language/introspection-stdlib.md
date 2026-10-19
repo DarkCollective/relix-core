@@ -6,7 +6,7 @@ relix.deps(<name>)           -- everything <name> transitively depends on
 relix.impact(<name>)         -- everything that transitively depends on <name>
 relix.find(<column>)         -- relations that have a column with that name (+ its type)
 relix.schema(<relation>)     -- the columns of one relation (column, type, ordinal)
-relix.cycles                 -- relations caught in a circular definition (one column: name)
+relix.cycles                 -- relations caught in a circular definition: empty once a script analyses
 relix.funcs(<category>)      -- functions in a category (name, arity, return_type)
 
 # Description:
@@ -32,7 +32,11 @@ call them like any other relation and read their definitions with the REPL's
   position. Where `find` asks "which relations have this column?", `schema` asks
   "what columns does this relation have?" — the data twin of the REPL's `:schema`.
 - **`relix.cycles`** — a view yielding the `name` of every relation caught in a
-  circular definition. Empty for a well-formed (acyclic) script.
+  circular definition. Analysis refuses a view that reaches itself, directly or
+  through a chain (`View 'A' refers to itself through A → B → A`), and the catalog
+  relations exist only for a script that analyses, so for any script it can be asked
+  of, `relix.cycles` is empty. That refusal is the place a cycle is reported; the view
+  states the same rule as data.
 - **`relix.funcs(cat)`** — a table-valued function filtering the function library by
   category (e.g. `"math"`, `"string"`, `"user"`), returning each function's `name`,
   `arity`, and `return_type`. Data-driven off `relix.functions`' properties.
@@ -154,7 +158,8 @@ query { relix.funcs("math") };
 -- …
 ```
 
-Relations caught in a circular definition (empty here — the example is acyclic):
+Relations caught in a circular definition, which is empty for every script that
+analyses, since analysis refuses a cycle:
 
 ```relix
 query { relix.cycles };
