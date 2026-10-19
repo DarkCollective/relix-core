@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.ast.internal;
 
+import com.darkcollective.relix.ast.RecursiveRefNode;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.RenameNode;
@@ -29,6 +30,9 @@ import java.util.Set;
  * <p>{@code A.x} names the column {@code x} of relation {@code A} only where {@code A}
  * is in scope, and which names are in scope is a property of the tree: a leaf brings its
  * own name, and a {@code ρ} that renames the relation replaces every name beneath it.
+ * A binder's reference to its own relation, the {@code T} inside {@code FIX T (…)}, is a
+ * leaf like any other: without its name, {@code T.employee} on the right of a join found
+ * neither side and was read from the left (#162).
  * Both the planner (routing a join condition's references to a side) and the optimizer
  * (deciding which input of a join a selection may be pushed into) ask this question, so
  * it is answered once, here.
@@ -59,6 +63,7 @@ public final class Qualifiers {
     private static void collect(RelNode node, Set<String> out) {
         switch (node) {
             case RelationNode r -> out.add(r.name().toLowerCase(Locale.ROOT));
+            case RecursiveRefNode r -> out.add(r.name().toLowerCase(Locale.ROOT));
             case RenameNode r -> {
                 if (r.relationName().isPresent()) {
                     out.add(r.relationName().get().toLowerCase(Locale.ROOT));
