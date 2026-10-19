@@ -94,6 +94,66 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("a projected column renamed with =, : or AS names expr -> name, at the sign")
+    public void reportsForeignAliasInProjection() {
+        assertParseError("PROJECT loan_id, days = loan_id * 2 (loans)")
+                .hasMessageContaining("a column is named with expr -> name, not name = expr:"
+                        + " write loan_id * 2 -> days")
+                .at(1, 23);
+        assertParseError("PROJECT member_id, book_name: name (loans)")
+                .hasMessageContaining("a column is named with expr -> name, not name: expr:"
+                        + " write name -> book_name")
+                .at(1, 29);
+        assertParseError("PROJECT member_id, name AS book_name (loans)")
+                .hasMessageContaining("a column is named with expr -> name, and AS is SQL's"
+                        + " spelling of '->': write name -> book_name")
+                .at(1, 25);
+        assertParseError("π days_out = DATEDIFF(day, out_on, back_on) (loans)")
+                .hasMessageContaining("write DATEDIFF(day, out_on, back_on) -> days_out");
+        assertParseError("π days =\n  loan_id\n  * 2 (loans)")
+                .hasMessageContaining("write loan_id * 2 -> days")
+                .at(1, 8);
+    }
+
+    @Test
+    @DisplayName("only a sign after one name, or AS before a name, is taken for a rename")
+    public void foreignAliasNeedsItsShape() {
+        assertParseError("PROJECT a AS (loans)")
+                .hasMessageContaining("Expected '(' after projection attribute list");
+        assertParseError("PROJECT 1 = a (loans)")
+                .hasMessageContaining("Expected '(' after projection attribute list");
+        assertParseError("PROJECT a + 1 = b (loans)")
+                .hasMessageContaining("Expected '(' after projection attribute list");
+        assertParseError("GROUP k, COUNT(*) -> n, total (loans)")
+                .hasMessageContaining("Expected '(' after aggregation expression");
+    }
+
+    @Test
+    @DisplayName("an aggregate or key renamed with =, : or AS in GROUP names expr -> name, at the sign")
+    public void reportsForeignAliasInAggregation() {
+        assertParseError("GROUP member_id, n = COUNT(*) (loans)")
+                .hasMessageContaining("a column is named with expr -> name, not name = expr:"
+                        + " write COUNT(*) -> n")
+                .at(1, 20);
+        assertParseError("GROUP member_id, COUNT(*) AS n (loans)")
+                .hasMessageContaining("a column is named with expr -> name, and AS is SQL's"
+                        + " spelling of '->': write COUNT(*) -> n")
+                .at(1, 27);
+        assertParseError("GROUP member_id, COUNT(*) -> n, total: SUM(fine) (loans)")
+                .hasMessageContaining("not name: expr: write SUM(fine) -> total")
+                .at(1, 38);
+        assertParseError("GROUP member_id, COUNT(*) -> n, total = SUM(fine) (loans)")
+                .hasMessageContaining("not name = expr: write SUM(fine) -> total")
+                .at(1, 39);
+        assertParseError("GROUP yr = YEAR(out_on), COUNT(*) -> n (loans)")
+                .hasMessageContaining("not name = expr: write YEAR(out_on) -> yr")
+                .at(1, 10);
+        assertParseError("γ member_id AS m, COUNT(*) -> n (loans)")
+                .hasMessageContaining("write member_id -> m")
+                .at(1, 13);
+    }
+
+    @Test
     @DisplayName("the column-list hint is a selection's own: a join condition keeps the plain message")
     public void columnListHintStaysWithItsSelection() {
         assertParseError("π a, b (R) >< x -> y S")
