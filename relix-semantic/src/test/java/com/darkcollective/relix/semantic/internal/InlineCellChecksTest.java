@@ -134,4 +134,63 @@ final class InlineCellChecksTest {
                 """))
                 .isFullyValid();
     }
+
+    @Test
+    @DisplayName("a quoted markdown cell keeps its quotes, and is named with the bare value to write (#165)")
+    void quotedCell() {
+        assertThat(analyze("""
+                T := [
+                | s     | t      |
+                |-------|--------|
+                | "45%" | 'a'    |
+                | 50%   | 'b'    |
+                | 'x    | 'c'    |
+                ];
+                query { T };
+                """))
+                .hasNoErrors()
+                .hasDiagnosticCount(2)
+                .hasErrorContaining("T.s, row 1: the cell \"45%\" keeps its quotes, because table cells are "
+                        + "bare values; write 45%")
+                .hasErrorContaining("T.t, row 1: the cell 'a' keeps its quotes, because table cells are "
+                        + "bare values; write a (and 2 more cells)");
+    }
+
+    @Test
+    @DisplayName("a quoted temporal is named for its quotes, not as a stray in its column")
+    void quotedTemporal() {
+        assertThat(analyze("""
+                T := [
+                | d            |
+                |--------------|
+                | 2026-03-01   |
+                | 2026-03-02   |
+                | '2026-03-03' |
+                ];
+                query { T };
+                """))
+                .hasDiagnosticCount(1)
+                .hasErrorContaining("T.d, row 3: the cell '2026-03-03' keeps its quotes");
+    }
+
+    @Test
+    @DisplayName("bare cells, a lone quote mark and the CSV form are left alone")
+    void unquotedCells() {
+        assertThat(analyze("""
+                T := [
+                | s      |
+                |--------|
+                | 45%    |
+                | '      |
+                | it's   |
+                ];
+                C := csv[
+                  s, n
+                  "London, UK", 1
+                  "45%", 2
+                ];
+                query { T };
+                """))
+                .isFullyValid();
+    }
 }
