@@ -817,6 +817,24 @@ final class AggregationParserTest extends ParserTestSupport {
     }
 
     @Test
+    public void reportsAnAggregateWrittenAsAGroupingKeyAlias() {
+        assertParseError("GROUP home_id -> COUNT(*) -> n (T)")
+                .hasMessageContaining("a grouping key's alias must be a plain name")
+                .hasMessageContaining("GROUP home_id, COUNT(…) -> name (…)")
+                .at(1, 15);
+        assertParseError("γ home_id, room_id -> AVG(temp) -> t, MAX(temp) -> hi (T)")
+                .hasMessageContaining("GROUP room_id, AVG(…) -> name (…)")
+                .at(1, 20);
+        assertParseError("γ k → MEDIAN(x) (T)").hasMessageContaining("separate it with a comma");
+        // An aggregate's name with no parenthesis after it is an alias, keyword or not.
+        org.assertj.core.api.Assertions.assertThat(((AggregationNode) parse("γ k → count, SUM(x) (T)"))
+                .groupingKeys().get(0).alias()).contains("count");
+        // A word that names an aggregate only where it is called is still an alias.
+        org.assertj.core.api.Assertions.assertThat(((AggregationNode) parse("γ k → median, COUNT(*) (T)"))
+                .groupingKeys().get(0).alias()).contains("median");
+    }
+
+    @Test
     public void groupingSetsErrors() {
         assertParseError("γ ROLLUP (a → x, a → y), COUNT(*) (R)").hasMessageContaining("named both 'x' and 'y'");
         assertParseError("γ CUBE (a, b, c, d, e, f, g, h, i, j, k, l, m), COUNT(*) (R)")
