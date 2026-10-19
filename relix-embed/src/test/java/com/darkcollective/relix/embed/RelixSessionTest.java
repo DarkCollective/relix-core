@@ -440,6 +440,40 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("a join written with SQL's ON or LEFT/INNER JOIN is one error, at ON or the keyword, naming the Relix join")
+        void sqlJoinDiagnosed() {
+            String tables = "loans := [| loan_id | member_id |\n| 1 | 2 |];\n"
+                    + "members := [| member_id | name |\n| 2 | a |];\n";
+            String[][] cases = {
+                    {"loans JOIN members ON loans.member_id = members.member_id", "20",
+                            "write loans >< loans.member_id = members.member_id members"},
+                    {"members LJOIN loans ON members.member_id = loans.member_id", "21",
+                            "write members LJOIN members.member_id = loans.member_id loans"},
+                    {"loans >< members ON loans.member_id = members.member_id", "18",
+                            "write loans >< loans.member_id = members.member_id members"},
+                    {"members LEFT JOIN loans ON members.member_id = loans.member_id", "9",
+                            "write members LJOIN members.member_id = loans.member_id loans"},
+                    {"loans INNER JOIN members ON loans.member_id = members.member_id", "7",
+                            "write loans >< loans.member_id = members.member_id members"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + "Q := { " + c[0] + " };\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .startsWith("Syntax error in RA expression: '")
+                            .endsWith(c[2]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0]).isEqualTo(5);
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
+                    String fixed = c[2].substring("write ".length());
+                    assertThat(relix.validate(tables + "Q := { " + fixed + " };\n"))
+                            .as("the rewrite of " + c[0] + " validates").isEmpty();
+                }
+            }
+        }
+
+        @Test
         @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
         void parseFailurePositionStatedOnce() {
             String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";

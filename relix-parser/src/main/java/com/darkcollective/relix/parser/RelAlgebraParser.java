@@ -370,13 +370,18 @@ public final class RelAlgebraParser {
     }
 
     private RelNode parseExpressionAtDepth(int minPrecedence) {
+        int leftStart = consumed.size();
         RelNode left = parsePrefix();
         left = parseKleenePostfix(left);
 
         while (isBinaryRelOperator(current.type()) && precedence(current.type()) >= minPrecedence) {
             Token operator = current;
             int precedence = precedence(operator.type());
+            int operatorAt = consumed.size();
             advance();
+            if (isWord(operator, "CROSS") && isWord(current, "JOIN")) {
+                rejectSqlJoin(operator, "×", leftStart, operatorAt);
+            }
 
             Predicate condition = null;
             boolean asofInner = false;
@@ -401,6 +406,12 @@ public final class RelAlgebraParser {
                 }
                 left = new UsingJoinNode(usingKind.get(), left, right, columns, loc(operator));
                 continue;
+            }
+
+            if (takesJoinCondition(operator.type()) && rightInputThenOn()) {
+                int rightStart = consumed.size();
+                parseExpression(precedence + 1);
+                rejectOnClause(operator, leftStart, operatorAt, rightStart);
             }
 
             if (operator.type() == TokenType.THETA_JOIN ||
@@ -485,7 +496,12 @@ public final class RelAlgebraParser {
             if (operator.type() == TokenType.NATURAL_JOIN) {
                 rejectConditionAfterRightInput(operator, left);
             }
+            int rightStart = consumed.size();
             RelNode right = parseExpression(precedence + 1);
+            if ((operator.type() == TokenType.NATURAL_JOIN || operator.type() == TokenType.PRODUCT)
+                    && isWord(current, "ON")) {
+                rejectOnClause(operator, leftStart, operatorAt, rightStart);
+            }
             // A ⋈ B USING (id): the natural join reads its right input first, then USING.
             if (operator.type() == TokenType.NATURAL_JOIN && startsUsingList()) {
                 left = new UsingJoinNode(UsingJoinNode.Kind.INNER, left, right, parseUsingList(),
@@ -529,7 +545,172 @@ public final class RelAlgebraParser {
             };
         }
 
+        rejectSqlJoinKeywords(leftStart);
         return left;
+    }
+
+    /** The joins that take a condition between their inputs, as SQL's {@code ON} gives one. */
+    private static boolean takesJoinCondition(TokenType type) {
+        return switch (type) {
+            case THETA_JOIN, LEFT_OUTER_JOIN, RIGHT_OUTER_JOIN, FULL_OUTER_JOIN, SEMI_JOIN,
+                 ANTI_JOIN, UNIVERSAL_SEMI_JOIN, ASOF_JOIN -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Whether the tokens after a conditioned join are its right input followed by
+     * {@code ON}, SQL's order: {@code A LJOIN B ON A.id = B.a_id}. The input is one name
+     * or one parenthesised expression. Left alone, the name is read as the start of the
+     * condition and parsing stops at {@code ON}, "expected comparison operator"; no
+     * condition can be a single name or group followed by a word.
+     */
+    private boolean rightInputThenOn() {
+        int next;
+        if (current.type() == TokenType.LPAREN) {
+            int depth = 0;
+            next = 0;
+            do {
+                TokenType type = peek(next).type();
+                if (type == TokenType.EOF) {
+                    return false;
+                }
+                if (type == TokenType.LPAREN) {
+                    depth++;
+                } else if (type == TokenType.RPAREN) {
+                    depth--;
+                }
+                next++;
+            } while (depth > 0);
+        } else if (current.type() == TokenType.IDENTIFIER) {
+            next = 1;
+        } else {
+            return false;
+        }
+        return isWord(peek(next), "ON");
+    }
+
+    /**
+     * Refuses SQL's {@code ON} after a join's right input, {@code A JOIN B ON cond}, with
+     * the current token at {@code ON} and the join's inputs read from
+     * {@code consumed[leftStart]}, the operator at {@code consumed[operatorAt]} and the
+     * right input from {@code consumed[rightStart]} on. Relix writes the condition between
+     * the inputs with no keyword, and the error rewrites the reader's own join that way,
+     * with ⨝ (><) for a natural join or a product, which take no condition.
+     */
+    private void rejectOnClause(Token operator, int leftStart, int operatorAt, int rightStart) {
+        Token on = current;
+        String left = relationText(leftStart, operatorAt);
+        String right = relationText(rightStart, consumed.size());
+        String condition = conditionAfterOn();
+        boolean conditioned = takesJoinCondition(operator.type());
+        String join = conditioned ? operator.lexeme() : operator.lexeme().equals("⋈") ? "⨝" : "><";
+        String problem = conditioned
+                ? "'" + operator.lexeme() + "' takes its condition between the two relations,"
+                        + " not after them with ON"
+                : "'" + operator.lexeme() + "' takes no condition; to join on one, use " + join
+                        + " with the condition between the two relations, not after them with ON";
+        throw ParseException.at(problem + ": write " + left + " " + join + " " + condition
+                + " " + right, lexer.input(), on);
+    }
+
+    /**
+     * Reads the condition after the current {@code ON} and returns it as written, or
+     * {@code condition} when none parses there.
+     */
+    private String conditionAfterOn() {
+        advance();
+        int start = consumed.size();
+        try {
+            parsePredicate();
+        } catch (ParseException e) {
+            return "condition";
+        }
+        return writtenBetween(start, consumed.size());
+    }
+
+    /** An input of a join as the reader wrote it, or {@code …} when it is long. */
+    private String relationText(int start, int end) {
+        String text = writtenBetween(start, end);
+        return text.length() > 80 ? "…" : text;
+    }
+
+    /**
+     * Refuses SQL's two-word joins after a relation: {@code A LEFT JOIN B ON cond},
+     * {@code LEFT OUTER JOIN}, {@code RIGHT}, {@code FULL}, {@code INNER} and
+     * {@code NATURAL}. The first word is read as nothing at all, and parsing stops there
+     * with "expected end of input"; no relation is followed by a word and then
+     * {@code JOIN}, so the words are SQL's whatever they are. ({@code CROSS} is Relix's
+     * own word for ×, and its {@code CROSS JOIN} is caught where the operator is read.)
+     */
+    private void rejectSqlJoinKeywords(int leftStart) {
+        String kind = current.lexeme().toUpperCase(Locale.ROOT);
+        if (!isNameToken(current) || !List.of("LEFT", "RIGHT", "FULL", "INNER", "NATURAL").contains(kind)) {
+            return;
+        }
+        int join = isWord(peek(1), "OUTER") ? 2 : 1;
+        if (!isWord(peek(join), "JOIN")) {
+            return;
+        }
+        Token first = current;
+        int leftEnd = consumed.size();
+        for (int i = 0; i < join; i++) {
+            advance();
+        }
+        String relix = switch (kind) {
+            case "LEFT" -> "LJOIN";
+            case "RIGHT" -> "RJOIN";
+            case "FULL" -> "FJOIN";
+            default -> "JOIN";
+        };
+        rejectSqlJoin(first, relix, leftStart, leftEnd);
+    }
+
+    /**
+     * Refuses a SQL join written in words, from {@code consumed[leftEnd]} through the
+     * current {@code JOIN}, after a left input read from {@code consumed[leftStart]}: names
+     * the Relix operator, {@code relix}, and rewrites the reader's own join with it,
+     * reading the right input and the {@code ON} condition or {@code USING} list after it.
+     * An inner or natural join with a condition is ⨝ (><); without one it is {@code JOIN}.
+     */
+    private void rejectSqlJoin(Token first, String relix, int leftStart, int leftEnd) {
+        advance();
+        String sql = writtenBetween(leftEnd, consumed.size());
+        String left = relationText(leftStart, leftEnd);
+        boolean conditioned = !relix.equals("JOIN") && !relix.equals("×");
+        int rightStart = consumed.size();
+        String right;
+        try {
+            parseExpression(precedence(TokenType.NATURAL_JOIN) + 1);
+            right = relationText(rightStart, consumed.size());
+        } catch (ParseException e) {
+            right = null;
+        }
+        String spelling = "'" + sql + "' is SQL's spelling of ";
+        String rewrite;
+        if (right != null && isWord(current, "ON")) {
+            String join = conditioned ? relix : "><";
+            throw ParseException.at(spelling + join + ", which takes its condition between the"
+                    + " two relations, not after them with ON: write " + left + " " + join + " "
+                    + conditionAfterOn() + " " + right, lexer.input(), first);
+        } else if (right != null && !relix.equals("×") && startsUsingList()) {
+            int using = consumed.size();
+            try {
+                parseUsingList();
+                rewrite = left + " " + relix + " " + right + " " + writtenBetween(using, consumed.size());
+            } catch (ParseException e) {
+                rewrite = left + " " + relix + " " + right + " USING (columns)";
+            }
+        } else if (right == null) {
+            rewrite = left + " " + relix + (conditioned ? " condition" : "") + " B";
+        } else if (conditioned) {
+            rewrite = left + " " + relix + " condition " + right;
+        } else if (relix.equals("JOIN")) {
+            rewrite = left + " JOIN " + right + ", or " + left + " >< condition " + right;
+        } else {
+            rewrite = left + " × " + right;
+        }
+        throw ParseException.at(spelling + relix + ": write " + rewrite, lexer.input(), first);
     }
 
     /** The USING join a join operator writes, for the four that take {@code USING}. */
@@ -2478,9 +2659,14 @@ public final class RelAlgebraParser {
      * them: a space wherever the source had any, between tokens or across a line.
      */
     private String writtenFrom(int start) {
+        return writtenBetween(start, consumed.size());
+    }
+
+    /** The tokens {@code consumed[start]} up to {@code consumed[end]}, as {@link #writtenFrom}. */
+    private String writtenBetween(int start, int end) {
         StringBuilder text = new StringBuilder();
         Token previous = null;
-        for (Token token : consumed.subList(start, consumed.size())) {
+        for (Token token : consumed.subList(start, end)) {
             if (previous != null && (token.line() != previous.line()
                     || token.column() > previous.column() + previous.lexeme().length())) {
                 text.append(' ');
