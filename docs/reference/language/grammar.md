@@ -807,7 +807,9 @@ are easy to miss in the rules above.
 - **Reserved words as names.** A reserved word can name a column almost anywhere
   (`γ region, COUNT(*) → count (Orders)`). In relation position it cannot, nor as a
   struct field, a `FIX` or `ITERATE` name or a `PER` key of `OPTIMIZE` or `TOP`; there it must be
-  backticked: `` π name (`order`) ``. Backticks are always safe.
+  backticked: `` π name (`order`) ``. Backticks are always safe. `DATE`, `TIME`,
+  `TIMESTAMP` and `DURATION` start a literal only when their quoted string follows, so
+  a column named `time` or `date` reads as a column: `σ time > 1000 (Laps)`.
 - **`query` names one plain name.** `query Totals;` works, but a dotted name needs
   the expression form: `query { relix.plan };`.
 - **Whole numbers must fit.** An INTEGER that counts rows or bounds (`λ`, `TOP`,

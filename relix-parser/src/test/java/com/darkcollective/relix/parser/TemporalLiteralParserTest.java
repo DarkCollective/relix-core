@@ -132,9 +132,61 @@ final class TemporalLiteralParserTest extends ParserTestSupport {
         }
 
         @Test
-        void missingPayloadIsAParseError() {
-            assertParseError("π DATE (R)")
-                    .hasMessageContaining("Expected a quoted ISO-8601 string after 'DATE'");
+        void keywordWithoutPayloadIsAColumn() {
+            // A literal always has its string next; without one, DATE is a column named date.
+            assertParsesTo("π DATE (R)", project(List.of(projected(attr("DATE"))), rel("R")));
+        }
+    }
+
+    /** A column named date, time, timestamp or duration, which no string follows. */
+    @Nested
+    class KeywordAsColumn {
+
+        @Test
+        void comparesAColumnNamedTime() {
+            assertParsesTo("SELECT time > 1000 (T)",
+                    select(cmp(attr("time"), ComparisonOperator.GREATER, num("1000")), rel("T")));
+        }
+
+        @Test
+        void comparesAColumnNamedDate() {
+            assertParsesTo("SELECT date > 1000 (T)",
+                    select(cmp(attr("date"), ComparisonOperator.GREATER, num("1000")), rel("T")));
+        }
+
+        @Test
+        void comparesColumnsNamedTimestampAndDuration() {
+            assertParsesTo("SELECT timestamp > duration (T)",
+                    select(cmp(attr("timestamp"), ComparisonOperator.GREATER, attr("duration")),
+                            rel("T")));
+        }
+
+        @Test
+        void testsAColumnNamedTimeForNull() {
+            AstAssertions.assertThat(parse("SELECT time IS NOT NULL (T)")).isNode(SelectionNode.class);
+        }
+
+        @Test
+        void projectsAColumnNamedTime() {
+            assertParsesTo("PROJECT id, time (T)",
+                    project(List.of(projected(attr("id")), projected(attr("time"))), rel("T")));
+        }
+
+        @Test
+        void sortsByAColumnNamedTime() {
+            AstAssertions.assertThat(parse("SORT time (T)")).isNode(SortNode.class);
+        }
+
+        @Test
+        void backtickedColumnStillWorks() {
+            assertParsesTo("SELECT `time` > 1000 (T)",
+                    select(cmp(attr("time"), ComparisonOperator.GREATER, num("1000")), rel("T")));
+        }
+
+        @Test
+        void timestampWithTimeZoneIsStillALiteral() {
+            ProjectionNode node = (ProjectionNode) parse("π TIMESTAMP WITH TIME ZONE '2026-06-15T13:40:00+02:00' (R)");
+            assertThat(node.attributes().get(0).expression()).isInstanceOf(TimestampOperand.class);
         }
     }
 
