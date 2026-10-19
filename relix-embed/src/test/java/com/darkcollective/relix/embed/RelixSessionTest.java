@@ -393,6 +393,28 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("a join or set operator written before its inputs is one error, at the operator, naming its infix form")
+        void infixOperatorWrittenFirstDiagnosed() {
+            String tables = "A := [| id |\n| 1 |];\nB := [| a_id |\n| 1 |];\n";
+            try (Relix relix = Relix.open()) {
+                List<Diagnostic> join = relix.validate(tables
+                        + "J := { JOIN A >< A.id = B.a_id B };\n");
+                assertThat(join).hasSize(1);
+                assertThat(join.getFirst().message()).isEqualTo("Syntax error in RA expression:"
+                        + " 'JOIN' goes between the two relations it joins: A JOIN B,"
+                        + " or A >< condition B");
+                assertThat(join.getFirst().location().orElseThrow().line()).isEqualTo(5);
+                assertThat(join.getFirst().location().orElseThrow().column()).isEqualTo(8);
+
+                List<Diagnostic> union = relix.validate(tables + "U := { UNION A B };\n");
+                assertThat(union).hasSize(1);
+                assertThat(union.getFirst().message()).isEqualTo("Syntax error in RA expression:"
+                        + " 'UNION' goes between the two relations it combines: A UNION B");
+                assertThat(union.getFirst().location().orElseThrow().column()).isEqualTo(8);
+            }
+        }
+
+        @Test
         @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
         void parseFailurePositionStatedOnce() {
             String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";
