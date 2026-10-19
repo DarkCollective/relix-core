@@ -1092,14 +1092,68 @@ public final class RelAlgebraParser {
 
     private AggregationNode parseAggregation() {
         Token opTok = current;
+        int opAt = consumed.size();
         expect(TokenType.AGGREGATION, "Expected 'γ'");
         consumeOptionalBy();
 
         Grouping grouping = parseGrouping();
+        if (current.type() == TokenType.LPAREN) {
+            rejectParenthesizedAggregates(opAt);
+        }
         List<AggregateFunction> aggregates = parseAggregateFunctionList();
         RelNode input = parseParenthesizedRelation("Expected '(' after aggregation expression");
 
         return new AggregationNode(grouping.keys(), grouping.sets(), aggregates, input, loc(opTok));
+    }
+
+    /**
+     * Refuses {@code GROUP k (COUNT(*) -> n) (R)} at its {@code (}, with the aggregates
+     * moved into the key list: {@code GROUP k, COUNT(*) -> n (R)}. A {@code (} after the
+     * keys never parsed, since the aggregate list cannot start with one, so this only
+     * changes the message: before it named the aggregate functions, which the reader had
+     * written, and not where they go. Anything other than an aggregate after the
+     * {@code (} keeps that message.
+     */
+    private void rejectParenthesizedAggregates(int opAt) {
+        Token open = current;
+        int keysEnd = consumed.size();
+        if (!startsAggregateAt(1)) {
+            return;
+        }
+        String problem = "aggregates follow the grouping keys in the same list, without parentheses";
+        String aggregates;
+        String input;
+        advance();
+        try {
+            int start = consumed.size();
+            parseAggregateFunctionList();
+            aggregates = writtenFrom(start);
+            expect(TokenType.RPAREN, "Expected ')' after the aggregates");
+        } catch (ParseException e) {
+            throw ParseException.at(problem, lexer.input(), open);
+        }
+        try {
+            int start = consumed.size();
+            parseParenthesizedRelation("Expected '(' after aggregation expression");
+            input = writtenFrom(start);
+        } catch (ParseException e) {
+            input = "(…)";
+        }
+        String keys = writtenBetween(opAt, keysEnd);
+        // A comma before the aggregates unless there are no keys, or the reader wrote one.
+        boolean listed = keysEnd - opAt > 1 && consumed.get(keysEnd - 1).type() != TokenType.COMMA;
+        throw ParseException.at(problem + ": write " + keys + (listed ? ", " : " ") + aggregates + " " + input,
+                lexer.input(), open);
+    }
+
+    /** Whether an aggregate call starts at {@code peek(n)}: a keyword aggregate, or a named one before its {@code (}. */
+    private boolean startsAggregateAt(int n) {
+        Token token = peek(n);
+        return switch (token.type()) {
+            case SUM, AVG, COUNT, MIN, MAX, COLLECT, ARGMAX, ARGMIN -> true;
+            default -> peek(n + 1).type() == TokenType.LPAREN && opensCall(token, peek(n + 1))
+                    && NAMED_AGGREGATES.containsKey(token.lexeme().toUpperCase(java.util.Locale.ROOT));
+        };
     }
 
     private SortNode parseSort() {
@@ -2302,6 +2356,7 @@ public final class RelAlgebraParser {
      */
     private TopKNode parseTopK() {
         Token opTok = current;
+        int opAt = consumed.size();
         expect(TokenType.TOP, "Expected 'TOP'");
 
         Token firstNum = expect(TokenType.NUMBER, "Expected a count after 'TOP'");
@@ -2314,25 +2369,63 @@ public final class RelAlgebraParser {
         } else {
             count = firstValue;
         }
+        int countEnd = consumed.size();
         boolean withTies = parseWithTies();
 
+        int sortStart = consumed.size();
         List<SortSpecification> sortSpecs = parseSortSpecificationList();
+        int sortEnd = consumed.size();
+        Token misplacedTies = withTies ? null : skipMisplacedTies();
 
         // No PER is not a missing clause, it is the global group. The sort-spec list is
         // read greedily and ends at either PER or the opening parenthesis, so which was
         // written is unambiguous.
         List<String> keys = new ArrayList<>();
+        int perStart = consumed.size();
         if (match(TokenType.PER)) {
             keys.add(expect(TokenType.IDENTIFIER, "Expected a grouping key after 'PER'").lexeme());
             while (match(TokenType.COMMA)) {
                 keys.add(expect(TokenType.IDENTIFIER, "Expected a grouping key after ','").lexeme());
             }
         }
+        int perEnd = consumed.size();
+        if (misplacedTies == null && !withTies) {
+            misplacedTies = skipMisplacedTies();
+        }
 
+        if (misplacedTies != null) {
+            rejectMisplacedTies(misplacedTies, writtenBetween(opAt, countEnd),
+                    writtenBetween(sortStart, sortEnd), writtenBetween(perStart, perEnd));
+        }
         RelNode input = parseParenthesizedRelation(
                 keys.isEmpty() ? "Expected 'PER' or '(' after the TOP sort keys"
                                : "Expected '(' after the TOP grouping keys");
         return new TopKNode(List.copyOf(keys), sortSpecs, offset, count, withTies, input, loc(opTok));
+    }
+
+    /** Consumes a {@code WITH TIES} written after TOP's sort or PER keys, returning its WITH; null if none. */
+    private Token skipMisplacedTies() {
+        Token with = current;
+        return parseWithTies() ? with : null;
+    }
+
+    /**
+     * Refuses {@code TOP 2 x ASC WITH TIES PER k (R)}, or the same after the PER keys, at
+     * WITH, rewritten with WITH TIES after the count, where TOP reads it. SQL writes
+     * {@code FETCH FIRST n ROWS WITH TIES} after its ORDER BY, so a SQL reader puts it
+     * after the sort keys.
+     */
+    private void rejectMisplacedTies(Token with, String count, String sort, String per) {
+        String input;
+        try {
+            int start = consumed.size();
+            parseParenthesizedRelation("Expected '(' after the TOP grouping keys");
+            input = writtenFrom(start);
+        } catch (ParseException e) {
+            input = "(…)";
+        }
+        throw ParseException.at("WITH TIES goes right after the count: write " + count + " WITH TIES "
+                + sort + (per.isEmpty() ? "" : " " + per) + " " + input, lexer.input(), with);
     }
 
     /** Consumes SQL's {@code WITH TIES} after a row count, and says whether it was written. */

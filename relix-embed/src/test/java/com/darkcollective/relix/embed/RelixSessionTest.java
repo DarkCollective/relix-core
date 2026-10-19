@@ -474,6 +474,45 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("aggregates in parentheses after GROUP's keys, and WITH TIES after TOP's sort keys, are one error naming the fix")
+        void misplacedAggregatesAndTiesDiagnosed() {
+            String tables = "T := [| age_group | name | seconds |\n| 1 | a | 2 |];\n";
+            String[][] cases = {
+                    {"GROUP age_group (COUNT(*) -> n) (T)", "17",
+                            "write GROUP age_group, COUNT(*) -> n (T)"},
+                    {"GROUP age_group, seconds (COUNT(*) -> n) (T)", "26",
+                            "write GROUP age_group, seconds, COUNT(*) -> n (T)"},
+                    {"GROUP age_group (COUNT(*) -> n, MIN(seconds) -> best) (T)", "17",
+                            "write GROUP age_group, COUNT(*) -> n, MIN(seconds) -> best (T)"},
+                    {"γ age_group (COUNT(*) -> n) (T)", "13",
+                            "write γ age_group, COUNT(*) -> n (T)"},
+                    {"GROUP BY age_group (COUNT(*) -> n) (T)", "20",
+                            "write GROUP BY age_group, COUNT(*) -> n (T)"},
+                    {"TOP 2 seconds ASC WITH TIES PER age_group (T)", "19",
+                            "write TOP 2 WITH TIES seconds ASC PER age_group (T)"},
+                    {"TOP 2 seconds ASC PER age_group WITH TIES (T)", "33",
+                            "write TOP 2 WITH TIES seconds ASC PER age_group (T)"},
+                    {"TOP 2 seconds ASC WITH TIES (T)", "19",
+                            "write TOP 2 WITH TIES seconds ASC (T)"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + "Q := { " + c[0] + " };\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .startsWith("Syntax error in RA expression: ")
+                            .endsWith(c[2]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0]).isEqualTo(3);
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
+                    String fixed = c[2].substring("write ".length());
+                    assertThat(relix.validate(tables + "Q := { " + fixed + " };\n"))
+                            .as("the rewrite of " + c[0] + " validates").isEmpty();
+                }
+            }
+        }
+
+        @Test
         @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
         void parseFailurePositionStatedOnce() {
             String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";

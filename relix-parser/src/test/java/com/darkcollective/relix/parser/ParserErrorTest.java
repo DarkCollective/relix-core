@@ -15,9 +15,11 @@
  */
 package com.darkcollective.relix.parser;
 
+import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.AntiJoinNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
+import com.darkcollective.relix.ast.TopKNode;
 import com.darkcollective.relix.ast.UnionNode;
 import com.darkcollective.relix.ast.UsingJoinNode;
 import java.util.List;
@@ -105,6 +107,9 @@ final class ParserErrorTest extends ParserTestSupport {
                 .hasMessageContaining("a column is named with expr -> name, not name: expr:"
                         + " write name -> book_name")
                 .at(1, 29);
+        assertParseError("TOP 2 seconds ASC WITH TIES (T")
+                .hasMessageContaining(": write TOP 2 WITH TIES seconds ASC (…)")
+                .at(1, 19);
         assertParseError("PROJECT member_id, name AS book_name (loans)")
                 .hasMessageContaining("a column is named with expr -> name, and AS is SQL's"
                         + " spelling of '->': write name -> book_name")
@@ -372,6 +377,56 @@ final class ParserErrorTest extends ParserTestSupport {
         assertThat(parse("loans >< loans.member_id = members.member_id members"))
                 .as("the rewrite the message offers parses")
                 .isNode(ThetaJoinNode.class);
+    }
+
+    @Test
+    @DisplayName("aggregates in parentheses after GROUP's keys are reported at '(', moved into the key list")
+    public void reportsParenthesizedAggregates() {
+        assertThatThrownBy(() -> parse("GROUP age_group (COUNT(*) -> n) (T)"))
+                .hasMessage("aggregates follow the grouping keys in the same list, without parentheses:"
+                        + " write GROUP age_group, COUNT(*) -> n (T) at line 1, column 17");
+        assertParseError("GROUP age_group, seconds (COUNT(*) -> n, MIN(seconds) -> best) (T)")
+                .hasMessageContaining(": write GROUP age_group, seconds, COUNT(*) -> n, MIN(seconds) -> best (T)")
+                .at(1, 26);
+        assertParseError("GROUP (COUNT(*) -> n) (T)")
+                .hasMessageContaining(": write GROUP COUNT(*) -> n (T)")
+                .at(1, 7);
+        assertParseError("GROUP age_group, (COUNT(*) -> n) (T)")
+                .hasMessageContaining(": write GROUP age_group, COUNT(*) -> n (T)")
+                .at(1, 18);
+        assertParseError("GROUP age_group (MEDIAN(seconds) -> m) (T)")
+                .hasMessageContaining(": write GROUP age_group, MEDIAN(seconds) -> m (T)")
+                .at(1, 17);
+        assertParseError("GROUP age_group (COUNT(*) -> n (T)")
+                .hasMessageContaining("aggregates follow the grouping keys in the same list, without parentheses")
+                .at(1, 17);
+        assertParseError("GROUP age_group (COUNT(*) -> n) (T")
+                .hasMessageContaining(": write GROUP age_group, COUNT(*) -> n (…)")
+                .at(1, 17);
+        // A parenthesis not followed by an aggregate call keeps its message.
+        for (String script : List.of("GROUP age_group (T)", "GROUP age_group (UPPER(name)) (T)",
+                "GROUP age_group (median (seconds)) (T)")) {
+            assertParseError(script).hasMessageContaining("Expected aggregate function").at(1, 17);
+        }
+        assertThat(parse("GROUP age_group, COUNT(*) -> n (T)")).isNode(AggregationNode.class);
+    }
+
+    @Test
+    @DisplayName("WITH TIES after TOP's sort or PER keys is reported at WITH, moved after the count")
+    public void reportsMisplacedTies() {
+        assertThatThrownBy(() -> parse("TOP 2 seconds ASC WITH TIES PER age_group (T)"))
+                .hasMessage("WITH TIES goes right after the count: write"
+                        + " TOP 2 WITH TIES seconds ASC PER age_group (T) at line 1, column 19");
+        assertParseError("TOP 2 seconds ASC PER age_group WITH TIES (T)")
+                .hasMessageContaining(": write TOP 2 WITH TIES seconds ASC PER age_group (T)")
+                .at(1, 33);
+        assertParseError("TOP 1, 2 seconds DESC, name WITH TIES (T)")
+                .hasMessageContaining(": write TOP 1, 2 WITH TIES seconds DESC, name (T)")
+                .at(1, 29);
+        assertParseError("TOP 2 seconds ASC WITH TIES (T")
+                .hasMessageContaining(": write TOP 2 WITH TIES seconds ASC (…)")
+                .at(1, 19);
+        assertThat(parse("TOP 2 WITH TIES seconds ASC PER age_group (T)")).isNode(TopKNode.class);
     }
 
     @Test
