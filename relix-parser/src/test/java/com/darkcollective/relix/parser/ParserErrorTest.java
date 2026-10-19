@@ -19,6 +19,8 @@ import com.darkcollective.relix.ast.AntiJoinNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.UnionNode;
+import java.util.List;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -131,6 +133,46 @@ final class ParserErrorTest extends ParserTestSupport {
         // Anything else after a whole expression is still the end of input expected.
         assertParseError("R S")
                 .hasMessageContaining("Expected end of input");
+    }
+
+    @Test
+    @DisplayName("a binary operator written before its inputs is reported at the operator, with its infix form")
+    public void reportsInfixOperatorWrittenFirst() {
+        assertParseError("JOIN A >< A.id = B.a_id B")
+                .hasMessageContaining("'JOIN' goes between the two relations it joins:"
+                        + " A JOIN B, or A >< condition B")
+                .at(1, 1);
+        assertParseError("UNION A B")
+                .hasMessageContaining("'UNION' goes between the two relations it combines: A UNION B")
+                .at(1, 1);
+        assertParseError("σ a > 1 (ljoin A B)")
+                .hasMessageContaining("'ljoin' goes between the two relations it joins, with its"
+                        + " condition after it: A ljoin A.id = B.a_id B")
+                .at(1, 10);
+        assertParseError("EXCEPT π a (R) S")
+                .hasMessageContaining("'EXCEPT' goes between the two relations it combines");
+        assertParseError("⋈ A B")
+                .hasMessageContaining("'⋈' goes between the two relations it joins: A ⋈ B")
+                .at(1, 1);
+        assertParseError("∪ A B")
+                .hasMessageContaining("'∪' goes between the two relations it combines: A ∪ B");
+        assertParseError("× A B")
+                .hasMessageContaining("'×' goes between its two inputs: A × B");
+        // A unary operator's glyph after the word starts a relation as its keyword does.
+        for (String unary : List.of("π a (R)", "μ tags (R)", "ω (R)", "∀ x (R)")) {
+            assertParseError("union " + unary)
+                    .hasMessageContaining("'union' goes between the two relations it combines")
+                    .at(1, 1);
+        }
+    }
+
+    @Test
+    @DisplayName("a relation named like a binary operator still reads as a relation")
+    public void relationNamedLikeInfixOperator() {
+        assertThat(parse("diff ⋈ R")).isNode(NaturalJoinNode.class).left().isRelation("diff");
+        assertThat(parse("union")).isRelation("union");
+        assertThat(parse("R ∪ (minus)")).isNode(UnionNode.class).right().isRelation("minus");
+        assertThat(parse("union union S")).isNode(UnionNode.class).left().isRelation("union");
     }
 
     @Test

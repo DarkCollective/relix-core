@@ -127,6 +127,6 @@ final class SymmetricDifferenceParserTest extends ParserTestSupport {
 
     @Test
     void failsOnMissingLeftOperand() {
-        assertParseError("∆ Users").hasMessageContaining("Expected relation name");
+        assertParseError("∆ Users").hasMessageContaining("'∆' goes between the two relations it combines: A ∆ B");
     }
 }

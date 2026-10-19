@@ -127,6 +127,6 @@ final class CompositionParserTest extends ParserTestSupport {
 
     @Test
     void failsOnMissingLeftOperand() {
-        assertParseError("∘ S").hasMessageContaining("Expected relation name");
+        assertParseError("∘ S").hasMessageContaining("'∘' goes between its two inputs: A ∘ B");
     }
 }

@@ -113,6 +113,6 @@ final class OuterUnionParserTest extends ParserTestSupport {
     @Test
     public void failsOnMissingLeftOperand() {
         assertParseError("⊔ Users")
-                .hasMessageContaining("Expected relation name");
+                .hasMessageContaining("'⊔' goes between the two relations it combines: A ⊔ B");
     }
 }
