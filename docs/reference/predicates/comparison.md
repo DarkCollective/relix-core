@@ -55,6 +55,16 @@ form; by the same rule it does *not* compare with plain text, and ordering
 the column to settle what it holds. NULL on either side makes the comparison
 UNKNOWN (row excluded); test for NULL explicitly with = NULL / = ⊥.
 
+A NUMBER never compares with a STRING, with any operator, and analysis refuses
+the pair rather than let it run. Text is never read as a number, so `=` and `≠`
+between the two would never be true and `<` would fail when run: `σ seconds = ''`
+would return no rows and look like an answer. The error names what to write
+instead. An empty inline-table, CSV, or JSON cell is NULL, not `''`, so
+`seconds = ''` is `seconds IS NULL` and `seconds != ''` is `seconds IS NOT NULL`.
+Text that holds a number is that number, written without quotes
+(`seconds = 1320`), or `CAST(… AS NUMBER)` for a column of such text. IN and
+BETWEEN answer to the same rule, since they are comparisons too.
+
 # Alternatives:
 For "is this missing" use the NULL test (= ⊥ / = NULL). For set membership use
 IN (∈). For a range, BETWEEN. For an equality under which NULL equals NULL,
@@ -83,8 +93,8 @@ holding `true`/`false` infer as STRING, but a query naturally writes
 `= true`/`= false` (a boolean literal), so the text is read as the boolean it
 names, case-insensitively — `true`/`TRUE`/`True` are one value. Hence
 `σ is_active = true (Rules)` matches a row whose `is_active` cell is the string
-`"true"`. A string that names no boolean stays a STRING and simply does not match
-(`=`/`≠` never error, whatever the types). This mirrors the string→temporal
+`"true"`. A string that names no boolean stays a STRING and simply does not match a
+BOOLEAN (`=`/`≠` between those never error; against a NUMBER, see Limitations). This mirrors the string→temporal
 reading for ISO-8601 cells.
 
 What a string means does **not** depend on what it is compared against: it is read

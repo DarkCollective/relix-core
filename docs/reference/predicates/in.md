@@ -79,6 +79,11 @@ the set nor out of it, and if the *set* holds a NULL then failing to match the
 other elements settles nothing — the unknown one might have been the value — so
 `∉` keeps that row no more than `∈` does.
 
+The members compare with the column as `=` does, so a NUMBER column takes no
+STRING member: `seconds IN {1320, '1400'}` is refused at analysis, naming the
+number to write instead. A member of `''` is refused the same way, since an
+empty cell is NULL: test for it with `seconds IS NULL`.
+
 # Alternatives:
 A SEMI join (⋉) for "value appears in another relation". A chain of `= … ∨ = …`
 is the long-hand form IN replaces.

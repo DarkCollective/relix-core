@@ -207,10 +207,10 @@ final class ComposedModelTest {
         void conflictingNameIsRefused() {
             try (Relix relix = Relix.open()) {
                 relix.table("Regions", List.of(Map.of("id", "1"), Map.of("id", "2")));
-                relix.define("Chosen := { σ id = '1' (Regions) };");
+                relix.define("Chosen := { σ id = 1 (Regions) };");
                 Relation first = relix.relation("Chosen");
 
-                relix.define("Chosen := { σ id = '2' (Regions) };");
+                relix.define("Chosen := { σ id = 2 (Regions) };");
                 Relation second = relix.relation("Chosen");
 
                 // Which side wins is not a question the caller asked, and either answer
