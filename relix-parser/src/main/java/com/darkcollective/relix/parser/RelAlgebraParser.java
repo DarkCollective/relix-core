@@ -689,6 +689,7 @@ public final class RelAlgebraParser {
             case TREE        -> parseTree();
             case WHY         -> parseWhy();
             default -> {
+                rejectInfixOperatorFirst();
                 // Allow any word-shaped keyword token as a relation name when there is no
                 // dedicated operator case for it (e.g. a relation named 'count' or 'to').
                 if (!isNameToken(current)) {
@@ -3779,6 +3780,46 @@ public final class RelAlgebraParser {
                     lexer.input(), current);
         }
         expect(TokenType.EOF, "Expected end of input");
+    }
+
+    /**
+     * Refuses a binary operator written before its inputs, the way a unary one is:
+     * {@code JOIN A >< A.id = B.a_id B}, or {@code UNION A B}.
+     *
+     * <p>A glyph there is reported as no relation at all, and a word such as
+     * {@code JOIN} is read as a relation's name, so parsing stops at the next relation
+     * with "expected end of input" and never mentions the operator. A word is taken for
+     * the operator only when a relation starts after it, which cannot follow a relation's
+     * name; a relation really named {@code diff} or {@code union} still reads as one.
+     * Straight after another binary operator, {@code A ⊎ ⊎ B}, the operator is doubled
+     * rather than misplaced, and keeps the plain message.
+     */
+    private void rejectInfixOperatorFirst() {
+        TokenType type = current.type();
+        if (!isBinaryRelOperator(type)
+                || !consumed.isEmpty() && isBinaryRelOperator(consumed.getLast().type())) {
+            return;
+        }
+        Token next = peek(1);
+        // A unary operator's Greek glyph is word-shaped, as its keyword is; ∀ alone is not.
+        boolean relationFollows = isNameToken(next) && !isBinaryRelOperator(next.type())
+                || next.type() == TokenType.FORALL;
+        if (isNameToken(current) && !relationFollows) {
+            return;
+        }
+        String op = current.lexeme();
+        String written = switch (type) {
+            case NATURAL_JOIN -> "goes between the two relations it joins: A " + op
+                    + " B, or A >< condition B";
+            case THETA_JOIN, LEFT_OUTER_JOIN, RIGHT_OUTER_JOIN, FULL_OUTER_JOIN, SEMI_JOIN,
+                 ANTI_JOIN, UNIVERSAL_SEMI_JOIN -> "goes between the two relations it joins,"
+                    + " with its condition after it: A " + op + " A.id = B.a_id B";
+            case ASOF_JOIN, IJOIN -> "goes between the two relations it joins: A " + op + " … B";
+            case UNION, UNION_ALL, OUTER_UNION, DIFFERENCE, INTERSECTION, SYMMETRIC_DIFFERENCE ->
+                    "goes between the two relations it combines: A " + op + " B";
+            default -> "goes between its two inputs: A " + op + " B";
+        };
+        throw ParseException.at("'" + op + "' " + written, lexer.input(), current);
     }
 
     /** True for the keywords that open a unary operator, written before its input. */
