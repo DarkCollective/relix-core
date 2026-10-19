@@ -25,6 +25,21 @@ choose the build side by cardinality. A natural join of two tables on the same
 connection pushes down to a SQL `JOIN … ON` that equates the common columns, provided
 each common column has the same type on both sides.
 
+Matching on every shared column is easy to get wrong when two tables also share a
+descriptive column, such as a `name` on both rooms and devices: the join then keeps a
+device only where it is named like its room. Analysis warns when a natural join
+matches on two or more columns and fewer of them are already a candidate key of an
+input (the keys `relix.keys` lists, read through views and through σ, τ, λ and δ).
+The warning names the matched columns and the USING join that matches on the key
+alone:
+
+```
+Natural join of devices and rooms matches on room_id and name; to join on room_id alone, write devices JOIN rooms USING (room_id)
+```
+
+A join on one shared column, or on shared columns no fewer of which make a key, is not
+warned about.
+
 # Examples:
 Pair each user with their orders (shared user_id):
   Users ⋈ Orders

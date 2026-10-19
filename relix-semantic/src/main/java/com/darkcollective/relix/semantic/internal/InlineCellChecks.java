@@ -17,6 +17,7 @@ package com.darkcollective.relix.semantic.internal;
 
 import com.darkcollective.relix.ast.internal.TemporalLiterals;
 import com.darkcollective.relix.lang.ast.table.InlineTable;
+import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
 
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -30,11 +31,16 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Finds the inline-table cells that will fail at run time rather than at analysis.
+ * Finds the inline-table cells that do not hold what they appear to.
  *
- * <p>A text column is a text column, so neither finding is an error. Each is a cell
- * that a later comparison, arithmetic or {@code SESSIONIZE} reads as a temporal and
- * cannot, and that then fails with an error naming two types and no cell:
+ * <p>A text column is a text column, so no finding is an error. A cell of a markdown
+ * table written in quotes, such as {@code "45%"}, keeps its quotes, because cells are
+ * bare values; string functions then see them. The CSV form is left alone, since
+ * quoting is how CSV escapes a comma.
+ *
+ * <p>The other findings are each a cell that a later comparison, arithmetic or
+ * {@code SESSIONIZE} reads as a temporal and cannot, and that then fails with an
+ * error naming two types and no cell:
  * <ul>
  *   <li>a cell written as a literal, such as {@code TIMESTAMP '2026-03-01T09:00:00Z'}.
  *       Cells are bare values, so this one is the whole text and never parses;</li>
@@ -86,10 +92,48 @@ final class InlineCellChecks {
         List<String> warnings = new ArrayList<>();
         for (int c = 0; c < table.headers().size(); c++) {
             String column = name + "." + table.headers().get(c);
+            Optional<String> quoted = table instanceof MarkdownInlineTable
+                    ? quotedCell(column, table, c) : Optional.empty();
+            quoted.ifPresent(warnings::add);
             literalCell(column, table, c).ifPresent(warnings::add);
-            strayCell(column, table, c).ifPresent(warnings::add);
+            if (quoted.isEmpty()) {
+                strayCell(column, table, c).ifPresent(warnings::add);
+            }
         }
         return warnings;
+    }
+
+    /**
+     * The first cell of column {@code c} that starts and ends with the same quote mark,
+     * reported once. A column already flagged here is not also checked for a stray
+     * temporal, since its quoted cells are the reason they do not read.
+     */
+    private static Optional<String> quotedCell(String column, InlineTable table, int c) {
+        int count = 0;
+        String first = null;
+        int firstRow = 0;
+        for (int r = 0; r < table.rows().size(); r++) {
+            String cell = cell(table, r, c);
+            if (isQuoted(cell) && count++ == 0) {
+                first = cell;
+                firstRow = r + 1;
+            }
+        }
+        if (count == 0) {
+            return Optional.empty();
+        }
+        String more = count == 1 ? "" : " (and " + (count - 1) + " more cell" + (count == 2 ? "" : "s") + ")";
+        return Optional.of(column + ", row " + firstRow + ": the cell " + first
+                + " keeps its quotes, because table cells are bare values; write "
+                + first.substring(1, first.length() - 1) + more);
+    }
+
+    private static boolean isQuoted(String cell) {
+        if (cell.length() < 2) {
+            return false;
+        }
+        char open = cell.charAt(0);
+        return (open == '"' || open == '\'') && cell.charAt(cell.length() - 1) == open;
     }
 
     /** The first cell of column {@code c} written as a typed literal, reported once. */

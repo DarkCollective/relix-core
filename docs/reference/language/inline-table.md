@@ -54,7 +54,18 @@ Items := csv[
 ];
 ```
 
-A cell is a bare value. A column of dates or timestamps holds text such as
+A cell is a bare value, so quotes written around one are part of it: the cell
+`"45%"` is five characters long, and `SUBSTRING` and `Len` see the quotes. Analysis
+warns about a markdown cell that starts and ends with the same quote mark, naming its
+table, column and row and the bare value to write:
+
+```
+T.s, row 1: the cell "45%" keeps its quotes, because table cells are bare values; write 45%
+```
+
+The CSV form is not warned about, since quoting a field is how CSV keeps a comma in it.
+
+A column of dates or timestamps holds text such as
 `2026-03-01T09:00:00Z`, which a comparison or `SESSIONIZE` reads as the temporal it
 spells. Two cells pass analysis and then cannot be read that way, so analysis warns
 about each:
