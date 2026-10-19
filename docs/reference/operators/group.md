@@ -192,6 +192,13 @@ query { γ region (Sales) };
 To list the distinct values of a column, project it and remove duplicates with
 `δ (π region (Sales))`.
 
+A grouping key's `→` names the key, so an aggregate cannot follow it. The parser
+reports this at the arrow and asks for a comma, as in `γ region, COUNT(*) → n (Sales)`:
+
+```relix-invalid
+query { γ region → COUNT(*) → n (Sales) };
+```
+
 # Alternatives:
 To keep the actual rows that achieve a maximum per group (not just one value),
 use TOP k … PER. To test a condition across a whole group, use ∀ (FORALL).
