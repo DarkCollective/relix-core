@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
 import static com.darkcollective.relix.ast.AstAssertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Tests for {@link ScriptParser} covering statement-level constructs:
@@ -257,6 +258,76 @@ class ScriptParserStatementTest {
                     """;
             Script s = parse(src);
             assertThat(s.statements()).hasSize(2);
+        }
+    }
+
+    // =========================================================================
+    // Statement structure written wrong (#187)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("statement structure written wrong names the fix (#187)")
+    class StructureTests {
+
+        @Test
+        @DisplayName("an expression written as a statement names query, at the token after its first name")
+        void expressionAsStatement() {
+            assertThatThrownBy(() -> parse("R := { S };\nR ANTI R.a = S.a S;"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessage("a result is written query { … }: write query { R ANTI R.a = S.a S }; (line 2, col 3)");
+            assertThatThrownBy(() -> parse("orders"))
+                    .hasMessage("a result is written query { … }: write query orders; (line 1, col 7)");
+            // Read before the statement lexer meets the '>' it has no token for.
+            assertThatThrownBy(() -> parse("SELECT total > 100 (orders);"))
+                    .hasMessage("a result is written query { … }: write query { SELECT total > 100 (orders) };"
+                            + " (line 1, col 8)");
+            assertThatThrownBy(() -> parse("orders -- the orders; all of them\n  ;"))
+                    .hasMessage("a result is written query { … }: write query orders; (line 2, col 3)");
+            assertThatThrownBy(() -> parse("R /* kept */ ANTI\n  R.a = S.a S;"))
+                    .hasMessageStartingWith("a result is written query { … }: write query { R ANTI R.a = S.a S };");
+            // Not an expression, or an assignment: the parser's own message.
+            assertThatThrownBy(() -> parse("orders customers;")).hasMessageContaining("Expected 'assign'");
+            assertThatThrownBy(() -> parse("X = { R };")).hasMessageNotContaining("query");
+            assertThat(parse("X /* the view */ := { R };").statements()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("a ';' inside braces is reported at the ';', moved after the brace or splitting the expressions")
+        void semicolonInBraces() {
+            assertThatThrownBy(() -> parse("query { SELECT a > 1 (R); };"))
+                    .hasMessage("Syntax error in RA expression: a ';' ends a statement and goes after the closing"
+                            + " brace: write query { SELECT a > 1 (R) }; (line 1, col 25)");
+            assertThatThrownBy(() -> parse("private  V :=\n{ R ; };"))
+                    .hasMessageContaining(": write private V := { R };");
+            assertThatThrownBy(() -> parse("query {\n  SELECT a > 1 -- big ones\n    (R);\n};"))
+                    .hasMessageContaining(": write query { SELECT a > 1 (R) };");
+            assertThatThrownBy(() -> parse("query { R; S };"))
+                    .hasMessageContaining("a query holds one expression; write each as its own:"
+                            + " query { R }; query { S };");
+            assertThatThrownBy(() -> parse("A := { R; SELECT a > 1 (A); PROJECT a (A) };"))
+                    .hasMessageContaining("a view holds one expression; give the first its own name:"
+                            + " A_1 := { R }; A_2 := { SELECT a > 1 (A_1) }; A := { PROJECT a (A_2) };")
+                    .hasMessageEndingWith("(line 1, col 9)");
+            // The expression before the ';' in error: its own error.
+            assertThatThrownBy(() -> parse("query { SELECT a > (R); };"))
+                    .hasMessageNotContaining("closing brace");
+            // A ';' in a string is the string's.
+            assertThat(parse("query { SELECT a = \"x;y\" (R) };").statements()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("an unclosed brace is reported at the brace, with '}' put before the ';'")
+        void unclosedBrace() {
+            assertThatThrownBy(() -> parse("query { SELECT a > 1 (R) ;\nquery R;"))
+                    .hasMessage("Unterminated brace block; put '}' before the ';':"
+                            + " write query { SELECT a > 1 (R) }; (line 1, col 7)");
+            assertThatThrownBy(() -> parse("def f(x: NUMBER): NUMBER := { x * 2 ;"))
+                    .hasMessageContaining("write def f(x: NUMBER): NUMBER := { x * 2 };");
+            // No ';' to put it before: the lexer's message.
+            assertThatThrownBy(() -> parse("query { R"))
+                    .hasMessage("Unterminated brace block (line 1, col 8)");
+            assertThatThrownBy(() -> parse("query { ;"))
+                    .hasMessage("Unterminated brace block (line 1, col 8)");
         }
     }
 }
