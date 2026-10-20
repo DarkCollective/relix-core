@@ -579,6 +579,49 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("an expression as a statement, a ';' in braces and an unclosed brace name the fix (#187)")
+        void statementStructureDiagnosed() {
+            String tables = "orders := [| customer_id | total |\n| 1 | 120 |];\n"
+                    + "customers := [| customer_id | name |\n| 1 | a |];\n";
+            // script, line, column, the message's end, the rewrite that validates
+            String[][] cases = {
+                    {"customers ANTI customers.customer_id = orders.customer_id orders;", "5", "11",
+                            "a result is written query { … }: write"
+                                    + " query { customers ANTI customers.customer_id = orders.customer_id orders };"},
+                    {"orders;", "5", "7", "a result is written query { … }: write query orders;"},
+                    {"query { SELECT total > 100 (orders); };", "5", "36",
+                            "a ';' ends a statement and goes after the closing brace:"
+                                    + " write query { SELECT total > 100 (orders) };"},
+                    {"Avg := { GROUP SUM(total) -> s, COUNT(*) -> n (orders); PROJECT s / n -> avg (Avg) };\n"
+                            + "query Avg;", "5", "55",
+                            "a view holds one expression; give the first its own name:"
+                                    + " Avg_1 := { GROUP SUM(total) -> s, COUNT(*) -> n (orders) };"
+                                    + " Avg := { PROJECT s / n -> avg (Avg_1) };"},
+                    {"query { SELECT total > 100 (orders) ;", "5", "7",
+                            "Unterminated brace block; put '}' before the ';':"
+                                    + " write query { SELECT total > 100 (orders) };"},
+                    {"Big := { SELECT total > 100 (orders) ;\nquery Big;", "5", "8",
+                            "Unterminated brace block; put '}' before the ';':"
+                                    + " write Big := { SELECT total > 100 (orders) };"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + c[0] + "\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0]).endsWith(c[3]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]));
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[2]));
+                    String fixed = c[3].substring(c[3].indexOf(": ") + 2).replaceFirst("^write ", "");
+                    String rest = c[0].contains("\n") ? c[0].substring(c[0].indexOf('\n')) : "";
+                    assertThat(relix.validate(tables + fixed + rest + "\n"))
+                            .as("the rewrite of " + c[0]).isEmpty();
+                }
+            }
+        }
+
+        @Test
         @DisplayName("*, an aggregate in SELECT and IN (SELECT …) name GROUP, the relation or SEMI (#188)")
         void starAggregateAndSubqueryDiagnosed() {
             String tables = "orders := [| customer_id | total |\n| 1 | 120 |];\n"

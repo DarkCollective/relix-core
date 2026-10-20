@@ -37,6 +37,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Recursive-descent parser for {@code .relix} scripting language source files.
@@ -75,6 +77,9 @@ public final class ScriptParser {
     private final LangLexer lexer;
     private final String filePath;
     LangToken current;
+
+    /** The first token of the statement being parsed, {@code private} included: where its text starts. */
+    private LangToken statementStart;
 
     /** The {@code ;} that ended the statement parsed last: where that statement's text ends. */
     private LangToken lastSemicolon;
@@ -354,6 +359,7 @@ public final class ScriptParser {
     // =========================================================================
 
     private Statement parseStatement() {
+        statementStart = current;
         boolean exported = true;
         LangToken exportedTok = current;
         if (current.type() == LangTokenType.PRIVATE) {
@@ -692,6 +698,9 @@ public final class ScriptParser {
     // -------------------------------------------------------------------------
 
     private Statement parseAssignmentStatement(boolean exported, LangToken startTok) {
+        if (current.type().isNameCompatible()) {
+            rejectExpressionStatement(current);
+        }
         String name = requireName("assignment target name");
         consume(LangTokenType.ASSIGN);
 
@@ -719,9 +728,9 @@ public final class ScriptParser {
             // { ... } — relational algebra expression
             // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
             LangToken brace = requireBraceToken();
-            LangLexer.RawBlock raw = lexer.consumeRawBraceBlock();
+            LangLexer.RawBlock raw = rawBraceBlock(brace);
             current = lexer.next();
-            body = new QueryAssignmentBody(delegateToRaParser(raw, brace));
+            body = new QueryAssignmentBody(delegateToRaParser(raw, brace, name));
             if (current.type() == LangTokenType.REFERENCES) {
                 throw error("A references clause applies to inline tables and sources;"
                         + " relate a view with a standalone 'relate' statement instead");
@@ -777,9 +786,9 @@ public final class ScriptParser {
 
             // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
             LangToken relBrace = requireBraceToken();
-            LangLexer.RawBlock relRaw = lexer.consumeRawBraceBlock();
+            LangLexer.RawBlock relRaw = rawBraceBlock(relBrace);
             current = lexer.next();
-            RelNode relBody = delegateToRaParser(relRaw, relBrace);
+            RelNode relBody = delegateToRaParser(relRaw, relBrace, null);
 
             consumeSemicolon();
             return new DefRelationStatement(exported, name,
@@ -798,7 +807,7 @@ public final class ScriptParser {
 
         // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
         LangToken brace = requireBraceToken();
-        LangLexer.RawBlock raw = lexer.consumeRawBraceBlock();
+        LangLexer.RawBlock raw = rawBraceBlock(brace);
         current = lexer.next();
         Operand body = delegateToOperandParser(raw, brace);
 
@@ -859,9 +868,9 @@ public final class ScriptParser {
             // query { ra-expression } ;
             // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
             LangToken brace = current;
-            LangLexer.RawBlock raw = lexer.consumeRawBraceBlock();
+            LangLexer.RawBlock raw = rawBraceBlock(brace);
             current = lexer.next();
-            target = new ExpressionQueryTarget(delegateToRaParser(raw, brace));
+            target = new ExpressionQueryTarget(delegateToRaParser(raw, brace, null));
         } else {
             // query NAME ;
             target = new NamedQueryTarget(requireName("query target name"));
@@ -1088,15 +1097,257 @@ public final class ScriptParser {
     // Delegation to sub-parsers
     // =========================================================================
 
-    private RelNode delegateToRaParser(LangLexer.RawBlock raw, LangToken openBrace) {
+    /**
+     * Parses the expression in a statement's braces.
+     *
+     * @param view the name a view statement gives its expression; null for a query or a
+     *             function's body
+     */
+    private RelNode delegateToRaParser(LangLexer.RawBlock raw, LangToken openBrace, String view) {
         try {
             return RelAlgebraParser.parse(raw.text(), filePath, raw.startLine(), raw.startCol(),
                     expressionComments::add);
         } catch (ParseException e) {
+            String fix = semicolonInBraces(raw, openBrace, view, e);
             throw new LangParseException(
-                    "Syntax error in RA expression: " + withoutPosition(e),
+                    "Syntax error in RA expression: " + (fix != null ? fix : withoutPosition(e)),
                     e.line(), e.column());
         }
+    }
+
+    /**
+     * The fix for a {@code ;} inside a statement's braces, when the expression failed
+     * there: {@code query { R; };} moves it after the brace, and two expressions in one
+     * view, {@code A := { γ … (R); π … (A) };}, are each given a name, the first
+     * {@code A_1}, with the second's references to {@code A} made to it. Null when the
+     * failure is not at a {@code ;}, or when it is a function's body holding more than
+     * one expression.
+     *
+     * @throws LangParseException when the expression before the {@code ;} is itself
+     *                            in error: that error, which the fix would not mend
+     */
+    private String semicolonInBraces(LangLexer.RawBlock raw, LangToken openBrace, String view,
+                                     ParseException failure) {
+        String input = lexer.input();
+        int from = offsetOf(raw.startLine(), raw.startCol());
+        int end = from + raw.text().length();
+        List<String> pieces = new ArrayList<>();
+        ParseException at = failure;
+        while (at != null) {
+            int semicolon = offsetOf(at.line(), at.column());
+            if (semicolon >= end || input.charAt(semicolon) != ';') {
+                if (pieces.isEmpty()) {
+                    return null;
+                }
+                break; // A later expression in error is echoed as written.
+            }
+            String piece = withoutComments(input.substring(from, semicolon));
+            if (!piece.isEmpty()) {
+                if (pieces.isEmpty()) {
+                    ParseException own = tryParse(from, semicolon);
+                    if (own != null) {
+                        throw new LangParseException("Syntax error in RA expression: "
+                                + withoutPosition(own), own.line(), own.column());
+                    }
+                }
+                pieces.add(piece);
+            }
+            from = semicolon + 1;
+            at = tryParse(from, end);
+        }
+        String rest = withoutComments(input.substring(from, end));
+        if (!rest.isEmpty()) {
+            pieces.add(rest);
+        }
+        if (pieces.isEmpty()) {
+            return null;
+        }
+        String statement = statementText(openBrace);
+        if (pieces.size() == 1) {
+            return "a ';' ends a statement and goes after the closing brace: write "
+                    + statement + " { " + pieces.getFirst() + " };";
+        }
+        StringBuilder fix = new StringBuilder();
+        if (view != null) {
+            Pattern reference = Pattern.compile(
+                    "(?<![\\w.`])" + Pattern.quote(view) + "(?![\\w`])");
+            String previous = null;
+            for (int i = 0; i < pieces.size(); i++) {
+                String name = i == pieces.size() - 1 ? view : view + "_" + (i + 1);
+                String piece = previous == null ? pieces.get(i)
+                        : reference.matcher(pieces.get(i)).replaceAll(
+                                Matcher.quoteReplacement(previous));
+                fix.append(i == 0 ? "" : " ").append(name).append(" := { ").append(piece).append(" };");
+                previous = name;
+            }
+            return "a view holds one expression; give the first its own name: " + fix;
+        }
+        if (statementStart.type() != LangTokenType.QUERY) {
+            return null;
+        }
+        for (String piece : pieces) {
+            fix.append(fix.isEmpty() ? "" : " ").append("query { ").append(piece).append(" };");
+        }
+        return "a query holds one expression; write each as its own: " + fix;
+    }
+
+    /** The expression parser's failure on the source between two offsets; null when it parses. */
+    private ParseException tryParse(int from, int to) {
+        int[] position = positionOf(from);
+        try {
+            RelAlgebraParser.parse(lexer.input().substring(from, to), filePath, position[0], position[1]);
+            return null;
+        } catch (ParseException e) {
+            return e;
+        }
+    }
+
+    /**
+     * Refuses a statement that is an expression, {@code orders;} or
+     * {@code customers ANTI … orders;}, at the token after its first name, naming
+     * {@code query}: a result is written {@code query { … };}, and the statement parser
+     * would otherwise ask for {@code :=}. A statement that is not an expression is left
+     * to the parser.
+     */
+    private void rejectExpressionStatement(LangToken first) {
+        String input = lexer.input();
+        int start = offsetOf(first.line(), first.column());
+        int afterName = start;
+        if (input.charAt(afterName) == '`') {
+            afterName = input.indexOf('`', afterName + 1) + 1;
+            if (afterName == 0) {
+                return;
+            }
+        } else {
+            while (afterName < input.length() && (Character.isLetterOrDigit(input.charAt(afterName))
+                    || input.charAt(afterName) == '_')) {
+                afterName++;
+            }
+        }
+        int next = afterName;
+        while (next < input.length()) {
+            if (Character.isWhitespace(input.charAt(next))) {
+                next++;
+            } else if (input.startsWith("--", next) || input.startsWith("/*", next)) {
+                int close = input.startsWith("--", next) ? input.indexOf('\n', next)
+                        : input.indexOf("*/", next + 2) + 2;
+                next = close <= 1 ? input.length() : close;
+            } else {
+                break;
+            }
+        }
+        if (input.startsWith(":=", next)) {
+            return;
+        }
+        int end = statementEnd(input, start);
+        if (tryParse(start, end) != null) {
+            return;
+        }
+        String expression = withoutComments(input.substring(start, end));
+        String fix = expression.equals(input.substring(start, afterName))
+                ? "query " + expression + ";"
+                : "query { " + expression + " };";
+        int[] position = positionOf(next);
+        throw new LangParseException("a result is written query { … }: write " + fix,
+                position[0], position[1]);
+    }
+
+    /**
+     * Where the statement starting at {@code start} ends: its {@code ;} outside strings
+     * and comments, or the end of the source. An expression has no other {@code ;}.
+     */
+    private static int statementEnd(String input, int start) {
+        for (int i = start; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (input.startsWith("--", i) || input.startsWith("/*", i)) {
+                int close = input.startsWith("--", i) ? input.indexOf('\n', i) : input.indexOf("*/", i + 2);
+                if (close < 0) {
+                    return input.length();
+                }
+                i = close;
+            } else if (c == '"' || c == '\'') {
+                int close = input.indexOf(c, i + 1);
+                if (close < 0) {
+                    return input.length();
+                }
+                i = close;
+            } else if (c == ';') {
+                return i;
+            }
+        }
+        return input.length();
+    }
+
+    /** An expression's text on one line, without its comments: as a fix echoes it. */
+    private static String withoutComments(String text) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (text.startsWith("--", i) || text.startsWith("/*", i)) {
+                int close = text.startsWith("--", i) ? text.indexOf('\n', i) : text.indexOf("*/", i + 2) + 1;
+                i = close <= 0 ? text.length() : close;
+                out.append(' ');
+            } else if (c == '"' || c == '\'') {
+                int close = text.indexOf(c, i + 1);
+                int stop = close < 0 ? text.length() : close + 1;
+                out.append(text, i, stop);
+                i = stop - 1;
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString().strip().replaceAll("\\s+", " ");
+    }
+
+    /**
+     * Extracts the raw block of the brace {@code brace} opens. When it is never closed,
+     * the lexer's error, moved to the brace, says where the {@code }} goes: before the
+     * statement's {@code ;}, as {@code query { R };}.
+     */
+    private LangLexer.RawBlock rawBraceBlock(LangToken brace) {
+        try {
+            return lexer.consumeRawBraceBlock();
+        } catch (LangParseException e) {
+            String input = lexer.input();
+            int open = offsetOf(brace.line(), brace.column()) + 1;
+            int semicolon = statementEnd(input, open);
+            if (semicolon == input.length() || input.substring(open, semicolon).isBlank()) {
+                throw e;
+            }
+            throw new LangParseException(e.description() + "; put '}' before the ';': write "
+                    + statementText(brace) + " { "
+                    + withoutComments(input.substring(open, semicolon)) + " };", brace.line(), brace.column());
+        }
+    }
+
+    /** The statement's text from its first token to the brace, its whitespace made single spaces. */
+    private String statementText(LangToken brace) {
+        return lexer.input().substring(offsetOf(statementStart.line(), statementStart.column()),
+                offsetOf(brace.line(), brace.column())).strip().replaceAll("\\s+", " ");
+    }
+
+    /** The source offset of a 1-based line and column. */
+    private int offsetOf(int line, int column) {
+        String input = lexer.input();
+        int offset = 0;
+        for (int l = 1; l < line; l++) {
+            offset = input.indexOf('\n', offset) + 1;
+        }
+        return offset + column - 1;
+    }
+
+    /** The 1-based line and column of a source offset. */
+    private int[] positionOf(int offset) {
+        String input = lexer.input();
+        int line = 1;
+        int lineStart = 0;
+        for (int i = 0; i < offset; i++) {
+            if (input.charAt(i) == '\n') {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+        return new int[] {line, offset - lineStart + 1};
     }
 
     private Operand delegateToOperandParser(LangLexer.RawBlock raw, LangToken openBrace) {
