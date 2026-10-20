@@ -3,13 +3,13 @@
 # Syntax:
 TOP <count> <sort-specs> [PER <keys>] (Relation)
 TOP <offset>, <count> <sort-specs> [PER <keys>] (Relation)
-TOP <count> WITH TIES <sort-specs> [PER <keys>] (Relation)
+TOP <count> WITH TIES <sort-specs> [PER <keys>] (Relation)   -- also keeps every row tied with the last one kept
 -- returns the kept input rows, schema unchanged
 
 TOP 3 amount DESC PER customer_id (Orders)
 TOP 5, 3 amount DESC PER customer_id (Orders)   -- skip 5, take 3 per group
 TOP 3 amount DESC (Orders)                      -- one global group: the top 3 overall
-TOP 1 WITH TIES amount DESC PER customer_id (Orders)   -- every order tied for the biggest
+TOP 2 WITH TIES seconds PER age_group (Results)   -- a tie shares a place: two tied for first fill both places, and nobody is second
 
 # Description:
 TOP keeps the highest (or lowest) N rows within each group. It answers "the 3
