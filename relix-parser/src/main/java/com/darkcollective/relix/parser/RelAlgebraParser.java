@@ -47,6 +47,14 @@ public final class RelAlgebraParser {
     /** Every token parsed so far, for an error that quotes the expression back. */
     private final List<Token> consumed = new ArrayList<>();
     private Token current;
+    /**
+     * The parenthesis that opens the join condition being read, and where its join's
+     * left input starts, so a relation name left inside it is reported as the right
+     * input; null outside a parenthesised join condition.
+     */
+    private JoinConditionParen joinConditionParen;
+
+    private record JoinConditionParen(Token open, int leftStart) {}
 
     /**
      * Stack of {@code FIX}-bound recursive relation names currently in lexical
@@ -422,7 +430,7 @@ public final class RelAlgebraParser {
                 operator.type() == TokenType.ANTI_JOIN ||
                 operator.type() == TokenType.UNIVERSAL_SEMI_JOIN) {
                 requireJoinCondition(operator, left);
-                condition = parsePredicate();
+                condition = parseJoinCondition(leftStart);
             } else if (operator.type() == TokenType.ASOF_JOIN) {
                 // Optional INNER keyword switches from left-outer to inner mode.
                 if (current.type() == TokenType.IDENTIFIER && "inner".equalsIgnoreCase(current.lexeme())) {
@@ -430,7 +438,7 @@ public final class RelAlgebraParser {
                     advance();
                 }
                 requireJoinCondition(operator, left);
-                condition = parsePredicate();
+                condition = parseJoinCondition(leftStart);
                 // Optional WITHIN <durExpr> tolerance clause.
                 if (current.type() == TokenType.WITHIN) {
                     advance();
@@ -1033,12 +1041,16 @@ public final class RelAlgebraParser {
 
     private RenameNode parseRename() {
         Token opTok = current;
+        int opAt = consumed.size();
         expect(TokenType.RENAME, "Expected 'ρ'");
 
         // The new relation name is optional: `ρ (a → b) (R)` renames columns only.
         Optional<String> relationName = Optional.empty();
         if (isNameToken(current)) {
             relationName = Optional.of(expectName("Expected new relation name after 'ρ'").lexeme());
+            if (current.type() == TokenType.ARROW) {
+                rejectUnparenthesizedRename(opAt);
+            }
         }
 
         List<String> attributes = List.of();
@@ -1056,6 +1068,42 @@ public final class RelAlgebraParser {
 
         RelNode input = parseParenthesizedRelation("Expected '(' after rename target");
         return new RenameNode(relationName, attributes, pairs, input, loc(opTok));
+    }
+
+    /**
+     * Refuses {@code RENAME a -> b (R)} at its arrow, with the pairs put in parentheses:
+     * {@code RENAME (a -> b) (R)}. Left alone, {@code a} is read as the relation's new
+     * name and the arrow is reported as where the input should start, which names
+     * neither the parentheses nor the pairs.
+     */
+    private void rejectUnparenthesizedRename(int opAt) {
+        Token arrow = current;
+        String problem = "the columns to rename go in parentheses";
+        List<String> attributes = new ArrayList<>();
+        try {
+            advance();
+            expectName("Expected new column name after '→'");
+            while (match(TokenType.COMMA)) {
+                parseRenameListElement(attributes, new ArrayList<>());
+            }
+        } catch (ParseException e) {
+            throw ParseException.at(problem, lexer.input(), arrow);
+        }
+        if (!attributes.isEmpty()) {
+            // A bare name among the pairs: the list would not parse in parentheses either.
+            throw ParseException.at(problem, lexer.input(), arrow);
+        }
+        String pairs = writtenFrom(opAt + 1);
+        String input;
+        try {
+            int start = consumed.size();
+            parseParenthesizedRelation("Expected '(' after rename target");
+            input = writtenFrom(start);
+        } catch (ParseException e) {
+            input = "(…)";
+        }
+        throw ParseException.at(problem + ": write " + writtenBetween(opAt, opAt + 1) + " (" + pairs + ") "
+                + input, lexer.input(), arrow);
     }
 
     /** The parsed column-list of a rename — exactly one of the two lists is populated. */
@@ -3234,6 +3282,7 @@ public final class RelAlgebraParser {
             Token open = current;
             advance();
             Predicate predicate = parsePredicate();
+            rejectRightInputInCondition(open);
             expect(TokenType.RPAREN, "Expected ')' after predicate");
             // A parenthesised predicate followed by a condition tail is not the
             // predicate itself but its *truth value* in operand position:
@@ -3936,6 +3985,40 @@ public final class RelAlgebraParser {
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /**
+     * Parses a join's condition, noting the parenthesis it opens with, if any, so that
+     * {@code T >< (a = M.a M)} is refused at {@code M} by
+     * {@link #rejectRightInputInCondition}.
+     */
+    private Predicate parseJoinCondition(int leftStart) {
+        JoinConditionParen outer = joinConditionParen;
+        joinConditionParen = current.type() == TokenType.LPAREN
+                ? new JoinConditionParen(current, leftStart) : null;
+        try {
+            return parsePredicate();
+        } finally {
+            joinConditionParen = outer;
+        }
+    }
+
+    /**
+     * Refuses a join's right input written inside its condition's parentheses,
+     * {@code T >< (age_group = M.age_group M)}, at the name, with the name moved after
+     * the parenthesis. Left alone, the name is reported as where the {@code )} should
+     * be, and nothing says the name belongs outside it: a reader who had written
+     * {@code OR} or {@code AND} in the condition blames that instead.
+     */
+    private void rejectRightInputInCondition(Token open) {
+        JoinConditionParen paren = joinConditionParen;
+        if (paren == null || paren.open() != open || current.type() != TokenType.IDENTIFIER
+                || peek(1).type() != TokenType.RPAREN) {
+            return;
+        }
+        throw ParseException.at("the right relation goes after the condition, outside its"
+                + " parentheses: write " + writtenFrom(paren.leftStart()) + ") " + current.lexeme(),
+                lexer.input(), current);
+    }
 
     /**
      * Refuses a conditioned join written with no condition, such as
