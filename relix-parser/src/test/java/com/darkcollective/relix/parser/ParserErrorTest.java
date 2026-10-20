@@ -18,6 +18,7 @@ package com.darkcollective.relix.parser;
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.AntiJoinNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.RenameNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.TopKNode;
 import com.darkcollective.relix.ast.UnionNode;
@@ -427,6 +428,46 @@ final class ParserErrorTest extends ParserTestSupport {
                 .hasMessageContaining(": write TOP 2 WITH TIES seconds ASC (…)")
                 .at(1, 19);
         assertThat(parse("TOP 2 WITH TIES seconds ASC PER age_group (T)")).isNode(TopKNode.class);
+    }
+
+    @Test
+    @DisplayName("RENAME's pairs written without parentheses are reported at the arrow, parenthesized")
+    public void reportsUnparenthesizedRename() {
+        assertThatThrownBy(() -> parse("RENAME age_group -> grp (T)"))
+                .hasMessage("the columns to rename go in parentheses:"
+                        + " write RENAME (age_group -> grp) (T) at line 1, column 18");
+        assertParseError("RENAME age_group -> grp, name -> who (T)")
+                .hasMessageContaining(": write RENAME (age_group -> grp, name -> who) (T)")
+                .at(1, 18);
+        assertParseError("ρ age_group → grp (T)")
+                .hasMessageContaining(": write ρ (age_group → grp) (T)")
+                .at(1, 13);
+        assertParseError("RENAME age_group -> grp (T")
+                .hasMessageContaining(": write RENAME (age_group -> grp) (…)")
+                .at(1, 18);
+        assertThatThrownBy(() -> parse("RENAME age_group -> grp, name (T)"))
+                .hasMessage("the columns to rename go in parentheses at line 1, column 18");
+        assertThat(parse("RENAME (age_group -> grp) (T)")).isNode(RenameNode.class);
+    }
+
+    @Test
+    @DisplayName("a join's right input inside its condition's parentheses is reported at the name, moved after them")
+    public void reportsRightInputInCondition() {
+        assertThatThrownBy(() -> parse("T >< (age_group = M.age_group M)"))
+                .hasMessage("the right relation goes after the condition, outside its parentheses:"
+                        + " write T >< (age_group = M.age_group) M at line 1, column 31");
+        assertParseError("(T >< (T.a = M.a) M) >< (T.age_group = M.age_group M)")
+                .hasMessageContaining(": write (T >< (T.a = M.a) M) >< (T.age_group = M.age_group) M")
+                .at(1, 52);
+        assertParseError("T LJOIN (T.age_group = M.age_group M)")
+                .hasMessageContaining(": write T LJOIN (T.age_group = M.age_group) M")
+                .at(1, 36);
+        assertParseError("σ s = a OR s = b ((F >< (g = A.g) A) >< (g = B.g B))")
+                .hasMessageContaining(": write (F >< (g = A.g) A) >< (g = B.g) B")
+                .at(1, 50);
+        // A name inside a nested parenthesis is not the right input.
+        assertParseError("T >< ((g = M.g M)) M").hasMessageContaining("Expected ')' after predicate");
+        assertThat(parse("T >< (age_group = M.age_group) M")).isNode(ThetaJoinNode.class);
     }
 
     @Test
