@@ -362,18 +362,47 @@ public final class RelAlgebraParser {
      */
     private Token selection;
 
+    /** Where the condition of {@link #selection} starts in {@code consumed}. */
+    private int selectionAt;
+
+    /**
+     * Each aggregate call read in operand position, where only GROUP takes one: its
+     * first and past-last index in {@code consumed}, and its {@code *} argument's
+     * index, or -1. An operator that read one says where it goes.
+     */
+    private final List<int[]> aggregateCalls = new ArrayList<>();
+
+    /**
+     * Whether {@code COUNT(*)} in operand position is read for now and reported once
+     * its operator's input is, so the report can rewrite the operator: true while a
+     * PROJECT's items or a SELECT's condition are read. Parsing a relation clears it.
+     */
+    private boolean deferAggregateStar;
+
+    /** Where the GROUP whose aggregates are being read starts in {@code consumed}; -1 outside one. */
+    private int groupAt = -1;
+
+    /** The {@code *} an aggregate other than COUNT was given in that GROUP, reported after its input; or null. */
+    private Token groupStar;
+
     private RelNode parseExpression(int minPrecedence) {
         if (++depth > MAX_NESTING_DEPTH) {
             throw error(current, "expression nests more than " + MAX_NESTING_DEPTH
                     + " levels deep");
         }
         Token enclosing = selection;
+        boolean enclosingDefer = deferAggregateStar;
+        int enclosingGroup = groupAt;
         selection = null;
+        deferAggregateStar = false;
+        groupAt = -1;
         try {
             return parseExpressionAtDepth(minPrecedence);
         } finally {
             depth--;
             selection = enclosing;
+            deferAggregateStar = enclosingDefer;
+            groupAt = enclosingGroup;
         }
     }
 
@@ -972,6 +1001,11 @@ public final class RelAlgebraParser {
             sb.append(next.lexeme());
         }
 
+        if (!dotted && current.type() == TokenType.LPAREN && opensCall(startTok, current)
+                && isAggregateName(firstName)) {
+            rejectAggregateAsRelation(startTok);
+        }
+
         // An identifier immediately followed by '(' in relation position is a
         // table-valued (relation-returning) function call, e.g. recentOrders(2).
         if (current.type() == TokenType.LPAREN) {
@@ -1011,7 +1045,17 @@ public final class RelAlgebraParser {
         if (current.type() == TokenType.DISTINCT && startsSqlDistinctColumns(1)) {
             rejectSqlDistinct(opTok.lexeme() + " takes no DISTINCT");
         }
-        ProjectionOperands attributes = parseProjectionOperandList();
+        rejectEveryColumn(opTok);
+        int itemsStart = consumed.size();
+        boolean enclosingDefer = deferAggregateStar;
+        deferAggregateStar = true;
+        ProjectionOperands attributes;
+        try {
+            attributes = parseProjectionOperandList();
+        } finally {
+            deferAggregateStar = enclosingDefer;
+        }
+        int itemsEnd = consumed.size();
 
         if (attributes.hadComma() && current.type() == TokenType.EOF) {
             throw error(new Token(
@@ -1023,7 +1067,9 @@ public final class RelAlgebraParser {
             ), "Expected '(' after projection attribute list");
         }
 
+        int inputStart = consumed.size();
         RelNode input = parseParenthesizedRelation("Expected '(' after projection attribute list");
+        rejectCountStar(itemsStart, itemsEnd, inputStart, false, isGlyph(opTok));
         return new ProjectionNode(attributes.operands(), input, loc(opTok));
     }
 
@@ -1033,15 +1079,26 @@ public final class RelAlgebraParser {
         if (current.type() == TokenType.DISTINCT && startsSqlDistinctColumns(1)) {
             rejectSqlDistinct(opTok.lexeme() + " filters rows");
         }
+        rejectEveryColumn(opTok);
         Token enclosing = selection;
+        int enclosingAt = selectionAt;
+        boolean enclosingDefer = deferAggregateStar;
         selection = opTok;
+        selectionAt = consumed.size();
+        deferAggregateStar = true;
+        int conditionStart = consumed.size();
         Predicate predicate;
         try {
             predicate = parsePredicate();
         } finally {
             selection = enclosing;
+            selectionAt = enclosingAt;
+            deferAggregateStar = enclosingDefer;
         }
+        int conditionEnd = consumed.size();
+        int inputStart = consumed.size();
         RelNode input = parseParenthesizedRelation("Expected '(' after selection predicate");
+        rejectCountStar(conditionStart, conditionEnd, inputStart, true, isGlyph(opTok));
         return new SelectionNode(predicate, input, loc(opTok));
     }
 
@@ -1161,8 +1218,23 @@ public final class RelAlgebraParser {
                 rejectKeysOnlyGroup(opTok, keysStart);
             }
         }
-        List<AggregateFunction> aggregates = parseAggregateFunctionList();
+        int enclosingGroup = groupAt;
+        Token enclosingStar = groupStar;
+        groupAt = opAt;
+        groupStar = null;
+        List<AggregateFunction> aggregates;
+        Token star;
+        try {
+            aggregates = parseAggregateFunctionList();
+        } finally {
+            star = groupStar;
+            groupAt = enclosingGroup;
+            groupStar = enclosingStar;
+        }
         RelNode input = parseParenthesizedRelation("Expected '(' after aggregation expression");
+        if (star != null) {
+            rejectStarArgument(star, opAt);
+        }
 
         return new AggregationNode(grouping.keys(), grouping.sets(), aggregates, input, loc(opTok));
     }
@@ -2924,13 +2996,17 @@ public final class RelAlgebraParser {
         return writtenBetween(start, consumed.size());
     }
 
+    /** Whether the source had space, or a line break, between two tokens. */
+    private static boolean spaced(Token previous, Token token) {
+        return token.line() != previous.line() || token.column() > previous.column() + previous.lexeme().length();
+    }
+
     /** The tokens {@code consumed[start]} up to {@code consumed[end]}, as {@link #writtenFrom}. */
     private String writtenBetween(int start, int end) {
         StringBuilder text = new StringBuilder();
         Token previous = null;
         for (Token token : consumed.subList(start, end)) {
-            if (previous != null && (token.line() != previous.line()
-                    || token.column() > previous.column() + previous.lexeme().length())) {
+            if (previous != null && spaced(previous, token)) {
                 text.append(' ');
             }
             text.append(token.lexeme());
@@ -3003,6 +3079,17 @@ public final class RelAlgebraParser {
                 && current.type() == TokenType.MULTIPLY
                 && peek(1).type() == TokenType.RPAREN) {
             Token star = current;
+            advance();
+            argument = new NumberOperand("1", loc(star));
+        } else if (!distinct && current.type() == TokenType.MULTIPLY && peek(1).type() == TokenType.RPAREN) {
+            // SUM(*): reported once the GROUP's input is read, so the GROUP can be echoed.
+            Token star = current;
+            if (groupAt < 0) {
+                rejectStarArgument(star, -1);
+            }
+            if (groupStar == null) {
+                groupStar = star;
+            }
             advance();
             argument = new NumberOperand("1", loc(star));
         } else {
@@ -3407,13 +3494,16 @@ public final class RelAlgebraParser {
             return predicate;
         }
 
+        int leftStart = seed != null ? -1 : consumed.size();
         Operand left = seed != null ? seed : parseOperand();
+        int leftEnd = consumed.size();
 
         // Check for element-of predicates (∈, ∉, IN, or NOT IN)
         if (current.type() == TokenType.ELEMENT_OF || current.type() == TokenType.NOT_ELEMENT_OF) {
             Token opTok = current;
             boolean isNegated = opTok.type() == TokenType.NOT_ELEMENT_OF;
             advance();
+            rejectSubquery(leftStart, leftEnd, isNegated);
 
             Operand setExpr = parseSetExpression();
             return new ElementOfPredicate(left, setExpr, isNegated, loc(opTok));
@@ -3423,6 +3513,7 @@ public final class RelAlgebraParser {
             Token notTok = current;
             advance(); // consume NOT
             advance(); // consume IN
+            rejectSubquery(leftStart, leftEnd, true);
             Operand setExpr = parseSetExpression();
             return new ElementOfPredicate(left, setExpr, true, loc(notTok));
         }
@@ -3549,11 +3640,296 @@ public final class RelAlgebraParser {
                 || current.type() != TokenType.ARROW && current.type() != TokenType.COMMA) {
             return;
         }
-        String written = selection.lexeme().equals("σ") ? "'σ'" : "'" + selection.lexeme() + "' (σ)";
-        throw ParseException.at(written + " filters rows by a"
-                + " condition, and found '" + current.lexeme() + "' where its comparison"
-                + " belongs. To choose or compute columns, use PROJECT (π):"
-                + " PROJECT a, b * 2 -> c (R)", lexer.input(), current);
+        Token sign = current;
+        Token select = selection;
+        if (callsBetween(selectionAt, consumed.size()).isEmpty()) {
+            String written = select.lexeme().equals("σ") ? "'σ'" : "'" + select.lexeme() + "' (σ)";
+            throw ParseException.at(written + " filters rows by a"
+                    + " condition, and found '" + sign.lexeme() + "' where its comparison"
+                    + " belongs. To choose or compute columns, use PROJECT (π):"
+                    + " PROJECT a, b * 2 -> c (R)", lexer.input(), sign);
+        }
+        // An aggregate before the '->' or ',': GROUP computes it, which PROJECT cannot.
+        int itemsStart = selectionAt;
+        String fix = null;
+        Token at = sign;
+        try {
+            if (match(TokenType.ARROW)) {
+                expectName("Expected alias after '→'");
+            }
+            if (match(TokenType.COMMA)) {
+                parseProjectionOperandList();
+            }
+            int itemsEnd = consumed.size();
+            int inputStart = consumed.size();
+            parseParenthesizedRelation("Expected '(' after the columns");
+            fix = groupForm(itemsStart, itemsEnd, writtenFrom(inputStart), false, isGlyph(select));
+            at = firstStar(itemsStart, sign);
+        } catch (ParseException e) {
+            // The rest does not read as columns and an input: say only where aggregates go.
+        }
+        throw ParseException.at("'" + select.lexeme() + "' filters rows; an aggregate belongs in "
+                + (isGlyph(select) ? "γ" : "GROUP") + ": write "
+                + (fix != null ? fix : (isGlyph(select) ? "γ" : "GROUP") + " AVG(x) -> avg (R)"),
+                lexer.input(), at);
+    }
+
+    /**
+     * Refuses {@code COUNT(*)} read outside GROUP in a PROJECT's items or a SELECT's
+     * condition, between {@code start} and {@code end}, at its {@code *}, naming the GROUP
+     * that computes it with the operator's own items and input: {@code GROUP COUNT(*) -> n
+     * (R)}, or {@code PROJECT s / n -> avg (GROUP SUM(x) -> s, COUNT(*) -> n (R))}.
+     */
+    private void rejectCountStar(int start, int end, int inputStart, boolean condition, boolean glyph) {
+        Token star = firstStar(start, null);
+        if (star == null) {
+            return;
+        }
+        String group = glyph ? "γ" : "GROUP";
+        String fix = groupForm(start, end, writtenFrom(inputStart), condition, glyph);
+        throw ParseException.at("COUNT(*) is an aggregate and belongs in " + group + ": write "
+                + (fix != null ? fix : group + " COUNT(*) -> n " + writtenFrom(inputStart)),
+                lexer.input(), star);
+    }
+
+    /**
+     * Refuses an aggregate called in relation position, {@code COUNT(*) (R)}, naming the
+     * GROUP that computes it: {@code GROUP COUNT(*) -> n (R)}. Left alone, it is read as
+     * a table-valued function call, whose {@code *} or input does not parse.
+     */
+    private void rejectAggregateAsRelation(Token name) {
+        int start = consumed.size() - 1;
+        boolean enclosingDefer = deferAggregateStar;
+        deferAggregateStar = true;
+        try {
+            parseOperandFromNameToken(name);
+        } finally {
+            deferAggregateStar = enclosingDefer;
+        }
+        int end = consumed.size();
+        String call = writtenBetween(start, end);
+        String fix = null;
+        if (current.type() == TokenType.LPAREN) {
+            int inputStart = consumed.size();
+            try {
+                parseParenthesizedRelation("Expected '(' after the aggregate");
+                fix = groupForm(start, end, writtenFrom(inputStart), false, false);
+            } catch (ParseException e) {
+                // No input to echo: the plain form below.
+            }
+        }
+        throw ParseException.at(call + " is an aggregate and belongs in GROUP: write "
+                + (fix != null ? fix : "GROUP " + call + " -> " + aggregateName(start, Set.of()) + " (R)"),
+                lexer.input(), firstStar(start, name));
+    }
+
+    /**
+     * Refuses {@code *} given to an aggregate that is not COUNT: {@code SUM(*)} has no
+     * column to add up. Inside a GROUP that starts at {@code consumed[groupStart]}, read
+     * to the end of its input, the GROUP is echoed with a column in its place; else
+     * {@code -1}.
+     */
+    private void rejectStarArgument(Token star, int groupStart) {
+        int starAt = consumed.indexOf(star);
+        Token name = consumed.get(starAt < 0 ? consumed.size() - 2 : starAt - 2);
+        String fn = name.lexeme();
+        if (fn.equalsIgnoreCase("COUNT")) {
+            throw ParseException.at("COUNT(*) is an aggregate and belongs in GROUP: write"
+                    + " GROUP COUNT(*) -> n (R)", lexer.input(), star);
+        }
+        String problem = fn + " needs a column, and only COUNT takes *";
+        if (groupStart < 0) {
+            throw ParseException.at(problem + ": write " + fn + "(column), or COUNT(*) to count rows",
+                    lexer.input(), star);
+        }
+        throw ParseException.at(problem + ": write " + writtenBetween(groupStart, starAt) + "column"
+                + writtenFrom(starAt + 1) + ", naming the column, or COUNT(*) to count rows",
+                lexer.input(), star);
+    }
+
+    /**
+     * Refuses SQL's {@code SELECT *} or {@code PROJECT *} at the {@code *}: a relation
+     * already has every column, so the relation alone is meant.
+     */
+    private void rejectEveryColumn(Token opTok) {
+        if (current.type() != TokenType.MULTIPLY || peek(1).type() != TokenType.LPAREN) {
+            return;
+        }
+        Token star = current;
+        advance();
+        String relation = "R";
+        int start = consumed.size();
+        try {
+            parseParenthesizedRelation("Expected '(' after '*'");
+            relation = writtenBetween(start + 1, consumed.size() - 1);
+        } catch (ParseException e) {
+            // Nothing to echo: R stands for it.
+        }
+        boolean filter = opTok.type() == TokenType.SELECT;
+        throw ParseException.at("a relation already has all its columns: write " + relation
+                + (filter ? ", or " + opTok.lexeme() + " a condition (" + relation + ")" : ""),
+                lexer.input(), star);
+    }
+
+    /**
+     * The aggregate calls read between two indices of {@code consumed}, outermost only, in
+     * order. A call is recorded when it closes, so after any call inside it.
+     */
+    private List<int[]> callsBetween(int start, int end) {
+        List<int[]> calls = new ArrayList<>();
+        for (int[] call : aggregateCalls) {
+            if (call[0] >= start && call[1] <= end) {
+                calls.removeIf(inner -> call[0] <= inner[0]);
+                calls.add(call);
+            }
+        }
+        return calls;
+    }
+
+    /**
+     * The first {@code *} given to an aggregate from {@code consumed[start]} on; else
+     * {@code otherwise}. One in a relation read since is reported by that relation's own
+     * operator, so none is past the range asked about.
+     */
+    private Token firstStar(int start, Token otherwise) {
+        for (int[] call : aggregateCalls) {
+            if (call[2] >= start) {
+                return consumed.get(call[2]);
+            }
+        }
+        return otherwise;
+    }
+
+    /**
+     * Relix's form of items that use aggregates outside GROUP, read from
+     * {@code consumed[start]} to {@code consumed[end]}, over {@code input} as written.
+     * Plain columns become GROUP's keys and aggregates its aggregates, named by their
+     * item's alias or else {@code n} for COUNT and an initial otherwise; an item that
+     * computes with aggregates, or a condition, is then written over the GROUP:
+     * {@code PROJECT s / n -> avg (GROUP SUM(x) -> s, COUNT(*) -> n (R))}. Null when an
+     * item computes with a column, which would need to be a key.
+     */
+    private String groupForm(int start, int end, String input, boolean condition, boolean glyph) {
+        List<int[]> calls = callsBetween(start, end);
+        String arrow = glyph ? " → " : " -> ";
+        List<int[]> items = condition ? List.<int[]>of(new int[] {start, end}) : itemsBetween(start, end);
+        Set<String> used = new HashSet<>();
+        for (int[] item : items) {
+            if (item[1] - item[0] >= 3 && consumed.get(item[1] - 2).type() == TokenType.ARROW) {
+                used.add(consumed.get(item[1] - 1).lexeme());
+            }
+        }
+        List<String> keys = new ArrayList<>();
+        List<String> aggregates = new ArrayList<>();
+        List<String> outer = new ArrayList<>();
+        boolean computed = condition;
+        for (int[] item : items) {
+            boolean aliased = item[1] - item[0] >= 3 && consumed.get(item[1] - 2).type() == TokenType.ARROW;
+            int exprEnd = aliased ? item[1] - 2 : item[1];
+            String alias = aliased ? consumed.get(item[1] - 1).lexeme() : null;
+            List<int[]> own = calls.stream().filter(c -> c[0] >= item[0] && c[1] <= exprEnd).toList();
+            if (own.size() == 1 && own.getFirst()[0] == item[0] && own.getFirst()[1] == exprEnd) {
+                String name = alias != null ? alias : aggregateName(item[0], used);
+                used.add(name);
+                aggregates.add(writtenBetween(item[0], exprEnd) + arrow + name);
+                outer.add(name);
+            } else if (own.isEmpty()) {
+                if (!isColumnName(item[0], exprEnd)) {
+                    return null;
+                }
+                keys.add(writtenBetween(item[0], item[1]));
+                outer.add(alias != null ? alias : writtenBetween(item[0], exprEnd));
+            } else {
+                computed = true;
+                StringBuilder text = new StringBuilder();
+                Token previous = null;
+                for (int i = item[0]; i < exprEnd; i++) {
+                    int index = i;
+                    int[] call = own.stream().filter(c -> c[0] == index).findFirst().orElse(null);
+                    Token token = consumed.get(i);
+                    if (previous != null && spaced(previous, token)) {
+                        text.append(' ');
+                    }
+                    if (call != null) {
+                        String name = aggregateName(call[0], used);
+                        used.add(name);
+                        aggregates.add(writtenBetween(call[0], call[1]) + arrow + name);
+                        text.append(name);
+                        previous = consumed.get(call[1] - 1);
+                        i = call[1] - 1;
+                    } else if (token.type() == TokenType.IDENTIFIER
+                            && consumed.get(i + 1).type() != TokenType.LPAREN) {
+                        return null; // A column outside an aggregate, which would need to be a key.
+                    } else {
+                        text.append(token.lexeme());
+                        previous = token;
+                    }
+                }
+                outer.add(alias != null ? text + arrow + alias : text.toString());
+            }
+        }
+        if (aggregates.isEmpty()) {
+            return null;
+        }
+        List<String> grouped = new ArrayList<>(keys);
+        grouped.addAll(aggregates);
+        String group = (glyph ? "γ " : "GROUP ") + String.join(", ", grouped) + " " + input;
+        if (!computed) {
+            return group;
+        }
+        String op = condition ? (glyph ? "σ " : "SELECT ") : (glyph ? "π " : "PROJECT ");
+        return op + String.join(", ", outer) + " (" + group + ")";
+    }
+
+    /** The items of a list between two indices of {@code consumed}, split at its own commas. */
+    private List<int[]> itemsBetween(int start, int end) {
+        List<int[]> items = new ArrayList<>();
+        int depth = 0;
+        int from = start;
+        for (int i = start; i < end; i++) {
+            switch (consumed.get(i).type()) {
+                case LPAREN, LBRACE, LBRACKET -> depth++;
+                case RPAREN, RBRACE, RBRACKET -> depth--;
+                case COMMA -> {
+                    if (depth == 0) {
+                        items.add(new int[] {from, i});
+                        from = i + 1;
+                    }
+                }
+                default -> { }
+            }
+        }
+        items.add(new int[] {from, end});
+        return items;
+    }
+
+    /** Whether the tokens between two indices of {@code consumed} are one column's name, dotted or not. */
+    private boolean isColumnName(int start, int end) {
+        for (int i = start; i < end; i++) {
+            boolean name = (i - start) % 2 == 0;
+            if (name ? !isNameToken(consumed.get(i)) : consumed.get(i).type() != TokenType.DOT) {
+                return false;
+            }
+        }
+        return (end - start) % 2 == 1;
+    }
+
+    /** A name for the aggregate called at {@code consumed[call]}: n for COUNT, else its initial; not one of {@code used}. */
+    private String aggregateName(int call, Set<String> used) {
+        String fn = consumed.get(call).lexeme();
+        String base = fn.equalsIgnoreCase("COUNT") ? "n" : fn.substring(0, 1).toLowerCase(java.util.Locale.ROOT);
+        String name = base;
+        for (int i = 2; used.contains(name); i++) {
+            name = base + i;
+        }
+        return name;
+    }
+
+    /** Whether {@code name} is an aggregate's, in any case: a keyword aggregate or a named one. */
+    private static boolean isAggregateName(String name) {
+        String upper = name.toUpperCase(java.util.Locale.ROOT);
+        return Set.of("SUM", "AVG", "COUNT", "MIN", "MAX", "COLLECT", "ARGMAX", "ARGMIN").contains(upper)
+                || NAMED_AGGREGATES.containsKey(upper);
     }
 
     /**
@@ -3645,8 +4021,63 @@ public final class RelAlgebraParser {
         } else if (current.type() == TokenType.IDENTIFIER) {
             return parseOperand();
         } else {
-            throw error(current, "Expected set literal {items}, (SELECT ...), or relation name");
+            throw error(current, "Expected set literal {items}, '(', or a name");
         }
+    }
+
+    /**
+     * Refuses SQL's subquery after {@code IN}, {@code x IN (SELECT y FROM S)} or
+     * {@code x IN (SELECT y (S))}, at its {@code SELECT}: IN takes a set, and membership
+     * in another relation is a semi-join, or an anti-join for {@code NOT IN}. When the
+     * test is a selection's whole condition over a named relation, the join is written
+     * out: {@code R SEMI R.x = S.y S}. The subject is {@code consumed[subjectStart]} up to
+     * {@code consumed[subjectEnd]}; {@code subjectStart} is -1 when it was read elsewhere.
+     */
+    private void rejectSubquery(int subjectStart, int subjectEnd, boolean negated) {
+        if (current.type() != TokenType.LPAREN || peek(1).type() != TokenType.SELECT) {
+            return;
+        }
+        Token select = peek(1);
+        String join = negated ? "ANTI" : "SEMI";
+        String problem = "IN takes a set such as {1, 2}; to keep rows with " + (negated ? "no" : "a")
+                + " match in another relation write ";
+        String fix = null;
+        try {
+            Token enclosing = selection;
+            int conditionStart = selectionAt;
+            advance(); // (
+            advance(); // SELECT
+            int columnStart = consumed.size();
+            parseOperand();
+            int columnEnd = consumed.size();
+            String column = writtenFrom(columnStart);
+            String inner;
+            boolean named = true;
+            if (matchWord("FROM")) {
+                inner = expectName("Expected a relation after FROM").lexeme();
+            } else {
+                int innerStart = consumed.size();
+                parseParenthesizedRelation("Expected '(' after the column");
+                inner = writtenBetween(innerStart + 1, consumed.size() - 1);
+                named = isColumnName(innerStart + 1, consumed.size() - 1);
+            }
+            expect(TokenType.RPAREN, "Expected ')' after the subquery");
+            if (enclosing != null && subjectStart == conditionStart && current.type() == TokenType.LPAREN) {
+                int outerStart = consumed.size();
+                parseParenthesizedRelation("Expected '(' after selection predicate");
+                String outer = writtenBetween(outerStart + 1, consumed.size() - 1);
+                String subject = writtenBetween(subjectStart, subjectEnd);
+                if (named && isColumnName(outerStart + 1, consumed.size() - 1)
+                        && isColumnName(subjectStart, subjectEnd) && isColumnName(columnStart, columnEnd)) {
+                    fix = outer + " " + join + " " + (subject.contains(".") ? subject : outer + "." + subject)
+                            + " = " + (column.contains(".") ? column : inner + "." + column) + " " + inner;
+                }
+            }
+        } catch (ParseException e) {
+            // Not the subquery shapes this reads: the general form below.
+        }
+        throw ParseException.at(problem + (fix != null ? fix : "R " + join + " R.x = S.y S"),
+                lexer.input(), select);
     }
 
     /**
@@ -3932,7 +4363,21 @@ public final class RelAlgebraParser {
             if (sb.toString().equalsIgnoreCase("SUBSTRING") || sb.toString().equalsIgnoreCase("POSITION")) {
                 return parseSqlStringCall(sb.toString(), nameToken);
             }
+            int callStart = consumed.lastIndexOf(nameToken);
+            boolean aggregate = isAggregateName(sb.toString());
             advance(); // consume '('
+            if (aggregate && current.type() == TokenType.MULTIPLY) {
+                // COUNT(*) outside GROUP: read for now when its operator will say where it goes.
+                Token star = current;
+                if (!deferAggregateStar || !sb.toString().equalsIgnoreCase("COUNT")) {
+                    rejectStarArgument(star, -1);
+                }
+                int starAt = consumed.size();
+                advance();
+                expect(TokenType.RPAREN, "Expected ')' after COUNT(*");
+                aggregateCalls.add(new int[] {callStart, consumed.size(), starAt});
+                return new FunctionCall(sb.toString(), List.of(), loc(nameToken));
+            }
             List<Operand> arguments = new ArrayList<>();
             if (current.type() != TokenType.RPAREN) {
                 do {
@@ -3940,6 +4385,9 @@ public final class RelAlgebraParser {
                 } while (match(TokenType.COMMA));
             }
             expect(TokenType.RPAREN, "Expected ')' after function arguments");
+            if (aggregate) {
+                aggregateCalls.add(new int[] {callStart, consumed.size(), -1});
+            }
             return new FunctionCall(sb.toString(), arguments, loc(nameToken));
         }
         return new AttributeOperand(sb.toString(), loc(nameToken));

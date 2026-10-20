@@ -579,6 +579,65 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("*, an aggregate in SELECT and IN (SELECT …) name GROUP, the relation or SEMI (#188)")
+        void starAggregateAndSubqueryDiagnosed() {
+            String tables = "orders := [| customer_id | total |\n| 1 | 120 |];\n"
+                    + "customers := [| customer_id | name |\n| 1 | a |];\n";
+            // expression, column, the message's end, the rewrite that validates (or null)
+            String[][] cases = {
+                    {"PROJECT COUNT(*) -> n (orders)", "15",
+                            "COUNT(*) is an aggregate and belongs in GROUP: write GROUP COUNT(*) -> n (orders)",
+                            "GROUP COUNT(*) -> n (orders)"},
+                    {"COUNT(*) (orders)", "7",
+                            "COUNT(*) is an aggregate and belongs in GROUP: write GROUP COUNT(*) -> n (orders)",
+                            "GROUP COUNT(*) -> n (orders)"},
+                    {"SELECT SUM(total) / COUNT(*) -> avg (orders)", "27",
+                            "'SELECT' filters rows; an aggregate belongs in GROUP:"
+                                    + " write PROJECT s / n -> avg (GROUP SUM(total) -> s, COUNT(*) -> n (orders))",
+                            "PROJECT s / n -> avg (GROUP SUM(total) -> s, COUNT(*) -> n (orders))"},
+                    {"GROUP SUM(*) -> n (orders)", "11",
+                            "SUM needs a column, and only COUNT takes *: write GROUP SUM(column) -> n (orders),"
+                                    + " naming the column, or COUNT(*) to count rows", null},
+                    {"SELECT * (orders)", "8",
+                            "a relation already has all its columns: write orders, or SELECT a condition (orders)",
+                            "orders"},
+                    {"PROJECT * (orders)", "9", "a relation already has all its columns: write orders", "orders"},
+                    {"SELECT AVG(total) -> avg (orders)", "19",
+                            "'SELECT' filters rows; an aggregate belongs in GROUP: write GROUP AVG(total) -> avg (orders)",
+                            "GROUP AVG(total) -> avg (orders)"},
+                    {"SELECT customer_id IN (SELECT customer_id FROM orders) (customers)", "24",
+                            "IN takes a set such as {1, 2}; to keep rows with a match in another relation write"
+                                    + " customers SEMI customers.customer_id = orders.customer_id orders",
+                            "customers SEMI customers.customer_id = orders.customer_id orders"},
+                    {"SELECT customer_id IN (SELECT customer_id (orders)) (customers)", "24",
+                            "write customers SEMI customers.customer_id = orders.customer_id orders",
+                            "customers SEMI customers.customer_id = orders.customer_id orders"},
+                    {"SELECT customer_id NOT IN (SELECT customer_id FROM orders) (customers)", "28",
+                            "IN takes a set such as {1, 2}; to keep rows with no match in another relation write"
+                                    + " customers ANTI customers.customer_id = orders.customer_id orders",
+                            "customers ANTI customers.customer_id = orders.customer_id orders"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + "Q := { " + c[0] + " };\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .startsWith("Syntax error in RA expression: ")
+                            .endsWith(c[2]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0]).isEqualTo(5);
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
+                    if (c[3] != null) {
+                        assertThat(relix.validate(tables + "Q := { " + c[3] + " };\n"))
+                                .as("the rewrite of " + c[0] + " validates").isEmpty();
+                    }
+                }
+                assertThat(relix.validate(tables + "Q := { GROUP AVG(total) -> avg, COUNT(*) -> n (orders) };\n"))
+                        .isEmpty();
+            }
+        }
+
+        @Test
         @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
         void parseFailurePositionStatedOnce() {
             String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";

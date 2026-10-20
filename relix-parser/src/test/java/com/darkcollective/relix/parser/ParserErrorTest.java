@@ -497,6 +497,105 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("COUNT(*) and * outside GROUP, an aggregate in SELECT and IN (SELECT …) name the fix (#188)")
+    public void reportsStarAggregatesAndSubqueries() {
+        assertParseError("PROJECT region, COUNT(*) -> n (T)")
+                .hasMessageContaining("COUNT(*) is an aggregate and belongs in GROUP:"
+                        + " write GROUP region, COUNT(*) -> n (T)")
+                .at(1, 23);
+        assertParseError("PROJECT COUNT(*) (T)")
+                .hasMessageContaining(": write GROUP COUNT(*) -> n (T)");
+        assertParseError("π region, COUNT(*) + 1 → m (T)")
+                .hasMessageContaining("COUNT(*) is an aggregate and belongs in γ:"
+                        + " write π region, n + 1 → m (γ region, COUNT(*) → n (T))");
+        assertParseError("SELECT COUNT(*) > 5 (T)")
+                .hasMessageContaining(": write SELECT n > 5 (GROUP COUNT(*) -> n (T))")
+                .at(1, 14);
+        // A column computed outside the aggregate would need to be a key: the plain form.
+        assertParseError("PROJECT UPPER(region), COUNT(*) -> n (T)")
+                .hasMessageContaining(": write GROUP COUNT(*) -> n (T)");
+        // Outside an item list or a condition, and * given to another aggregate.
+        assertParseError("T JOIN COUNT(*) = 1 S")
+                .hasMessageContaining("COUNT(*) is an aggregate and belongs in GROUP");
+        assertParseError("PROJECT SUM(*) -> s (T)")
+                .hasMessageContaining("SUM needs a column, and only COUNT takes *: write SUM(column),"
+                        + " or COUNT(*) to count rows")
+                .at(1, 13);
+        assertParseError("γ region, AVG(*) → a (T)")
+                .hasMessageContaining(": write γ region, AVG(column) → a (T), naming the column")
+                .at(1, 15);
+        assertParseError("SUM(total) (T)")
+                .hasMessageContaining("SUM(total) is an aggregate and belongs in GROUP:"
+                        + " write GROUP SUM(total) -> s (T)")
+                .at(1, 1);
+        assertParseError("σ * (T)")
+                .hasMessageContaining("a relation already has all its columns: write T, or σ a condition (T)")
+                .at(1, 3);
+        assertParseError("SELECT MIN(a) -> m, region (T)")
+                .hasMessageContaining("'SELECT' filters rows; an aggregate belongs in GROUP:"
+                        + " write GROUP region, MIN(a) -> m (T)")
+                .at(1, 15);
+        // Not an aggregate: the PROJECT advice stands.
+        assertParseError("SELECT UPPER(a) -> m (T)")
+                .hasMessageContaining("To choose or compute columns, use PROJECT");
+        assertParseError("SELECT a -> b (T)")
+                .hasMessageContaining("To choose or compute columns, use PROJECT");
+        // The subquery anywhere but a selection's whole condition over a name: the general join.
+        assertParseError("SELECT a = 1 AND b IN (SELECT b FROM S) (T)")
+                .hasMessageContaining("to keep rows with a match in another relation write R SEMI R.x = S.y S")
+                .at(1, 24);
+        assertParseError("SELECT b ∉ (SELECT b FROM S) (T)")
+                .hasMessageContaining("with no match in another relation write T ANTI T.b = S.b S");
+        assertParseError("SELECT T.b IN (σ c > 1 (S)) (T)")
+                .hasMessageContaining("write R SEMI R.x = S.y S");
+        // What still reads.
+        assertThat(parse("SELECT b IN {1, 2} (T)")).isNode(SelectionNode.class);
+        assertThat(parse("GROUP region, COUNT(*) -> n (T)")).isNode(AggregationNode.class);
+        assertThat(parse("PROJECT a * 2 -> b (T)")).isNode(ProjectionNode.class);
+    }
+
+    @Test
+    @DisplayName("an aggregate rewrite names each call once, and only its own operator's (#188)")
+    public void rewritesOnlyItsOwnAggregates() {
+        // An aggregate inside another is the outer one's argument; a named aggregate counts.
+        assertParseError("PROJECT SUM(MAX(a)) + COUNT(*) -> x (T)")
+                .hasMessageContaining(": write PROJECT s + n -> x (GROUP SUM(MAX(a)) -> s, COUNT(*) -> n (T))");
+        assertParseError("PROJECT COUNT(*)+1 -> m (T)")
+                .hasMessageContaining(": write PROJECT n+1 -> m (GROUP COUNT(*) -> n (T))");
+        assertParseError("PROJECT MEDIAN(a) -> m, COUNT(*) (T)")
+                .hasMessageContaining(": write GROUP MEDIAN(a) -> m, COUNT(*) -> n (T)");
+        assertParseError("PROJECT 2 * COUNT(*), COUNT(*) -> n (T)")
+                .hasMessageContaining(": write PROJECT 2 * n2, n (GROUP COUNT(*) -> n2, COUNT(*) -> n (T))")
+                .at(1, 19);
+        // Aggregates in the input, or around the operator, are not this operator's.
+        assertParseError("PROJECT COUNT(*) -> n (SELECT SUM(x) > 1 (T))")
+                .hasMessageContaining(": write GROUP COUNT(*) -> n (SELECT SUM(x) > 1 (T))");
+        assertParseError("SELECT COUNT(*) > 1 (PROJECT COUNT(*) -> n (T))")
+                .hasMessageContaining(": write GROUP COUNT(*) -> n (T)")
+                .at(1, 36);
+        assertParseError("PROJECT COUNT(*\n (T)").hasMessageContaining("Expected ')' after COUNT(*");
+        // A '*' that is not before the input is not every column.
+        assertThatThrownBy(() -> parse("SELECT * FROM T")).hasMessageNotContaining("all its columns");
+    }
+
+    @Test
+    @DisplayName("IN (SELECT …) writes the semi-join out only over plain names (#188)")
+    public void subqueryJoinOverPlainNames() {
+        String general = "write R SEMI R.x = S.y S";
+        for (String script : List.of(
+                "SELECT b IN (SELECT b FROM S) (DISTINCT (T))",
+                "SELECT b IN (SELECT b (DISTINCT (S))) (T)",
+                "SELECT b + 1 IN (SELECT b FROM S) (T)",
+                "SELECT b IN (SELECT b + 1 FROM S) (T)",
+                "SELECT b IN (SELECT b FROM S) AND a = 1 (T)",
+                "T >< T.b IN (SELECT b FROM S) S")) {
+            assertParseError(script).as(script).hasMessageContaining(general);
+        }
+        assertParseError("SELECT T.b IN (SELECT S.b FROM S) (ns.T)")
+                .hasMessageContaining("write ns.T SEMI T.b = S.b S");
+    }
+
+    @Test
     @DisplayName("a join's right input inside its condition's parentheses is reported at the name, moved after them")
     public void reportsRightInputInCondition() {
         assertThatThrownBy(() -> parse("T >< (age_group = M.age_group M)"))
