@@ -1008,6 +1008,9 @@ public final class RelAlgebraParser {
     private ProjectionNode parseProjection() {
         Token opTok = current;
         expect(TokenType.PROJECT, "Expected 'π'");
+        if (current.type() == TokenType.DISTINCT && startsSqlDistinctColumns(1)) {
+            rejectSqlDistinct(opTok.lexeme() + " takes no DISTINCT");
+        }
         ProjectionOperands attributes = parseProjectionOperandList();
 
         if (attributes.hadComma() && current.type() == TokenType.EOF) {
@@ -1027,6 +1030,9 @@ public final class RelAlgebraParser {
     private SelectionNode parseSelection() {
         Token opTok = current;
         expect(TokenType.SELECT, "Expected 'σ'");
+        if (current.type() == TokenType.DISTINCT && startsSqlDistinctColumns(1)) {
+            rejectSqlDistinct(opTok.lexeme() + " filters rows");
+        }
         Token enclosing = selection;
         selection = opTok;
         Predicate predicate;
@@ -1138,15 +1144,22 @@ public final class RelAlgebraParser {
         }
     }
 
+    private static final String EXPECTED_AGGREGATE =
+            "Expected aggregate function (SUM, AVG, COUNT, MIN, MAX, COLLECT, ARGMAX, or ARGMIN)";
+
     private AggregationNode parseAggregation() {
         Token opTok = current;
         int opAt = consumed.size();
         expect(TokenType.AGGREGATION, "Expected 'γ'");
         consumeOptionalBy();
 
+        int keysStart = consumed.size();
         Grouping grouping = parseGrouping();
         if (current.type() == TokenType.LPAREN) {
             rejectParenthesizedAggregates(opAt);
+            if (!grouping.keys().isEmpty() && grouping.sets().isEmpty()) {
+                rejectKeysOnlyGroup(opTok, keysStart);
+            }
         }
         List<AggregateFunction> aggregates = parseAggregateFunctionList();
         RelNode input = parseParenthesizedRelation("Expected '(' after aggregation expression");
@@ -1192,6 +1205,37 @@ public final class RelAlgebraParser {
         boolean listed = keysEnd - opAt > 1 && consumed.get(keysEnd - 1).type() != TokenType.COMMA;
         throw ParseException.at(problem + ": write " + keys + (listed ? ", " : " ") + aggregates + " " + input,
                 lexer.input(), open);
+    }
+
+    /**
+     * Refuses {@code GROUP a, b (R)}, keys with no aggregate, at its {@code (}, naming
+     * the distinct rows of those keys: {@code DISTINCT (PROJECT a, b (R))}. SQL's
+     * {@code GROUP BY} without aggregates means that, and before this the message asked
+     * for an aggregate function and said nothing of DISTINCT. When what follows is not
+     * one parenthesized input, that message stays.
+     */
+    private void rejectKeysOnlyGroup(Token opTok, int keysStart) {
+        Token open = current;
+        int keysEnd = consumed.size();
+        if (consumed.get(keysEnd - 1).type() == TokenType.COMMA) {
+            keysEnd--;
+        }
+        String keys = writtenBetween(keysStart, keysEnd);
+        boolean glyph = isGlyph(opTok);
+        String input;
+        try {
+            int start = consumed.size();
+            parseParenthesizedRelation("Expected '(' after aggregation expression");
+            input = writtenFrom(start);
+        } catch (ParseException e) {
+            input = null;
+        }
+        if (input == null || current.type() == TokenType.LPAREN) {
+            // Not keys and an input, as in GROUP k (UPPER(name)) (R): the plain message.
+            throw error(open, EXPECTED_AGGREGATE);
+        }
+        throw ParseException.at(opTok.lexeme() + " needs an aggregate after its keys; for distinct rows write "
+                + (glyph ? "δ (π " : "DISTINCT (PROJECT ") + keys + " " + input + ")", lexer.input(), open);
     }
 
     /** Whether an aggregate call starts at {@code peek(n)}: a keyword aggregate, or a named one before its {@code (}. */
@@ -1275,8 +1319,76 @@ public final class RelAlgebraParser {
     private DistinctNode parseDistinct() {
         Token opTok = current;
         expect(TokenType.DISTINCT, "Expected 'δ'");
-        RelNode input = parseParenthesizedRelation("Expected '(' after 'δ'");
+        String noParen = "Expected '(' after '" + opTok.lexeme() + "'";
+        if (startsSqlDistinctColumns(0)) {
+            // DISTINCT a, b (R): SQL's columns, where Relix takes a relation.
+            Token first = current;
+            String rewrite = distinctOf(opTok);
+            throw ParseException.at(rewrite == null ? noParen
+                    : opTok.lexeme() + " takes a relation, not columns: write " + rewrite, lexer.input(), first);
+        }
+        RelNode input = parseParenthesizedRelation(noParen);
         return new DistinctNode(input, loc(opTok));
+    }
+
+    /**
+     * Whether SQL's columns of a distinct start at {@code peek(n)}: a name followed by
+     * another, or a keyword-spelled name before a comma, or {@code *} before the input's
+     * {@code (}. A keyword followed by anything else may be a column named
+     * {@code distinct} in a condition or list, as in {@code SELECT distinct = 1 (R)}.
+     */
+    private boolean startsSqlDistinctColumns(int n) {
+        Token token = peek(n);
+        return token.type() == TokenType.IDENTIFIER
+                || isNameToken(token) && peek(n + 1).type() == TokenType.COMMA
+                || token.type() == TokenType.MULTIPLY && peek(n + 1).type() == TokenType.LPAREN;
+    }
+
+    /**
+     * Refuses SQL's {@code SELECT DISTINCT a, b (R)} or {@code PROJECT DISTINCT a, b (R)}
+     * at the {@code DISTINCT}, rewritten as Relix's {@code DISTINCT (PROJECT a, b (R))},
+     * or {@code DISTINCT (R)} for {@code *}. Left alone, {@code SELECT} reads the columns
+     * as a condition and {@code PROJECT} reads {@code DISTINCT} as a column.
+     */
+    private void rejectSqlDistinct(String problem) {
+        Token distinct = current;
+        advance();
+        boolean everyColumn = current.type() == TokenType.MULTIPLY;
+        String rewrite = distinctOf(distinct);
+        throw ParseException.at(problem + "; for distinct rows "
+                + (rewrite == null ? "write " + distinct.lexeme() + " (PROJECT … (…))"
+                        : (everyColumn ? "write " : "of some columns write ") + rewrite),
+                lexer.input(), distinct);
+    }
+
+    /**
+     * Reads SQL's columns and input of a distinct, {@code a, b (R)} or {@code * (R)},
+     * and returns them in Relix's form, {@code DISTINCT (PROJECT a, b (R))} or
+     * {@code DISTINCT (R)}, with {@code distinct} spelled as the reader wrote it; null
+     * when they do not parse.
+     */
+    private String distinctOf(Token distinct) {
+        try {
+            if (match(TokenType.MULTIPLY)) {
+                int start = consumed.size();
+                parseParenthesizedRelation("Expected '(' after '*'");
+                return distinct.lexeme() + " " + writtenFrom(start);
+            }
+            int start = consumed.size();
+            parseProjectionOperandList();
+            String columns = writtenFrom(start);
+            int from = consumed.size();
+            parseParenthesizedRelation("Expected '(' after the columns");
+            return distinct.lexeme() + " (" + (isGlyph(distinct) ? "π " : "PROJECT ") + columns + " "
+                    + writtenFrom(from) + ")";
+        } catch (ParseException e) {
+            return null;
+        }
+    }
+
+    /** Whether {@code token} is an operator's glyph, such as {@code δ}, rather than its keyword. */
+    private static boolean isGlyph(Token token) {
+        return token.lexeme().codePointAt(0) > 127;
     }
 
     /**
@@ -2847,8 +2959,7 @@ public final class RelAlgebraParser {
             case COLLECT -> AggregateOperator.COLLECT;
             case ARGMAX -> AggregateOperator.ARGMAX;
             case ARGMIN -> AggregateOperator.ARGMIN;
-            default -> throw error(current,
-                "Expected aggregate function (SUM, AVG, COUNT, MIN, MAX, COLLECT, ARGMAX, or ARGMIN)");
+            default -> throw error(current, EXPECTED_AGGREGATE);
         });
         advance();
 
