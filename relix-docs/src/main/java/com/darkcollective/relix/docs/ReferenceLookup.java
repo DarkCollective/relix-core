@@ -63,6 +63,10 @@ import java.util.regex.Pattern;
  * itself in its {@code # Name: X (…)} heading, or the name when it has none. A function
  * with no {@code docKey}, or whose library serves no page under it, is not indexed.
  *
+ * <p>SQL writes a conditional value with keywords, not a function, so the conditional
+ * functions are keyed by them too: {@code case} and {@code case when} find
+ * {@code Switch}, the multi-branch form, and {@code if} finds {@code IIf}.
+ *
  * <p>An index is immutable and safe to share between threads. Markdown is read when it
  * is asked for, not when the index is built.
  *
@@ -76,6 +80,11 @@ public final class ReferenceLookup {
     /** {@code # Name: Len (string length)} — a page's own one-line summary. */
     private static final Pattern TITLE =
             Pattern.compile("^#\\s*Name:\\s*(\\S+)\\s*\\(([^)]*)\\)", Pattern.MULTILINE);
+
+    /** Function name → the SQL keywords that also find its page, for a value SQL writes with keywords. */
+    private static final Map<String, List<String>> SQL_KEYWORDS = Map.of(
+            "switch", List.of("case", "case when"),
+            "iif", List.of("if"));
 
     /** Where a page's markdown is read from. */
     private enum Source { LANGUAGE, EXTRA, FUNCTION }
@@ -268,8 +277,11 @@ public final class ReferenceLookup {
         if (markdown.isEmpty()) {
             return;
         }
+        List<String> keys = new ArrayList<>();
+        keys.add(name.toLowerCase(Locale.ROOT));
+        keys.addAll(SQL_KEYWORDS.getOrDefault(normalise(name), List.of()));
         ReferencePage page = new ReferencePage(docKey.get(), FUNCTION_CATEGORY, name, name,
-                summaryOf(markdown.get(), name), List.of(name.toLowerCase(Locale.ROOT)));
+                summaryOf(markdown.get(), name), List.copyOf(keys));
         byFunction.putIfAbsent(normalise(name), page);
         categories.computeIfAbsent(category, unused -> new ArrayList<>()).add(page);
         register(new Entry(page, Source.FUNCTION));
