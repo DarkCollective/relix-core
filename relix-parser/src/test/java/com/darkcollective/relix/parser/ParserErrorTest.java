@@ -17,8 +17,11 @@ package com.darkcollective.relix.parser;
 
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.AntiJoinNode;
+import com.darkcollective.relix.ast.DistinctNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
+import com.darkcollective.relix.ast.ProjectionNode;
 import com.darkcollective.relix.ast.RenameNode;
+import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.TopKNode;
 import com.darkcollective.relix.ast.UnionNode;
@@ -405,7 +408,7 @@ final class ParserErrorTest extends ParserTestSupport {
                 .hasMessageContaining(": write GROUP age_group, COUNT(*) -> n (…)")
                 .at(1, 17);
         // A parenthesis not followed by an aggregate call keeps its message.
-        for (String script : List.of("GROUP age_group (T)", "GROUP age_group (UPPER(name)) (T)",
+        for (String script : List.of("GROUP age_group (UPPER(name)) (T)",
                 "GROUP age_group (median (seconds)) (T)")) {
             assertParseError(script).hasMessageContaining("Expected aggregate function").at(1, 17);
         }
@@ -448,6 +451,49 @@ final class ParserErrorTest extends ParserTestSupport {
         assertThatThrownBy(() -> parse("RENAME age_group -> grp, name (T)"))
                 .hasMessage("the columns to rename go in parentheses at line 1, column 18");
         assertThat(parse("RENAME (age_group -> grp) (T)")).isNode(RenameNode.class);
+    }
+
+    @Test
+    @DisplayName("SQL's ways of asking for distinct rows are reported naming DISTINCT (PROJECT …)")
+    public void reportsSqlDistinct() {
+        assertThatThrownBy(() -> parse("SELECT DISTINCT age_group, seconds (T)"))
+                .hasMessage("SELECT filters rows; for distinct rows of some columns write"
+                        + " DISTINCT (PROJECT age_group, seconds (T)) at line 1, column 8");
+        assertParseError("SELECT DISTINCT * (T)")
+                .hasMessageContaining("SELECT filters rows; for distinct rows write DISTINCT (T)")
+                .at(1, 8);
+        assertParseError("DISTINCT age_group, seconds (T)")
+                .hasMessageContaining("DISTINCT takes a relation, not columns:"
+                        + " write DISTINCT (PROJECT age_group, seconds (T))")
+                .at(1, 10);
+        assertParseError("δ age_group (T)")
+                .hasMessageContaining("δ takes a relation, not columns: write δ (π age_group (T))")
+                .at(1, 3);
+        assertParseError("PROJECT DISTINCT age_group, seconds (T)")
+                .hasMessageContaining("PROJECT takes no DISTINCT; for distinct rows of some columns write"
+                        + " DISTINCT (PROJECT age_group, seconds (T))")
+                .at(1, 9);
+        assertParseError("GROUP age_group, seconds (T)")
+                .hasMessageContaining("GROUP needs an aggregate after its keys;"
+                        + " for distinct rows write DISTINCT (PROJECT age_group, seconds (T))")
+                .at(1, 26);
+        assertParseError("GROUP BY age_group, seconds -> n (T)")
+                .hasMessageContaining(" write DISTINCT (PROJECT age_group, seconds -> n (T))")
+                .at(1, 34);
+        assertParseError("DISTINCT date, seconds (T)")
+                .hasMessageContaining(": write DISTINCT (PROJECT date, seconds (T))")
+                .at(1, 10);
+        // Without an input to rewrite, or with no columns, the plain message.
+        assertParseError("DISTINCT age_group").hasMessageContaining("Expected '(' after 'DISTINCT'");
+        assertParseError("DISTINCT count (T)").hasMessageContaining("Expected '(' after 'DISTINCT'");
+        assertParseError("DISTINCT * 2").hasMessageContaining("Expected '(' after 'DISTINCT'");
+        assertParseError("GROUP age_group (T").hasMessageContaining("Expected aggregate function").at(1, 17);
+        assertParseError("GROUP (T)").hasMessageContaining("Expected aggregate function");
+        assertParseError("GROUP ROLLUP (age_group) (T)").hasMessageContaining("Expected aggregate function");
+        assertThat(parse("DISTINCT (PROJECT age_group, seconds (T))")).isNode(DistinctNode.class);
+        // A column named distinct still reads as one.
+        assertThat(parse("SELECT distinct = 1 (T)")).isNode(SelectionNode.class);
+        assertThat(parse("PROJECT distinct, a (T)")).isNode(ProjectionNode.class);
     }
 
     @Test
