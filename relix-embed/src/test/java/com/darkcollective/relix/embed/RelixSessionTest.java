@@ -545,6 +545,40 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("SQL's ways of asking for distinct rows are one error naming DISTINCT (PROJECT …)")
+        void sqlDistinctDiagnosed() {
+            String tables = "T := [| age_group | name | seconds |\n| 1 | a | 2 |];\n";
+            String[][] cases = {
+                    {"SELECT DISTINCT age_group, seconds (T)", "8",
+                            "write DISTINCT (PROJECT age_group, seconds (T))"},
+                    {"SELECT DISTINCT * (T)", "8", "write DISTINCT (T)"},
+                    {"DISTINCT age_group, seconds (T)", "10",
+                            "write DISTINCT (PROJECT age_group, seconds (T))"},
+                    {"PROJECT DISTINCT age_group, seconds (T)", "9",
+                            "write DISTINCT (PROJECT age_group, seconds (T))"},
+                    {"GROUP age_group, seconds (T)", "26",
+                            "write DISTINCT (PROJECT age_group, seconds (T))"},
+                    {"GROUP age_group, seconds -> n (T)", "31",
+                            "write DISTINCT (PROJECT age_group, seconds -> n (T))"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + "Q := { " + c[0] + " };\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .startsWith("Syntax error in RA expression: ")
+                            .endsWith(c[2]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0]).isEqualTo(3);
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
+                    String fixed = c[2].substring("write ".length());
+                    assertThat(relix.validate(tables + "Q := { " + fixed + " };\n"))
+                            .as("the rewrite of " + c[0] + " validates").isEmpty();
+                }
+            }
+        }
+
+        @Test
         @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
         void parseFailurePositionStatedOnce() {
             String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";

@@ -397,7 +397,7 @@ final class AggregationParserTest extends ParserTestSupport {
     @Test
     public void failsOnMissingAggregateFunction() {
         assertParseError("γ dept, (Employees)")
-                .hasMessageContaining("Expected aggregate function");
+                .hasMessageContaining("γ needs an aggregate after its keys; for distinct rows write δ (π dept (Employees))");
     }
 
     @Test
@@ -417,7 +417,7 @@ final class AggregationParserTest extends ParserTestSupport {
     @Test
     public void failsOnNoAggregateFunctions() {
         assertParseError("γ dept, (Employees)")
-                .hasMessageContaining("Expected aggregate function");
+                .hasMessageContaining("γ needs an aggregate after its keys; for distinct rows write δ (π dept (Employees))");
     }
 
     @Test
