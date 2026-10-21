@@ -640,6 +640,8 @@ final class ParserErrorTest extends ParserTestSupport {
         assertThat(parse("customers LJOIN customers.customer_id = orders.customer_id orders"))
                 .isNode(LeftOuterJoinNode.class);
         assertThat(parse("T >< a BETWEEN 1 AND 2 M")).isNode(ThetaJoinNode.class);
+        // Two names with nothing compared after them are not taken for a misplaced relation.
+        assertParseError("customers LJOIN orders customer_id").hasMessageContaining("Expected comparison operator");
     }
 
     @Test

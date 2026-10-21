@@ -669,10 +669,7 @@ public final class RelAlgebraParser {
                 || List.of("AT", "BETWEEN", "MATCHES", "ESCAPE").stream().anyMatch(w -> isWord(peek(1), w))) {
             return;
         }
-        TokenType after = peek(2).type();
-        if (after != TokenType.DOT && !isComparison(after) && after != TokenType.ELEMENT_OF
-                && after != TokenType.NOT_ELEMENT_OF && after != TokenType.LIKE
-                && after != TokenType.IS && after != TokenType.NOT && !isWord(peek(2), "BETWEEN")) {
+        if (peek(2).type() != TokenType.DOT && !isComparison(peek(2).type())) {
             return;
         }
         Token right = current;
