@@ -535,7 +535,26 @@ public final class Relix implements AutoCloseable {
      */
     public List<Relation> script(String relixText) {
         requireWithinInputLimit(relixText);
-        Script parsed = parseForSession(relixText);
+        return script(parseForSession(relixText));
+    }
+
+    /**
+     * Adds every declaration in a script already parsed and returns one {@link Relation}
+     * per {@code query} statement, in order.
+     *
+     * <p>The tree counterpart of {@link #script(String)}, for a caller that reads the
+     * script before running it — to drop a statement, say — and so holds statements
+     * rather than text. Each statement keeps the location it was parsed with, so what a
+     * caller removes leaves the rest on their own lines. A sandbox's limit on text does
+     * not apply, there being no text; its limit on what a declaration may reach does.
+     *
+     * @param parsed the script, from {@link #parse(String)} or built; must not be null
+     * @return one relation per query statement, in order; empty when there are none
+     * @throws RelixException if the script does not analyse
+     * @since 1.0
+     */
+    public List<Relation> script(Script parsed) {
+        Objects.requireNonNull(parsed, "parsed");
         // A query is not a declaration: it names a result, and installing it would make
         // every later analysis re-root it. The declarations go in; the queries come back
         // as relations.
@@ -1148,6 +1167,24 @@ public final class Relix implements AutoCloseable {
         } catch (RelixException e) {
             return List.of(syntaxDiagnostic(e));
         }
+        return validate(parsed);
+    }
+
+    /**
+     * Analyses a script already parsed against the session <em>without</em> installing
+     * it, and reports what is wrong as data.
+     *
+     * <p>The tree counterpart of {@link #validate(String)}, as {@link #script(Script)} is
+     * of {@link #script(String)}: each statement keeps the location it was parsed with,
+     * so a diagnostic points into the text the caller parsed, however many statements
+     * the caller removed from it first.
+     *
+     * @param parsed the script, from {@link #parse(String)} or built; must not be null
+     * @return the diagnostics, empty when it analyses cleanly
+     * @since 1.0
+     */
+    public List<Diagnostic> validate(Script parsed) {
+        Objects.requireNonNull(parsed, "parsed");
         Optional<String> refused = refusal(parsed.statements());
         if (refused.isPresent()) {
             return List.of(Diagnostic.of(refused.get()));
