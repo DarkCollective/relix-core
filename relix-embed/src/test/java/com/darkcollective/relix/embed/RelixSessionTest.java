@@ -726,6 +726,37 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("a join with no right relation after its condition is one error naming the relation (#199)")
+        void missingRightInputDiagnosed() {
+            String tables = "home_members := [| home_id | user_id |\n| 104 | 1 |];\n"
+                    + "users := [| user_id | name |\n| 1 | a |];\n";
+            // expression, column, the message's end
+            String[][] cases = {
+                    {"SELECT home_members.home_id = 104 (home_members >< home_members.user_id = users.user_id)",
+                            "88", "write home_members >< home_members.user_id = users.user_id users"},
+                    {"home_members SEMI home_members.user_id = users.user_id", "56",
+                            "write home_members SEMI home_members.user_id = users.user_id users"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + "Q := { " + c[0] + " };\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .startsWith("Syntax error in RA expression: a join takes its right relation"
+                                    + " after the condition: ")
+                            .endsWith(c[2]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0]).isEqualTo(5);
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
+                }
+                String fixed = "SELECT home_members.home_id = 104"
+                        + " (home_members >< home_members.user_id = users.user_id users)";
+                assertThat(relix.validate(tables + "Q := { " + fixed + " };\n"))
+                        .as("the rewrite validates").noneMatch(Diagnostic::isError);
+            }
+        }
+
+        @Test
         @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
         void parseFailurePositionStatedOnce() {
             String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";

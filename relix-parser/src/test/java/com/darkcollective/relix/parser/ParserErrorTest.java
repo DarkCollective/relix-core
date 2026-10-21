@@ -662,6 +662,37 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("a join that ends after its condition is reported where it ends, naming the right relation (#199)")
+    public void reportsMissingRightInput() {
+        assertThatThrownBy(() -> parse("SELECT home_members.home_id = 104"
+                + " (home_members >< home_members.user_id = users.user_id)"))
+                .hasMessage("a join takes its right relation after the condition: write home_members ><"
+                        + " home_members.user_id = users.user_id users at line 1, column 88");
+        assertParseError("customers LJOIN customers.id = orders.customer_id")
+                .hasMessageContaining(": write customers LJOIN customers.id = orders.customer_id orders")
+                .at(1, 50);
+        assertParseError("customers ANTI orders.customer_id = customers.id AND orders.total > 1")
+                .hasMessageContaining(": write customers ANTI orders.customer_id = customers.id"
+                        + " AND orders.total > 1 orders");
+        assertParseError("ρ c (customers) ⋉ c.id = ns.orders.customer_id")
+                .hasMessageContaining(": write ρ c (customers) ⋉ c.id = ns.orders.customer_id ns.orders");
+        for (String op : List.of("><", "⨝", "RJOIN", "FJOIN", "SEMI", "ASOF")) {
+            assertParseError("T " + op + " T.a = S.a").as(op)
+                    .hasMessageContaining(": write T " + op + " T.a = S.a S");
+        }
+        // No relation, or more than one, named apart from the left input: the general form.
+        assertParseError("T >< a = b")
+                .hasMessageContaining("a join takes its right relation after the condition: write A >< cond B");
+        assertParseError("T >< T.a = S.a AND T.b = U.b")
+                .hasMessageContaining(": write A >< cond B");
+        assertParseError("T >< T.a = S.a }")
+                .hasMessageContaining(": write T >< T.a = S.a S")
+                .at(1, 16);
+        // What still reads.
+        assertThat(parse("SELECT a = 1 (T >< T.a = S.a S)")).isNode(SelectionNode.class);
+    }
+
+    @Test
     @DisplayName("SQL's two-word joins are reported at the first word, naming the Relix operator")
     public void reportsSqlJoinKeywords() {
         assertThatThrownBy(() -> parse("members LEFT JOIN loans ON members.member_id = loans.member_id"))
