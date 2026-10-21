@@ -580,6 +580,23 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("IN { SELECT … } is reported as IN (SELECT …) is, at the inner SELECT (#197)")
+    public void reportsBracedSubquery() {
+        assertParseError("SELECT room_id IN { SELECT room_id (Rooms) } (devices)")
+                .hasMessageContaining("IN takes a set such as {1, 2}; to keep rows with a match in another"
+                        + " relation write devices SEMI devices.room_id = Rooms.room_id Rooms")
+                .at(1, 21);
+        assertParseError("SELECT room_id NOT IN { SELECT room_id FROM Rooms } (devices)")
+                .hasMessageContaining("with no match in another relation write"
+                        + " devices ANTI devices.room_id = Rooms.room_id Rooms")
+                .at(1, 25);
+        assertParseError("SELECT a = 1 AND b ∈ { SELECT b (S) } (T)")
+                .hasMessageContaining("write R SEMI R.x = S.y S")
+                .at(1, 24);
+        assertThat(parse("SELECT b IN {1, 2} (T)")).isNode(SelectionNode.class);
+    }
+
+    @Test
     @DisplayName("IN (SELECT …) writes the semi-join out only over plain names (#188)")
     public void subqueryJoinOverPlainNames() {
         String general = "write R SEMI R.x = S.y S";
