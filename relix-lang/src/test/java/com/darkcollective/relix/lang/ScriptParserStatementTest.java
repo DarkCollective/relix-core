@@ -292,6 +292,30 @@ class ScriptParserStatementTest {
         }
 
         @Test
+        @DisplayName("a view written without braces is reported at its expression, written again in braces (#198)")
+        void unbracedView() {
+            assertThatThrownBy(() -> parse("JoinedDevices := RoomsRenamed >< r_room_id = DevicesRenamed.d_room_id"
+                    + " DevicesRenamed;"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessage("a view's expression goes in braces: write JoinedDevices := { RoomsRenamed ><"
+                            + " r_room_id = DevicesRenamed.d_room_id DevicesRenamed }; (line 1, col 18)");
+            assertThatThrownBy(() -> parse("private  Big :=\n  SELECT total > 100 -- big ones\n  (orders);"))
+                    .hasMessage("a view's expression goes in braces: write private Big := {"
+                            + " SELECT total > 100 (orders) }; (line 2, col 3)");
+            assertThatThrownBy(() -> parse("V := σ a > 1 (R);"))
+                    .hasMessageContaining(": write V := { σ a > 1 (R) };");
+            assertThatThrownBy(() -> parse("V := orders"))
+                    .hasMessageContaining(": write V := { orders };");
+            // An expression in error itself: the braces, not a rewrite that fails.
+            assertThatThrownBy(() -> parse("V := SELECT a > (R);"))
+                    .hasMessageContaining(": write V := { … };");
+            // Nothing after ':=': the parser's own message.
+            assertThatThrownBy(() -> parse("V := ;")).hasMessageContaining("Expected '{'");
+            assertThatThrownBy(() -> parse("V :=")).hasMessageContaining("Expected '{'");
+            assertThat(parse("V := { R };\nT := [| a |\n| 1 |];").statements()).hasSize(2);
+        }
+
+        @Test
         @DisplayName("a ';' inside braces is reported at the ';', moved after the brace or splitting the expressions")
         void semicolonInBraces() {
             assertThatThrownBy(() -> parse("query { SELECT a > 1 (R); };"))
