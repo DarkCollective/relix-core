@@ -382,10 +382,20 @@ public final class SymbolCollector {
     // Statement handlers
     // =========================================================================
 
+    /**
+     * The file a statement at {@code loc} was written in, which is not always the file
+     * being collected: a session analyses the statements it was given as one script,
+     * whatever each was parsed from. One built without a position falls back to
+     * {@code filePath}.
+     */
+    private static String fileOf(SourceLocation loc, String filePath) {
+        return loc.line() > 0 ? loc.filePath() : filePath;
+    }
+
     private void handleConnection(String filePath, ConnectionDeclaration conn) {
         String key = conn.name().toLowerCase(Locale.ROOT);
         if (connections.containsKey(key)) {
-            errors.add(SemanticError.error(filePath,
+            errors.add(SemanticError.error(fileOf(conn.location(), filePath),
                     conn.location().line(), conn.location().column(),
                     "Duplicate connection name: '" + conn.name() + "'"));
             return;
@@ -398,7 +408,7 @@ public final class SymbolCollector {
         Schema schema = schemaFromSourceConfig(src);
         if (src.config() instanceof HttpSourceConfig http) {
             for (String problem : HttpSourceChecks.check(src, http)) {
-                errors.add(SemanticError.error(filePath,
+                errors.add(SemanticError.error(fileOf(src.location(), filePath),
                         src.location().line(), src.location().column(), problem));
             }
         }
@@ -429,7 +439,7 @@ public final class SymbolCollector {
             if (asgn.body() instanceof InlineTableBody inline) {
                 SourceLocation loc = asgn.location();
                 for (String message : InlineCellChecks.warnings(asgn.name(), inline.table())) {
-                    errors.add(SemanticError.warning(filePath, loc.line(), loc.column(), message));
+                    errors.add(SemanticError.warning(fileOf(loc, filePath), loc.line(), loc.column(), message));
                 }
             }
         }
