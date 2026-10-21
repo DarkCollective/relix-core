@@ -727,6 +727,7 @@ public final class ScriptParser {
         } else {
             // { ... } — relational algebra expression
             // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
+            rejectUnbracedView();
             LangToken brace = requireBraceToken();
             LangLexer.RawBlock raw = rawBraceBlock(brace);
             current = lexer.next();
@@ -1250,6 +1251,28 @@ public final class ScriptParser {
         int[] position = positionOf(next);
         throw new LangParseException("a result is written query { … }: write " + fix,
                 position[0], position[1]);
+    }
+
+    /**
+     * Refuses a view whose expression is written without braces,
+     * {@code V := A >< cond B;}, at the expression's first token, with the statement
+     * written again in braces: {@code V := { A >< cond B };}. When the expression does
+     * not parse either, the braces are shown around {@code …}, since echoing it would
+     * offer a fix that fails. Nothing written after {@code :=} is left to the parser.
+     */
+    private void rejectUnbracedView() {
+        if (current.type() == LangTokenType.LBRACE || current.type() == LangTokenType.SEMICOLON
+                || current.type() == LangTokenType.EOF) {
+            return;
+        }
+        String input = lexer.input();
+        int start = offsetOf(current.line(), current.column());
+        int end = statementEnd(input, start);
+        String expression = withoutComments(input.substring(start, end));
+        String target = input.substring(offsetOf(statementStart.line(), statementStart.column()), start)
+                .strip().replaceAll("\\s+", " ");
+        throw new LangParseException("a view's expression goes in braces: write " + target + " { "
+                + (tryParse(start, end) == null ? expression : "…") + " };", current.line(), current.column());
     }
 
     /**

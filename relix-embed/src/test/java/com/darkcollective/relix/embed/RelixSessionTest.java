@@ -600,6 +600,9 @@ final class RelixSessionTest {
                     {"query { SELECT total > 100 (orders) ;", "5", "7",
                             "Unterminated brace block; put '}' before the ';':"
                                     + " write query { SELECT total > 100 (orders) };"},
+                    {"Joined := customers >< customers.customer_id = orders.customer_id orders;\nquery Joined;",
+                            "5", "11", "a view's expression goes in braces: write Joined :="
+                                    + " { customers >< customers.customer_id = orders.customer_id orders };"},
                     {"Big := { SELECT total > 100 (orders) ;\nquery Big;", "5", "8",
                             "Unterminated brace block; put '}' before the ';':"
                                     + " write Big := { SELECT total > 100 (orders) };"},
