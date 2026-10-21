@@ -29,6 +29,27 @@ AssignmentStatement
 QueryStatement
 ```
 
+`validate` and `script` take a parsed `Script` as well as text, so a tool can read a
+script, leave out some of its statements and check or run the rest. A statement keeps the
+line and column it was parsed at, so a diagnostic still points into the user's text:
+
+```java
+import com.darkcollective.relix.lang.ast.AssignmentStatement;
+import com.darkcollective.relix.lang.ast.ScriptBuilders;
+
+Relix relix = Relix.open();
+relix.define("""
+        Large := [| amount |
+                  | 250    |];
+        """);
+
+// Run the queries against the session's own Large, not the one the script declares.
+Script kept = ScriptBuilders.script(script.statements().stream()
+        .filter(st -> !(st instanceof AssignmentStatement a && a.name().equals("Large")))
+        .toArray(Statement[]::new));
+List<Relation> results = relix.script(kept);
+```
+
 Text that does not parse raises a `ScriptParseException`, which carries the line and
 column of the failure:
 
