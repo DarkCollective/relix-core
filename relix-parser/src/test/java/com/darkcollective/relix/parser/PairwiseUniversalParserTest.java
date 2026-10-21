@@ -122,6 +122,6 @@ final class PairwiseUniversalParserTest extends ParserTestSupport {
     @Test
     void failsOnMissingRightOperand() {
         assertParseError("L USEMI L.id = R.id")
-                .hasMessageContaining("Expected relation name");
+                .hasMessageContaining("a join takes its right relation after the condition: write L USEMI L.id = R.id R");
     }
 }

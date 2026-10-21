@@ -204,7 +204,8 @@ final class SemiAntiJoinParserTest extends ParserTestSupport {
     @Test
     public void failsOnMissingRightOperandInSemiJoin() {
         assertParseError("Users ⋉ Users.id = Orders.user_id")
-                .hasMessageContaining("Expected relation name");
+                .hasMessageContaining("a join takes its right relation after the condition:"
+                        + " write Users ⋉ Users.id = Orders.user_id Orders");
     }
 
     @Test
@@ -217,7 +218,8 @@ final class SemiAntiJoinParserTest extends ParserTestSupport {
     @Test
     public void failsOnMissingRightOperandInAntiJoin() {
         assertParseError("Users ▷ Users.id = Orders.user_id")
-                .hasMessageContaining("Expected relation name");
+                .hasMessageContaining("a join takes its right relation after the condition:"
+                        + " write Users ▷ Users.id = Orders.user_id Orders");
     }
 
     @Test

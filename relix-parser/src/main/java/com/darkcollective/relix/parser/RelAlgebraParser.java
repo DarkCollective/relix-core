@@ -26,6 +26,7 @@ import java.util.function.Consumer;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -535,6 +536,9 @@ public final class RelAlgebraParser {
             if (operator.type() == TokenType.NATURAL_JOIN) {
                 rejectConditionAfterRightInput(operator, left);
             }
+            if (condition != null) {
+                rejectMissingRightInput(operator, leftStart, operatorAt);
+            }
             int rightStart = consumed.size();
             RelNode right = parseExpression(precedence + 1);
             if ((operator.type() == TokenType.NATURAL_JOIN || operator.type() == TokenType.PRODUCT)
@@ -685,6 +689,45 @@ public final class RelAlgebraParser {
         }
         throw ParseException.at("the right relation goes after the condition: write " + left + " "
                 + operator.lexeme() + " " + condition + " " + right.lexeme(), lexer.input(), right);
+    }
+
+    /**
+     * Refuses a conditioned join that ends after its condition, {@code A >< A.id = B.a_id}
+     * followed by {@code )}, {@code }} or the end of the expression, at that
+     * token: the right input was never written. Left alone, the parser asks for a
+     * relation name where the join ended, without saying which join lacks one. When the
+     * condition qualifies exactly one relation that the left input does not name, the
+     * join is written out with it after the condition; otherwise with {@code B}.
+     */
+    private void rejectMissingRightInput(Token operator, int leftStart, int operatorAt) {
+        if (current.type() != TokenType.RPAREN && current.type() != TokenType.RBRACE
+                && current.type() != TokenType.EOF) {
+            return;
+        }
+        Set<String> leftNames = new HashSet<>();
+        for (Token token : consumed.subList(leftStart, operatorAt)) {
+            if (isNameToken(token)) {
+                leftNames.add(token.lexeme());
+            }
+        }
+        Set<String> named = new LinkedHashSet<>();
+        for (int i = operatorAt + 1; i < consumed.size(); i++) {
+            // consumed[i] up to consumed[last] is a dotted name; all but its last part qualify it.
+            int last = i;
+            while (last + 3 <= consumed.size() && isColumnName(i, last + 3)) {
+                last += 2;
+            }
+            if (last > i && !leftNames.contains(consumed.get(last - 2).lexeme())) {
+                named.add(writtenBetween(i, last - 1));
+            }
+            i = last;
+        }
+        String join = writtenBetween(operatorAt, consumed.size());
+        String right = named.size() == 1 ? named.iterator().next() : "B";
+        String left = named.size() == 1 ? relationText(leftStart, operatorAt) : "A";
+        throw ParseException.at("a join takes its right relation after the condition: write "
+                + left + " " + (named.size() == 1 ? join : operator.lexeme() + " cond") + " " + right,
+                lexer.input(), current);
     }
 
     /**
