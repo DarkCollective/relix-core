@@ -150,6 +150,6 @@ final class AsOfJoinParserTest extends ParserTestSupport {
     @Test
     void failsOnMissingRightOperand() {
         assertParseError("L ASOF L.ts >= R.ts")
-                .hasMessageContaining("Expected relation name");
+                .hasMessageContaining("a join takes its right relation after the condition: write L ASOF L.ts >= R.ts R");
     }
 }
