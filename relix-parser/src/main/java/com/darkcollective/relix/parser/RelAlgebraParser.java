@@ -4063,14 +4063,16 @@ public final class RelAlgebraParser {
 
     /**
      * Refuses SQL's subquery after {@code IN}, {@code x IN (SELECT y FROM S)} or
-     * {@code x IN (SELECT y (S))}, at its {@code SELECT}: IN takes a set, and membership
+     * {@code x IN (SELECT y (S))}, at its {@code SELECT}, and the same subquery in a set's
+     * braces, {@code x IN { SELECT y (S) }}: IN takes a set, and membership
      * in another relation is a semi-join, or an anti-join for {@code NOT IN}. When the
      * test is a selection's whole condition over a named relation, the join is written
      * out: {@code R SEMI R.x = S.y S}. The subject is {@code consumed[subjectStart]} up to
      * {@code consumed[subjectEnd]}; {@code subjectStart} is -1 when it was read elsewhere.
      */
     private void rejectSubquery(int subjectStart, int subjectEnd, boolean negated) {
-        if (current.type() != TokenType.LPAREN || peek(1).type() != TokenType.SELECT) {
+        boolean braced = current.type() == TokenType.LBRACE;
+        if (!braced && current.type() != TokenType.LPAREN || peek(1).type() != TokenType.SELECT) {
             return;
         }
         Token select = peek(1);
@@ -4081,7 +4083,7 @@ public final class RelAlgebraParser {
         try {
             Token enclosing = selection;
             int conditionStart = selectionAt;
-            advance(); // (
+            advance(); // ( or {
             advance(); // SELECT
             int columnStart = consumed.size();
             parseOperand();
@@ -4097,7 +4099,11 @@ public final class RelAlgebraParser {
                 inner = writtenBetween(innerStart + 1, consumed.size() - 1);
                 named = isColumnName(innerStart + 1, consumed.size() - 1);
             }
-            expect(TokenType.RPAREN, "Expected ')' after the subquery");
+            if (braced) {
+                expect(TokenType.RBRACE, "Expected '}' after the subquery");
+            } else {
+                expect(TokenType.RPAREN, "Expected ')' after the subquery");
+            }
             if (enclosing != null && subjectStart == conditionStart && current.type() == TokenType.LPAREN) {
                 int outerStart = consumed.size();
                 parseParenthesizedRelation("Expected '(' after selection predicate");
