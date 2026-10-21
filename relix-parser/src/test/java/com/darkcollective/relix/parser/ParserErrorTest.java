@@ -18,6 +18,7 @@ package com.darkcollective.relix.parser;
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.AntiJoinNode;
 import com.darkcollective.relix.ast.DistinctNode;
+import com.darkcollective.relix.ast.LeftOuterJoinNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.ProjectionNode;
 import com.darkcollective.relix.ast.RenameNode;
@@ -613,6 +614,32 @@ final class ParserErrorTest extends ParserTestSupport {
         // A name inside a nested parenthesis is not the right input.
         assertParseError("T >< ((g = M.g M)) M").hasMessageContaining("Expected ')' after predicate");
         assertThat(parse("T >< (age_group = M.age_group) M")).isNode(ThetaJoinNode.class);
+    }
+
+    @Test
+    @DisplayName("a join's right input written before its condition is reported at the name, moved after it")
+    public void reportsRightInputBeforeCondition() {
+        assertThatThrownBy(() -> parse("customers LJOIN orders customer_id = customer_id"))
+                .hasMessage("the right relation goes after the condition:"
+                        + " write customers LJOIN customer_id = customer_id orders at line 1, column 17");
+        assertParseError("customers LJOIN orders customers.customer_id = orders.customer_id")
+                .hasMessageContaining(": write customers LJOIN customers.customer_id = orders.customer_id orders")
+                .at(1, 17);
+        assertParseError("customers LJOIN orders customers.customer_id = orders.customer_id orders")
+                .hasMessageContaining(": write customers LJOIN customers.customer_id = orders.customer_id orders")
+                .at(1, 17);
+        assertParseError("customers >< orders customers.customer_id = orders.customer_id")
+                .hasMessageContaining(": write customers >< customers.customer_id = orders.customer_id orders")
+                .at(1, 14);
+        assertParseError("customers SEMI orders customers.customer_id = orders.customer_id")
+                .hasMessageContaining(": write customers SEMI customers.customer_id = orders.customer_id orders")
+                .at(1, 16);
+        assertParseError("customers ANTI orders customer_id = customer_id")
+                .hasMessageContaining(": write customers ANTI customer_id = customer_id orders")
+                .at(1, 16);
+        assertThat(parse("customers LJOIN customers.customer_id = orders.customer_id orders"))
+                .isNode(LeftOuterJoinNode.class);
+        assertThat(parse("T >< a BETWEEN 1 AND 2 M")).isNode(ThetaJoinNode.class);
     }
 
     @Test

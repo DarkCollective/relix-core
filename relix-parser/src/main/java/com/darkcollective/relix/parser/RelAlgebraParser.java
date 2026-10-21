@@ -459,6 +459,7 @@ public final class RelAlgebraParser {
                 operator.type() == TokenType.ANTI_JOIN ||
                 operator.type() == TokenType.UNIVERSAL_SEMI_JOIN) {
                 requireJoinCondition(operator, left);
+                rejectRightInputBeforeCondition(operator, leftStart, operatorAt);
                 condition = parseJoinCondition(leftStart);
             } else if (operator.type() == TokenType.ASOF_JOIN) {
                 // Optional INNER keyword switches from left-outer to inner mode.
@@ -467,6 +468,7 @@ public final class RelAlgebraParser {
                     advance();
                 }
                 requireJoinCondition(operator, left);
+                rejectRightInputBeforeCondition(operator, leftStart, operatorAt);
                 condition = parseJoinCondition(leftStart);
                 // Optional WITHIN <durExpr> tolerance clause.
                 if (current.type() == TokenType.WITHIN) {
@@ -649,6 +651,43 @@ public final class RelAlgebraParser {
                         + " with the condition between the two relations, not after them with ON";
         throw ParseException.at(problem + ": write " + left + " " + join + " " + condition
                 + " " + right, lexer.input(), on);
+    }
+
+    /**
+     * Refuses a conditioned join's right input written before its condition, SQL's
+     * {@code ON} clause with the {@code ON} dropped: {@code A LJOIN B A.id = B.a_id}, at
+     * {@code B}, with the condition moved before it. Left alone, {@code B} is read as the
+     * start of the condition and parsing stops at the next name, "expected comparison
+     * operator", describing a comparison that never began. No condition starts with two
+     * names in a row unless the second is a word that follows an operand ({@code AT},
+     * {@code BETWEEN}, …), so a name followed by a name that is itself compared, or
+     * qualified, can only be the right input. A copy of the relation written again after
+     * the condition is left out of the rewrite, which puts the relation there once.
+     */
+    private void rejectRightInputBeforeCondition(Token operator, int leftStart, int operatorAt) {
+        if (current.type() != TokenType.IDENTIFIER || peek(1).type() != TokenType.IDENTIFIER
+                || List.of("AT", "BETWEEN", "MATCHES", "ESCAPE").stream().anyMatch(w -> isWord(peek(1), w))) {
+            return;
+        }
+        TokenType after = peek(2).type();
+        if (after != TokenType.DOT && !isComparison(after) && after != TokenType.ELEMENT_OF
+                && after != TokenType.NOT_ELEMENT_OF && after != TokenType.LIKE
+                && after != TokenType.IS && after != TokenType.NOT && !isWord(peek(2), "BETWEEN")) {
+            return;
+        }
+        Token right = current;
+        String left = relationText(leftStart, operatorAt);
+        advance();
+        int start = consumed.size();
+        String condition;
+        try {
+            parsePredicate();
+            condition = writtenBetween(start, consumed.size());
+        } catch (ParseException e) {
+            condition = "condition";
+        }
+        throw ParseException.at("the right relation goes after the condition: write " + left + " "
+                + operator.lexeme() + " " + condition + " " + right.lexeme(), lexer.input(), right);
     }
 
     /**
