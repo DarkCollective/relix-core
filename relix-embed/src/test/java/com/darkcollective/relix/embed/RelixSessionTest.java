@@ -681,6 +681,45 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("a join's right relation written before its condition is one error naming the fix")
+        void rightInputBeforeConditionDiagnosed() {
+            String tables = "customers := [| customer_id | name |\n| 1 | a |];\n"
+                    + "orders := [| order_id | customer_id |\n| 7 | 1 |];\n";
+            String qualified = "customers.customer_id = orders.customer_id";
+            String[][] cases = {
+                    {"customers LJOIN orders customer_id = customer_id", "17",
+                            "write customers LJOIN customer_id = customer_id orders"},
+                    {"customers LJOIN orders " + qualified, "17",
+                            "write customers LJOIN " + qualified + " orders"},
+                    {"customers LJOIN orders " + qualified + " orders", "17",
+                            "write customers LJOIN " + qualified + " orders"},
+                    {"customers >< orders " + qualified, "14",
+                            "write customers >< " + qualified + " orders"},
+                    {"customers SEMI orders " + qualified, "16",
+                            "write customers SEMI " + qualified + " orders"},
+                    {"customers ANTI orders " + qualified, "16",
+                            "write customers ANTI " + qualified + " orders"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + "Q := { " + c[0] + " };\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .startsWith("Syntax error in RA expression: ")
+                            .endsWith(c[2]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0]).isEqualTo(5);
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
+                    // An unqualified condition still draws the self-comparison warning,
+                    // which names the qualified form; the rewrite has no error.
+                    String fixed = c[2].substring("write ".length());
+                    assertThat(relix.validate(tables + "Q := { " + fixed + " };\n"))
+                            .as("the rewrite of " + c[0] + " validates").noneMatch(Diagnostic::isError);
+                }
+            }
+        }
+
+        @Test
         @DisplayName("a parse failure states its position once: in the thrown message, or as the location")
         void parseFailurePositionStatedOnce() {
             String bad = "Orders := [| a |\n| 1 |];\nquery { π a.+1 (Orders) };\n";
