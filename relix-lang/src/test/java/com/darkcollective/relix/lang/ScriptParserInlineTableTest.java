@@ -193,6 +193,20 @@ class ScriptParserInlineTableTest {
         }
 
         @Test
+        @DisplayName("a csv row ending in a comma ends with an empty cell, after a bare or quoted field (#207)")
+        void csvTrailingEmptyField() {
+            Script s = parse("X := csv[\n  id, on, at\n  1, true, 2026-10-22\n  2, 0,\n  3, \"x\",\n];");
+            InlineTableBody body = (InlineTableBody) ((AssignmentStatement) firstStatement(s)).body();
+            assertThat(((CsvInlineTable) body.table()).rows()).containsExactly(
+                    java.util.List.of("1", "true", "2026-10-22"),
+                    java.util.List.of("2", "0", ""),
+                    java.util.List.of("3", "x", ""));
+            assertThatThrownBy(() -> parse("X := csv[\n  a, b,\n  1, 2, 3\n];"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("CSV inline table's column 3 has no name");
+        }
+
+        @Test
         @DisplayName("a markdown row may end with a comment after its last pipe")
         void trailingComment() {
             Script s = parse("X := [\n| a | b |\n|---|---|\n| 1 | 2 |  -- the first\n| 3 | 4 |\n];");
