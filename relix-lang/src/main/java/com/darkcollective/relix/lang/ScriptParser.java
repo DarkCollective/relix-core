@@ -1051,6 +1051,7 @@ public final class ScriptParser {
         int i = 0;
         while (i <= line.length()) {
             StringBuilder field = new StringBuilder();
+            boolean comma = false;
             // Skip leading whitespace before checking for quoted field
             while (i < line.length() && line.charAt(i) == ' ') {
                 i++;
@@ -1075,6 +1076,7 @@ public final class ScriptParser {
                 }
                 if (i < line.length() && line.charAt(i) == ',') {
                     i++; // skip separating comma
+                    comma = true;
                 }
             } else {
                 // Unquoted field: read until ',' or end
@@ -1084,10 +1086,14 @@ public final class ScriptParser {
                 }
                 if (i < line.length()) {
                     i++; // skip ','
+                    comma = true;
                 }
             }
             fields.add(field.toString().trim());
             if (i >= line.length()) {
+                if (comma) {
+                    fields.add(""); // a line ending in a comma ends with an empty field
+                }
                 break;
             }
         }
