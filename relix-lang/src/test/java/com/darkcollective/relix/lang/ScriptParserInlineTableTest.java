@@ -16,8 +16,10 @@
 package com.darkcollective.relix.lang;
 
 import com.darkcollective.relix.lang.ast.*;
+import com.darkcollective.relix.lang.ast.source.ColumnSpec;
 import com.darkcollective.relix.lang.ast.table.CsvInlineTable;
 import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
+import com.darkcollective.relix.symbol.ScalarType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -205,6 +207,70 @@ class ScriptParserInlineTableTest {
             Script s = parse("X := [\n| a | b |\n|---|---|\n| 1 |  |\n];");
             InlineTableBody body = (InlineTableBody) ((AssignmentStatement) firstStatement(s)).body();
             assertThat(((MarkdownInlineTable) body.table()).rows().getFirst()).containsExactly("1", "");
+        }
+    }
+
+    @Nested
+    @DisplayName("schema block (#205)")
+    class SchemaBlockTests {
+
+        private InlineTableBody body(String src) {
+            return (InlineTableBody) ((AssignmentStatement) firstStatement(parse(src))).body();
+        }
+
+        @Test
+        @DisplayName("either form takes a schema block, before its references, in the header's spelling")
+        void parsesSchemaBlock() {
+            InlineTableBody md = body("R := [\n| id | Read_At |\n|---|---|\n| 1 | x |\n]"
+                    + " schema { read_at: TIMESTAMP, id: NUMBER } references { id -> S.id };");
+            assertThat(md.schema()).containsExactly(
+                    ColumnSpec.out("Read_At", ScalarType.TIMESTAMP), ColumnSpec.out("id", ScalarType.NUMBER));
+            assertThat(md.references()).hasSize(1);
+            InlineTableBody csv = body("R := csv[\n id, on\n 1, true\n] schema { on: BOOLEAN };");
+            assertThat(csv.schema()).containsExactly(ColumnSpec.out("on", ScalarType.BOOLEAN));
+            assertThat(((CsvInlineTable) csv.table()).rowLocations()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("a schema block prints back as written")
+        void printsSchemaBlock() {
+            String printed = ScriptPrinter.print(parse(
+                    "R := [\n| id | at |\n|---|---|\n| 1 | x |\n] schema { at: DATE } references { id -> S.id };"));
+            assertThat(printed).contains("] schema { at: date } references { id -> S.id };");
+            assertThat(body(printed).schema()).containsExactly(ColumnSpec.out("at", ScalarType.DATE));
+        }
+
+        @Test
+        @DisplayName("a schema naming a column the header lacks is an error at that name")
+        void unknownColumn() {
+            assertThatThrownBy(() -> parse("R := [\n| id |\n|---|\n| 1 |\n] schema { id: NUMBER, at: DATE };"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("Inline table R has no column 'at' for its schema to type; its columns are id")
+                    .hasMessageContaining("line 5, col 24");
+        }
+
+        @Test
+        @DisplayName("a column typed twice, a nested type, a binding, or schema after references is refused")
+        void refusals() {
+            String table = "R := [\n| id |\n|---|\n| 1 |\n]";
+            assertThatThrownBy(() -> parse(table + " schema { id: NUMBER, ID: STRING };"))
+                    .hasMessageContaining("types column 'id' twice");
+            assertThatThrownBy(() -> parse(table + " schema { id: [NUMBER] };"))
+                    .hasMessageContaining("cannot be");
+            assertThatThrownBy(() -> parse(table + " schema { id: ANY };"))
+                    .hasMessageContaining("cannot be ANY");
+            assertThatThrownBy(() -> parse(table + " schema { id: NUMBER at \"$.x\" };"))
+                    .hasMessageContaining("takes a type only");
+            assertThatThrownBy(() -> parse(table + " schema { id: NUMBER [required] };"))
+                    .hasMessageContaining("takes a type only");
+            assertThatThrownBy(() -> parse(table + " schema { id: NUMBER [default: \"0\"] };"))
+                    .hasMessageContaining("takes a type only");
+            assertThatThrownBy(() -> parse(table + " schema { id: NUMBER"))
+                    .isInstanceOf(LangParseException.class);
+            assertThatThrownBy(() -> parse(table + " references { id -> S.id } schema { id: NUMBER };"))
+                    .hasMessageContaining("schema block goes before its references clause");
+            assertThatThrownBy(() -> parse("V := { R } schema { id: NUMBER };"))
+                    .hasMessageContaining("A schema block applies to inline tables");
         }
     }
 

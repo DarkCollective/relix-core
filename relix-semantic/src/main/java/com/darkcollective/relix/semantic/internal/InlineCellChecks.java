@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -82,15 +83,20 @@ final class InlineCellChecks {
             "(?i)(TIMESTAMP|DATE|TIME|DURATION)\\s*'(.*)'");
 
     /**
-     * The warnings for the inline table {@code name}.
+     * The warnings for the inline table {@code name}. A column its schema block types
+     * is left out: a cell that does not read as that type is an error there.
      *
-     * @param name  the table's name, as messages qualify its columns
-     * @param table the table
+     * @param name     the table's name, as messages qualify its columns
+     * @param table    the table
+     * @param declared the columns its schema block types, lower-cased
      * @return the warning messages, column by column
      */
-    static List<String> warnings(String name, InlineTable table) {
+    static List<String> warnings(String name, InlineTable table, Set<String> declared) {
         List<String> warnings = new ArrayList<>();
         for (int c = 0; c < table.headers().size(); c++) {
+            if (declared.contains(table.headers().get(c).toLowerCase(Locale.ROOT))) {
+                continue;
+            }
             String column = name + "." + table.headers().get(c);
             Optional<String> quoted = table instanceof MarkdownInlineTable
                     ? quotedCell(column, table, c) : Optional.empty();

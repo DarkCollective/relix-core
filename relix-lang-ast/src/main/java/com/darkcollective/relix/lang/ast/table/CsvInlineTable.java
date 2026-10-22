@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.lang.ast.table;
 
+import com.darkcollective.relix.ast.SourceLocation;
+
 import java.util.List;
 import java.util.Objects;
 
@@ -38,13 +40,17 @@ import java.util.Objects;
  *
  * <p>The first row is always treated as the header row.
  *
- * @param headers the column names from the first row; must not be empty
- * @param rows    the data rows; each inner list has the same length as
- *                {@code headers}
+ * @param headers      the column names from the first row; must not be empty
+ * @param rows         the data rows; each inner list has the same length as
+ *                     {@code headers}
+ * @param rowLocations where each row starts, one per row, so that analysis can
+ *                     report a bad cell at its row; empty for a table built rather
+ *                     than parsed
  */
 public record CsvInlineTable(
         List<String> headers,
-        List<List<String>> rows
+        List<List<String>> rows,
+        List<SourceLocation> rowLocations
 ) implements InlineTable {
 
     public CsvInlineTable {
@@ -55,5 +61,19 @@ public record CsvInlineTable(
         Objects.requireNonNull(rows, "rows");
         headers = List.copyOf(headers);
         rows = rows.stream().map(List::copyOf).collect(java.util.stream.Collectors.toUnmodifiableList());
+        rowLocations = List.copyOf(Objects.requireNonNull(rowLocations, "rowLocations"));
+        if (!rowLocations.isEmpty() && rowLocations.size() != rows.size()) {
+            throw new IllegalArgumentException("rowLocations must name one location per row, or none");
+        }
+    }
+
+    /**
+     * A table built rather than parsed, whose rows have no locations.
+     *
+     * @param headers the column names; must not be empty
+     * @param rows    the data rows, each as long as {@code headers}
+     */
+    public CsvInlineTable(List<String> headers, List<List<String>> rows) {
+        this(headers, rows, List.of());
     }
 }

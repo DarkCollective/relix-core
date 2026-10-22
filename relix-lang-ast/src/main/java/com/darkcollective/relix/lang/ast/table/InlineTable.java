@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.lang.ast.table;
 
+import com.darkcollective.relix.ast.SourceLocation;
+
 import java.util.List;
 
 /**
@@ -37,4 +39,7 @@ public sealed interface InlineTable permits MarkdownInlineTable, CsvInlineTable 
 
     /** Returns the data rows, each as an ordered list of raw cell strings. */
     List<List<String>> rows();
+
+    /** Returns where each row starts, one per row, or none for a table built rather than parsed. */
+    List<SourceLocation> rowLocations();
 }
