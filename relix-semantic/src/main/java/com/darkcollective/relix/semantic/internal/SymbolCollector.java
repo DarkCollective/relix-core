@@ -19,6 +19,7 @@ import com.darkcollective.relix.semantic.CatalogProvider;
 import com.darkcollective.relix.semantic.CatalogSnapshot;
 import com.darkcollective.relix.semantic.SemanticError;
 import com.darkcollective.relix.semantic.Severity;
+import com.darkcollective.relix.ast.BooleanOperand;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.NumberOperand;
@@ -78,6 +79,8 @@ import com.darkcollective.relix.symbol.relation.SourceRelationSymbol;
 import com.darkcollective.relix.symbol.relation.SystemRelationSymbol;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 
+import java.math.BigDecimal;
+import java.time.DateTimeException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -85,6 +88,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -424,7 +428,8 @@ public final class SymbolCollector {
     private void handleAssignment(String filePath, String namespace,
                                    AssignmentStatement asgn, Map<String, Symbol> exports) {
         Symbol sym = switch (asgn.body()) {
-            case InlineTableBody inline -> buildInlineRelation(namespace, asgn.name(), inline.table());
+            case InlineTableBody inline -> buildInlineRelation(
+                    filePath, namespace, asgn.name(), inline, asgn.location());
             case QueryAssignmentBody query -> new QueryRelationSymbol(
                     namespace, asgn.name(), Provenance.USER, ShadowPolicy.PERMITTED,
                     UNRESOLVED_SCHEMA, query.expression());
@@ -438,7 +443,8 @@ public final class SymbolCollector {
             }
             if (asgn.body() instanceof InlineTableBody inline) {
                 SourceLocation loc = asgn.location();
-                for (String message : InlineCellChecks.warnings(asgn.name(), inline.table())) {
+                for (String message : InlineCellChecks.warnings(asgn.name(), inline.table(),
+                        declaredColumns(inline))) {
                     errors.add(SemanticError.warning(fileOf(loc, filePath), loc.line(), loc.column(), message));
                 }
             }
@@ -539,12 +545,34 @@ public final class SymbolCollector {
     // Symbol construction helpers
     // =========================================================================
 
-    private static InlineRelationSymbol buildInlineRelation(
-            String namespace, String name, InlineTable table) {
-        Schema schema = schemaFromInlineTable(table);
-        List<Map<String, Operand>> rows = rowsFromInlineTable(table, schema);
+    private InlineRelationSymbol buildInlineRelation(String filePath, String namespace,
+            String name, InlineTableBody inline, SourceLocation location) {
+        InlineTable table = inline.table();
+        Map<String, Type> declared = new LinkedHashMap<>();
+        inline.schema().forEach(spec -> declared.put(spec.name(), spec.type()));
+        Schema schema = schemaFromInlineTable(table, declared);
+        List<Map<String, Operand>> rows = rowsFromInlineTable(table, schema, declared.keySet(), (r, c, cell) -> {
+            String column = table.headers().get(c);
+            SourceLocation at = r < table.rowLocations().size() ? table.rowLocations().get(r) : location;
+            errors.add(SemanticError.error(fileOf(at, filePath), at.line(), at.column(),
+                    name + "." + column + ", row " + (r + 1) + ": '" + cell + "' is not a "
+                            + ((ScalarType) declared.get(column)).name() + ", the type its schema declares"));
+        });
         return new InlineRelationSymbol(
                 namespace, name, Provenance.USER, ShadowPolicy.PERMITTED, schema, rows);
+    }
+
+    /** The columns an inline table's schema block types, ignoring case. */
+    private static Set<String> declaredColumns(InlineTableBody inline) {
+        return inline.schema().stream()
+                .map(spec -> spec.name().toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+    }
+
+    /** Told of an inline-table cell that does not parse as its column's declared type. */
+    @FunctionalInterface
+    private interface BadCell {
+        void report(int row, int column, String cell);
     }
 
     // =========================================================================
@@ -699,16 +727,20 @@ public final class SymbolCollector {
     }
 
     /**
-     * Infers a {@link Schema} from an inline table by examining cell values
-     * column-by-column.  A column is typed {@link ScalarType#NUMBER} if and only
-     * if every non-empty cell in that column parses as a numeric literal; otherwise
-     * it is {@link ScalarType#STRING}.
+     * The {@link Schema} of an inline table: a column its schema block declares has
+     * that type, and any other is inferred by examining its cells.  An inferred
+     * column is typed {@link ScalarType#NUMBER} if and only if every non-empty cell
+     * in that column parses as a numeric literal; otherwise it is
+     * {@link ScalarType#STRING}.
+     *
+     * @param declared the declared columns' types, by the header's spelling
      */
-    private static Schema schemaFromInlineTable(InlineTable table) {
+    private static Schema schemaFromInlineTable(InlineTable table, Map<String, Type> declared) {
         List<String> headers = table.headers();
         List<ColumnDefinition> cols = new ArrayList<>(headers.size());
         for (int i = 0; i < headers.size(); i++) {
-            cols.add(new ColumnDefinition(headers.get(i), inferColumnType(table, i)));
+            Type type = declared.get(headers.get(i));
+            cols.add(new ColumnDefinition(headers.get(i), type != null ? type : inferColumnType(table, i)));
         }
         return new Schema(cols);
     }
@@ -723,12 +755,19 @@ public final class SymbolCollector {
      * materialises an absent column as {@code NullValue}, so a NULL can appear in
      * a column of any type (e.g. a missing NUMBER to be filled by {@code SOLVE})
      * without forcing the column to STRING or failing to parse.
+     *
+     * <p>A cell of a declared column that does not parse as the column's type is
+     * told to {@code bad} and left out of its row as a NULL is. An inferred column's
+     * cells parse by construction.
+     *
+     * @param declared the columns the table's schema block types
      */
     private static List<Map<String, Operand>> rowsFromInlineTable(
-            InlineTable table, Schema schema) {
+            InlineTable table, Schema schema, Set<String> declared, BadCell bad) {
         List<String> headers = table.headers();
         List<Map<String, Operand>> result = new ArrayList<>(table.rows().size());
-        for (List<String> row : table.rows()) {
+        for (int r = 0; r < table.rows().size(); r++) {
+            List<String> row = table.rows().get(r);
             Map<String, Operand> rowMap = new LinkedHashMap<>(headers.size());
             for (int i = 0; i < headers.size() && i < row.size(); i++) {
                 String col  = headers.get(i);
@@ -739,24 +778,54 @@ public final class SymbolCollector {
                 Type type = schema.column(col)
                         .map(ColumnDefinition::type)
                         .orElse(ScalarType.STRING);
-                Operand operand = switch (type) {
-                    case ScalarType.NUMBER    -> new NumberOperand(cell);
-                    case ScalarType.TIMESTAMP -> new TimestampOperand(TemporalLiterals.parseTimestamp(cell));
-                    case ScalarType.TIMESTAMPTZ -> TimestampOperand.zoned(TemporalLiterals.parseZonedTimestamp(cell),
-                            SourceLocation.UNKNOWN);
-                    case ScalarType.DATE      -> new DateOperand(TemporalLiterals.parseDate(cell));
-                    case ScalarType.TIME      -> new TimeOperand(TemporalLiterals.parseTime(cell));
-                    case ScalarType.DURATION  -> {
-                        TemporalLiterals.Span span = TemporalLiterals.parseInterval(cell);
-                        yield new DurationOperand(span.months(), span.exact(), SourceLocation.UNKNOWN);
-                    }
-                    default -> new StringOperand(cell);
-                };
+                Operand operand;
+                try {
+                    operand = cellOperand(cell, type, declared.contains(col));
+                } catch (DateTimeException | IllegalArgumentException e) {
+                    bad.report(r, i, cell);
+                    continue;
+                }
                 rowMap.put(col, operand);
             }
             result.add(rowMap);
         }
         return result;
+    }
+
+    /**
+     * A cell read as {@code type}, as a CSV source reads a field: a number as a
+     * decimal, a boolean as {@code true}/{@code 1} or {@code false}/{@code 0} in any
+     * case, and a temporal against ISO-8601.
+     *
+     * @param declared whether a schema block declared the column; an inferred NUMBER
+     *                 column holds whatever inference read as a number, unchecked
+     * @throws DateTimeException        when a temporal cell does not parse
+     * @throws IllegalArgumentException when a number or boolean cell does not parse
+     */
+    private static Operand cellOperand(String cell, Type type, boolean declared) {
+        return switch (type) {
+            case ScalarType.NUMBER    -> {
+                if (declared) {
+                    new BigDecimal(cell);   // NumberFormatException, an IllegalArgumentException
+                }
+                yield new NumberOperand(cell);
+            }
+            case ScalarType.BOOLEAN   -> switch (cell.toLowerCase(Locale.ROOT)) {
+                case "true", "1"  -> new BooleanOperand(true);
+                case "false", "0" -> new BooleanOperand(false);
+                default -> throw new IllegalArgumentException("not a boolean: " + cell);
+            };
+            case ScalarType.TIMESTAMP -> new TimestampOperand(TemporalLiterals.parseTimestamp(cell));
+            case ScalarType.TIMESTAMPTZ -> TimestampOperand.zoned(TemporalLiterals.parseZonedTimestamp(cell),
+                    SourceLocation.UNKNOWN);
+            case ScalarType.DATE      -> new DateOperand(TemporalLiterals.parseDate(cell));
+            case ScalarType.TIME      -> new TimeOperand(TemporalLiterals.parseTime(cell));
+            case ScalarType.DURATION  -> {
+                TemporalLiterals.Span span = TemporalLiterals.parseInterval(cell);
+                yield new DurationOperand(span.months(), span.exact(), SourceLocation.UNKNOWN);
+            }
+            default -> new StringOperand(cell);
+        };
     }
 
     /**

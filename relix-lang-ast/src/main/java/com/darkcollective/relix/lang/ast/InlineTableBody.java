@@ -16,6 +16,7 @@
 package com.darkcollective.relix.lang.ast;
 
 import com.darkcollective.relix.lang.ast.source.ColumnReference;
+import com.darkcollective.relix.lang.ast.source.ColumnSpec;
 import com.darkcollective.relix.lang.ast.table.InlineTable;
 
 import java.util.List;
@@ -42,6 +43,17 @@ import java.util.Objects;
  * and conversion to {@link com.darkcollective.relix.ast.Operand} values are
  * deferred to the semantic layer.
  *
+ * <p>An inline table may declare some or all of its columns' types with a
+ * trailing {@code schema} block, as a CSV source's {@code schema:} field does;
+ * a declared column's cells are parsed to its type, and the others are inferred:
+ * <pre>
+ *   Readings := [
+ *   | id | read_at              |
+ *   |----|----------------------|
+ *   | 1  | 2026-10-22T14:00:00Z |
+ *   ] schema { read_at: TIMESTAMP };
+ * </pre>
+ *
  * <p>An inline table may declare foreign-key relationships with a trailing
  * {@code references} clause — the inline-table counterpart of the
  * {@code references:} field on source configs:
@@ -54,19 +66,23 @@ import java.util.Objects;
  * </pre>
  *
  * @param table      the parsed inline table; must not be null
+ * @param schema     declared column types, each naming a column of the table; may be empty
  * @param references declared column references; may be empty
  */
 public record InlineTableBody(InlineTable table,
+                              List<ColumnSpec> schema,
                               List<ColumnReference> references) implements AssignmentBody {
 
     public InlineTableBody {
         Objects.requireNonNull(table, "table");
+        Objects.requireNonNull(schema, "schema");
         Objects.requireNonNull(references, "references");
+        schema = List.copyOf(schema);
         references = List.copyOf(references);
     }
 
-    /** Creates a body with no declared references. */
+    /** Creates a body with no declared column types or references. */
     public InlineTableBody(InlineTable table) {
-        this(table, List.of());
+        this(table, List.of(), List.of());
     }
 }

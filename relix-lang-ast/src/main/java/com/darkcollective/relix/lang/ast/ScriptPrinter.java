@@ -379,7 +379,8 @@ public final class ScriptPrinter {
             case MarkdownInlineTable t -> markdown(t);
             case CsvInlineTable t -> csv(t);
         };
-        return table + references(body.references(), " references ");
+        return table + (body.schema().isEmpty() ? "" : " schema " + schemaBlock(body.schema()))
+                + references(body.references(), " references ");
     }
 
     /**
@@ -581,16 +582,18 @@ public final class ScriptPrinter {
 
     /** {@code schema: { name: TYPE at "path", … }}, or null when no columns are declared. */
     private static String schemaEntry(List<ColumnSpec> columns) {
-        if (columns.isEmpty()) {
-            return null;
-        }
+        return columns.isEmpty() ? null : entry("schema", schemaBlock(columns));
+    }
+
+    /** {@code { name: TYPE at "path", … }}: a source's schema, or an inline table's. */
+    private static String schemaBlock(List<ColumnSpec> columns) {
         StringJoiner joiner = new StringJoiner(", ", "{ ", " }");
         for (ColumnSpec column : columns) {
             joiner.add(columnName(column.name()) + ": "
                     + (column.direction() == ColumnDirection.IN ? "in " : "")
                     + type(column.type()) + binding(column) + modifier(column));
         }
-        return entry("schema", joiner.toString());
+        return joiner.toString();
     }
 
     /**

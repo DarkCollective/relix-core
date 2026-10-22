@@ -22,6 +22,7 @@ import com.darkcollective.relix.ast.SourceLocation;
 import com.darkcollective.relix.lang.ast.*;
 import com.darkcollective.relix.lang.ast.source.*;
 import com.darkcollective.relix.lang.ast.table.CsvInlineTable;
+import com.darkcollective.relix.lang.ast.table.InlineTable;
 import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
 import com.darkcollective.relix.parser.ParseException;
 import com.darkcollective.relix.parser.RelAlgebraParser;
@@ -714,16 +715,14 @@ public final class ScriptParser {
             LangToken bracket = requireBracketToken();
             LangLexer.RawBlock raw = lexer.consumeRawBracketBlock();
             current = lexer.next();
-            body = new InlineTableBody(parseCsvInlineTable(raw, bracket),
-                    parseInlineReferencesSuffix());
+            body = inlineTableBody(name, parseCsvInlineTable(raw, bracket));
         } else if (current.type() == LangTokenType.LBRACKET) {
             // [ ... ] — Markdown inline table
             // current = LBRACKET; lexer.pos is past '['.  Do NOT advance first.
             LangToken bracket = current;
             LangLexer.RawBlock raw = lexer.consumeRawBracketBlock();
             current = lexer.next();
-            body = new InlineTableBody(parseMarkdownInlineTable(raw, bracket),
-                    parseInlineReferencesSuffix());
+            body = inlineTableBody(name, parseMarkdownInlineTable(raw, bracket));
         } else {
             // { ... } — relational algebra expression
             // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
@@ -736,10 +735,31 @@ public final class ScriptParser {
                 throw error("A references clause applies to inline tables and sources;"
                         + " relate a view with a standalone 'relate' statement instead");
             }
+            if (current.type() == LangTokenType.SCHEMA) {
+                throw error("A schema block applies to inline tables, whose cells it types;"
+                        + " a view's columns take the types of its expression");
+            }
         }
 
         consumeSemicolon();
         return new AssignmentStatement(exported, name, body, loc(startTok));
+    }
+
+    /**
+     * An inline table's body: the table, then its optional {@code schema { … }} block,
+     * then its optional {@code references { … }} clause, in that order.
+     */
+    private InlineTableBody inlineTableBody(String name, InlineTable table) {
+        List<ColumnSpec> schema = List.of();
+        if (current.type() == LangTokenType.SCHEMA) {
+            advance();
+            schema = new SourceConfigParser(this).parseInlineSchemaBlock(name, table.headers());
+        }
+        List<ColumnReference> references = parseInlineReferencesSuffix();
+        if (current.type() == LangTokenType.SCHEMA) {
+            throw error("An inline table's schema block goes before its references clause");
+        }
+        return new InlineTableBody(table, schema, references);
     }
 
     /**
@@ -1021,6 +1041,7 @@ public final class ScriptParser {
     private CsvInlineTable parseCsvInlineTable(LangLexer.RawBlock raw, LangToken openToken) {
         List<String> headers = null;
         List<List<String>> rows = new ArrayList<>();
+        List<SourceLocation> rowLocations = new ArrayList<>();
 
         String[] lines = raw.text().split("\\R", -1);
         for (int i = 0; i < lines.length; i++) {
@@ -1035,6 +1056,9 @@ public final class ScriptParser {
             } else {
                 requireWidth(cells, headers, "CSV", raw, lines, i);
                 rows.add(Collections.unmodifiableList(new ArrayList<>(cells)));
+                int indent = lines[i].length() - lines[i].stripLeading().length();
+                rowLocations.add(new SourceLocation(filePath,
+                        raw.startLine() + i, (i == 0 ? raw.startCol() : 1) + indent));
             }
         }
 
@@ -1043,7 +1067,7 @@ public final class ScriptParser {
                     "CSV inline table has no header row",
                     openToken.line(), openToken.column());
         }
-        return new CsvInlineTable(headers, rows);
+        return new CsvInlineTable(headers, rows, rowLocations);
     }
 
     private List<String> parseCsvLine(String line) {
