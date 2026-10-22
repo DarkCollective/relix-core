@@ -45,6 +45,27 @@ compare the two sides: `Users.dept_id = Depts.dept_id`. A condition that filters
 side on purpose, such as `Customers ⨝ Customers.customer_id = 1 Orders`, is a filtered
 cross product, and the warning is only there to say so.
 
+# A column both inputs have:
+When both inputs declare a column of the same name, the result keeps the left
+input's column under that name and calls the right input's `<name>_r`. A later
+`π name` then reads the left column, which is often not the one meant, and the
+result's heading does not show it. So `⨝`, `⟕`, `⟖`, `⟗` and `ASOF` give a
+**warning** at the join for each such column, naming which input's column keeps the
+name and what the other's is called:
+
+```
+warning: Theta join ⋈: both inputs have 'name': the result keeps GarageRooms.name as 'name' and calls devices.name 'name_r'. To keep both under names of your own, rename one first: RENAME (name -> devices_name) (devices)
+```
+
+A column the condition equates across the inputs, as `room_id` in
+`GarageRooms.room_id = devices.room_id`, is quiet under `⨝`, `⟕` and `ASOF`, since
+its two copies hold the same value on every row. Under `⟖` and `⟗` it still warns:
+an unmatched right row has no left copy, so `room_id` is NULL there while
+`room_id_r` holds the value. A qualified reference such as `devices.name` reads the
+column it names whatever it is called, so the warning can be left as it is when every
+later reference is qualified. `⋉` and `▷` keep the left input's columns alone and say
+nothing, and so does the natural join `⋈`, which merges the shared columns by design.
+
 # Qualified column references above a join:
 When both sides expose a column of the same name, the joined relation keeps both.
 A **relation-qualified** reference — `Relation.column` — resolves to the exact

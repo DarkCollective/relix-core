@@ -1581,7 +1581,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     public Void visit(ThetaJoinNode node) {
         node.left().accept(this);
         node.right().accept(this);
-        validateJoinCondition(node.left(), node.right(), node.condition(), "Theta join ⋈");
+        if (validateJoinCondition(node.left(), node.right(), node.condition(), "Theta join ⋈")) {
+            warnColumnClashes(node, node.left(), node.right(), node.condition(), "Theta join ⋈", true);
+        }
         return null;
     }
 
@@ -1589,7 +1591,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     public Void visit(LeftOuterJoinNode node) {
         node.left().accept(this);
         node.right().accept(this);
-        validateJoinCondition(node.left(), node.right(), node.condition(), "Left outer join ⟕");
+        if (validateJoinCondition(node.left(), node.right(), node.condition(), "Left outer join ⟕")) {
+            warnColumnClashes(node, node.left(), node.right(), node.condition(), "Left outer join ⟕", true);
+        }
         return null;
     }
 
@@ -1597,7 +1601,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     public Void visit(RightOuterJoinNode node) {
         node.left().accept(this);
         node.right().accept(this);
-        validateJoinCondition(node.left(), node.right(), node.condition(), "Right outer join ⟖");
+        if (validateJoinCondition(node.left(), node.right(), node.condition(), "Right outer join ⟖")) {
+            warnColumnClashes(node, node.left(), node.right(), node.condition(), "Right outer join ⟖", false);
+        }
         rejectUnmatchedRightOverOpen(node, node.left(), node.right(), "Right outer join ⟖");
         return null;
     }
@@ -1606,7 +1612,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     public Void visit(FullOuterJoinNode node) {
         node.left().accept(this);
         node.right().accept(this);
-        validateJoinCondition(node.left(), node.right(), node.condition(), "Full outer join ⟗");
+        if (validateJoinCondition(node.left(), node.right(), node.condition(), "Full outer join ⟗")) {
+            warnColumnClashes(node, node.left(), node.right(), node.condition(), "Full outer join ⟗", false);
+        }
         rejectUnmatchedRightOverOpen(node, node.left(), node.right(), "Full outer join ⟗");
         return null;
     }
@@ -1667,7 +1675,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     public Void visit(AsOfJoinNode node) {
         node.left().accept(this);
         node.right().accept(this);
-        validateJoinCondition(node.left(), node.right(), node.condition(), "AS-OF join ASOF");
+        if (validateJoinCondition(node.left(), node.right(), node.condition(), "AS-OF join ASOF")) {
+            warnColumnClashes(node, node.left(), node.right(), node.condition(), "AS-OF join ASOF", true);
+        }
         ComparisonPredicate matchOn = validateAsOfShape(node);
         if (node.tolerance().isPresent()) {
             validateAsOfTolerance(node, matchOn);
@@ -2381,12 +2391,15 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      *
      * <p>Skips silently if either input schema is missing (inference already
      * reported an error for the unresolvable subtree).
+     *
+     * @return whether the condition is valid and relates the two inputs, so that what
+     *         it equates can be trusted
      */
-    private void validateJoinCondition(RelNode left, RelNode right,
-                                       Predicate condition, String opName) {
+    private boolean validateJoinCondition(RelNode left, RelNode right,
+                                          Predicate condition, String opName) {
         Optional<Schema> leftOpt  = annotations.get(left);
         Optional<Schema> rightOpt = annotations.get(right);
-        if (leftOpt.isEmpty() || rightOpt.isEmpty()) return;
+        if (leftOpt.isEmpty() || rightOpt.isEmpty()) return false;
         Schema combined = leftOpt.get().concat(rightOpt.get());
         int before = errors.size();
         validatePredicate(condition, combined, opName);
@@ -2396,6 +2409,28 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     left, right, leftOpt.get(), rightOpt.get(), condition, opName)) {
                 errors.add(SemanticError.warning(loc.filePath(), loc.line(), loc.column(), message));
             }
+        }
+        return errors.size() == before;
+    }
+
+    /**
+     * Warns, at {@code node}, about each column both inputs of a join that keeps both
+     * sides' columns declare, since the result calls the right one {@code name_r} without
+     * saying so (#201). Called only for a condition that is valid and relates the
+     * inputs: a broken one is the thing to fix first, and fixing it changes the keys.
+     *
+     * @param keyCopiesEqual whether a column the condition equates across the inputs has
+     *                       the same value in both copies on every row, so it can stay quiet
+     */
+    private void warnColumnClashes(RelNode node, RelNode left, RelNode right, Predicate condition,
+                                   String opName, boolean keyCopiesEqual) {
+        // validateJoinCondition has found both headings.
+        Schema leftSchema  = annotations.get(left).orElseThrow();
+        Schema rightSchema = annotations.get(right).orElseThrow();
+        SourceLocation loc = node.location();
+        for (String message : JoinConditionChecks.clashWarnings(
+                left, right, leftSchema, rightSchema, condition, opName, keyCopiesEqual)) {
+            errors.add(SemanticError.warning(loc.filePath(), loc.line(), loc.column(), message));
         }
     }
 

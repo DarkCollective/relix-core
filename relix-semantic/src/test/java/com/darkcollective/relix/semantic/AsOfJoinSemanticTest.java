@@ -69,7 +69,8 @@ final class AsOfJoinSemanticTest {
         void acceptsTimestampMatchColumn() {
             assertThat(analyze(TYPED + "query { TradesT ASOF TradesT.sym = QuotesT.sym "
                     + "∧ TradesT.ts >= QuotesT.ts WITHIN DURATION 'PT1M' QuotesT };")).messages()
-                    .isEmpty();
+                    // The match column is named alike on both sides, so the result calls the right one ts_r.
+                    .allSatisfy(m -> assertThat(m).contains("both inputs have 'ts'"));
         }
 
         @Test
@@ -77,7 +78,8 @@ final class AsOfJoinSemanticTest {
         void acceptsStringMatchColumnWithoutTolerance() {
             assertThat(analyze(INLINE + "query { Trades ASOF Trades.sym = Quotes.sym "
                     + "∧ Trades.ts >= Quotes.ts Quotes };")).messages()
-                    .isEmpty();
+                    // The match column is named alike on both sides, so the result calls the right one ts_r.
+                    .allSatisfy(m -> assertThat(m).contains("both inputs have 'ts'"));
         }
 
         @Test
@@ -90,7 +92,8 @@ final class AsOfJoinSemanticTest {
                   + "schema: { sym: STRING, ts: ANY } };\n"
                   + "query { Feed ASOF Feed.sym = Book.sym ∧ Feed.ts >= Book.ts "
                   + "WITHIN DURATION 'PT1M' Book };")).messages()
-                    .isEmpty();
+                    // The match column is named alike on both sides, so the result calls the right one ts_r.
+                    .allSatisfy(m -> assertThat(m).contains("both inputs have 'ts'"));
         }
 
         @Test

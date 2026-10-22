@@ -54,7 +54,7 @@ final class QualifiedReferenceValidationTest {
                 "Joined := { π devices.name → d, rooms.name → r "
                 + "(devices ⨝ devices.room_id = rooms.room_id rooms) };\n"
                 + "query Joined;"))
-                .isEmpty();
+                .filteredOn(e -> e.severity() == Severity.ERROR).isEmpty();
     }
 
     @Test
@@ -64,7 +64,7 @@ final class QualifiedReferenceValidationTest {
                 "Living := { σ rooms.name = \"LivingRoom\" "
                 + "(devices ⨝ devices.room_id = rooms.room_id rooms) };\n"
                 + "query Living;"))
-                .isEmpty();
+                .filteredOn(e -> e.severity() == Severity.ERROR).isEmpty();
     }
 
     @Test
