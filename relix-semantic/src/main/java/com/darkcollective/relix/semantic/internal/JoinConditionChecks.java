@@ -16,6 +16,7 @@
 package com.darkcollective.relix.semantic.internal;
 
 import com.darkcollective.relix.ast.AttributeOperand;
+import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.RelNode;
@@ -24,11 +25,14 @@ import com.darkcollective.relix.ast.RenameNode;
 import com.darkcollective.relix.ast.internal.AttributeNames;
 import com.darkcollective.relix.ast.internal.OperandWalker;
 import com.darkcollective.relix.ast.internal.Predicates;
+import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.Schema;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -46,6 +50,9 @@ import java.util.Set;
  * <p>A reference is placed on a side only when both headings are declared and say so
  * without doubt; one either side could own makes the check say nothing, so a warning
  * is never a guess.
+ *
+ * <p>It also names each column both inputs of such a join declare, which the result
+ * keeps under one name for the left and renames for the right ({@link #clashWarnings}).
  */
 final class JoinConditionChecks {
 
@@ -126,6 +133,80 @@ final class JoinConditionChecks {
             warnings.add(opName + ": no part of the condition relates " + leftName + " to "
                     + rightName + ": each conjunct refers to one side only, so every row of "
                     + leftName + " is paired with every row of " + rightName + " that passes it");
+        }
+        return warnings;
+    }
+
+    /**
+     * The warnings for the columns both inputs of a join that keeps both sides' columns
+     * declare, one per column in left order (#201).
+     *
+     * <p>The result keeps the left input's column under the shared name and calls the
+     * right's {@code name_r}, so a later {@code PROJECT name} reads the left one whether
+     * or not that was meant, and the result's heading does not show it. A column the
+     * condition equates across the inputs ({@code A.id = B.id}) is quiet when
+     * {@code keyCopiesEqual}, since its two copies then hold the same value on every row;
+     * under a right or full outer join they do not, as an unmatched right row has no left
+     * copy.
+     *
+     * @param left           the left input
+     * @param right          the right input
+     * @param leftSchema     the left input's heading
+     * @param rightSchema    the right input's heading
+     * @param condition      the join condition
+     * @param opName         the operator as messages name it, such as {@code Theta join ⋈}
+     * @param keyCopiesEqual whether an equated key's two copies are equal on every row
+     * @return the warning messages; empty when the inputs share no column or a heading
+     *         is open
+     */
+    static List<String> clashWarnings(RelNode left, RelNode right, Schema leftSchema, Schema rightSchema,
+                                      Predicate condition, String opName, boolean keyCopiesEqual) {
+        if (leftSchema.isOpen() || rightSchema.isOpen()) {
+            return List.of();
+        }
+        Set<String> keys = new HashSet<>();
+        if (keyCopiesEqual) {
+            for (Predicate conjunct : Predicates.conjuncts(condition)) {
+                if (conjunct instanceof ComparisonPredicate c && c.operator() == ComparisonOperator.EQUAL
+                        && c.left() instanceof AttributeOperand l && c.right() instanceof AttributeOperand r
+                        && l.unqualifiedName().equalsIgnoreCase(r.unqualifiedName())
+                        && EnumSet.of(sideOf(l.name(), leftSchema, rightSchema),
+                                sideOf(r.name(), leftSchema, rightSchema))
+                            .equals(EnumSet.of(Side.LEFT, Side.RIGHT))) {
+                    keys.add(l.unqualifiedName().toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        // A self-join's two inputs answer to one name, which tells them apart no better.
+        boolean selfJoin = displayName(left).isPresent() && displayName(left).equals(displayName(right));
+        Optional<String> leftName = selfJoin ? Optional.empty() : displayName(left);
+        Optional<String> rightName = selfJoin ? Optional.empty() : displayName(right);
+        List<ColumnDefinition> result = leftSchema.concat(rightSchema).columns();
+        int leftCount = leftSchema.columns().size();
+        List<String> warnings = new ArrayList<>();
+        for (ColumnDefinition column : leftSchema.columns()) {
+            String name = column.name();
+            if (keys.contains(name.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            List<ColumnDefinition> rightColumns = rightSchema.columns();
+            for (int i = 0; i < rightColumns.size(); i++) {
+                if (!rightColumns.get(i).name().equalsIgnoreCase(name)) {
+                    continue;
+                }
+                String rightColumn = rightColumns.get(i).name();
+                String renamed = result.get(leftCount + i).name();
+                String rename = rightName
+                        .map(r -> "RENAME (" + rightColumn + " -> " + r.toLowerCase(Locale.ROOT) + "_"
+                                + rightColumn + ") (" + r + ")")
+                        .orElse("RENAME (" + rightColumn + " -> new_name) (…) around the right input");
+                warnings.add(opName + ": both inputs have '" + name + "': the result keeps "
+                        + leftName.map(l -> l + "." + name).orElse("the left input's " + name)
+                        + " as '" + name + "' and calls "
+                        + rightName.map(r -> r + "." + rightColumn).orElse("the right input's " + rightColumn)
+                        + " '" + renamed + "'. To keep both under names of your own, rename one first: "
+                        + rename);
+            }
         }
         return warnings;
     }
