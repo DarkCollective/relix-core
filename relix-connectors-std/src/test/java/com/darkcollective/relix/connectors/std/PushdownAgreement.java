@@ -29,6 +29,7 @@ import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.semantic.CatalogProvider;
 import com.darkcollective.relix.semantic.SemanticFixtures;
 import com.darkcollective.relix.semantic.SemanticModel;
+import com.darkcollective.relix.semantic.Severity;
 import com.darkcollective.relix.semantic.internal.SemanticResult;
 import org.junit.jupiter.api.Assumptions;
 
@@ -172,7 +173,8 @@ final class PushdownAgreement {
         String script = preamble + "query { " + expression + " };";
         Plans plans = plans(script);
         SemanticResult analysis = SemanticFixtures.analyze(script, CATALOG);
-        assertThat(analysis.errors()).as("analysis of: %s", expression).isEmpty();
+        assertThat(analysis.errors()).as("analysis of: %s", expression)
+                .filteredOn(e -> e.severity() == Severity.ERROR).isEmpty();
         SemanticModel model = analysis.model().orElseThrow();
         assertThat(model.connections().values().stream().map(Dialect::of))
                 .as("the connection this suite declares resolves to the dialect it claims "

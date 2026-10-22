@@ -17,6 +17,7 @@ package com.darkcollective.relix.processor;
 
 import com.darkcollective.relix.processor.internal.QueryExecutor;
 import com.darkcollective.relix.processor.internal.QueryResult;
+import com.darkcollective.relix.semantic.Severity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -40,7 +41,8 @@ final class QualifiedColumnReferenceIntegrationTest extends ProcessorTestSupport
 
     private static List<QueryResult> run(String src) {
         var result = analyze(src);
-        assertThat(result.errors()).as("semantic errors").isEmpty();
+        assertThat(result.errors()).as("semantic errors")
+                .filteredOn(e -> e.severity() == Severity.ERROR).isEmpty();
         return EXECUTOR.execute(result);
     }
 

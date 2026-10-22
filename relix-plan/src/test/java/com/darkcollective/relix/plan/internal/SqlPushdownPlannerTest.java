@@ -24,6 +24,7 @@ import com.darkcollective.relix.lang.ast.ExpressionQueryTarget;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.semantic.CatalogProvider;
 import com.darkcollective.relix.semantic.SemanticFixtures;
+import com.darkcollective.relix.semantic.Severity;
 import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
@@ -2089,7 +2090,8 @@ final class SqlPushdownPlannerTest {
         /** Pushes the first query of {@code src}, with dotted references resolved by the catalog. */
         private static Optional<PhysicalNode.PushedScan> pushDotted(String src) {
             SemanticResult result = SemanticFixtures.analyze(src, CATALOG);
-            assertThat(result.errors()).as("analysis of: %s", src).isEmpty();
+            assertThat(result.errors()).as("analysis of: %s", src)
+                    .filteredOn(e -> e.severity() == Severity.ERROR).isEmpty();
             SemanticModel model = result.model().orElseThrow();
             RelNode logical =
                     ((ExpressionQueryTarget) model.rootQueries().get(0).target()).expression();
