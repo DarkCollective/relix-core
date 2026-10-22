@@ -86,7 +86,7 @@ import_stmt       ::= "import" NONBLANK_STRING_DQ ";"
    Name := [ | a | b | … ];  an inline table (see Inline tables)          */
 assignment        ::= script_name ":=" assignment_body ";"
 assignment_body   ::= "{" rel_expr "}"
-                    | inline_table ( "references" references_block )?
+                    | inline_table ( "schema" schema_block )? ( "references" references_block )?
 
 /* query Name;  or  query { expression };  — marks a result to produce.
    The bare form takes one plain name: write query { relix.plan }; for a
@@ -248,7 +248,14 @@ boolean_literal   ::= "true" | "false"
    puts each row on a line of its own.
 
    Cells are trimmed. A cell's type is inferred: a column whose every value is a
-   number is NUMBER, anything else is STRING. */
+   number is NUMBER, anything else is STRING.
+
+   A schema block after the rows declares some or all columns' types:
+     Readings := [ … ] schema { read_at: TIMESTAMP };
+   Each cell of a declared column is parsed to its type as a CSV source parses a
+   field, and an empty cell is NULL. The block names columns of the header, each
+   once, with a scalar type other than ANY and no binding or modifier; a cell that
+   does not parse is an error at its row. */
 inline_table      ::= MARKDOWN_TABLE
                     | "csv" CSV_TABLE
 ```

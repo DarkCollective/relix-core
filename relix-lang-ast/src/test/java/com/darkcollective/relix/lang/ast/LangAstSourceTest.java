@@ -373,6 +373,18 @@ final class LangAstSourceTest {
             assertThatThrownBy(() -> new CsvInlineTable(List.of(), List.of()))
                     .isInstanceOf(IllegalArgumentException.class);
         }
+
+        @Test
+        @DisplayName("Takes one row location per row")
+        void rowLocations() {
+            SourceLocation at = new SourceLocation("t.relix", 4, 1);
+            assertThat(new CsvInlineTable(List.of("id"), List.of(List.of("1")), List.of(at))
+                    .rowLocations()).containsExactly(at);
+            assertThatThrownBy(() -> new CsvInlineTable(
+                    List.of("id"), List.of(List.of("1"), List.of("2")), List.of(at)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("one location per row");
+        }
     }
 
     @Nested

@@ -14,6 +14,9 @@
   v1, v2
 ];
 
+-- Either form, with declared column types:
+<Name> := [ … ] schema { col1: TIMESTAMP };
+
 # Description:
 An inline table embeds small reference data directly in the script — lookup
 tables, status-code mappings, region lists — without needing an external file or
@@ -27,6 +30,24 @@ come from the header row and all values are strings unless a column contains onl
 numbers (which infers NUMBER). In the csv form, the first non-blank line is the
 header and fields with commas are quoted. Use csv[ ] when values contain commas or
 pipe characters.
+
+A `schema { col: TYPE, … }` block after the rows declares column types, as a CSV
+source's `schema:` field does. Each cell of a declared column is parsed to its type as
+a CSV source parses a field: NUMBER as a decimal, BOOLEAN as `true`/`1` or
+`false`/`0` in any case, and DATE, TIME, TIMESTAMP, TIMESTAMPTZ and DURATION against
+ISO-8601. STRING keeps the text. An empty cell is NULL. The block may name some
+columns and not others; the rest are inferred as above. It names each column of the
+header at most once, gives each a type and nothing more (no binding or modifier), and
+goes before a `references` clause. A schema naming a column the header lacks is a
+syntax error at that name, and a cell that does not parse as its column's type is an
+error at its row:
+
+```
+Readings.read_at, row 2: 'yesterday' is not a TIMESTAMP, the type its schema declares
+```
+
+Analysis does not warn about a declared column's cells, as it does below for
+inferred ones: a cell that does not read as the declared type is already an error.
 
 The header names every column once: no header cell is empty, and no two name the same
 column, ignoring case as column names are matched. Every row has exactly as many cells as
@@ -110,6 +131,26 @@ Prices := [
 ];
 ```
 
+Declared types, here a TIMESTAMP column beside an inferred NUMBER one with a
+missing value:
+```relix
+Readings := [
+| capability_id | read_at              | value |
+|---------------|----------------------|-------|
+| 701           | 2026-10-22T14:00:00Z | 70.0  |
+| 702           | 2026-10-22T13:00:00Z |       |
+] schema { read_at: TIMESTAMP };
+```
+
+The csv form takes a schema block the same way:
+```relix
+Flags := csv[
+    id, enabled, since
+    1, true, 2026-01-05
+    2, false, 2026-03-12
+] schema { enabled: BOOLEAN, since: DATE };
+```
+
 CSV form for values containing commas:
 ```relix
 Cities := csv[
@@ -136,8 +177,8 @@ Offices := [
 
 # Limitations:
 Intended for small, static reference data — not large datasets (use a source for
-those). Type inference is limited (numbers vs strings); there is no explicit
-schema clause on inline tables.
+those). Type inference is limited to numbers and strings; declare any other type with
+a schema block. A schema block's types are scalar: a nested or ANY column is refused.
 
 # Alternatives:
 `source … from csv("path")` for external files; `source … from database` for live

@@ -16,14 +16,18 @@
 package com.darkcollective.relix.lang;
 
 import com.darkcollective.relix.lang.ast.source.*;
+import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Type;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Parses source-declaration config blocks on behalf of {@link ScriptParser}.
@@ -307,6 +311,59 @@ final class SourceConfigParser {
         }
         parser.consume(LangTokenType.RBRACE);
         return Collections.unmodifiableList(specs);
+    }
+
+    /**
+     * Parses an inline table's {@code \{ colName: TYPE, … \}} block, after its
+     * {@code schema} keyword. Each entry names one of the table's columns, once, and
+     * a type a cell can be read as; a binding or a modifier has nothing to act on. An
+     * entry takes the header's spelling of its column, as columns match ignoring case.
+     *
+     * @param table   the table's name, as messages name it
+     * @param headers the table's columns
+     */
+    List<ColumnSpec> parseInlineSchemaBlock(String table, List<String> headers) {
+        parser.consume(LangTokenType.LBRACE);
+        List<ColumnSpec> specs = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        while (parser.current.type() != LangTokenType.RBRACE
+                && parser.current.type() != LangTokenType.EOF) {
+            LangToken at = parser.current;
+            ColumnSpec spec = parseColumnSpec(false);
+            String column = headers.stream()
+                    .filter(h -> h.equalsIgnoreCase(spec.name()))
+                    .findFirst()
+                    .orElseThrow(() -> new LangParseException("Inline table " + table
+                            + " has no column '" + spec.name() + "' for its schema to type;"
+                            + " its columns are " + String.join(", ", headers),
+                            at.line(), at.column()));
+            if (!seen.add(column.toLowerCase(Locale.ROOT))) {
+                throw new LangParseException("Inline table " + table
+                        + "'s schema types column '" + column + "' twice", at.line(), at.column());
+            }
+            if (!(spec.type() instanceof ScalarType type) || type == ScalarType.ANY) {
+                throw new LangParseException("Inline table " + table + "'s column '" + column
+                        + "' cannot be " + typeName(spec.type()) + "; a cell is read as NUMBER,"
+                        + " STRING, BOOLEAN, DATE, TIME, TIMESTAMP, TIMESTAMPTZ or DURATION",
+                        at.line(), at.column());
+            }
+            if (spec.binding().isPresent() || spec.required() || spec.defaultValue().isPresent()) {
+                throw new LangParseException("Inline table " + table + "'s column '" + column
+                        + "' takes a type only: its cells are its values, so there is"
+                        + " nothing to bind or default", at.line(), at.column());
+            }
+            specs.add(ColumnSpec.out(column, type));
+            if (parser.current.type() == LangTokenType.COMMA) {
+                parser.advance();
+            }
+        }
+        parser.consume(LangTokenType.RBRACE);
+        return Collections.unmodifiableList(specs);
+    }
+
+    /** A type as the grammar spells it: {@code ANY}, or {@code [NUMBER]} by its display. */
+    private static String typeName(Type type) {
+        return type instanceof ScalarType scalar ? scalar.name() : type.display();
     }
 
     private ColumnSpec parseColumnSpec(boolean allowDirection) {
