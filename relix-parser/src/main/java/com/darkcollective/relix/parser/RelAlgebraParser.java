@@ -3654,7 +3654,7 @@ public final class RelAlgebraParser {
         }
 
         if (!isComparison(current.type())) {
-            rejectColumnListAfterSelect();
+            rejectColumnListAfterSelect(leftStart);
             throw error(current, "Expected comparison operator");
         }
 
@@ -3713,14 +3713,26 @@ public final class RelAlgebraParser {
      * comparison's place, the condition was never a condition: it is a column list, and
      * saying "expected comparison operator" sends the writer to the literal or the arrow.
      * The error names the operator that chooses columns instead.
+     *
+     * <p>Where the whole condition is one operand, from {@code consumed[leftStart]}, and a
+     * relation in parentheses follows it, {@code SELECT x (R)} is SQL's {@code SELECT x
+     * FROM R}: the error echoes it as {@code PROJECT x (R)}, or as the GROUP an aggregate
+     * needs.
      */
-    private void rejectColumnListAfterSelect() {
-        if (selection == null
-                || current.type() != TokenType.ARROW && current.type() != TokenType.COMMA) {
+    private void rejectColumnListAfterSelect(int leftStart) {
+        if (selection == null) {
+            return;
+        }
+        boolean input = current.type() == TokenType.LPAREN && leftStart == selectionAt;
+        if (!input && current.type() != TokenType.ARROW && current.type() != TokenType.COMMA) {
             return;
         }
         Token sign = current;
         Token select = selection;
+        if (input && callsBetween(selectionAt, consumed.size()).isEmpty()) {
+            rejectProjectionAfterSelect(select, sign);
+            return;
+        }
         if (callsBetween(selectionAt, consumed.size()).isEmpty()) {
             String written = select.lexeme().equals("σ") ? "'σ'" : "'" + select.lexeme() + "' (σ)";
             throw ParseException.at(written + " filters rows by a"
@@ -3751,6 +3763,29 @@ public final class RelAlgebraParser {
                 + (isGlyph(select) ? "γ" : "GROUP") + ": write "
                 + (fix != null ? fix : (isGlyph(select) ? "γ" : "GROUP") + " AVG(x) -> avg (R)"),
                 lexer.input(), at);
+    }
+
+    /**
+     * Refuses {@code SELECT x (R)}, a column or expression and then an input where the
+     * comparison belongs, at the {@code (}, naming {@code PROJECT x (R)} as written, or
+     * {@code PROJECT x + 1 -> c (R)} for an expression, which needs a name. Where the
+     * input does not read as a relation, the plain error stands.
+     */
+    private void rejectProjectionAfterSelect(Token select, Token paren) {
+        boolean glyph = isGlyph(select);
+        String column = writtenFrom(selectionAt)
+                + (isColumnName(selectionAt, consumed.size()) ? "" : (glyph ? " → c" : " -> c"));
+        int inputStart = consumed.size();
+        try {
+            parseParenthesizedRelation("Expected '(' after the column");
+        } catch (ParseException e) {
+            throw error(paren, "Expected comparison operator");
+        }
+        String written = glyph ? "'σ'" : "'" + select.lexeme() + "' (σ)";
+        throw ParseException.at(written + " filters rows by a condition, and found '('"
+                + " where its comparison belongs. To choose columns, use PROJECT (π): write "
+                + (glyph ? "π " : "PROJECT ") + column + " " + writtenFrom(inputStart),
+                lexer.input(), paren);
     }
 
     /**
