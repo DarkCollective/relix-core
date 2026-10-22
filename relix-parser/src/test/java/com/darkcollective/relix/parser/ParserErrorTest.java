@@ -81,9 +81,41 @@ final class ParserErrorTest extends ParserTestSupport {
 
     @Test
     public void reportsMissingSelectionComparison() {
-        assertParseError("σ age (Users)")
-                .hasMessageContaining("Expected comparison operator")
+        assertParseError("σ age (Users) ∪ T")
+                .hasMessageContaining("'σ' filters rows by a condition, and found '(' where its"
+                        + " comparison belongs. To choose columns, use PROJECT (π): write π age (Users)")
                 .at(1, 7);
+        assertParseError("σ age > 1 AND name (Users)")
+                .hasMessageContaining("Expected comparison operator")
+                .at(1, 20);
+        assertParseError("SELECT age (")
+                .hasMessageContaining("Expected comparison operator")
+                .at(1, 12);
+    }
+
+    @Test
+    @DisplayName("SELECT with one column or aggregate and an input names PROJECT or GROUP (#203)")
+    public void reportsSingleColumnSelect() {
+        assertParseError("SELECT x (A)")
+                .hasMessageContaining("'SELECT' (σ) filters rows by a condition, and found '(' where"
+                        + " its comparison belongs. To choose columns, use PROJECT (π): write PROJECT x (A)")
+                .at(1, 10);
+        assertParseError("SELECT name (SELECT name LIKE '%P%' (devices))")
+                .hasMessageContaining("write PROJECT name (SELECT name LIKE '%P%' (devices))");
+        assertParseError("SELECT COUNT(*) (A)")
+                .hasMessageContaining("'SELECT' filters rows; an aggregate belongs in GROUP:"
+                        + " write GROUP COUNT(*) -> n (A)")
+                .at(1, 14);
+        assertParseError("SELECT MAX(x) (A)")
+                .hasMessageContaining("'SELECT' filters rows; an aggregate belongs in GROUP:"
+                        + " write GROUP MAX(x) -> m (A)")
+                .at(1, 15);
+        assertParseError("σ MAX(x) (A)")
+                .hasMessageContaining("'σ' filters rows; an aggregate belongs in γ: write γ MAX(x) → m (A)");
+        assertThat(parse("PROJECT x (A)")).isNode(ProjectionNode.class);
+        assertThat(parse("π (a + b) → c (R)")).isNode(ProjectionNode.class);
+        assertThat(parse("GROUP COUNT(*) -> n (A)")).isNode(AggregationNode.class);
+        assertThat(parse("GROUP MAX(x) -> m (A)")).isNode(AggregationNode.class);
     }
 
     @Test
@@ -838,6 +870,9 @@ final class ParserErrorTest extends ParserTestSupport {
     @Test
     public void reportsGroupedArithmeticWithoutComparisonInPredicate() {
         assertParseError("σ (a + b) (R)")
+                .hasMessageContaining("To choose columns, use PROJECT (π): write π (a + b) → c (R)")
+                .at(1, 11);
+        assertParseError("σ (a + b) (")
                 .hasMessageContaining("Expected comparison operator")
                 .at(1, 11);
     }

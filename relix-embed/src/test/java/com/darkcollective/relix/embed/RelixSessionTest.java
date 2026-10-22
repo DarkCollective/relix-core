@@ -687,6 +687,42 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("SELECT with one column or aggregate and an input names PROJECT or GROUP (#203)")
+        void singleColumnSelectDiagnosed() {
+            String tables = "orders := [| customer_id | total |\n| 1 | 120 |];\n";
+            // expression, column, the message's end, the rewrite that validates
+            String[][] cases = {
+                    {"SELECT customer_id (orders)", "20",
+                            "'SELECT' (σ) filters rows by a condition, and found '(' where its comparison"
+                                    + " belongs. To choose columns, use PROJECT (π): write PROJECT customer_id (orders)",
+                            "PROJECT customer_id (orders)"},
+                    {"SELECT total * 2 (SELECT total > 1 (orders))", "18",
+                            "write PROJECT total * 2 -> c (SELECT total > 1 (orders))",
+                            "PROJECT total * 2 -> c (SELECT total > 1 (orders))"},
+                    {"SELECT COUNT(*) (orders)", "14",
+                            "'SELECT' filters rows; an aggregate belongs in GROUP: write GROUP COUNT(*) -> n (orders)",
+                            "GROUP COUNT(*) -> n (orders)"},
+                    {"SELECT MAX(total) (orders)", "19",
+                            "'SELECT' filters rows; an aggregate belongs in GROUP: write GROUP MAX(total) -> m (orders)",
+                            "GROUP MAX(total) -> m (orders)"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + "Q := { " + c[0] + " };\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .startsWith("Syntax error in RA expression: ")
+                            .endsWith(c[2]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0]).isEqualTo(3);
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
+                    assertThat(relix.validate(tables + "Q := { " + c[3] + " };\n"))
+                            .as("the rewrite of " + c[0] + " validates").isEmpty();
+                }
+            }
+        }
+
+        @Test
         @DisplayName("a join's right relation written before its condition is one error naming the fix")
         void rightInputBeforeConditionDiagnosed() {
             String tables = "customers := [| customer_id | name |\n| 1 | a |];\n"
