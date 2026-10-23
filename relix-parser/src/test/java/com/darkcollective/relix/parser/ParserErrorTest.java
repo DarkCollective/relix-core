@@ -221,6 +221,45 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("a GROUP after a PROJECT that holds the aggregates moves them into GROUP, in a rewrite that parses")
+    public void movesProjectedAggregatesIntoGroup() {
+        String written = "In Relix the aggregates go in GROUP, after its keys: write ";
+        String rewrite = "GROUP customer_id, MAX(viewed_at) -> last_view (P)";
+        assertParseError("PROJECT customer_id, MAX(viewed_at) -> last_view (P) GROUP customer_id")
+                .hasMessageContaining(written + rewrite)
+                .at(1, 54);
+        assertParseError("PROJECT customer_id, MAX(viewed_at) -> last_view (P) GROUP BY customer_id")
+                .hasMessageContaining(written + rewrite);
+        // Written in Relix's order but with the aggregate still in the PROJECT.
+        assertParseError("GROUP customer_id (PROJECT customer_id, MAX(viewed_at) -> last_view (P))")
+                .hasMessageContaining(written + rewrite);
+        RelAlgebraParser.parse(rewrite);
+        String several = "GROUP a, b, SUM(x * 2) -> s, AVG(y) -> n (SELECT x > 1 (T))";
+        assertParseError("PROJECT a, b, SUM(x * 2) -> s, AVG(y) -> n (SELECT x > 1 (T)) GROUP a, b")
+                .hasMessageContaining(written + several);
+        RelAlgebraParser.parse(several);
+        assertParseError("π k, MAX(x) → m (R) γ k")
+                .hasMessageContaining("In Relix the aggregates go in γ, after its keys: write γ k, MAX(x) → m (R)");
+        RelAlgebraParser.parse("γ k, MAX(x) → m (R)");
+        // No aggregate in the PROJECT, or more than one PROJECT: the messages they had.
+        assertParseError("PROJECT a, b (T) GROUP a")
+                .hasMessageContaining("'GROUP' is written before its input");
+        assertParseError("GROUP a (PROJECT a, b (T))")
+                .hasMessageContaining("for distinct rows write DISTINCT (PROJECT a (PROJECT a, b (T)))");
+        assertParseError("PROJECT a, STDDEV(x) -> sd (T) GROUP a")
+                .hasMessageContaining(written + "GROUP a, STDDEV(x) -> sd (T)");
+        RelAlgebraParser.parse("GROUP a, STDDEV(x) -> sd (T)");
+        // A scalar call is not an aggregate, and is left behind with the keys.
+        assertParseError("PROJECT a, UPPER(b) -> u, MAX(x) -> m (T) GROUP a")
+                .hasMessageContaining(written + "GROUP a, MAX(x) -> m (T)");
+        for (String other : List.of("R ⋈ PROJECT a, MAX(x) -> m (T) GROUP a",
+                "PROJECT a (R) ⋈ PROJECT a, MAX(x) -> m (T) GROUP a",
+                "PROJECT a, MAX(x) -> m (T) ⋈ R GROUP a")) {
+            assertParseError(other).hasMessageContaining("'GROUP' is written before its input");
+        }
+    }
+
+    @Test
     @DisplayName("an operator written after its input, SQL's ORDER BY order, is rewritten into Relix's")
     public void reportsOperatorAfterItsInput() {
         assertParseError("PROJECT Item, Value (Selected) SORT Item ASC")

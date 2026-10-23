@@ -955,6 +955,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 new PredicateValidator(input, symbolTable, functions, errors, filePath,
                         node.location(), "Window " + a.operator().name(), parameters)
                         .validateExpression(a.argument());
+                validateSummed(a.operator(), a.argument(), input, node.location(), false);
             }
             case WindowFunction.RankingWindow r -> {
                 r.ntileCount().ifPresent(c -> new PredicateValidator(
@@ -2050,10 +2051,44 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     input, symbolTable, functions, errors, filePath, node.location(),
                     "Aggregation γ " + agg.operator().name(), parameters);
             operandValidator.validateExpression(agg.argument());
+            validateSummed(agg.operator(), agg.argument(), input, node.location(), true);
             agg.yieldExpr().ifPresent(operandValidator::validateExpression);
             agg.orderBy().forEach(s -> operandValidator.validateExpression(s.expression()));
         }
         return null;
+    }
+
+    /**
+     * Refuses {@code SUM} or {@code AVG} over a value that is not a number. Either adds
+     * only the numbers it reads, so over a BOOLEAN or a STRING it returned NULL for every
+     * group, with nothing to say why. SQL's habit of counting a condition,
+     * {@code SUM(status = 'open')}, is the usual way in, and the message names the
+     * Relix spelling of that count; {@code COUNT(*) FILTER} only where a GROUP reads it.
+     */
+    private void validateSummed(AggregateOperator operator, Operand argument, Schema input,
+                                SourceLocation loc, boolean grouped) {
+        if (operator != AggregateOperator.SUM && operator != AggregateOperator.AVG) {
+            return;
+        }
+        Type type = new OperandTypeInferrer(symbolTable, functions).infer(argument, input);
+        if (type == ScalarType.NUMBER || type == ScalarType.ANY) {
+            return;
+        }
+        String written = argument.prettyPrint();
+        if (argument instanceof ConditionOperand) {
+            // A condition prints in its parentheses, which IIf's argument and FILTER's do not need.
+            written = written.substring(1, written.length() - 1);
+        }
+        String message = operator.name() + " takes numbers, and " + written + " is "
+                + (type instanceof ScalarType ? "a " + type : type.display());
+        if (type == ScalarType.BOOLEAN) {
+            String counted = "IIf(" + written + ", 1, 0)";
+            message += operator == AggregateOperator.SUM
+                    ? ": to count the rows where it holds, write SUM(" + counted + ")"
+                            + (grouped ? " or COUNT(*) FILTER (WHERE " + written + ")" : "")
+                    : ": for the share of rows where it holds, write AVG(" + counted + ")";
+        }
+        error(loc, message);
     }
 
     // =========================================================================

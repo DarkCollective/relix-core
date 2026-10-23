@@ -167,6 +167,17 @@ final class ReferenceLookupTest {
         }
 
         @Test
+        @DisplayName("a record, SQL's ROW or STRUCT, finds the Struct page, which names them (#222)")
+        void recordFindsStruct() {
+            for (String name : List.of("record", "RECORD", "row value", "named_struct", "struct")) {
+                assertThat(INSTALLED.entry(name)).as(name)
+                        .map(ReferencePage::path).contains("literals/struct-construction.md");
+            }
+            assertThat(INSTALLED.lookup("record").orElseThrow())
+                    .contains("# SQL names:", "`{ model: model_number, state: status }`");
+        }
+
+        @Test
         @DisplayName("SQL's clauses and subquery forms find the operator that spells them, whose page names them (#218)")
         void sqlOperatorNames() {
             Map<String, String> pages = Map.ofEntries(
