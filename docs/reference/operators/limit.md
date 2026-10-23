@@ -121,6 +121,16 @@ query { λ 3 WITH TIES (Orders) };
 For a random subset use SAMPLE p (probabilistic) or SAMPLE n ROWS (exact count).
 For "N per group" rather than N overall use TOP … PER.
 
+# SQL names:
+SQL's `LIMIT n`, `TOP n`, `FETCH FIRST n ROWS ONLY` and `ROWNUM <= n` are `LIMIT n (R)`,
+and `LIMIT n OFFSET m` or `OFFSET m ROWS FETCH NEXT n ROWS ONLY` is `LIMIT m, n (R)`, the
+offset first. Its `ORDER BY` is a [sort](sort.md) below it:
+`ORDER BY amount DESC LIMIT 10` is `LIMIT 10 (SORT amount DESC (R))`, and
+`FETCH FIRST n ROWS WITH TIES` is `LIMIT n WITH TIES (SORT … (R))`. Relix's
+[TOP](../advanced/top.md) is the top rows per group, SQL's `ROW_NUMBER() OVER (PARTITION
+BY …)` filtered to `<= n`; `ORDER BY RANDOM() LIMIT n` is
+[SAMPLE n ROWS](../advanced/sample-reservoir.md).
+
 # See Also:
 [sort](sort.md), [top](../advanced/top.md), [sample-bernoulli](../advanced/sample-bernoulli.md), [sample-reservoir](../advanced/sample-reservoir.md)
 

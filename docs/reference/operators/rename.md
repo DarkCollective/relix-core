@@ -166,6 +166,14 @@ when you want to keep all columns and only change names — the pair form makes 
 subset rename as terse as a projection alias while preserving column order and
 every unlisted column.
 
+# SQL names:
+A table alias, SQL's `orders o` or `orders AS o`, is `RENAME o (orders)`, and the
+columns are then `o.column`. A self-join names each copy: `SELECT e.id, m.id FROM emp e
+JOIN emp m ON e.boss = m.id` is
+`PROJECT e.id -> emp, m.id -> mgr (RENAME e (emp) >< e.boss = m.id RENAME m (emp))`.
+A column alias, `AS` in a select list, is `->` in a [projection](project.md), or the
+pair form here, `RENAME (old -> new) (R)`, to rename it and keep every other column.
+
 # See Also:
 [project](project.md), [natural-join](../joins/natural-join.md), [theta-join](../joins/theta-join.md), [union](../set-operations/union.md)
 

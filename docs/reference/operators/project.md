@@ -107,6 +107,15 @@ struct/array construction is not pushed down to SQL backends.
 To rename a relation or all its columns without choosing a subset, use ρ
 (RENAME). To aggregate rather than compute per-row, use γ (GROUP).
 
+# SQL names:
+SQL's select list is `PROJECT`, π, and its `AS` is `->` (or `→`):
+`SELECT a, b * 2 AS c FROM R` is `PROJECT a, b * 2 -> c (R)`. There is no FROM: the
+input relation goes last, in parentheses. There is no `*` either: to keep every column,
+leave the projection out, and to keep all but a few, list the ones you keep. SQL's
+`SELECT` keyword is not this operator: Relix's `SELECT` is the filter, SQL's `WHERE`
+([Selection](select.md)). `SELECT DISTINCT` is [DISTINCT](distinct.md) over the
+projection: `DISTINCT (PROJECT a (R))`. A table alias is [RENAME](rename.md).
+
 # See Also:
 [select](select.md), [rename](rename.md), [distinct](distinct.md), [group](group.md), [struct-construction](../literals/struct-construction.md), [array-construction](../literals/array-construction.md)
 

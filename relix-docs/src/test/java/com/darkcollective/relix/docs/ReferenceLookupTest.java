@@ -167,6 +167,39 @@ final class ReferenceLookupTest {
         }
 
         @Test
+        @DisplayName("SQL's clauses and subquery forms find the operator that spells them, whose page names them (#218)")
+        void sqlOperatorNames() {
+            Map<String, String> pages = Map.ofEntries(
+                    Map.entry("WHERE", "operators/select.md"),
+                    Map.entry("HAVING", "operators/select.md"),
+                    Map.entry("select list", "operators/project.md"),
+                    Map.entry("SELECT *", "operators/project.md"),
+                    Map.entry("FROM", "operators/project.md"),
+                    Map.entry("alias", "operators/rename.md"),
+                    Map.entry("AS", "operators/rename.md"),
+                    Map.entry("self join", "operators/rename.md"),
+                    Map.entry("GROUP BY", "operators/group.md"),
+                    Map.entry("ORDER BY", "operators/sort.md"),
+                    Map.entry("FETCH NEXT", "operators/limit.md"),
+                    Map.entry("SELECT DISTINCT", "operators/distinct.md"),
+                    Map.entry("NOT EXISTS", "joins/anti-join.md"),
+                    Map.entry("not in subquery", "joins/anti-join.md"),
+                    Map.entry("EXISTS", "joins/semi-join.md"),
+                    Map.entry("in subquery", "joins/semi-join.md"),
+                    Map.entry("TABLESAMPLE", "advanced/sample-bernoulli.md"),
+                    Map.entry("ORDER BY RANDOM()", "advanced/sample-reservoir.md"));
+            pages.forEach((name, path) -> assertThat(INSTALLED.entry(name)).as(name)
+                    .map(ReferencePage::path).contains(path));
+            // SELECT stays Relix's filter; its page says where SQL's select list went.
+            assertThat(INSTALLED.entry("SELECT")).map(ReferencePage::path).contains("operators/select.md");
+            assertThat(INSTALLED.lookup("SELECT").orElseThrow())
+                    .contains("# SQL names:", "SQL's select list is [PROJECT](project.md)");
+            for (String path : new java.util.TreeSet<>(pages.values())) {
+                assertThat(RelixDocs.referencePage(path).orElseThrow()).as(path).contains("# SQL names:");
+            }
+        }
+
+        @Test
         @DisplayName("nothing is found by a word no page has, nor is a page not in the index read")
         void nothing() {
             assertThat(INSTALLED.lookup("no-such-thing")).isEmpty();
