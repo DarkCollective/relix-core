@@ -118,6 +118,13 @@ SAMPLE p (Bernoulli) for an approximate-percentage sample that streams. LIMIT fo
 a deterministic (non-random) prefix. SAMPLE p SEED k for a reproducible
 approximate-percentage sample.
 
+# SQL names:
+SQL's `ORDER BY RANDOM() LIMIT n` is `SAMPLE n ROWS (R)`, or `LIMIT n (SHUFFLE (R))`;
+the sample reads its input once and keeps only n rows. A seed, like `REPEATABLE (s)`,
+is `SEED s`. A percentage, `TABLESAMPLE BERNOULLI (10)`, is
+[SAMPLE p](sample-bernoulli.md). Every row in a random order, `ORDER BY RANDOM()` with
+no limit, is [SHUFFLE](../operators/shuffle.md).
+
 # See Also:
 [sample-bernoulli](sample-bernoulli.md), [limit](../operators/limit.md)
 

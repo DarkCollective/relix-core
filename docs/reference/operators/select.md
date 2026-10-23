@@ -83,6 +83,15 @@ keep NULLs you must test for them explicitly (e.g. `status = "x" ∨ status = NU
 For "keep rows that have a match in another relation" use a SEMI join (⋉)
 rather than a selection with a subquery — relix has no scalar subqueries.
 
+# SQL names:
+SQL's `WHERE c` is `SELECT c (R)`, σ: Relix's SELECT is the filter, not the select
+list. SQL's select list is [PROJECT](project.md), π: `SELECT a, b FROM R WHERE c` is
+`PROJECT a, b (SELECT c (R))`. There is no FROM: the input relation goes last, in
+parentheses. `HAVING` is a σ over the [GROUP](group.md) it filters, on the aggregate's
+alias: `SELECT k, COUNT(*) AS n FROM R GROUP BY k HAVING COUNT(*) > 2` is
+`SELECT n > 2 (GROUP k, COUNT(*) -> n (R))`. A `WHERE EXISTS (…)` or `IN (subquery)` is a
+[semi join](../joins/semi-join.md), and `NOT EXISTS` an [anti join](../joins/anti-join.md).
+
 # See Also:
 [project](project.md), [theta-join](../joins/theta-join.md), [semi-join](../joins/semi-join.md), [and](../predicates/and.md), [or](../predicates/or.md), [not](../predicates/not.md), [is-null](../predicates/is-null.md), [in](../predicates/in.md)
 

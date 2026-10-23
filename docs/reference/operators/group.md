@@ -203,6 +203,13 @@ query { γ region → COUNT(*) → n (Sales) };
 To keep the actual rows that achieve a maximum per group (not just one value),
 use TOP k … PER. To test a condition across a whole group, use ∀ (FORALL).
 
+# SQL names:
+SQL's `GROUP BY k` with aggregates in the select list is one γ, the keys first:
+`SELECT k, SUM(x) AS total FROM R GROUP BY k` is `GROUP k, SUM(x) -> total (R)`, and
+`GROUP BY` is accepted as a synonym of `GROUP`. An aggregate with no `GROUP BY` is a γ
+with no keys: `GROUP COUNT(*) -> n (R)`. `HAVING` is a [σ](select.md) over the γ, on the
+aggregate's alias: `... HAVING COUNT(*) > 2` is `SELECT n > 2 (GROUP k, COUNT(*) -> n (R))`.
+
 # See Also:
 [sum](../aggregates/sum.md), [avg](../aggregates/avg.md), [count](../aggregates/count.md), [min](../aggregates/min.md), [max](../aggregates/max.md), [collect](../aggregates/collect.md), [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [filter](../aggregates/filter.md), [grouping](../aggregates/grouping.md), [stddev](../aggregates/stddev.md), [percentile](../aggregates/percentile_cont.md), [top](../advanced/top.md), [forall](forall.md), [sort](sort.md)
 

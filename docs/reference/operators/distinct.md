@@ -88,6 +88,12 @@ the input is already ordered.
 γ (GROUP) on the columns you want unique achieves the same and lets you aggregate
 at the same time. UNION (∪) deduplicates as part of combining two relations.
 
+# SQL names:
+SQL's `SELECT DISTINCT a, b FROM R` is `DISTINCT (PROJECT a, b (R))`: the projection
+chooses the columns and δ removes the repeats. `COUNT(DISTINCT x)` is an aggregate in a
+[GROUP](group.md), not this operator: `GROUP COUNT(DISTINCT x) -> n (R)`. `UNION`
+removes duplicates itself; SQL's `UNION ALL`, which keeps them, is `UALL` (⊎).
+
 # See Also:
 [project](project.md), [group](group.md), [union](../set-operations/union.md), [sort](sort.md)
 

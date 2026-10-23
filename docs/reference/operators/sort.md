@@ -162,6 +162,13 @@ the NULL test elsewhere.
 For "N highest per group" use TOP … PER instead of sorting the whole relation.
 For a single extreme value per group use γ with MIN/MAX or ARGMAX/ARGMIN.
 
+# SQL names:
+SQL's `ORDER BY a, b DESC` is `SORT a, b DESC (R)`, and `ORDER BY` is accepted as a
+synonym of `SORT`. It wraps the expression it orders rather than ending it:
+`SELECT a FROM R ORDER BY a` is `SORT a (PROJECT a (R))`. Sort last, after any join:
+only a sort promises an order. `ORDER BY … LIMIT n` is [LIMIT](limit.md) over
+the sort, and `ORDER BY RANDOM()` is [SHUFFLE](shuffle.md).
+
 # See Also:
 [limit](limit.md), [top](../advanced/top.md), [group](group.md), [distinct](distinct.md)
 
