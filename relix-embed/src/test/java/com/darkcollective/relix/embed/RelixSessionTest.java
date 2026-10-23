@@ -364,9 +364,7 @@ final class RelixSessionTest {
                         + "Totals := { SELECT 'TOTAL' -> Item, SUM(Value) -> Value (Items) };\n")
                         .getFirst();
                 assertThat(select.message()).isEqualTo("Syntax error in RA expression:"
-                        + " 'SELECT' (σ) filters rows by a condition, and found '->' where its"
-                        + " comparison belongs. To choose or compute columns, use PROJECT (π):"
-                        + " PROJECT a, b * 2 -> c (R)");
+                        + " 'SELECT' filters rows; an aggregate belongs in GROUP: write GROUP AVG(x) -> avg (Items)");
                 assertThat(select.location().orElseThrow().line()).isEqualTo(3);
                 assertThat(select.location().orElseThrow().column()).isEqualTo(28);
 
@@ -718,6 +716,54 @@ final class RelixSessionTest {
                             .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
                     assertThat(relix.validate(tables + "Q := { " + c[3] + " };\n"))
                             .as("the rewrite of " + c[0] + " validates").isEmpty();
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("SQL's select list, a table alias and a '*' column list each name a rewrite that validates (#212, #213, #215)")
+        void sqlSelectListAliasAndStarDiagnosed() {
+            String tables = "orders := [| customer_id | total |\n| 1 | 120 |];\n";
+            // expression, column, the message's end, the rewrite that validates
+            String[][] cases = {
+                    {"SELECT customer_id AS c, total FROM orders", "20",
+                            "write PROJECT customer_id -> c, total (orders)",
+                            "PROJECT customer_id -> c, total (orders)"},
+                    {"SELECT customer_id -> c, total -> t (orders)", "20",
+                            "write PROJECT customer_id -> c, total -> t (orders)",
+                            "PROJECT customer_id -> c, total -> t (orders)"},
+                    {"SELECT total FROM orders WHERE total > 100", "14",
+                            "write PROJECT total (SELECT total > 100 (orders))",
+                            "PROJECT total (SELECT total > 100 (orders))"},
+                    {"SELECT * FROM orders WHERE total > 100", "8",
+                            "SQL's FROM is the input: write SELECT total > 100 (orders)",
+                            "SELECT total > 100 (orders)"},
+                    {"PROJECT o.customer_id (orders o)", "31",
+                            "to refer to orders as o, write RENAME o (orders). A self-join is"
+                                    + " RENAME x (T) >< x.a = y.b RENAME y (T)",
+                            "PROJECT o.customer_id (RENAME o (orders))"},
+                    {"orders x >< x.total < y.total orders y", "8",
+                            "to refer to orders as x, write RENAME x (orders). A self-join is"
+                                    + " RENAME x (T) >< x.a = y.b RENAME y (T)",
+                            "RENAME x (orders) >< x.total < y.total RENAME y (orders)"},
+                    {"PROJECT orders.* (orders)", "16",
+                            "Relix has no '*' column list: PROJECT names the columns it keeps."
+                                    + " To keep all of orders's columns, leave PROJECT out, or list them",
+                            "orders"},
+            };
+            try (Relix relix = Relix.open()) {
+                for (String[] c : cases) {
+                    List<Diagnostic> found = relix.validate(tables + "Q := { " + c[0] + " };\n");
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .startsWith("Syntax error in RA expression: ")
+                            .endsWith(c[2]);
+                    assertThat(found.getFirst().location().orElseThrow().line()).as(c[0]).isEqualTo(3);
+                    assertThat(found.getFirst().location().orElseThrow().column()).as(c[0])
+                            .isEqualTo(Integer.parseInt(c[1]) + "Q := { ".length());
+                    // A self-join's shared columns warn; the rewrite has no error.
+                    assertThat(relix.validate(tables + "Q := { " + c[3] + " };\n"))
+                            .as("the rewrite of " + c[0] + " validates").noneMatch(Diagnostic::isError);
                 }
             }
         }

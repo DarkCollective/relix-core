@@ -122,9 +122,8 @@ final class ParserErrorTest extends ParserTestSupport {
     @DisplayName("SELECT followed by SQL's column list says that SELECT filters, and names PROJECT")
     public void reportsColumnListAfterSelect() {
         assertParseError("SELECT 'TOTAL' -> Item, SUM(Value) -> Value (Selection)")
-                .hasMessageContaining("'SELECT' (σ) filters rows by a condition, and found '->'"
-                        + " where its comparison belongs. To choose or compute columns, use"
-                        + " PROJECT (π): PROJECT a, b * 2 -> c (R)")
+                .hasMessageContaining("'SELECT' filters rows; an aggregate belongs in GROUP:"
+                        + " write GROUP AVG(x) -> avg (Selection)")
                 .at(1, 16);
         assertParseError("σ a, b (R)")
                 .hasMessageContaining("'σ' filters rows by a condition, and found ','")
@@ -607,8 +606,8 @@ final class ParserErrorTest extends ParserTestSupport {
                 .hasMessageContaining(": write GROUP COUNT(*) -> n (T)")
                 .at(1, 36);
         assertParseError("PROJECT COUNT(*\n (T)").hasMessageContaining("Expected ')' after COUNT(*");
-        // A '*' that is not before the input is not every column.
-        assertThatThrownBy(() -> parse("SELECT * FROM T")).hasMessageNotContaining("all its columns");
+        // SQL's FROM names the input.
+        assertParseError("SELECT * FROM T").hasMessageContaining("SQL's FROM is the input: write T");
     }
 
     @Test
@@ -772,6 +771,116 @@ final class ParserErrorTest extends ParserTestSupport {
         assertParseError("A JOIN B (x = y")
                 .as("an unclosed group is left to the call's own error")
                 .hasMessageContaining("Expected ')' after function call arguments");
+    }
+
+    @Test
+    @DisplayName("SQL's select list after SELECT is rewritten as PROJECT, with AS, FROM, WHERE and * (#213)")
+    public void reportsSqlSelectList() {
+        assertParseError("SELECT a AS x, b FROM T")
+                .hasMessageContaining("'SELECT' (σ) filters rows by a condition, and found 'AS' where its"
+                        + " comparison belongs. To choose or compute columns, use PROJECT (π):"
+                        + " write PROJECT a -> x, b (T)")
+                .at(1, 10);
+        assertParseError("SELECT room_a -> src, room_b -> dst, meters (room_links)")
+                .hasMessageContaining("write PROJECT room_a -> src, room_b -> dst, meters (room_links)")
+                .at(1, 15);
+        assertParseError("SELECT home_id, name (homes)")
+                .hasMessageContaining("found ',' where its comparison belongs. To choose or compute"
+                        + " columns, use PROJECT (π): write PROJECT home_id, name (homes)")
+                .at(1, 15);
+        assertParseError("SELECT from_issue AS src, to_issue AS dst (SELECT kind = 'blocks' (issue_links))")
+                .hasMessageContaining("write PROJECT from_issue -> src, to_issue -> dst"
+                        + " (SELECT kind = 'blocks' (issue_links))");
+        assertParseError("SELECT a FROM T WHERE a > 1")
+                .hasMessageContaining("found 'FROM' where its comparison belongs. To choose or compute"
+                        + " columns, use PROJECT (π): write PROJECT a (SELECT a > 1 (T))")
+                .at(1, 10);
+        assertParseError("σ a AS x FROM T")
+                .hasMessageContaining("'σ' filters rows by a condition, and found 'AS' where its"
+                        + " comparison belongs. To choose or compute columns, use PROJECT (π): write π a → x (T)");
+        // An input that does not parse is echoed as written, for its own error next.
+        assertParseError("SELECT P.total AS prev_total, O.order_id FROM orders P JOIN orders O ON P.id = O.id")
+                .hasMessageContaining("write PROJECT P.total -> prev_total, O.order_id"
+                        + " (orders P JOIN orders O ON P.id = O.id)");
+        // An aggregate among the items is GROUP's.
+        assertParseError("SELECT region, COUNT(*) -> n FROM T")
+                .hasMessageContaining("'SELECT' filters rows; an aggregate belongs in GROUP:"
+                        + " write GROUP region, COUNT(*) -> n (T)");
+        // SELECT * FROM is the input, filtered by a WHERE.
+        assertParseError("SELECT * FROM components WHERE 0 = 1")
+                .hasMessageContaining("Relix has no '*' column list, and a relation already has all its"
+                        + " columns; SQL's FROM is the input: write SELECT 0 = 1 (components)")
+                .at(1, 8);
+        assertParseError("PROJECT n (SELECT a AS x FROM orders o JOIN (p) q WHERE b IN {1, 2})")
+                .hasMessageContaining("write PROJECT a -> x (orders o JOIN (p) q WHERE b IN {1, 2})")
+                .at(1, 21);
+        // AS with no name after it, or after more than one operand, is not a select list.
+        assertParseError("SELECT a AS (T)").hasMessageContaining("Expected comparison operator");
+        assertParseError("SELECT a = 1 AND b AS x (T)").hasMessageContaining("Expected comparison operator");
+        // A condition that goes on past its first operand keeps the general advice.
+        assertParseError("SELECT a = 1 AND b, c (T)")
+                .hasMessageContaining("To choose or compute columns, use PROJECT (π): PROJECT a, b * 2 -> c (R)");
+        assertThat(parse("PROJECT a -> x, b (SELECT a > 1 (T))")).isNode(ProjectionNode.class);
+    }
+
+    @Test
+    @DisplayName("a table alias after a relation names the RENAME that gives it that name (#212)")
+    public void reportsTableAlias() {
+        String advice = "Relix has no table aliases: to refer to order_items as oi, write RENAME oi"
+                + " (order_items). A self-join is RENAME x (T) >< x.a = y.b RENAME y (T)";
+        assertParseError("order_items oi JOIN orders o ON oi.order_id = o.order_id")
+                .hasMessageContaining(advice)
+                .at(1, 13);
+        assertParseError("PROJECT oi.a (order_items AS oi)")
+                .hasMessageContaining(advice)
+                .at(1, 27);
+        assertParseError("device_loads d1 >< d1.device_id < d2.device_id device_loads d2")
+                .hasMessageContaining("to refer to device_loads as d1, write RENAME d1 (device_loads)");
+        assertParseError("issues I LEFT JOIN issues J ON I.sprint_id = J.sprint_id")
+                .hasMessageContaining("to refer to issues as I, write RENAME I (issues)");
+        assertParseError("Grouped >< TotalOrders B")
+                .hasMessageContaining("to refer to TotalOrders as B, write RENAME B (TotalOrders)")
+                .at(1, 24);
+        assertParseError("issues LJOIN status_changes AS prevSC ON issues.id = prevSC.issue_id")
+                .hasMessageContaining("to refer to status_changes as prevSC, write RENAME prevSC (status_changes)")
+                .at(1, 29);
+        assertParseError("(SELECT a = 1 (T)) as children")
+                .hasMessageContaining("to refer to SELECT a = 1 (T) as children, write RENAME children"
+                        + " (SELECT a = 1 (T))");
+        // A name as long as the relation's is an alias only where it qualifies a column.
+        assertParseError("T x >< x.a = y.b T y")
+                .hasMessageContaining("to refer to T as x, write RENAME x (T)");
+        assertParseError("Users Orders").hasMessageContaining("Expected end of input");
+        assertParseError("PROJECT x.a, y.b (T x JOIN T y ON x.a = y.b)")
+                .hasMessageContaining("to refer to T as x, write RENAME x (T)")
+                .at(1, 21);
+        assertThatThrownBy(() -> parse("PROJECT x (T x)")).hasMessageNotContaining("alias");
+        assertThatThrownBy(() -> parse("T AS")).hasMessageNotContaining("alias");
+        // RENAME is the spelling that works.
+        assertThat(parse("RENAME x (T) >< x.a = y.b RENAME y (T)")).isNode(ThetaJoinNode.class);
+    }
+
+    @Test
+    @DisplayName("'*' as a column list says Relix has none (#215)")
+    public void reportsStarColumnList() {
+        assertParseError("PROJECT i.* (SELECT r.src = 5016 (Reach))")
+                .hasMessageContaining("Relix has no '*' column list: PROJECT names the columns it keeps."
+                        + " To keep all of i's columns, leave PROJECT out, or list them")
+                .at(1, 11);
+        assertParseError("PROJECT a, * (T)")
+                .hasMessageContaining("Relix has no '*' column list: PROJECT names the columns it keeps."
+                        + " List them, or leave PROJECT out to keep them all")
+                .at(1, 12);
+        assertParseError("PROJECT * (T)")
+                .hasMessageContaining("Relix has no '*' column list, and a relation already has all its"
+                        + " columns: write T")
+                .at(1, 9);
+        assertParseError("PROJECT a, *, b (T)").hasMessageContaining("List them, or leave PROJECT out");
+        assertParseError("PROJECT a, * FROM T").hasMessageContaining("List them, or leave PROJECT out");
+        // Multiplication is not a column list.
+        assertThatThrownBy(() -> parse("PROJECT a, * 2 (T)")).hasMessageNotContaining("column list");
+        assertThatThrownBy(() -> parse("PROJECT * 2 (T)")).hasMessageNotContaining("column list");
+        assertThat(parse("PROJECT a * 2 -> b, a * b -> c (T)")).isNode(ProjectionNode.class);
     }
 
     @Test
