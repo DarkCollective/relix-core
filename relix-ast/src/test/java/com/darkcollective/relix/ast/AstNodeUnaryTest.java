@@ -355,6 +355,31 @@ final class AstNodeUnaryTest extends AstTestSupport {
         }
 
         @Test
+        @DisplayName("only an ascending first key can have its direction implied")
+        void impliedDirectionNeedsAnAscendingFirstKey() {
+            assertThatThrownBy(() -> new TopKNode(List.of("k"), List.of(spec()), Optional.empty(), 3L, false,
+                    true, AstBuilders.rel("R"), SourceLocation.UNKNOWN))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("ascending first sort key");
+            assertThatThrownBy(() -> new TopKNode(List.of("k"), List.of(), Optional.empty(), 3L, false,
+                    true, AstBuilders.rel("R"), SourceLocation.UNKNOWN))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("prints ASC for an ascending first key unless its direction was implied")
+        void printsTheFirstKeysDirection() {
+            TopKNode implied = new TopKNode(List.of("k"), List.of(asc("v")), Optional.empty(), 1L, false,
+                    true, AstBuilders.rel("R"), SourceLocation.UNKNOWN);
+            assertThat(implied.prettyPrint()).isEqualTo("TOP 1 v PER k (R)");
+            assertThat(implied.withInput(AstBuilders.rel("S")).leadingDirectionImplied()).isTrue();
+            assertThat(AstBuilders.topK(List.of("k"), List.of(asc("v")), 1L, AstBuilders.rel("R")).prettyPrint())
+                    .isEqualTo("TOP 1 v ASC PER k (R)");
+            assertThat(new TopKNode(List.of(), List.of(), 1L, AstBuilders.rel("R")).prettyPrint())
+                    .isEqualTo("TOP 1  (R)");
+        }
+
+        @Test
         @DisplayName("rejects null input relation")
         void rejectsNullInput() {
             assertThatThrownBy(() -> new TopKNode(List.of("k"), List.of(spec()), 3L, null))

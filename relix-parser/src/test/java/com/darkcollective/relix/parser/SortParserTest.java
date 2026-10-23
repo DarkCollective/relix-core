@@ -423,7 +423,9 @@ final class SortParserTest extends ParserTestSupport {
                         rel("Orders")));
         assertThat(parse("TOP 1, 2 WITH TIES amount DESC (Orders)").prettyPrint())
                 .isEqualTo("TOP 1, 2 WITH TIES amount DESC (Orders)");
+        // A sort's ascending key is ascending by request once it is a TOP, so the TOP
+        // the fusion prints reads back without the no-direction warning (#210).
         assertThat(parse("λ 2 WITH TIES (τ amount (Orders))").prettyPrint())
-                .isEqualTo("TOP 2 WITH TIES amount (Orders)");
+                .isEqualTo("TOP 2 WITH TIES amount ASC (Orders)");
     }
 }

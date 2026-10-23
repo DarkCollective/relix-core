@@ -472,7 +472,7 @@ public final class RelNodeOperands {
                 List<SortSpecification> specs = mapSortSpecs(n.sortSpecs(), onOperand);
                 yield specs == n.sortSpecs() ? n
                         : new TopKNode(n.groupingAttributes(), specs, n.offset(), n.count(),
-                                n.withTies(), n.input(), n.location());
+                                n.withTies(), n.leadingDirectionImplied(), n.input(), n.location());
             }
             case TreeNode n -> {
                 List<SortSpecification> specs = mapSortSpecs(n.orderSpecs(), onOperand);

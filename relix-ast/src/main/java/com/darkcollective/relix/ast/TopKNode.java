@@ -23,8 +23,9 @@ import java.util.Optional;
 
 /**
  * Top-k per group (TOP) — partitions {@code input} by {@code groupingAttributes}
- * and, within each group, keeps the {@code count} highest rows by
- * {@code sortSpecs} (after skipping {@code offset} rows).
+ * and, within each group, keeps the first {@code count} rows in {@code sortSpecs}
+ * order (after skipping {@code offset} rows). A key with no direction is ascending,
+ * so {@code TOP 1 x} keeps the row with the lowest {@code x}.
  *
  * <p>This is the "N highest rows per group" operation — <em>top 3 orders by
  * amount per customer</em> — that SQL forces into a
@@ -54,6 +55,10 @@ import java.util.Optional;
  * @param offset             rows to skip within each group before taking {@code count}
  * @param count              number of rows to keep per group; non-negative
  * @param withTies           whether rows tied with the last one kept are kept too; needs a sort key
+ * @param leadingDirectionImplied whether the first sort key was written with neither
+ *                           {@code ASC} nor {@code DESC}, so that it is ascending by
+ *                           default rather than by request; validation warns about it,
+ *                           since "top" reads as the highest
  * @param input              the source relation; never null
  * @param location           the source location of this node; never null
  */
@@ -63,6 +68,7 @@ public record TopKNode(
         Optional<Long> offset,
         long count,
         boolean withTies,
+        boolean leadingDirectionImplied,
         RelNode input,
         SourceLocation location
 ) implements RelNode {
@@ -81,8 +87,30 @@ public record TopKNode(
         if (withTies && sortSpecs.isEmpty()) {
             throw new IllegalArgumentException("WITH TIES needs a sort key to decide what ties");
         }
+        if (leadingDirectionImplied
+                && (sortSpecs.isEmpty() || sortSpecs.get(0).direction() != SortDirection.ASC)) {
+            throw new IllegalArgumentException("Only an ascending first sort key can have its direction implied");
+        }
         groupingAttributes = List.copyOf(groupingAttributes);
         sortSpecs = List.copyOf(sortSpecs);
+    }
+
+    /**
+     * A top-k whose sort directions are all taken as requested, as one the optimizer
+     * or a builder makes rather than one a person wrote.
+     *
+     * @param groupingAttributes the partition keys; empty means one global group
+     * @param sortSpecs          within-group ordering; at least one required
+     * @param offset             rows to skip within each group before taking {@code count}
+     * @param count              number of rows to keep per group; non-negative
+     * @param withTies           whether rows tied with the last one kept are kept too; needs a sort key
+     * @param input              the source relation; never null
+     * @param location           the source location of this node; never null
+     */
+    public TopKNode(List<String> groupingAttributes, List<SortSpecification> sortSpecs,
+                    Optional<Long> offset, long count, boolean withTies, RelNode input,
+                    SourceLocation location) {
+        this(groupingAttributes, sortSpecs, offset, count, withTies, false, input, location);
     }
 
     /**
@@ -108,7 +136,8 @@ public record TopKNode(
      * @since 1.0
      */
     public TopKNode withInput(RelNode input) {
-        return new TopKNode(groupingAttributes, sortSpecs, offset, count, withTies, input, location);
+        return new TopKNode(groupingAttributes, sortSpecs, offset, count, withTies, leadingDirectionImplied,
+                input, location);
     }
 
     /** Convenience constructor for tests; no offset, {@link SourceLocation#UNKNOWN}. */

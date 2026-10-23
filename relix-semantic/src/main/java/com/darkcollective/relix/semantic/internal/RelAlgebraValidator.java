@@ -575,8 +575,20 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 columnNotFound(node.location(), "Top-k TOP: grouping key", key, input);
             }
         }
+        int before = errors.size();
         for (SortSpecification spec : node.sortSpecs()) {
             validateSortKey(node.location(), "Top-k TOP: sort attribute", spec, input);
+        }
+        // "Top" reads as the highest, as in SQL's SELECT TOP, but a key with no direction
+        // is ascending, so TOP 1 x keeps the lowest x (#210). Only the first key decides
+        // which rows lead; a later one breaks ties and is quiet.
+        if (node.leadingDirectionImplied() && errors.size() == before) {
+            String key = node.sortSpecs().get(0).expression().prettyPrint();
+            SourceLocation loc = node.location();
+            errors.add(SemanticError.warning(loc.filePath(), loc.line(), loc.column(),
+                    "Top-k TOP: " + key + " has no direction, so TOP keeps the rows with the lowest "
+                            + key + ": write " + key + " DESC for the highest, or " + key
+                            + " ASC to keep the lowest without this warning"));
         }
         return null;
     }
@@ -2118,6 +2130,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     + "right has " + r.width() + " column(s)");
             return;
         }
+        warnPermutedColumns(loc, l, r, right, opSymbol);
 
         for (int i = 0; i < l.columns().size(); i++) {
             Type lt = l.columns().get(i).type();
@@ -2131,6 +2144,51 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                         + ", right '" + rName + "' is " + rt);
             }
         }
+    }
+
+    /**
+     * Warns when the two sides of a set operation have the same column names in a
+     * different order (#209). A set operation matches columns by position, so the right
+     * side's values then land under the left side's other names, and nothing else says
+     * so. Sides whose names differ are the documented use, renaming by position, and
+     * stay quiet.
+     *
+     * @param loc      where to report it
+     * @param l        the left side's heading
+     * @param r        the right side's heading, as wide as {@code l}
+     * @param right    the right side, to name in the suggested projection
+     * @param opSymbol the operator, such as {@code ∪}
+     */
+    private void warnPermutedColumns(SourceLocation loc, Schema l, Schema r, RelNode right, String opSymbol) {
+        List<String> leftNames = l.columns().stream().map(ColumnDefinition::name).toList();
+        List<String> rightNames = r.columns().stream().map(ColumnDefinition::name).toList();
+        if (!lowerSorted(leftNames).equals(lowerSorted(rightNames))) {
+            return;
+        }
+        List<String> misplaced = new ArrayList<>();
+        for (int i = 0; i < leftNames.size(); i++) {
+            if (!leftNames.get(i).equalsIgnoreCase(rightNames.get(i))) {
+                misplaced.add("'" + rightNames.get(i) + "' lands in '" + leftNames.get(i) + "'");
+            }
+        }
+        if (misplaced.isEmpty()) {
+            return;
+        }
+        String projection = "PROJECT " + String.join(", ", leftNames) + " "
+                + JoinConditionChecks.displayName(right).map(n -> "(" + n + ")")
+                        .orElse("(…) around the right side");
+        // ⊔ lines columns up by name and keeps one copy of a repeated row, so it is ∪ by
+        // name; the other operators have no by-name form.
+        String byName = opSymbol.equals("∪") ? "Use OUNION (⊔) to match them by name, or project " : "Project ";
+        errors.add(SemanticError.warning(loc.filePath(), loc.line(), loc.column(),
+                "Set operation " + opSymbol + " matches columns by position, not name: the right side's "
+                        + String.join(", its ", misplaced) + ". " + byName
+                        + "the right side's columns in the left side's order: " + projection));
+    }
+
+    /** {@code names} lower-cased and sorted, to compare two headings' names as multisets. */
+    private static List<String> lowerSorted(List<String> names) {
+        return names.stream().map(n -> n.toLowerCase(Locale.ROOT)).sorted().toList();
     }
 
     /**

@@ -257,7 +257,7 @@ final class JoinConditionChecks {
     }
 
     /** The name an input answers to, when it answers to exactly one. */
-    private static Optional<String> displayName(RelNode node) {
+    static Optional<String> displayName(RelNode node) {
         return switch (node) {
             case RelationNode r -> Optional.of(r.name());
             case RenameNode r when r.relationName().isPresent() -> r.relationName();

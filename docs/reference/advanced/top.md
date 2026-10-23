@@ -18,14 +18,19 @@ top earner in each department" — the per-group ranking that SQL needs a window
 function for. You give the number to keep, how to rank (a sort spec), and the
 column(s) that define each group (PER).
 
+TOP keeps the *first* rows in the order the sort spec gives, and a sort key with
+no direction is ascending, as in `τ`. So `TOP 1 amount` keeps the **lowest**
+amount: write `amount DESC` for the highest. A first sort key written with neither
+`ASC` nor `DESC` draws a warning saying so (see Notes).
+
 # Technical Description:
 **`PER` is optional.** Written without it, there is one global group and TOP is the
 top `count` rows overall — which is what `λ` over `τ` means, and what the optimizer
 rewrites that pair into (`LIM-003`). Writing it directly says the same thing and
 costs the reader nothing to recognise.
 
-TOP returns, per partition defined by the PER keys, the `count` rows ranked
-highest by the sort specifications (optionally skipping `offset` rows first) —
+TOP returns, per partition defined by the PER keys, the first `count` rows in
+the order of the sort specifications (optionally skipping `offset` rows first) —
 the `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …) ≤ k` idiom. Requires ≥1 sort
 spec. Output = full input rows (a windowed filter). It cannot
 desugar (no per-group ranking primitive) and does not push down ([bag]).
@@ -104,7 +109,7 @@ Results := [
 | r2   | Eve    | 72   |
 ];
 
-query { TOP 1 WITH TIES secs PER race (Results) };
+query { TOP 1 WITH TIES secs ASC PER race (Results) };
 ```
 
 ```
@@ -145,6 +150,19 @@ the optimizer rewrites into a keyless TOP (`LIM-003`, see the
 # Notes:
 TOP is the "keep the actual rows" counterpart to the ARGMAX aggregate (which
 returns a value).
+
+**Direction.** "Top" reads as the highest, as SQL's `SELECT TOP` does, but a TOP
+ranks in its sort keys' order, and a key with no direction is ascending. So when
+the first sort key has neither `ASC` nor `DESC`, validation gives a **warning**:
+
+```
+warning: Top-k TOP: story_points has no direction, so TOP keeps the rows with the lowest story_points: write story_points DESC for the highest, or story_points ASC to keep the lowest without this warning
+```
+
+Writing either direction silences it, so `TOP 1 secs ASC PER race` keeps each
+race's fastest time quietly. Only the first key decides which rows lead; a later
+key breaks ties among them and is quiet without a direction. `τ` and the sorts
+inside windows say nothing, since "sort by x" carries no "highest".
 
 **Ties.** Where the sort specifications cannot separate two rows, the one that
 reached the operator first is kept — the same rows a full sort followed by a
