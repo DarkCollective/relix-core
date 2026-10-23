@@ -1446,8 +1446,8 @@ public final class RelAlgebraParser {
         String keys = writtenBetween(keysStart, keysEnd);
         boolean glyph = isGlyph(opTok);
         String input;
+        int start = consumed.size();
         try {
-            int start = consumed.size();
             parseParenthesizedRelation("Expected '(' after aggregation expression");
             input = writtenFrom(start);
         } catch (ParseException e) {
@@ -1457,8 +1457,71 @@ public final class RelAlgebraParser {
             // Not keys and an input, as in GROUP k (UPPER(name)) (R): the plain message.
             throw error(open, EXPECTED_AGGREGATE);
         }
+        String grouped = groupedProject(opTok, keys, start + 1, consumed.size() - 1);
+        if (grouped != null) {
+            throw ParseException.at(grouped, lexer.input(), open);
+        }
         throw ParseException.at(opTok.lexeme() + " needs an aggregate after its keys; for distinct rows write "
                 + (glyph ? "δ (π " : "DISTINCT (PROJECT ") + keys + " " + input + ")", lexer.input(), open);
+    }
+
+    /**
+     * The rewrite of SQL's {@code SELECT k, MAX(x) … GROUP BY k}, written as a GROUP over
+     * a PROJECT that holds the aggregates, {@code consumed[from]} to {@code consumed[to]}:
+     * the aggregates go in GROUP itself, after its keys. Null unless that range is one
+     * PROJECT of items and a parenthesized input, with an aggregate among the items.
+     *
+     * <p>Without this, a trailing GROUP was rewritten into
+     * {@code GROUP k (PROJECT k, MAX(x) -> m (R))}, which needs an aggregate after its
+     * keys, and that message's rewrite still kept {@code MAX} in the PROJECT.
+     */
+    private String groupedProject(Token opTok, String keys, int from, int to) {
+        if (to - from < 4 || consumed.get(from).type() != TokenType.PROJECT
+                || consumed.get(to - 1).type() != TokenType.RPAREN) {
+            return null;
+        }
+        int open = to - 1;
+        for (int depth = 0; ; open--) {
+            TokenType type = consumed.get(open).type();
+            depth += type == TokenType.RPAREN ? 1 : type == TokenType.LPAREN ? -1 : 0;
+            if (depth == 0) {
+                break;
+            }
+        }
+        List<String> aggregates = new ArrayList<>();
+        int depth = 0;
+        int itemStart = from + 1;
+        boolean aggregate = false;
+        for (int i = from + 1; i <= open; i++) {
+            Token token = consumed.get(i);
+            TokenType type = token.type();
+            if (depth == 0 && (i == open || type == TokenType.COMMA)) {
+                if (aggregate) {
+                    aggregates.add(writtenBetween(itemStart, i));
+                }
+                itemStart = i + 1;
+                aggregate = false;
+                continue;
+            }
+            if (depth == 0 && isBinaryRelOperator(type)) {
+                // More than one PROJECT's items: R ⋈ PROJECT … (S), say.
+                return null;
+            }
+            depth += type == TokenType.LPAREN ? 1 : type == TokenType.RPAREN ? -1 : 0;
+            Token next = consumed.get(i + 1);
+            aggregate |= next.type() == TokenType.LPAREN && switch (type) {
+                case SUM, AVG, COUNT, MIN, MAX, COLLECT, ARGMAX, ARGMIN -> true;
+                default -> opensCall(token, next)
+                        && NAMED_AGGREGATES.containsKey(token.lexeme().toUpperCase(java.util.Locale.ROOT));
+            };
+        }
+        if (aggregates.isEmpty()) {
+            return null;
+        }
+        String input = writtenBetween(open, to);
+        String group = isGlyph(opTok) ? "γ" : "GROUP";
+        return "In Relix the aggregates go in " + group + ", after its keys: write " + group + " " + keys
+                + ", " + String.join(", ", aggregates) + " " + input;
     }
 
     /** Whether an aggregate call starts at {@code peek(n)}: a keyword aggregate, or a named one before its {@code (}. */
@@ -5113,6 +5176,15 @@ public final class RelAlgebraParser {
             int end = 0;
             while (peek(end).type() != TokenType.EOF) {
                 end++;
+            }
+            if (current.type() == TokenType.AGGREGATION) {
+                // SQL's SELECT k, MAX(x) … GROUP BY k: the aggregates move into GROUP.
+                int keys = peek(1).type() == TokenType.BY ? 2 : 1;
+                String grouped = end > keys
+                        ? groupedProject(current, sourceText(keys, end), 0, consumed.size()) : null;
+                if (grouped != null) {
+                    throw ParseException.at(grouped, lexer.input(), current);
+                }
             }
             String operator = sourceText(0, end);
             String input = joined(consumed);
