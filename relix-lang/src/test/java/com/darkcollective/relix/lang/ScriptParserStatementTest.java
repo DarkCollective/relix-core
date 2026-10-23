@@ -316,6 +316,38 @@ class ScriptParserStatementTest {
         }
 
         @Test
+        @DisplayName("an inline table written in braces is told to go in brackets (#216)")
+        void inlineTableInBraces() {
+            assertThatThrownBy(() -> parse("R := { | a | b |\n| 1 | 2 | };"))
+                    .hasMessage("an inline table goes in brackets, not braces: write R := [ | a | b | … ];"
+                            + " (line 1, col 6)");
+            assertThatThrownBy(() -> parse("private R := { | a, b | 1, 2 | };"))
+                    .hasMessageContaining(": write private R := [ | a, b | 1, 2 | ];");
+            assertThat(parse("R := [ | a | b |\n| 1 | 2 | ];").statements()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("a relation named with a keyword in another case is reported where it is read as the keyword (#214)")
+        void keywordName() {
+            String table = "T := [| a | b |\n| 1 | 2 |];\n";
+            assertThatThrownBy(() -> parse(table + "Closure := { CLOSURE a, b (T) };\n"
+                    + "query { SELECT a != b (Closure) };"))
+                    .hasMessage("'Closure' is the keyword CLOSURE (keywords ignore case), so it is read as"
+                            + " that keyword here; write `Closure` in backticks to refer to Closure, or give"
+                            + " it another name (line 4, col 24)");
+            assertThatThrownBy(() -> parse(table + "Select := { T };\nquery { Select >< a = 1 T };"))
+                    .hasMessageContaining("'Select' is the keyword SELECT");
+            // In backticks it is the relation; where the keyword reads as a name, it stands.
+            assertThat(parse(table + "Closure := { CLOSURE a, b (T) };\n"
+                    + "query { SELECT a != b (`Closure`) };").statements()).hasSize(3);
+            assertThat(parse(table + "Seed := { T };\nquery { FIX Reach (Seed, Reach) };").statements())
+                    .hasSize(3);
+            // A failure the name has no part in is the failure's own.
+            assertThatThrownBy(() -> parse(table + "Seed := { T };\nquery { PROJECT a, (Seed) };"))
+                    .hasMessageNotContaining("keyword");
+        }
+
+        @Test
         @DisplayName("a ';' inside braces is reported at the ';', moved after the brace or splitting the expressions")
         void semicolonInBraces() {
             assertThatThrownBy(() -> parse("query { SELECT a > 1 (R); };"))

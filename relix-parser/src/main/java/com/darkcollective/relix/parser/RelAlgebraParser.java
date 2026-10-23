@@ -33,6 +33,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Recursive-descent parser for relational algebra expressions.
@@ -941,9 +942,11 @@ public final class RelAlgebraParser {
                 yield parseRelationFromNameToken(startTok);
             }
             case LPAREN -> {
+                int start = consumed.size();
                 advance();
                 RelNode expression = parseExpression(0);
                 expect(TokenType.RPAREN, "Expected ')' after relational expression");
+                rejectTableAlias(relationText(start + 1, consumed.size() - 1), 0);
                 yield expression;
             }
             case UNIT -> {
@@ -1065,6 +1068,71 @@ public final class RelAlgebraParser {
         return text.strip().matches("[+-]?\\d+(\\.\\d+)?");
     }
 
+    /** The words SQL writes after a relation, which end a table alias before them. */
+    private static final List<String> SQL_AFTER_RELATION = List.of("ON", "LEFT", "RIGHT", "FULL",
+            "INNER", "NATURAL", "OUTER", "CROSS", "WHERE");
+
+    /** Words after an operand that go on with a condition, which a join's condition may hold. */
+    private static final List<String> CONDITION_WORDS = List.of("AT", "BETWEEN", "MATCHES", "ESCAPE");
+
+    /**
+     * Refuses SQL's table alias after a relation, {@code orders o} or {@code orders AS o},
+     * starting {@code offset} tokens ahead, at its first token, naming the RENAME that
+     * gives the relation that name. Relix has no aliases, and left alone the name is
+     * reported as wherever the parser expected the expression to go on, an end, a
+     * {@code )} or a comparison, which never says what is wrong. An alias is one name,
+     * not a word SQL writes after a relation, followed by what ends a relation: the end
+     * of the expression, a {@code )}, a {@code ,}, an operator, or SQL's {@code ON},
+     * {@code WHERE} or join words. Without {@code AS}, a name no shorter than the
+     * relation's, {@code Users Orders}, is taken for an alias only where the expression
+     * qualifies a column with it, as {@code o.id}: two relations side by side are a
+     * missing operator or comma as likely as an alias.
+     */
+    private void rejectTableAlias(String relation, int offset) {
+        Token first = peek(offset);
+        int at;
+        if (first.type() == TokenType.AS && isNameToken(peek(offset + 1))) {
+            at = offset + 1;
+        } else if (first.type() == TokenType.IDENTIFIER
+                && Stream.concat(SQL_AFTER_RELATION.stream(), CONDITION_WORDS.stream()).noneMatch(w -> isWord(first, w))) {
+            at = offset;
+        } else {
+            return;
+        }
+        Token after = peek(at + 1);
+        boolean ends = switch (after.type()) {
+            case EOF, RPAREN, RBRACE, COMMA -> true;
+            default -> isBinaryRelOperator(after.type())
+                    || SQL_AFTER_RELATION.stream().anyMatch(w -> isWord(after, w));
+        };
+        String alias = peek(at).lexeme();
+        if (!ends || at == offset && alias.length() >= relation.length() && !qualifies(alias)) {
+            return;
+        }
+        throw ParseException.at("Relix has no table aliases: to refer to " + relation + " as " + alias
+                + ", write RENAME " + alias + " (" + relation + "). A self-join is"
+                + " RENAME x (T) >< x.a = y.b RENAME y (T)", lexer.input(), first);
+    }
+
+    /** Whether {@code name} qualifies a column anywhere in the expression, as {@code name.column}. */
+    private boolean qualifies(String name) {
+        for (int i = 0; i + 1 < consumed.size(); i++) {
+            if (consumed.get(i).lexeme().equals(name) && consumed.get(i + 1).type() == TokenType.DOT) {
+                return true;
+            }
+        }
+        try {
+            for (int i = 0; peek(i).type() != TokenType.EOF; i++) {
+                if (peek(i).lexeme().equals(name) && peek(i + 1).type() == TokenType.DOT) {
+                    return true;
+                }
+            }
+        } catch (ParseException e) {
+            // A character that does not lex ends the search; its error comes in its turn.
+        }
+        return false;
+    }
+
     /**
      * Shared logic for parsing a bare name token (IDENTIFIER or word-shaped keyword)
      * in relation position: handles dotted names, TVF calls, FIX recursive references,
@@ -1092,6 +1160,8 @@ public final class RelAlgebraParser {
         if (current.type() == TokenType.LPAREN) {
             return parseRelationFunctionCall(sb.toString(), startTok);
         }
+
+        rejectTableAlias(sb.toString(), 0);
 
         // A bare identifier matching an in-scope FIX binder is a reference to
         // the recursive relation, resolved here at parse time (Decision 2).
@@ -3418,6 +3488,7 @@ public final class RelAlgebraParser {
 
         while (match(TokenType.COMMA)) {
             hadComma = true;
+            rejectStarItem();
             operands.add(parseProjectedAttribute());
         }
 
@@ -3738,8 +3809,11 @@ public final class RelAlgebraParser {
         if (selection == null) {
             return;
         }
-        boolean input = current.type() == TokenType.LPAREN && leftStart == selectionAt;
-        if (!input && current.type() != TokenType.ARROW && current.type() != TokenType.COMMA) {
+        boolean whole = leftStart == selectionAt;
+        boolean input = current.type() == TokenType.LPAREN && whole;
+        boolean sql = whole && (current.type() == TokenType.AS && isNameToken(peek(1))
+                || isWord(current, "FROM"));
+        if (!input && !sql && current.type() != TokenType.ARROW && current.type() != TokenType.COMMA) {
             return;
         }
         Token sign = current;
@@ -3750,10 +3824,12 @@ public final class RelAlgebraParser {
         }
         if (callsBetween(selectionAt, consumed.size()).isEmpty()) {
             String written = select.lexeme().equals("σ") ? "'σ'" : "'" + select.lexeme() + "' (σ)";
+            String rewrite = whole ? selectListAsProjection(select, sign) : null;
             throw ParseException.at(written + " filters rows by a"
                     + " condition, and found '" + sign.lexeme() + "' where its comparison"
-                    + " belongs. To choose or compute columns, use PROJECT (π):"
-                    + " PROJECT a, b * 2 -> c (R)", lexer.input(), sign);
+                    + " belongs. To choose or compute columns, use PROJECT (π): "
+                    + (rewrite != null ? "write " + rewrite : "PROJECT a, b * 2 -> c (R)"),
+                    lexer.input(), sign);
         }
         // An aggregate before the '->' or ',': GROUP computes it, which PROJECT cannot.
         int itemsStart = selectionAt;
@@ -3778,6 +3854,90 @@ public final class RelAlgebraParser {
                 + (isGlyph(select) ? "γ" : "GROUP") + ": write "
                 + (fix != null ? fix : (isGlyph(select) ? "γ" : "GROUP") + " AVG(x) -> avg (R)"),
                 lexer.input(), at);
+    }
+
+    /**
+     * The PROJECT that SQL's select list means, read on from the condition's first
+     * operand, at {@code sign}: its items, each {@code AS} written {@code ->}, then its
+     * input, in parentheses or after SQL's {@code FROM}, with a {@code WHERE} written as
+     * the SELECT it is. {@code SELECT a AS x, b FROM T WHERE c} is {@code PROJECT a -> x,
+     * b (SELECT c (T))}. An input after {@code FROM} that does not parse is echoed as
+     * written, so its own error comes next. Null when the items do not read as columns.
+     * An aggregate among them is refused here, naming GROUP.
+     */
+    private String selectListAsProjection(Token select, Token sign) {
+        boolean glyph = isGlyph(select);
+        String arrow = glyph ? " → " : " -> ";
+        int itemsStart = selectionAt;
+        StringBuilder items = new StringBuilder(writtenFrom(itemsStart));
+        boolean sqlAlias = false;
+        int itemsEnd;
+        String input;
+        selection = null;
+        try {
+            while (true) {
+                if (current.type() == TokenType.AS || current.type() == TokenType.ARROW) {
+                    sqlAlias |= current.type() == TokenType.AS;
+                    advance();
+                    items.append(arrow).append(expectName("Expected a column name").lexeme());
+                }
+                if (!match(TokenType.COMMA)) {
+                    break;
+                }
+                int item = consumed.size();
+                parseOperand();
+                items.append(", ").append(writtenFrom(item));
+            }
+            itemsEnd = consumed.size();
+            if (isWord(current, "FROM")) {
+                advance();
+                input = "(" + sqlFromClause(glyph) + ")";
+            } else {
+                int start = consumed.size();
+                parseParenthesizedRelation("Expected '(' after the columns");
+                input = writtenFrom(start);
+            }
+        } catch (ParseException e) {
+            return null;
+        }
+        if (!callsBetween(itemsStart, itemsEnd).isEmpty()) {
+            String group = glyph ? "γ" : "GROUP";
+            String fix = sqlAlias ? null : groupForm(itemsStart, itemsEnd, input, false, glyph);
+            throw ParseException.at("'" + select.lexeme() + "' filters rows; an aggregate belongs in "
+                    + group + ": write " + (fix != null ? fix : group + " AVG(x)" + arrow + "avg " + input),
+                    lexer.input(), firstStar(itemsStart, sign));
+        }
+        return (glyph ? "π " : "PROJECT ") + items + " " + input;
+    }
+
+    /**
+     * SQL's {@code FROM} clause, read after its {@code FROM}: the relation, or
+     * {@code SELECT c (R)} for {@code R WHERE c}. When it does not parse, the rest of the
+     * expression up to the parenthesis that closes it, as written.
+     */
+    private String sqlFromClause(boolean glyph) {
+        int start = consumed.size();
+        try {
+            parseExpression(0);
+            String from = writtenFrom(start);
+            if (!isWord(current, "WHERE")) {
+                return from;
+            }
+            advance();
+            int condition = consumed.size();
+            parsePredicate();
+            return (glyph ? "σ " : "SELECT ") + writtenFrom(condition) + " (" + from + ")";
+        } catch (ParseException e) {
+            int depth = 0;
+            for (Token token : consumed.subList(start, consumed.size())) {
+                depth += token.type() == TokenType.LPAREN ? 1 : token.type() == TokenType.RPAREN ? -1 : 0;
+            }
+            while (current.type() != TokenType.EOF && (current.type() != TokenType.RPAREN || depth > 0)) {
+                depth += current.type() == TokenType.LPAREN ? 1 : current.type() == TokenType.RPAREN ? -1 : 0;
+                advance();
+            }
+            return writtenFrom(start);
+        }
     }
 
     /**
@@ -3878,14 +4038,23 @@ public final class RelAlgebraParser {
 
     /**
      * Refuses SQL's {@code SELECT *} or {@code PROJECT *} at the {@code *}: a relation
-     * already has every column, so the relation alone is meant.
+     * already has every column, so the relation alone is meant. After SQL's {@code FROM},
+     * {@code SELECT * FROM T WHERE c} is {@code SELECT c (T)}, and without a
+     * {@code WHERE} it is {@code T}.
      */
     private void rejectEveryColumn(Token opTok) {
-        if (current.type() != TokenType.MULTIPLY || peek(1).type() != TokenType.LPAREN) {
+        if (current.type() != TokenType.MULTIPLY
+                || peek(1).type() != TokenType.LPAREN && !isWord(peek(1), "FROM")) {
             return;
         }
         Token star = current;
         advance();
+        if (isWord(current, "FROM")) {
+            advance();
+            String from = sqlFromClause(isGlyph(opTok));
+            throw ParseException.at("Relix has no '*' column list, and a relation already has all"
+                    + " its columns; SQL's FROM is the input: write " + from, lexer.input(), star);
+        }
         String relation = "R";
         int start = consumed.size();
         try {
@@ -3895,9 +4064,38 @@ public final class RelAlgebraParser {
             // Nothing to echo: R stands for it.
         }
         boolean filter = opTok.type() == TokenType.SELECT;
-        throw ParseException.at("a relation already has all its columns: write " + relation
+        throw ParseException.at("Relix has no '*' column list, and a relation already has all its"
+                + " columns: write " + relation
                 + (filter ? ", or " + opTok.lexeme() + " a condition (" + relation + ")" : ""),
                 lexer.input(), star);
+    }
+
+    /**
+     * Refuses {@code *} for "every column" after a qualifier, {@code PROJECT i.* (R)}, at
+     * the {@code *}, which {@code qualifier} was read up to: no operator takes a column
+     * list of {@code *}, and PROJECT names the columns it keeps.
+     */
+    private void rejectQualifiedStar(CharSequence qualifier) {
+        if (current.type() != TokenType.MULTIPLY) {
+            return;
+        }
+        String of = qualifier.toString().substring(0, qualifier.length() - 1);
+        throw ParseException.at("Relix has no '*' column list: PROJECT names the columns it keeps."
+                + " To keep all of " + of + "'s columns, leave PROJECT out, or list them",
+                lexer.input(), current);
+    }
+
+    /**
+     * Refuses {@code *} as a later item of a column list, {@code PROJECT a, * (R)}, at
+     * the {@code *}.
+     */
+    private void rejectStarItem() {
+        if (current.type() != TokenType.MULTIPLY || peek(1).type() != TokenType.COMMA
+                && peek(1).type() != TokenType.LPAREN && !isWord(peek(1), "FROM")) {
+            return;
+        }
+        throw ParseException.at("Relix has no '*' column list: PROJECT names the columns it keeps."
+                + " List them, or leave PROJECT out to keep them all", lexer.input(), current);
     }
 
     /**
@@ -4467,6 +4665,7 @@ public final class RelAlgebraParser {
 
         while (match(TokenType.DOT)) {
             sb.append('.');
+            rejectQualifiedStar(sb);
             Token next = expectName("Expected identifier after '.'");
             sb.append(next.lexeme());
         }
@@ -4735,6 +4934,7 @@ public final class RelAlgebraParser {
             right.append('.').append(peek(next + 1).lexeme());
             next += 2;
         }
+        rejectTableAlias(right.toString(), next);
         TokenType after = peek(next).type();
         if (after == TokenType.EOF || after == TokenType.RPAREN || isBinaryRelOperator(after)) {
             String leftName = left instanceof RelationNode named ? named.name() : "…";

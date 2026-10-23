@@ -24,8 +24,11 @@ import com.darkcollective.relix.lang.ast.source.*;
 import com.darkcollective.relix.lang.ast.table.CsvInlineTable;
 import com.darkcollective.relix.lang.ast.table.InlineTable;
 import com.darkcollective.relix.lang.ast.table.MarkdownInlineTable;
+import com.darkcollective.relix.parser.Lexer;
 import com.darkcollective.relix.parser.ParseException;
 import com.darkcollective.relix.parser.RelAlgebraParser;
+import com.darkcollective.relix.parser.Token;
+import com.darkcollective.relix.parser.TokenType;
 import com.darkcollective.relix.symbol.ArrayType;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ParameterDefinition;
@@ -87,6 +90,9 @@ public final class ScriptParser {
 
     /** The comments read inside braces, by the expression parser rather than this lexer. */
     private final List<Comment> expressionComments = new ArrayList<>();
+
+    /** The names the statements so far give relations and functions, as written. */
+    private final Set<String> definedNames = new HashSet<>();
 
     private ScriptParser(String source) {
         this(source, "<stdin>");
@@ -206,8 +212,17 @@ public final class ScriptParser {
         // Remaining statements
         while (current.type() != LangTokenType.EOF) {
             LangToken start = current;
-            statements.add(parseStatement());
+            Statement statement = parseStatement();
+            statements.add(statement);
             spans.add(new Span(start, lastSemicolon));
+            switch (statement) {
+                case AssignmentStatement s -> definedNames.add(s.name());
+                case SourceDeclaration s -> definedNames.add(s.name());
+                case DefStatement s -> definedNames.add(s.name());
+                case DefRelationStatement s -> definedNames.add(s.name());
+                case ImportStatement s -> definedNames.addAll(s.names());
+                default -> { }
+            }
         }
 
         return new Script(namespace, Collections.unmodifiableList(statements),
@@ -729,6 +744,7 @@ public final class ScriptParser {
             rejectUnbracedView();
             LangToken brace = requireBraceToken();
             LangLexer.RawBlock raw = rawBraceBlock(brace);
+            rejectBracedTable(raw, brace);
             current = lexer.next();
             body = new QueryAssignmentBody(delegateToRaParser(raw, brace, name));
             if (current.type() == LangTokenType.REFERENCES) {
@@ -1139,6 +1155,7 @@ public final class ScriptParser {
             return RelAlgebraParser.parse(raw.text(), filePath, raw.startLine(), raw.startCol(),
                     expressionComments::add);
         } catch (ParseException e) {
+            rejectKeywordName(raw, e);
             String fix = semicolonInBraces(raw, openBrace, view, e);
             throw new LangParseException(
                     "Syntax error in RA expression: " + (fix != null ? fix : withoutPosition(e)),
@@ -1220,6 +1237,69 @@ public final class ScriptParser {
             fix.append(fix.isEmpty() ? "" : " ").append("query { ").append(piece).append(" };");
         }
         return "a query holds one expression; write each as its own: " + fix;
+    }
+
+    /**
+     * Refuses an inline table written in braces, {@code R := { | a | b | … };}, at the
+     * brace: an inline table goes in brackets. Left alone, the rows are read as an
+     * expression, and its first {@code |} is an unexpected character.
+     */
+    private void rejectBracedTable(LangLexer.RawBlock raw, LangToken brace) {
+        String rows = raw.text().strip();
+        if (!rows.startsWith("|")) {
+            return;
+        }
+        int lineEnd = rows.indexOf('\n');
+        String header = lineEnd < 0 ? rows : rows.substring(0, lineEnd).strip() + " …";
+        throw new LangParseException("an inline table goes in brackets, not braces: write "
+                + statementText(brace) + " [ " + header + " ];", brace.line(), brace.column());
+    }
+
+    /**
+     * Refuses a relation or function this script named with a keyword spelled in another
+     * case, {@code Closure}, written bare in an expression that fails: keywords ignore
+     * case, so the name is read as the keyword, {@code CLOSURE}, and the failure describes
+     * that keyword's arguments rather than the name. Reported at the name when the
+     * expression, with the name in backticks, parses or fails differently; a keyword name
+     * that reads as a name where it stands, or one the failure does not involve, is left
+     * to the failure.
+     */
+    private void rejectKeywordName(LangLexer.RawBlock raw, ParseException failure) {
+        List<Token> bare = new ArrayList<>();
+        try {
+            Lexer words = new Lexer(raw.text(), raw.startLine(), raw.startCol());
+            for (Token token = words.next(); token.type() != TokenType.EOF; token = words.next()) {
+                if (token.type() != TokenType.IDENTIFIER && definedNames.contains(token.lexeme())) {
+                    bare.add(token);
+                }
+            }
+        } catch (ParseException e) {
+            return;
+        }
+        int from = offsetOf(raw.startLine(), raw.startCol());
+        for (String name : bare.stream().map(Token::lexeme).distinct().toList()) {
+            StringBuilder text = new StringBuilder(lexer.input().substring(from, from + raw.text().length()));
+            for (Token token : bare.reversed()) {
+                if (token.lexeme().equals(name)) {
+                    int at = offsetOf(token.line(), token.column()) - from;
+                    text.replace(at, at + name.length(), "`" + name + "`");
+                }
+            }
+            String again;
+            try {
+                RelAlgebraParser.parse(text.toString(), filePath, raw.startLine(), raw.startCol());
+                again = null;
+            } catch (ParseException e) {
+                again = withoutPosition(e);
+            }
+            if (!withoutPosition(failure).equals(again)) {
+                Token first = bare.stream().filter(t -> t.lexeme().equals(name)).findFirst().orElseThrow();
+                throw new LangParseException("'" + name + "' is the keyword " + name.toUpperCase(Locale.ROOT)
+                        + " (keywords ignore case), so it is read as that keyword here; write `" + name
+                        + "` in backticks to refer to " + name + ", or give it another name",
+                        first.line(), first.column());
+            }
+        }
     }
 
     /** The expression parser's failure on the source between two offsets; null when it parses. */
