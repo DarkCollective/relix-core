@@ -533,7 +533,8 @@ final class ReferenceIndex {
             e("literals/array-construction.md","literal", "Array",     "[expr, …]",     "Array construction literal",
               "array-construction", "array construction", "array"),
             e("literals/struct-construction.md","literal","Struct",    "{name: expr}",  "Struct construction literal",
-              "struct-construction", "struct construction", "struct"),
+              "struct-construction", "struct construction", "struct", "record", "row value",
+              "composite", "named_struct", "object"),
             e("literals/truth-relations.md",   "literal", "Truth relations", "UNIT",   "Zero-column truth relations",
               "truth-relations", "truth relation", "unit", "empty", "dee", "dum")
         );
