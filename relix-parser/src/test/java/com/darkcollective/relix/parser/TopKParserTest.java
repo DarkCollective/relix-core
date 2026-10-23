@@ -46,11 +46,29 @@ final class TopKParserTest extends ParserTestSupport {
     @Test
     void defaultsToAscending() {
         assertParsesTo("TOP 5 amount PER customer_id (Orders)",
-                topK(
-                        List.of("customer_id"),
-                        List.of(asc("amount")),
-                        5,
-                        rel("Orders")));
+                new TopKNode(List.of("customer_id"), List.of(asc("amount")), Optional.empty(), 5,
+                        false, true, rel("Orders"), SourceLocation.UNKNOWN));
+    }
+
+    /** Validation warns about a first key left ascending by default, not one asked to be (#210). */
+    @Test
+    void recordsWhetherTheFirstKeysDirectionWasWritten() {
+        assertThat(((TopKNode) parse("TOP 1 p PER g (T)")).leadingDirectionImplied()).isTrue();
+        assertThat(((TopKNode) parse("TOP 1 p NULLS FIRST (T)")).leadingDirectionImplied()).isTrue();
+        assertThat(((TopKNode) parse("TOP 1 p ASC PER g (T)")).leadingDirectionImplied()).isFalse();
+        assertThat(((TopKNode) parse("TOP 1 p DESC PER g (T)")).leadingDirectionImplied()).isFalse();
+        assertThat(((TopKNode) parse("TOP 1 p DESC, t PER g (T)")).leadingDirectionImplied()).isFalse();
+        assertThat(((TopKNode) parse("λ 1 WITH TIES (τ p (T))")).leadingDirectionImplied()).isFalse();
+    }
+
+    @Test
+    void printsTheFirstKeysDirectionAsWrittenAndReadsBack() {
+        for (String written : List.of("TOP 1 p PER g (T)", "TOP 1 p ASC PER g (T)",
+                "TOP 1 p ASC NULLS FIRST, t (T)", "TOP 1 WITH TIES p NULLS FIRST (T)")) {
+            RelNode node = parse(written);
+            assertThat(node.prettyPrint()).isEqualTo(written);
+            assertParsesTo(node.prettyPrint(), node);
+        }
     }
 
     @Test

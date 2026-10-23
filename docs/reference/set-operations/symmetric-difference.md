@@ -63,6 +63,10 @@ same three rows. It is the "what disagrees between these two sources?" operator,
 which is why it is useful for reconciliation.
 
 # Limitations:
+Columns match by position, not name. Two sides with the same column names in a
+different order draw a warning, as under [union](union.md); project the right
+side's columns in the left side's order.
+
 Both sides must be union-compatible. Like difference, it is non-monotone and
 cannot appear in a recursive FIX step. It materialises rather than streams.
 

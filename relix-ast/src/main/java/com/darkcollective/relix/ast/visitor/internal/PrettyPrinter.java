@@ -20,6 +20,7 @@ import com.darkcollective.relix.ast.*;
 import com.darkcollective.relix.ast.internal.DisplayLabels;
 import com.darkcollective.relix.ast.internal.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
@@ -403,9 +404,16 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
     @Override
     public String visit(TopKNode node) {
         String count = node.offset().map(o -> o + ", ").orElse("") + node.count();
-        String specs = node.sortSpecs().stream()
-                .map(this::renderSortKey)
-                .collect(Collectors.joining(", "));
+        List<String> keys = new ArrayList<>(node.sortSpecs().stream().map(this::renderSortKey).toList());
+        // An ascending first key reads back as one whose direction was left to the
+        // default unless ASC is written, and only that one draws a warning (#210).
+        if (!node.leadingDirectionImplied() && !keys.isEmpty()
+                && node.sortSpecs().get(0).direction() == SortDirection.ASC) {
+            SortSpecification leading = node.sortSpecs().get(0);
+            keys.set(0, leading.expression().accept(operandPrinter) + " ASC"
+                    + (leading.nulls() == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : ""));
+        }
+        String specs = String.join(", ", keys);
         String per = node.groupingAttributes().isEmpty()
                 ? "" : " PER " + String.join(", ", node.groupingAttributes());
         return "TOP " + count + (node.withTies() ? " WITH TIES " : " ") + specs + per

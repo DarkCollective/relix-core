@@ -13,6 +13,10 @@ input is filled with NULL for the rows that came from the other input. Duplicate
 result rows are removed. Use it to stack records from differently-shaped sources
 into one table — exactly the situation a plain UNION rejects.
 
+Because it lines columns up by name, it is also the **union by name**: over two
+inputs with the same column names, in whatever order, `⊔` is a `∪` that matches
+columns by name rather than by position.
+
 # Technical Description:
 `R ⊔ S` produces the **column-union** of the two schemas: every column of `R`,
 followed by every column of `S` whose name is not already present (matched
@@ -80,6 +84,11 @@ is NULL in exactly the columns its own input does not have.
 Set semantics only — duplicate rows are removed (there is no "outer-union all"
 variant). Never pushed down to a source; the merge runs in-engine. A type
 conflict on a shared column resolves to `ANY` rather than raising an error.
+
+# SQL names:
+DuckDB's `UNION BY NAME` and Spark's `unionByName` are `⊔` here. There is no
+`UNION ALL BY NAME`: `⊔` removes duplicate rows, so to keep them, project one side's
+columns into the other's order and use `⊎`.
 
 # Alternatives:
 Union (∪) when the inputs are already union-compatible — it is cheaper and checks

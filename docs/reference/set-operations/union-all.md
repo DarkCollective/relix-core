@@ -65,6 +65,10 @@ whole difference from `∪`, which would return four. Union-all never compares r
 so it is also the cheaper of the two: no buffering, no dedup pass.
 
 # Limitations:
+Columns match by position, not name. Two sides with the same column names in a
+different order draw a warning, as under [union](union.md); project the right
+side's columns in the left side's order.
+
 Keeps duplicates by design — if you need a de-duplicated result use UNION (∪) or
 follow with δ.
 
