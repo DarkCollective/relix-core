@@ -495,8 +495,8 @@ public final class AstLocations {
         @Override
         public RelNode visit(TopKNode node) {
             return new TopKNode(node.groupingAttributes(), stripSpecs(node.sortSpecs()),
-                    node.offset(), node.count(), node.withTies(), node.input().accept(this),
-                    SourceLocation.UNKNOWN);
+                    node.offset(), node.count(), node.withTies(), node.leadingDirectionImplied(),
+                    node.input().accept(this), SourceLocation.UNKNOWN);
         }
 
         @Override

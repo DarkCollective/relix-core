@@ -76,6 +76,10 @@ the right, so the result is a subset of `Subscribers`. Reverse the operands and
 you get a different answer (`dee@example.com` alone).
 
 # Limitations:
+Columns match by position, not name. Two sides with the same column names in a
+different order draw a warning, as under [union](union.md); project the right
+side's columns in the left side's order.
+
 Both sides must be union-compatible. To "subtract" based on a key while keeping
 extra columns from the left, an ANTI join (▷) is usually the better tool.
 

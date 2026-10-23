@@ -65,6 +65,10 @@ two lists, the row would not match and the result would be empty. To intersect o
 a key alone, project to that key first, or use a SEMI join.
 
 # Limitations:
+Columns match by position, not name. Two sides with the same column names in a
+different order draw a warning, as under [union](union.md); project the right
+side's columns in the left side's order.
+
 Both sides must be union-compatible. Compares whole rows; project to the relevant
 columns first if you want to intersect on a subset.
 

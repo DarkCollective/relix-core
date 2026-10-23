@@ -23,6 +23,20 @@ called. Rows are matched by position for the same reason, so a row of `L` and a 
 of `R` holding the same values in the same order are one row. The result carries the
 left side's column names.
 
+Because columns match by position, two sides with the **same column names in a
+different order** put the right side's values under the left side's other names.
+That is almost never meant, so validation gives a **warning** for it, under `∪`,
+`⊎`, `∩`, `−` and `∆` alike:
+
+```
+warning: Set operation ∪ matches columns by position, not name: the right side's 'country' lands in 'status', its 'status' lands in 'country'. Use OUNION (⊔) to match them by name, or project the right side's columns in the left side's order: PROJECT status, country (B)
+```
+
+To match columns **by name** (SQL's `UNION BY NAME`), use the outer union
+[`⊔` / `OUNION`](outer-union.md): over two sides with the same names it is a union
+by name. Sides whose names differ, as in `π city (Shipping) ∪ π town (Billing)`,
+are the positional use above and stay quiet.
+
 # Examples:
 Combine two customer lists into one de-duplicated list:
   CurrentCustomers ∪ ArchivedCustomers

@@ -47,6 +47,8 @@ public final class RelAlgebraParser {
     private final List<Token> lookahead = new ArrayList<>();
     /** Every token parsed so far, for an error that quotes the expression back. */
     private final List<Token> consumed = new ArrayList<>();
+    /** Whether the sort key {@link #parseSortSpecification} read last wrote ASC or DESC. */
+    private boolean sortDirectionWritten;
     private Token current;
     /**
      * The parenthesis that opens the join condition being read, and where its join's
@@ -1426,8 +1428,13 @@ public final class RelAlgebraParser {
     }
 
     private List<SortSpecification> parseSortSpecificationList() {
+        return parseSortSpecificationList(parseSortSpecification());
+    }
+
+    /** The sort-key list whose first key, {@code first}, has already been read. */
+    private List<SortSpecification> parseSortSpecificationList(SortSpecification first) {
         List<SortSpecification> specs = new ArrayList<>();
-        specs.add(parseSortSpecification());
+        specs.add(first);
 
         while (match(TokenType.COMMA)) {
             specs.add(parseSortSpecification());
@@ -1445,12 +1452,15 @@ public final class RelAlgebraParser {
         Operand expression = parseOperand();
         SortDirection direction = SortDirection.ASC;
 
+        sortDirectionWritten = true;
         if (current.type() == TokenType.ASC) {
             advance();
             direction = SortDirection.ASC;
         } else if (current.type() == TokenType.DESC) {
             advance();
             direction = SortDirection.DESC;
+        } else {
+            sortDirectionWritten = false;
         }
 
         // SQL's NULLS FIRST / NULLS LAST, matched by text so that none of the three
@@ -2684,7 +2694,11 @@ public final class RelAlgebraParser {
         boolean withTies = parseWithTies();
 
         int sortStart = consumed.size();
-        List<SortSpecification> sortSpecs = parseSortSpecificationList();
+        SortSpecification leading = parseSortSpecification();
+        // Whether the first key was left ascending by default: "top" reads as the
+        // highest, so validation warns about it (#210).
+        boolean leadingDirectionImplied = !sortDirectionWritten;
+        List<SortSpecification> sortSpecs = parseSortSpecificationList(leading);
         int sortEnd = consumed.size();
         Token misplacedTies = withTies ? null : skipMisplacedTies();
 
@@ -2711,7 +2725,8 @@ public final class RelAlgebraParser {
         RelNode input = parseParenthesizedRelation(
                 keys.isEmpty() ? "Expected 'PER' or '(' after the TOP sort keys"
                                : "Expected '(' after the TOP grouping keys");
-        return new TopKNode(List.copyOf(keys), sortSpecs, offset, count, withTies, input, loc(opTok));
+        return new TopKNode(List.copyOf(keys), sortSpecs, offset, count, withTies, leadingDirectionImplied,
+                input, loc(opTok));
     }
 
     /** Consumes a {@code WITH TIES} written after TOP's sort or PER keys, returning its WITH; null if none. */
