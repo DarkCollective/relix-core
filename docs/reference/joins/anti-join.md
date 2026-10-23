@@ -76,6 +76,13 @@ A left outer join then `σ right.key = NULL` produces the same set but is more
 verbose; the anti join states the intent directly. Set difference (−) works when
 the two relations are union-compatible.
 
+# SQL names:
+SQL's `WHERE NOT EXISTS (SELECT … FROM S WHERE S.k = R.k)` and
+`WHERE R.k NOT IN (SELECT k FROM S)` are `R ANTI R.k = S.k S`. The anti join answers as
+`NOT EXISTS` does: SQL's `NOT IN` returns no rows at all when the subquery yields a NULL,
+where the anti join keeps every row that has no match. `EXISTS` and `IN (subquery)` are
+the [semi join](semi-join.md); `NOT IN` over a list of values is [IN](../predicates/in.md).
+
 # See Also:
 [semi-join](semi-join.md), [left-outer-join](left-outer-join.md), [difference](../set-operations/difference.md), [is-null](../predicates/is-null.md)
 

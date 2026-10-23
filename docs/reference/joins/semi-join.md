@@ -79,6 +79,12 @@ A theta join then δ achieves a similar set but risks fan-out and needs the
 dedupe; semi join is cleaner and avoids duplicating left rows. ANTI join (▷) is
 the complement ("no match").
 
+# SQL names:
+SQL's `WHERE EXISTS (SELECT … FROM S WHERE S.k = R.k)` and
+`WHERE R.k IN (SELECT k FROM S)` are `R SEMI R.k = S.k S`, each row of R kept once
+however many rows of S match it. `NOT EXISTS` and `NOT IN (subquery)` are the
+[anti join](anti-join.md); `IN` over a list of values is [IN](../predicates/in.md).
+
 # See Also:
 [anti-join](anti-join.md), [theta-join](theta-join.md), [natural-join](natural-join.md), [forall](../operators/forall.md), [distinct](../operators/distinct.md)
 

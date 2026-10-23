@@ -98,6 +98,12 @@ produces the same sample for a given input.
 SAMPLE n ROWS for an exact-count uniform sample. LIMIT for a deterministic prefix
 (not random). SAMPLE n ROWS SEED k for a reproducible fixed-count sample.
 
+# SQL names:
+SQL's `TABLESAMPLE BERNOULLI (10)` is `SAMPLE 0.1 (R)`: the percentage is a probability
+here, and `REPEATABLE (s)` is `SEED s`. `WHERE RANDOM() < 0.1` is the same sample.
+`ORDER BY RANDOM() LIMIT n`, a fixed count of random rows, is
+[SAMPLE n ROWS](sample-reservoir.md).
+
 # See Also:
 [sample-reservoir](sample-reservoir.md), [limit](../operators/limit.md), [rand](../functions/math/rand.md)
 
