@@ -65,7 +65,10 @@ import java.util.regex.Pattern;
  *
  * <p>SQL writes a conditional value with keywords, not a function, so the conditional
  * functions are keyed by them too: {@code case} and {@code case when} find
- * {@code Switch}, the multi-branch form, and {@code if} finds {@code IIf}.
+ * {@code Switch}, the multi-branch form, and {@code if} finds {@code IIf}. So are two
+ * whose SQL name Relix does not take as a function: {@code timestampdiff} finds
+ * {@code DATEDIFF}, which counts differently, and {@code ifnull} and {@code nvl} find
+ * {@code Coalesce}.
  *
  * <p>An index is immutable and safe to share between threads. Markdown is read when it
  * is asked for, not when the index is built.
@@ -81,10 +84,15 @@ public final class ReferenceLookup {
     private static final Pattern TITLE =
             Pattern.compile("^#\\s*Name:\\s*(\\S+)\\s*\\(([^)]*)\\)", Pattern.MULTILINE);
 
-    /** Function name → the SQL keywords that also find its page, for a value SQL writes with keywords. */
+    /**
+     * Function name → the SQL words that also find its page: keywords SQL writes a value
+     * with, and SQL functions Relix has no function of that name for.
+     */
     private static final Map<String, List<String>> SQL_KEYWORDS = Map.of(
             "switch", List.of("case", "case when"),
-            "iif", List.of("if"));
+            "iif", List.of("if"),
+            "datediff", List.of("timestampdiff"),
+            "coalesce", List.of("ifnull", "nvl"));
 
     /** Where a page's markdown is read from. */
     private enum Source { LANGUAGE, EXTRA, FUNCTION }

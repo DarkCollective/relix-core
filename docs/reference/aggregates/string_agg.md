@@ -80,5 +80,10 @@ string, the separator a literal, each ordering key a column, and there is no
 joining one runs in the engine. MySQL's `GROUP_CONCAT` is never used: it cuts its
 result short at `group_concat_max_len` without an error.
 
+# SQL names:
+String aggregation, joining a group's values into one string: PostgreSQL's and SQL
+Server's `STRING_AGG`, MySQL's `GROUP_CONCAT` and Oracle's `LISTAGG`, each spelled as
+it is there. An array of the values rather than a string is [COLLECT](collect.md).
+
 # See Also:
 [collect](collect.md), [array_to_string](../functions/nested/array_to_string.md), [concat_ws](../functions/string/concat_ws.md), [group](../operators/group.md)

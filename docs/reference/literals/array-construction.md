@@ -115,6 +115,11 @@ construction cannot state when its elements disagree.
 COLLECT (inside γ) builds an array from many rows of a group, not from columns of
 one row. Struct construction ({ … }) for named fields rather than an ordered list.
 
+# SQL names:
+A list or array value: SQL's `ARRAY[a, b]`, Python's and JSON's list `[a, b]`, written
+the same way, `[a, b]`. An array built from a group's rows is [COLLECT](../aggregates/collect.md),
+SQL's `ARRAY_AGG`.
+
 # See Also:
 [struct-construction](struct-construction.md), [collect](../aggregates/collect.md), [unnest](../operators/unnest.md), [project](../operators/project.md)
 

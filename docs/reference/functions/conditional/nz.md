@@ -43,5 +43,9 @@ columns — pass an explicit replacement (e.g. 0) for those.
 Coalesce returns the first non-NULL of several values. IIf with IsNull for more
 complex conditions.
 
+# SQL names:
+MySQL's and SQLite's `IFNULL(x, y)` and Oracle's `NVL(x, y)` are `Nz(x, y)`, or
+[Coalesce](coalesce.md)`(x, y)`.
+
 # See Also:
 [coalesce](coalesce.md), [iif](iif.md), [isnull](../typecheck/isnull.md), [is-null](../../predicates/is-null.md)

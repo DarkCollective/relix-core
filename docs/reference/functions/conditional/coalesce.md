@@ -36,5 +36,9 @@ argument is required.
 # Alternatives:
 Nz substitutes a single fallback for a NULL; IIf for a general true/false choice.
 
+# SQL names:
+MySQL's and SQLite's `IFNULL(x, y)`, Oracle's `NVL(x, y)` and SQL Server's
+`ISNULL(x, y)` are `Coalesce(x, y)`, or [Nz](nz.md)`(x, y)`.
+
 # See Also:
 [nz](nz.md), [iif](iif.md), [isnull](../typecheck/isnull.md), [is-null](../../predicates/is-null.md)

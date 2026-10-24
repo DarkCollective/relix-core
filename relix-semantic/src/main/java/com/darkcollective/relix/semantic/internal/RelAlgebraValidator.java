@@ -259,8 +259,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 .map(RelationFunctionSymbol.class::cast)
                 .toList();
         if (overloads.isEmpty()) {
-            error(node.location(), "Unknown table-valued function: '" + node.functionName() + "'"
-                    + Suggestions.didYouMean(node.functionName(), functionCandidates()));
+            error(node.location(), bareColumnAsProject(node, symbolTable).orElse(
+                    "Unknown table-valued function: '" + node.functionName() + "'"
+                    + Suggestions.didYouMean(node.functionName(), functionCandidates())));
             return null;
         }
         int argCount = node.arguments().size();
@@ -295,6 +296,29 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      * declares, each at a compatible type. It may have more: the body is handed the
      * argument narrowed to the declared heading, so an extra column never reaches it.
      */
+    /**
+     * The rewrite for a column written before its input with no operator,
+     * {@code category (T)}: a one-column select list whose PROJECT was left out, which
+     * parses as a call to a table-valued function named for the column. Present when the
+     * call's one argument names a relation that has that column, bare or qualified by
+     * the relation's own name; the caller has found no function of that name.
+     */
+    static Optional<String> bareColumnAsProject(RelationFunctionCall call, SymbolTable symbols) {
+        if (call.arguments().size() != 1 || !(call.arguments().getFirst() instanceof AttributeOperand input)) {
+            return Optional.empty();
+        }
+        String column = call.functionName();
+        String qualifier = input.name() + ".";
+        if (column.regionMatches(true, 0, qualifier, 0, qualifier.length())) {
+            column = column.substring(qualifier.length());
+        }
+        String name = column;
+        return symbols.resolveRelation(input.name())
+                .filter(relation -> relation.schema().column(name).isPresent())
+                .map(relation -> "A column list needs PROJECT (π) before it: write PROJECT "
+                        + call.functionName() + " (" + input.name() + ")");
+    }
+
     private void validateRelationArgument(Operand arg, ParameterDefinition parameter,
                                           RelationFunctionCall call) {
         String what = "Table-valued function '" + call.functionName() + "': relation parameter '"

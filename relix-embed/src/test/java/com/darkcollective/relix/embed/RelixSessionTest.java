@@ -721,6 +721,32 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("a column list with no PROJECT before it, in a view or a query, names one that validates (#225)")
+        void bareColumnListDiagnosed() {
+            String tables = "T := [| category | parent |\n| A | B |];\n";
+            try (Relix relix = Relix.open()) {
+                for (String[] c : new String[][] {
+                        {"V := { category, parent (T) };\n", "PROJECT category, parent (T)"},
+                        {"query { category, parent (T) };\n", "PROJECT category, parent (T)"},
+                        {"query { T.category, T.parent (T) };\n", "PROJECT T.category, T.parent (T)"},
+                        // One column reads as a call to a function of its name.
+                        {"query { category (T) };\n", "PROJECT category (T)"},
+                        {"V := { T.category (T) };\n", "PROJECT T.category (T)"}}) {
+                    List<Diagnostic> found = relix.validate(tables + c[0]);
+                    assertThat(found).as(c[0]).hasSize(1);
+                    assertThat(found.getFirst().message()).as(c[0])
+                            .endsWith("A column list needs PROJECT (π) before it: write " + c[1]);
+                    assertThat(relix.validate(tables + "query { " + c[1] + " };\n"))
+                            .as("the rewrite of " + c[0]).isEmpty();
+                }
+                // A name that is no column of its input is still an unknown function.
+                assertThat(relix.validate(tables + "query { nosuch (T) };\n"))
+                        .extracting(Diagnostic::message)
+                        .anyMatch(m -> m.contains("table-valued function: 'nosuch'"));
+            }
+        }
+
+        @Test
         @DisplayName("SQL's select list, a table alias and a '*' column list each name a rewrite that validates (#212, #213, #215)")
         void sqlSelectListAliasAndStarDiagnosed() {
             String tables = "orders := [| customer_id | total |\n| 1 | 120 |];\n";

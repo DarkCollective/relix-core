@@ -178,6 +178,29 @@ final class ReferenceLookupTest {
         }
 
         @Test
+        @DisplayName("TIMESTAMPDIFF, IFNULL, tuple, list, function definition and string aggregation find their pages (#224)")
+        void otherNamesFindTheirPages() {
+            Map<String, String> pages = Map.of(
+                    "tuple", "literals/struct-construction.md",
+                    "tuple constructor", "literals/struct-construction.md",
+                    "list", "literals/array-construction.md",
+                    "function definition", "language/def.md",
+                    "string aggregation", "aggregates/string_agg.md");
+            pages.forEach((name, path) -> assertThat(INSTALLED.entry(name)).as(name)
+                    .map(ReferencePage::path).contains(path));
+            for (String path : new java.util.TreeSet<>(pages.values())) {
+                assertThat(RelixDocs.referencePage(path).orElseThrow()).as(path).contains("# SQL names:");
+            }
+            assertThat(INSTALLED.entry("TIMESTAMPDIFF")).contains(INSTALLED.function("DATEDIFF").orElseThrow());
+            assertThat(INSTALLED.lookup("timestampdiff").orElseThrow())
+                    .contains("# SQL names:", "`TIMESTAMPDIFF(MONTH, start, end)`");
+            for (String name : List.of("IFNULL", "nvl")) {
+                assertThat(INSTALLED.entry(name)).as(name).contains(INSTALLED.function("Coalesce").orElseThrow());
+            }
+            assertThat(INSTALLED.lookup("ifnull").orElseThrow()).contains("# SQL names:", "`IFNULL(x, y)`");
+        }
+
+        @Test
         @DisplayName("SQL's clauses and subquery forms find the operator that spells them, whose page names them (#218)")
         void sqlOperatorNames() {
             Map<String, String> pages = Map.ofEntries(
