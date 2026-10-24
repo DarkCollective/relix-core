@@ -49,6 +49,11 @@ RELATION return type (a table-valued function).
 A table-valued function (`: RELATION`) returns a relation rather than a value. The
 built-in scalar functions cover common string/math/date operations already.
 
+# SQL names:
+A function definition: SQL's `CREATE FUNCTION`, a user-defined function (UDF). It
+lives in the script, before the queries that call it: `def double(x: NUMBER) : NUMBER
+:= { x * 2 };`. A function returning a table is [def relation](def-relation.md).
+
 # See Also:
 [def-relation](def-relation.md), [import](import.md), [project](../operators/project.md), [select](../operators/select.md)
 

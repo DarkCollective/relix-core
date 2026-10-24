@@ -252,6 +252,9 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
     public Optional<Schema> visit(RelationFunctionCall node) {
         Optional<RelationFunctionSymbol> sym = lookupRelationFunction(node.functionName());
         if (sym.isEmpty()) {
+            if (RelAlgebraValidator.bareColumnAsProject(node, symbolTable).isPresent()) {
+                return Optional.empty();   // a column missing its PROJECT, which validation names
+            }
             errors.add(SemanticError.error(
                     node.location().filePath(),
                     node.location().line(),

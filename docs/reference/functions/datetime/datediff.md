@@ -61,5 +61,11 @@ SQL: `DATEDIFF(unit, …)` on SQL Server, both sides switched to UTC, for every 
 but week, whose start there depends on the session's `DATEFIRST`; in the engine
 elsewhere.
 
+# SQL names:
+MySQL's `TIMESTAMPDIFF(MONTH, start, end)` is `DATEDIFF(month, start, end)`, with the
+same unit first, but it counts whole units elapsed where DATEDIFF counts boundaries
+crossed: 31 January to 1 February is 0 months there and 1 here. To count whole days
+elapsed, as `TIMESTAMPDIFF(DAY, …)` does, write `DAYS(end - start)`.
+
 # See Also:
 [last_day](last_day.md), [make_date](make_date.md), [days](days.md), [date_trunc](date_trunc.md)

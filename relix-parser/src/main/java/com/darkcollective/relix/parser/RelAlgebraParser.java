@@ -5195,7 +5195,33 @@ public final class RelAlgebraParser {
                     + " which it takes in parentheses: " + operator + " (" + input + ")",
                     lexer.input(), current);
         }
+        rejectColumnListWithoutProject();
         expect(TokenType.EOF, "Expected end of input");
+    }
+
+    /**
+     * Refuses a column list with no operator before it, {@code a, b (R)}: SQL's select
+     * list with its {@code SELECT} left out, or a PROJECT dropped. The first column reads
+     * as a relation's name and parsing stops at the comma, so "expected end of input"
+     * never says what is missing. The error names PROJECT and the writer's own expression
+     * after it, when that parses.
+     */
+    private void rejectColumnListWithoutProject() {
+        if (current.type() != TokenType.COMMA || !isColumnName(0, consumed.size())) {
+            return;
+        }
+        int end = 0;
+        while (peek(end).type() != TokenType.EOF) {
+            end++;
+        }
+        String rewrite = "PROJECT " + joined(consumed) + sourceText(0, end);
+        try {
+            parse(rewrite);
+        } catch (ParseException e) {
+            rewrite = "PROJECT a, b (R)";
+        }
+        throw ParseException.at("A column list needs PROJECT (π) before it: write " + rewrite,
+                lexer.input(), current);
     }
 
     /**
