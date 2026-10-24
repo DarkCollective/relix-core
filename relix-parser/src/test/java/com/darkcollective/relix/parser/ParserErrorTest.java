@@ -221,6 +221,29 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("a column list with no operator before it names PROJECT, in a rewrite that parses (#225)")
+    public void namesProjectForABareColumnList() {
+        String written = "A column list needs PROJECT (π) before it: write ";
+        assertParseError("category, parent (T)")
+                .hasMessageContaining(written + "PROJECT category, parent (T)")
+                .at(1, 9);
+        RelAlgebraParser.parse("PROJECT category, parent (T)");
+        assertParseError("T.category, T.parent (T)")
+                .hasMessageContaining(written + "PROJECT T.category, T.parent (T)");
+        RelAlgebraParser.parse("PROJECT T.category, T.parent (T)");
+        String filtered = "PROJECT view_id, customer_id, viewed_at (σ customer_id = 7 (page_views))";
+        assertParseError("view_id, customer_id, viewed_at (σ customer_id = 7 (page_views))")
+                .hasMessageContaining(written + filtered);
+        RelAlgebraParser.parse(filtered);
+        // No input to echo, so no rewrite of the writer's own.
+        assertParseError("a, b")
+                .hasMessageContaining(written + "PROJECT a, b (R)");
+        // A relation before the comma keeps the plain message.
+        assertParseError("R ⋈ S, b")
+                .hasMessageContaining("Expected end of input");
+    }
+
+    @Test
     @DisplayName("a GROUP after a PROJECT that holds the aggregates moves them into GROUP, in a rewrite that parses")
     public void movesProjectedAggregatesIntoGroup() {
         String written = "In Relix the aggregates go in GROUP, after its keys: write ";

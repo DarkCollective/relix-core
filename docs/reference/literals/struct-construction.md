@@ -125,7 +125,7 @@ Array construction ([ … ]) for ordered lists rather than named fields. Keep
 columns flat if the consumer cannot handle nested output.
 
 # SQL names:
-A record, row value or object. SQL's `ROW(a, b)` and `STRUCT(a, b)`, Spark's
+A record, tuple, row value or object. SQL's `ROW(a, b)` and `STRUCT(a, b)`, Spark's
 `named_struct('model', model_number)`, PostgreSQL's composite types, BigQuery's
 `STRUCT<…>` and JSON's object are all written with braces, each field named:
 `{ model: model_number, state: status }`. A record called `info` is a projected item
