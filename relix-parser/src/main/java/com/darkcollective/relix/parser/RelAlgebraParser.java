@@ -670,18 +670,27 @@ public final class RelAlgebraParser {
      * {@code BETWEEN}, …), so a name followed by a name that is itself compared, or
      * qualified, can only be the right input. A copy of the relation written again after
      * the condition is left out of the rewrite, which puts the relation there once.
+     *
+     * <p>SQL's {@code AND} or {@code WHERE} before the condition, {@code A >< B AND A.id =
+     * B.a_id}, is the same mistake, and the rewrite drops the word. A name followed by
+     * {@code AND} cannot begin a condition, whose first term must be compared.
      */
     private void rejectRightInputBeforeCondition(Token operator, int leftStart, int operatorAt) {
-        if (current.type() != TokenType.IDENTIFIER || peek(1).type() != TokenType.IDENTIFIER
-                || List.of("AT", "BETWEEN", "MATCHES", "ESCAPE").stream().anyMatch(w -> isWord(peek(1), w))) {
+        boolean joined = current.type() == TokenType.IDENTIFIER
+                && (peek(1).type() == TokenType.AND || isWord(peek(1), "WHERE"));
+        if (!joined && (current.type() != TokenType.IDENTIFIER || peek(1).type() != TokenType.IDENTIFIER
+                || List.of("AT", "BETWEEN", "MATCHES", "ESCAPE").stream().anyMatch(w -> isWord(peek(1), w)))) {
             return;
         }
-        if (peek(2).type() != TokenType.DOT && !isComparison(peek(2).type())) {
+        if (!joined && peek(2).type() != TokenType.DOT && !isComparison(peek(2).type())) {
             return;
         }
         Token right = current;
         String left = relationText(leftStart, operatorAt);
         advance();
+        if (joined) {
+            advance();
+        }
         int start = consumed.size();
         String condition;
         try {

@@ -755,6 +755,25 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("SQL's AND or WHERE before a condition written after the right relation is dropped from the rewrite (#227)")
+    public void reportsRightInputBeforeAndOrWhere() {
+        String rewrite = "SC1 >< SC1.issue_id = SC2.issue_id AND SC2.changed_at < SC1.changed_at SC2";
+        assertParseError("GROUP SC1.issue_id, MAX(SC2.changed_at) -> prev"
+                + " (SC1 >< SC2 AND SC1.issue_id = SC2.issue_id AND SC2.changed_at < SC1.changed_at)")
+                .hasMessageContaining("the right relation goes after the condition: write " + rewrite)
+                .at(1, 57);
+        parse(rewrite);
+        assertParseError("A >< B WHERE A.id = B.bid")
+                .hasMessageContaining(": write A >< A.id = B.bid B")
+                .at(1, 6);
+        for (String op : List.of("><", "LJOIN", "RJOIN", "FJOIN", "SEMI", "ANTI")) {
+            assertParseError("A " + op + " B AND A.id = B.bid").as(op)
+                    .hasMessageContaining(": write A " + op + " A.id = B.bid B");
+            parse("A " + op + " A.id = B.bid B");
+        }
+    }
+
+    @Test
     @DisplayName("a join that ends after its condition is reported where it ends, naming the right relation (#199)")
     public void reportsMissingRightInput() {
         assertThatThrownBy(() -> parse("SELECT home_members.home_id = 104"
