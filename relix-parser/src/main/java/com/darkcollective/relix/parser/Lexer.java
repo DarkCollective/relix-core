@@ -374,6 +374,7 @@ public final class Lexer {
             case ']' -> token(TokenType.RBRACKET, startIndex, startLine, startColumn);
             case ':' -> token(TokenType.COLON, startIndex, startLine, startColumn);
             case '$' -> parameterToken(startIndex, startLine, startColumn);
+            case '\\' -> throw escapedQuote(startLine, startColumn);
             default -> {
                 if (isIdentifierStart(c)) {
                     yield identifierToken(startIndex, startLine, startColumn);
@@ -390,6 +391,37 @@ public final class Lexer {
                 );
             }
         };
+    }
+
+    /**
+     * Refuses a {@code \} outside a string. Before a quote it is JSON's escaping leaked
+     * into the script, {@code \"optimistic\"}, and the error names the string as Relix
+     * writes it: {@code "optimistic"}, or {@code 'optimistic'}. The {@code \} has just
+     * been consumed.
+     */
+    private ParseException escapedQuote(int line, int column) {
+        Token backslash = new Token(TokenType.IDENTIFIER, "\\", null, line, column);
+        if (isAtEnd() || peek() != '"' && peek() != '\'') {
+            return new ParseException("Unexpected character", input, backslash);
+        }
+        char quote = peek();
+        char other = quote == '"' ? '\'' : '"';
+        int start = index + 1;
+        int end = start;
+        while (end < input.length() && input.charAt(end) != quote && input.charAt(end) != '\n') {
+            end++;
+        }
+        String message = "Strings need no backslash before their quotes";
+        if (end < input.length() && input.charAt(end) == quote) {
+            String text = input.substring(start, end);
+            if (text.endsWith("\\")) {
+                text = text.substring(0, text.length() - 1);
+            }
+            if (text.indexOf(other) < 0) {
+                message += ": write " + quote + text + quote + " (or " + other + text + other + ")";
+            }
+        }
+        return ParseException.at(message, input, backslash);
     }
 
     /**
