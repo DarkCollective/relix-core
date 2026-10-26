@@ -4017,6 +4017,10 @@ public final class RelAlgebraParser {
      * comparison belongs, at the {@code (}, naming {@code PROJECT x (R)} as written, or
      * {@code PROJECT x + 1 -> c (R)} for an expression, which needs a name. Where the
      * input does not read as a relation, the plain error stands.
+     *
+     * <p>{@code SELECT TRUE (R)} is no column list: the error, at the literal, says a
+     * condition compares something and names {@code R}, every row of it, or
+     * {@code SELECT 1 = 0 (R)} for FALSE.
      */
     private void rejectProjectionAfterSelect(Token select, Token paren) {
         boolean glyph = isGlyph(select);
@@ -4029,6 +4033,17 @@ public final class RelAlgebraParser {
             throw error(paren, "Expected comparison operator");
         }
         String written = glyph ? "'σ'" : "'" + select.lexeme() + "' (σ)";
+        Token literal = consumed.get(selectionAt);
+        if (inputStart - selectionAt == 1
+                && (literal.type() == TokenType.TRUE || literal.type() == TokenType.FALSE)) {
+            String input = writtenBetween(inputStart + 1, consumed.size() - 1);
+            throw ParseException.at(written + " needs a condition that compares something, and "
+                    + literal.lexeme() + " alone does not. " + (literal.type() == TokenType.TRUE
+                            ? "Every row of the input is the input itself: write " + input
+                            : "To keep no row, write " + (glyph ? "σ " : select.lexeme() + " ")
+                                    + "1 = 0 (" + input + ")"),
+                    lexer.input(), literal);
+        }
         throw ParseException.at(written + " filters rows by a condition, and found '('"
                 + " where its comparison belongs. To choose columns, use PROJECT (π): write "
                 + (glyph ? "π " : "PROJECT ") + column + " " + writtenFrom(inputStart),

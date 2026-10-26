@@ -278,6 +278,10 @@ final class LangLexer {
                     advance(); // consume '}'
                     return new RawBlock(text, startLine, startCol);
                 }
+            } else if (input.startsWith("\\\"", pos) || input.startsWith("\\'", pos)) {
+                // A quote escaped outside a string, JSON's \"x\" leaked into the script,
+                // starts no string: the RA parser names the slip
+                advance();
             } else if (c == '"') {
                 // Skip string literal content so its braces are not counted
                 advance();

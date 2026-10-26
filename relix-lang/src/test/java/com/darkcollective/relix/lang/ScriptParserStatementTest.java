@@ -385,5 +385,19 @@ class ScriptParserStatementTest {
             assertThatThrownBy(() -> parse("query { ;"))
                     .hasMessage("Unterminated brace block (line 1, col 8)");
         }
+
+        @Test
+        @DisplayName("a backslash before a string's quotes is named, not read as an unclosed brace (#229)")
+        void backslashBeforeQuotes() {
+            assertThatThrownBy(() -> parse("E := { PROJECT id, \\\"optimistic\\\" -> scenario (R) };"))
+                    .hasMessageContaining("Strings need no backslash before their quotes:"
+                            + " write \"optimistic\" (or 'optimistic')")
+                    .hasMessageNotContaining("Unterminated brace block");
+            assertThat(parse("E := { PROJECT id, \"optimistic\" -> scenario (R) };").statements()).hasSize(1);
+            assertThatThrownBy(() -> parse("E := { PROJECT id, \\'optimistic\\' -> scenario (R) };"))
+                    .hasMessageContaining("write 'optimistic' (or \"optimistic\")");
+            assertThatThrownBy(() -> parse("E := { PROJECT id \\ (R) };"))
+                    .hasMessageContaining("Unexpected character");
+        }
     }
 }
