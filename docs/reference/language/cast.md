@@ -96,5 +96,16 @@ function. `TO_DATE`, `TO_TIMESTAMP` and `TO_CHAR` are functions of their own
 [to_char](../functions/conversion/to_char.md)), and Db2's `VALUE(a, b)`, which is
 `COALESCE`, is [Nz](../functions/conditional/nz.md).
 
+`TO_STRING(x)`, a value as text, is `CAST(x AS STRING)`, or
+[CStr](../functions/conversion/cstr.md); to format a date or number with a pattern,
+use [to_char](../functions/conversion/to_char.md).
+
+`TRY_CAST(x AS type)` (SQL Server, Snowflake, DuckDB) gives NULL where the value does
+not convert. Relix's CAST stops the query with an error instead, so check first:
+`IIf(IsNumeric(x), CAST(x AS NUMBER), NULL)` is SQL's `TRY_CAST(x AS NUMBER)`, and
+`σ IsNumeric(x) = TRUE (R)` keeps only the rows that convert
+([IsNumeric](../functions/typecheck/isnumeric.md)). There is no TO_STRING or TRY_CAST
+function.
+
 # See Also:
 [cdbl](../functions/conversion/cdbl.md), [cstr](../functions/conversion/cstr.md), [cbool](../functions/conversion/cbool.md), [to_date](../functions/datetime/to_date.md), [to_time](../functions/datetime/to_time.md), [to_timestamp](../functions/datetime/to_timestamp.md), [EXTRACT](extract.md)
