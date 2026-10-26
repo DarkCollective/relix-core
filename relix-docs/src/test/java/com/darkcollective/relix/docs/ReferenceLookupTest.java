@@ -201,6 +201,17 @@ final class ReferenceLookupTest {
         }
 
         @Test
+        @DisplayName("TO_STRING and TRY_CAST open the CAST page, which names them (#231)")
+        void toStringAndTryCastFindCast() {
+            for (String name : List.of("to_string", "TO_STRING", "try_cast", "TRY_CAST")) {
+                assertThat(INSTALLED.entry(name)).as(name)
+                        .map(ReferencePage::path).contains("language/cast.md");
+            }
+            assertThat(INSTALLED.lookup("try_cast").orElseThrow())
+                    .contains("# SQL names:", "`TO_STRING(x)`", "`TRY_CAST(x AS type)`", "IsNumeric");
+        }
+
+        @Test
         @DisplayName("SQL's clauses and subquery forms find the operator that spells them, whose page names them (#218)")
         void sqlOperatorNames() {
             Map<String, String> pages = Map.ofEntries(

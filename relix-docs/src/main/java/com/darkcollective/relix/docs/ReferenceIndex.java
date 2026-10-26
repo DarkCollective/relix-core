@@ -510,7 +510,7 @@ final class ReferenceIndex {
             e("language/cast.md",              "language", "CAST", "CAST",
               "Convert a value to a type: CAST(x AS NUMBER)",
               "cast", "convert", "conversion", "type conversion",
-              "to_number", "parse", "value"),
+              "to_number", "to_string", "try_cast", "parse", "value"),
             e("language/at-time-zone.md",      "language", "AT TIME ZONE", "AT TIME ZONE",
               "The wall-clock time in a zone: ts AT TIME ZONE 'Europe/London'",
               "at-time-zone", "at time zone", "time zone", "timezone conversion", "zone"),
