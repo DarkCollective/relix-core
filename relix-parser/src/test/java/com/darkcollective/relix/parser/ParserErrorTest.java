@@ -774,6 +774,44 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("a backslash before a string's quotes says strings need none, naming the string (#229)")
+    public void reportsBackslashBeforeQuotes() {
+        assertParseError("PROJECT id, \\\"optimistic\\\" -> scenario (R)")
+                .hasMessageContaining("Strings need no backslash before their quotes:"
+                        + " write \"optimistic\" (or 'optimistic')")
+                .at(1, 13);
+        assertParseError("PROJECT id, \\'optimistic\\' -> scenario (R)")
+                .hasMessageContaining("write 'optimistic' (or \"optimistic\")");
+        parse("PROJECT id, \"optimistic\" -> scenario (R)");
+        parse("PROJECT id, 'optimistic' -> scenario (R)");
+        // No closing quote on the line: the slip, without a string to name.
+        assertParseError("PROJECT id, \\\"optimistic -> scenario (R)")
+                .hasMessageContaining("Strings need no backslash before their quotes at line 1");
+        // A backslash before anything else stays an unexpected character.
+        assertParseError("PROJECT id \\ (R)").hasMessageContaining("Unexpected character");
+        // In a string a backslash escapes, as before.
+        parse("PROJECT \"a\\\"b\" -> s (R)");
+    }
+
+    @Test
+    @DisplayName("SELECT TRUE (R) says a condition compares something and names R, never PROJECT (#229)")
+    public void reportsBooleanLiteralCondition() {
+        assertParseError("PROJECT 201 -> room_id, 0 -> depth (SELECT true (rooms))")
+                .hasMessageContaining("'SELECT' (σ) needs a condition that compares something, and true"
+                        + " alone does not. Every row of the input is the input itself: write rooms")
+                .at(1, 44);
+        parse("PROJECT 201 -> room_id, 0 -> depth (rooms)");
+        assertParseError("σ TRUE (σ v > 1 (R))")
+                .hasMessageContaining("'σ' needs a condition that compares something, and TRUE alone"
+                        + " does not. Every row of the input is the input itself: write σ v > 1 (R)");
+        assertParseError("SELECT false (R)")
+                .hasMessageContaining("and false alone does not. To keep no row, write SELECT 1 = 0 (R)");
+        parse("SELECT 1 = 0 (R)");
+        // A column is still a column list, and names PROJECT.
+        assertParseError("SELECT active (R)").hasMessageContaining("write PROJECT active (R)");
+    }
+
+    @Test
     @DisplayName("a join that ends after its condition is reported where it ends, naming the right relation (#199)")
     public void reportsMissingRightInput() {
         assertThatThrownBy(() -> parse("SELECT home_members.home_id = 104"
