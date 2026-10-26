@@ -791,6 +791,13 @@ final class ParserErrorTest extends ParserTestSupport {
         assertParseError("PROJECT id \\ (R)").hasMessageContaining("Unexpected character");
         // In a string a backslash escapes, as before.
         parse("PROJECT \"a\\\"b\" -> s (R)");
+        // The line ends before the string closes, or the input before a quote: no string to name.
+        assertParseError("PROJECT id, \\\"optimistic\n\" -> s (R)")
+                .hasMessageContaining("Strings need no backslash before their quotes at line 1");
+        assertParseError("PROJECT id \\").hasMessageContaining("Unexpected character");
+        // A string holding the other quote is named in its own quotes only.
+        assertParseError("PROJECT \\\"it's\\\" -> s (R)")
+                .hasMessageContaining("Strings need no backslash before their quotes at line 1");
     }
 
     @Test
@@ -809,6 +816,177 @@ final class ParserErrorTest extends ParserTestSupport {
         parse("SELECT 1 = 0 (R)");
         // A column is still a column list, and names PROJECT.
         assertParseError("SELECT active (R)").hasMessageContaining("write PROJECT active (R)");
+    }
+
+    @Test
+    @DisplayName("SQL's WHERE inside an operator's input names the SELECT that filters it (#230)")
+    public void reportsWhereInInput() {
+        String rewrite = "PROJECT id (SELECT kind = 'a' (R))";
+        assertParseError("PROJECT id (R WHERE kind = 'a')")
+                .hasMessageContaining("Relix has no WHERE: filter the input with SELECT: write " + rewrite)
+                .at(1, 15);
+        assertParseError("SELECT id (R WHERE kind = 'a')")
+                .hasMessageContaining("Relix has no WHERE: filter the input with SELECT: write " + rewrite)
+                .at(1, 14);
+        parse(rewrite);
+        assertParseError("π id (R WHERE kind = 'a')").hasMessageContaining("write π id (σ kind = 'a' (R))");
+        parse("π id (σ kind = 'a' (R))");
+        assertParseError("GROUP COUNT(*) -> n (R WHERE kind = 'a')")
+                .hasMessageContaining("write GROUP COUNT(*) -> n (SELECT kind = 'a' (R))");
+        parse("GROUP COUNT(*) -> n (SELECT kind = 'a' (R))");
+        // A condition the parenthesis does not close after: SELECT is named without a rewrite.
+        assertThatThrownBy(() -> parse("PROJECT id (R WHERE kind = 'a' x)"))
+                .hasMessage("Relix has no WHERE: filter the input with SELECT at line 1, column 15");
+        // A condition that does not parse: SELECT is named without a rewrite.
+        assertThatThrownBy(() -> parse("PROJECT id (R WHERE kind)"))
+                .hasMessage("Relix has no WHERE: filter the input with SELECT at line 1, column 15");
+    }
+
+    @Test
+    @DisplayName("ON after an operator's right input gets the ON message, as after a name (#230)")
+    public void reportsOnAfterRenamedRelation() {
+        for (String op : List.of("><", "LJOIN")) {
+            String rewrite = "RENAME a (R) " + op + " a.id = b.id RENAME b (R)";
+            assertParseError("RENAME a (R) " + op + " RENAME b (R) ON a.id = b.id").as(op)
+                    .hasMessageContaining("'" + op + "' takes its condition between the two relations,"
+                            + " not after them with ON: write " + rewrite);
+            parse(rewrite);
+        }
+        assertParseError("A >< SELECT x = 1 (B) ON A.id = B.id")
+                .hasMessageContaining("write A >< A.id = B.id SELECT x = 1 (B)");
+        parse("A >< A.id = B.id SELECT x = 1 (B)");
+        assertParseError("A >< RENAME b ((R)) ON a.id = b.id").hasMessageContaining("write A >< a.id = b.id RENAME b ((R))");
+        assertParseError("A >< SELECT x = 1 (B UNION C) ON A.id = B.id")
+                .hasMessageContaining("write A >< A.id = B.id SELECT x = 1 (B UNION C)");
+        // No ON after the operator: the error it had before.
+        for (String script : List.of("A >< RENAME b (R)", "A >< RENAME b (R) x", "A >< SELECT x = 1 (B) UNION C",
+                "(A >< RENAME b (R))")) {
+            assertThatThrownBy(() -> parse(script)).as(script).hasMessageNotContaining("not after them with ON");
+        }
+    }
+
+    @Test
+    @DisplayName("a qualified name after -> or in TOP's PER keys is written unqualified (#230)")
+    public void reportsQualifiedNewNames() {
+        assertParseError("PROJECT id -> R.ident (R)")
+                .hasMessageContaining("The name after -> is a new column's, and takes no relation:"
+                        + " write id -> ident")
+                .at(1, 16);
+        parse("PROJECT id -> ident (R)");
+        assertParseError("PROJECT id -> a.b.c (R)").hasMessageContaining("write id -> c");
+        assertParseError("PROJECT id -> a.b. (R)").hasMessageContaining("write id -> b");
+        assertThatThrownBy(() -> parse("PROJECT id -> a. (R)")).hasMessageNotContaining("new column");
+        assertParseError("π id, v + 1 → R.w (R)").hasMessageContaining("The name after → is a new column's,"
+                + " and takes no relation: write v + 1 → w");
+        String top = "TOP 1 WITH TIES R.at DESC PER grp (R)";
+        assertParseError("TOP 1 WITH TIES R.at DESC PER R.grp (R)")
+                .hasMessageContaining("TOP's PER keys are its input's columns, written without a relation:"
+                        + " write " + top)
+                .at(1, 32);
+        parse(top);
+        assertParseError("TOP 1 x DESC PER R.g, S.h (R)").hasMessageContaining("write TOP 1 x DESC PER g, h (R)");
+        assertThatThrownBy(() -> parse("TOP 1 x DESC PER R. (R)")).hasMessageNotContaining("PER keys");
+        assertThatThrownBy(() -> parse("TOP 1 x DESC PER R.g")).hasMessage(
+                "TOP's PER keys are its input's columns, written without a relation at line 1, column 19");
+    }
+
+    @Test
+    @DisplayName("an alias after a LATERAL call is dropped: its columns keep their own names (#230)")
+    public void reportsLateralAlias() {
+        for (String alias : List.of(" H", " AS H")) {
+            assertParseError("S LATERAL hot(S.grp)" + alias).as(alias)
+                    .hasMessageContaining("Relix has no table aliases: LATERAL adds hot's columns under"
+                            + " their own names, so name them unqualified: write S LATERAL hot(S.grp)")
+                    .at(1, 22);
+        }
+        assertParseError("S LATERAL hot(S.grp) H WHERE H.x = 1")
+                .hasMessageContaining("write S LATERAL hot(S.grp)");
+        assertParseError("R >< R.id = H.id (S LATERAL hot(S.grp) H)")
+                .hasMessageContaining("write S LATERAL hot(S.grp)");
+        parse("S LATERAL hot(S.grp)");
+        // Not an alias: AS without a name, SQL's words, or a name that does not end the relation.
+        for (String script : List.of("S LATERAL hot(S.grp) AS", "S LATERAL hot(S.grp) WHERE x = 1",
+                "S LATERAL hot(S.grp) H K")) {
+            assertThatThrownBy(() -> parse(script)).as(script).hasMessageNotContaining("table aliases");
+        }
+    }
+
+    @Test
+    @DisplayName("SQL's OVER in a projection names ROLLING or WINDOW under the projection (#230)")
+    public void reportsOverInProjection() {
+        String rolling = "PROJECT running (ROLLING SUM(v) OVER ALL ROWS SORT at ASC PER grp AS running (R))";
+        assertParseError("PROJECT SUM(v) OVER (SORT at ASC PER grp) -> running (R)")
+                .hasMessageContaining("A running or sliding aggregate is ROLLING, its own operator: write "
+                        + rolling)
+                .at(1, 16);
+        parse(rolling);
+        String sql = "PROJECT id, running, kind (ROLLING SUM(v) OVER ALL ROWS SORT at PER grp AS running (R))";
+        assertParseError("PROJECT id, SUM(v) OVER (PARTITION BY grp ORDER BY at) AS running, kind (R)")
+                .hasMessageContaining("write " + sql);
+        parse(sql);
+        String total = "PROJECT id, total (ROLLING SUM(v) OVER PARTITION PER grp AS total (R))";
+        assertParseError("PROJECT id, SUM(v) OVER (PER grp) -> total (R)").hasMessageContaining("write " + total);
+        parse(total);
+        String window = "PROJECT id, prev (WINDOW LAG(v) SORT at ASC PER grp AS prev (R))";
+        assertParseError("PROJECT id, LAG(v) OVER (SORT at ASC PER grp) -> prev (R)")
+                .hasMessageContaining("A ranking or offset function is WINDOW, its own operator: write " + window);
+        parse(window);
+        assertParseError("PROJECT SUM(v) OVER (SORT at) (R)")
+                .hasMessageContaining("write PROJECT running (ROLLING SUM(v) OVER ALL ROWS SORT at AS running (R))");
+        parse("PROJECT running (ROLLING SUM(v) OVER ALL ROWS SORT at AS running (R))");
+        assertThatThrownBy(() -> parse("PROJECT LAG(v) OVER (PER grp) -> p (R)"))
+                .hasMessage("A ranking or offset function is WINDOW, its own operator at line 1, column 16");
+        for (String window2 : List.of("ORDER at", "PARTITION grp")) {
+            assertThatThrownBy(() -> parse("PROJECT SUM(v) OVER (" + window2 + ") -> s (R)")).as(window2)
+                    .hasMessage("A running or sliding aggregate is ROLLING, its own operator at line 1, column 16");
+        }
+        // A window that does not read: the operators are named without a rewrite.
+        assertThatThrownBy(() -> parse("PROJECT Len(s) OVER (SORT at) -> n (R)"))
+                .hasMessage("Relix has no OVER in a projection: a running or sliding aggregate is ROLLING,"
+                        + " a ranking or offset function WINDOW at line 1, column 16");
+    }
+
+    @Test
+    @DisplayName("WINDOW's name written before its ordering is shown in WINDOW's order (#230)")
+    public void reportsEarlyWindowName() {
+        String rewrite = "WINDOW LAG(v) SORT at ASC PER grp AS prev (R)";
+        assertParseError("WINDOW LAG(v) AS prev SORT at ASC PER grp (R)")
+                .hasMessageContaining("WINDOW names its column last, after SORT and PER: write " + rewrite)
+                .at(1, 15);
+        parse(rewrite);
+        assertThatThrownBy(() -> parse("WINDOW LAG(v) AS prev (R)"))
+                .hasMessage("WINDOW names its column last, after SORT and PER at line 1, column 15");
+        assertParseError("WINDOW LAG(v) AS (R)").hasMessageContaining("Expected 'SORT'");
+    }
+
+    @Test
+    @DisplayName("SQL's CASE names IIf or Switch, written with the CASE's own conditions and values (#230)")
+    public void reportsCase() {
+        assertParseError("PROJECT id, CASE WHEN v > 1 THEN 'big' ELSE 'small' END -> size (R)")
+                .hasMessageContaining("Relix has no CASE: write IIf(v > 1, 'big', 'small')")
+                .at(1, 13);
+        parse("PROJECT id, IIf(v > 1, 'big', 'small') -> size (R)");
+        String many = "Switch(v > 1, 'big', v > 0, 'mid', 'small')";
+        assertParseError("PROJECT id, CASE WHEN v > 1 THEN 'big' WHEN v > 0 THEN 'mid' ELSE 'small' END -> size (R)")
+                .hasMessageContaining("Relix has no CASE: write " + many);
+        parse("PROJECT id, " + many + " -> size (R)");
+        assertParseError("PROJECT id, CASE WHEN v > 1 THEN 'big' END -> size (R)")
+                .hasMessageContaining("Relix has no CASE: write Switch(v > 1, 'big')");
+        parse("PROJECT id, Switch(v > 1, 'big') -> size (R)");
+        assertParseError("PROJECT CASE WHEN v > 1 'big' END -> size (R)")
+                .hasMessageContaining("Relix has no CASE: write IIf(condition, a, b)");
+        String simple = "Switch(kind = 'a', 1, kind = 'b', 2)";
+        assertParseError("PROJECT id, CASE kind WHEN 'a' THEN 1 WHEN 'b' THEN 2 END -> k (R)")
+                .hasMessageContaining("Relix has no CASE: write " + simple);
+        parse("PROJECT id, " + simple + " -> k (R)");
+        assertParseError("SELECT CASE WHEN v > 1 THEN 1 ELSE 0 END = 1 (R)")
+                .hasMessageContaining("Relix has no CASE: write IIf(v > 1, 1, 0)");
+        parse("SELECT IIf(v > 1, 1, 0) = 1 (R)");
+        // A CASE with no END: both functions are named.
+        assertParseError("PROJECT CASE WHEN v > 1 THEN 1 -> k (R)")
+                .hasMessageContaining("Relix has no CASE: write IIf(condition, a, b), or Switch(");
+        // A column named case is still a column.
+        parse("PROJECT case (R)");
     }
 
     @Test

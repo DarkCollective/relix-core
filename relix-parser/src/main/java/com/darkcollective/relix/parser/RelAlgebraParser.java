@@ -23,8 +23,10 @@ import java.io.InputStream;
 import java.time.DateTimeException;
 import java.util.ArrayDeque;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -369,6 +371,9 @@ public final class RelAlgebraParser {
     /** Where the condition of {@link #selection} starts in {@code consumed}. */
     private int selectionAt;
 
+    /** Where each relation {@link #parsePrefix} is reading starts in {@code consumed}, innermost first. */
+    private final Deque<Integer> prefixStarts = new ArrayDeque<>();
+
     /**
      * Each aggregate call read in operand position, where only GROUP takes one: its
      * first and past-last index in {@code consumed}, and its {@code *} argument's
@@ -532,6 +537,7 @@ public final class RelAlgebraParser {
                     }
                 }
                 expect(TokenType.RPAREN, "Expected ')' after LATERAL function arguments");
+                rejectLateralAlias(fnName, leftStart);
                 left = new LateralJoinNode(left, fnName, lateralArgs, loc(operator));
                 continue;
             }
@@ -604,14 +610,28 @@ public final class RelAlgebraParser {
         };
     }
 
+    /** The operators {@link #parsePrefix} reads before a parenthesised input, as {@code RENAME b (R)}. */
+    private static final Set<TokenType> PREFIX_OPERATORS = EnumSet.of(TokenType.PROJECT,
+            TokenType.SELECT, TokenType.RENAME, TokenType.AGGREGATION, TokenType.SORT, TokenType.ORDER,
+            TokenType.LIMIT, TokenType.DISTINCT, TokenType.UNNEST, TokenType.CLOSURE, TokenType.RCLOSURE,
+            TokenType.CLUSTER, TokenType.PATH, TokenType.TRACE, TokenType.FIX, TokenType.ITERATE,
+            TokenType.FORALL, TokenType.SAMPLE, TokenType.SHUFFLE, TokenType.ROLL, TokenType.SOLVE,
+            TokenType.OPTIMIZE, TokenType.TOP, TokenType.COVER, TokenType.DOWNSAMPLE, TokenType.ROLLING,
+            TokenType.WINDOW, TokenType.SESSIONIZE, TokenType.UNPIVOT, TokenType.PIVOT, TokenType.TREE,
+            TokenType.WHY);
+
     /**
      * Whether the tokens after a conditioned join are its right input followed by
-     * {@code ON}, SQL's order: {@code A LJOIN B ON A.id = B.a_id}. The input is one name
-     * or one parenthesised expression. Left alone, the name is read as the start of the
-     * condition and parsing stops at {@code ON}, "expected comparison operator"; no
-     * condition can be a single name or group followed by a word.
+     * {@code ON}, SQL's order: {@code A LJOIN B ON A.id = B.a_id}. The input is one name,
+     * one parenthesised expression, or an operator and its input, {@code RENAME b (R)}.
+     * Left alone, the name is read as the start of the condition and parsing stops at
+     * {@code ON}, "expected comparison operator"; no condition can be a single name or
+     * group followed by a word, or start with an operator.
      */
     private boolean rightInputThenOn() {
+        if (PREFIX_OPERATORS.contains(current.type())) {
+            return operatorThenOn();
+        }
         int next;
         if (current.type() == TokenType.LPAREN) {
             int depth = 0;
@@ -634,6 +654,32 @@ public final class RelAlgebraParser {
             return false;
         }
         return isWord(peek(next), "ON");
+    }
+
+    /**
+     * Whether an operator at the current token closes a parenthesised group with
+     * {@code ON} after it, {@code RENAME b (R) ON}, before the expression ends.
+     */
+    private boolean operatorThenOn() {
+        int depth = 0;
+        for (int next = 1; ; next++) {
+            TokenType type = peek(next).type();
+            if (type == TokenType.EOF) {
+                return false;
+            }
+            if (type == TokenType.LPAREN) {
+                depth++;
+            } else if (type == TokenType.RPAREN) {
+                if (--depth < 0) {
+                    return false;
+                }
+                if (depth == 0 && isWord(peek(next + 1), "ON")) {
+                    return true;
+                }
+            } else if (depth == 0 && isBinaryRelOperator(type)) {
+                return false;
+            }
+        }
     }
 
     /**
@@ -944,6 +990,15 @@ public final class RelAlgebraParser {
     }
 
     private RelNode parsePrefix() {
+        prefixStarts.push(consumed.size());
+        try {
+            return parsePrefixAtStart();
+        } finally {
+            prefixStarts.pop();
+        }
+    }
+
+    private RelNode parsePrefixAtStart() {
         return switch (current.type()) {
             case IDENTIFIER -> {
                 Token startTok = current;
@@ -1123,6 +1178,34 @@ public final class RelAlgebraParser {
                 + " RENAME x (T) >< x.a = y.b RENAME y (T)", lexer.input(), first);
     }
 
+    /**
+     * Refuses SQL's alias after a LATERAL call, {@code S LATERAL hot(S.grp) H}, at its
+     * first token, with the join read from {@code consumed[leftStart]}. As for a relation,
+     * an alias is one name, or {@code AS} and a name, before what ends a relation; but
+     * the function's columns join the row under their own names, so the error drops the
+     * alias rather than naming a RENAME.
+     */
+    private void rejectLateralAlias(String function, int leftStart) {
+        Token first = current;
+        int at = first.type() == TokenType.AS && isNameToken(peek(1)) ? 1 : 0;
+        if (at == 0 && (first.type() != TokenType.IDENTIFIER
+                || Stream.concat(SQL_AFTER_RELATION.stream(), CONDITION_WORDS.stream()).anyMatch(w -> isWord(first, w)))) {
+            return;
+        }
+        Token after = peek(at + 1);
+        boolean ends = switch (after.type()) {
+            case EOF, RPAREN, RBRACE, COMMA -> true;
+            default -> isBinaryRelOperator(after.type())
+                    || SQL_AFTER_RELATION.stream().anyMatch(w -> isWord(after, w));
+        };
+        if (!ends) {
+            return;
+        }
+        throw ParseException.at("Relix has no table aliases: LATERAL adds " + function + "'s columns"
+                + " under their own names, so name them unqualified: write " + writtenFrom(leftStart),
+                lexer.input(), first);
+    }
+
     /** Whether {@code name} qualifies a column anywhere in the expression, as {@code name.column}. */
     private boolean qualifies(String name) {
         for (int i = 0; i + 1 < consumed.size(); i++) {
@@ -1227,6 +1310,9 @@ public final class RelAlgebraParser {
             ), "Expected '(' after projection attribute list");
         }
 
+        if (current.type() == TokenType.OVER) {
+            rejectOverInProjection(opTok, itemsStart);
+        }
         int inputStart = consumed.size();
         RelNode input = parseParenthesizedRelation("Expected '(' after projection attribute list");
         rejectCountStar(itemsStart, itemsEnd, inputStart, false, isGlyph(opTok));
@@ -2545,8 +2631,12 @@ public final class RelAlgebraParser {
     private WindowNode parseWindow() {
         Token opTok = current;
         expect(TokenType.WINDOW, "Expected 'WINDOW'");
+        int opAt = consumed.size() - 1;
         Token fnTok = expectName("Expected a window function name after 'WINDOW'");
         WindowFunction function = parseWindowFunction(fnTok);
+        if (current.type() == TokenType.AS && isNameToken(peek(1))) {
+            rejectEarlyWindowName(opAt);
+        }
 
         expect(TokenType.SORT, "Expected 'SORT' before the WINDOW ordering");
         List<SortSpecification> sortSpecs = parseSortSpecificationList();
@@ -2560,6 +2650,35 @@ public final class RelAlgebraParser {
                 "Expected '(' after the WINDOW output column");
         return new WindowNode(function, partitionKeys, sortSpecs,
                 new WindowFrame.PartitionFrame(), outputCol.lexeme(), input, loc(opTok));
+    }
+
+    /**
+     * Refuses WINDOW's output name written before its ordering, SQL's order of
+     * {@code LAG(v) AS prev} with the window after it, at {@code AS}, with the operator
+     * read from {@code consumed[opAt]}: the error writes it in WINDOW's own order,
+     * function, SORT, PER, AS name, input.
+     */
+    private void rejectEarlyWindowName(int opAt) {
+        Token as = current;
+        String function = writtenFrom(opAt);
+        String rewrite = "";
+        try {
+            advance();
+            String name = current.lexeme();
+            advance();
+            int windowStart = consumed.size();
+            expect(TokenType.SORT, "Expected 'SORT' before the WINDOW ordering");
+            parseSortSpecificationList();
+            parseOptionalPartition();
+            String window = writtenFrom(windowStart);
+            int inputStart = consumed.size();
+            parseParenthesizedRelation("Expected '(' after the WINDOW output column");
+            rewrite = ": write " + function + " " + window + " AS " + name + " " + writtenFrom(inputStart);
+        } catch (ParseException e) {
+            // The rest does not read: the error gives the order without a rewrite.
+        }
+        throw ParseException.at("WINDOW names its column last, after SORT and PER" + rewrite,
+                lexer.input(), as);
     }
 
     /**
@@ -2849,13 +2968,23 @@ public final class RelAlgebraParser {
         // written is unambiguous.
         List<String> keys = new ArrayList<>();
         int perStart = consumed.size();
+        Token qualified = null;
         if (match(TokenType.PER)) {
-            keys.add(expect(TokenType.IDENTIFIER, "Expected a grouping key after 'PER'").lexeme());
-            while (match(TokenType.COMMA)) {
-                keys.add(expect(TokenType.IDENTIFIER, "Expected a grouping key after ','").lexeme());
-            }
+            do {
+                keys.add(expect(TokenType.IDENTIFIER, keys.isEmpty() ? "Expected a grouping key after 'PER'"
+                        : "Expected a grouping key after ','").lexeme());
+                while (current.type() == TokenType.DOT && isNameToken(peek(1))) {
+                    qualified = qualified == null ? current : qualified;
+                    advance();
+                    keys.set(keys.size() - 1, current.lexeme());
+                    advance();
+                }
+            } while (match(TokenType.COMMA));
         }
         int perEnd = consumed.size();
+        if (qualified != null) {
+            rejectQualifiedPerKeys(qualified, writtenBetween(opAt, perStart), keys);
+        }
         if (misplacedTies == null && !withTies) {
             misplacedTies = skipMisplacedTies();
         }
@@ -2869,6 +2998,24 @@ public final class RelAlgebraParser {
                                : "Expected '(' after the TOP grouping keys");
         return new TopKNode(List.copyOf(keys), sortSpecs, offset, count, withTies, leadingDirectionImplied,
                 input, loc(opTok));
+    }
+
+    /**
+     * Refuses TOP's PER keys qualified with a relation, {@code PER R.grp}, at the first
+     * {@code .}, rewritten with {@code top}, the operator up to PER as written, and the
+     * keys unqualified: they name the input's own columns.
+     */
+    private void rejectQualifiedPerKeys(Token dot, String top, List<String> keys) {
+        String rewrite = "";
+        try {
+            int start = consumed.size();
+            parseParenthesizedRelation("Expected '(' after the TOP grouping keys");
+            rewrite = ": write " + top + " PER " + String.join(", ", keys) + " " + writtenFrom(start);
+        } catch (ParseException e) {
+            // The input does not parse: the error names the keys without a rewrite.
+        }
+        throw ParseException.at("TOP's PER keys are its input's columns, written without a relation"
+                + rewrite, lexer.input(), dot);
     }
 
     /** Consumes a {@code WITH TIES} written after TOP's sort or PER keys, returning its WITH; null if none. */
@@ -3547,10 +3694,174 @@ public final class RelAlgebraParser {
     }
 
     private RelNode parseParenthesizedRelation(String message) {
+        // Every operator is read by parsePrefix, so its start is on the stack.
+        int operator = prefixStarts.element();
+        boolean glyph = isGlyph(consumed.get(operator));
+        return parseParenthesizedRelation(message, () -> writtenFrom(operator), glyph);
+    }
+
+    /**
+     * Reads an operator's parenthesised input. SQL's {@code WHERE} inside it,
+     * {@code PROJECT id (R WHERE kind = 'a')}, is refused at the {@code WHERE}, naming
+     * the operator, as {@code operator} writes it up to the {@code (}, over the SELECT
+     * that filters its input, σ where {@code glyph}.
+     */
+    private RelNode parseParenthesizedRelation(String message, Supplier<String> operator, boolean glyph) {
+        String written = current.type() == TokenType.LPAREN ? operator.get() : null;
         expect(TokenType.LPAREN, message);
+        int inputStart = consumed.size();
         RelNode input = parseExpression(0);
+        if (isWord(current, "WHERE")) {
+            rejectWhereInInput(written, inputStart, glyph);
+        }
         expect(TokenType.RPAREN, "Expected ')' after relational expression");
         return input;
+    }
+
+    /** Whether the group the current {@code (} opens holds SQL's {@code WHERE} at its own level. */
+    private boolean whereInGroup() {
+        try {
+            int depth = 0;
+            for (int next = 0; peek(next).type() != TokenType.EOF; next++) {
+                Token token = peek(next);
+                if (token.type() == TokenType.LPAREN) {
+                    depth++;
+                } else if (token.type() == TokenType.RPAREN && --depth == 0) {
+                    return false;
+                } else if (depth == 1 && isWord(token, "WHERE")) {
+                    return true;
+                }
+            }
+        } catch (ParseException e) {
+            // A character that does not lex ends the search; its error comes in its turn.
+        }
+        return false;
+    }
+
+    /**
+     * Refuses SQL's {@code WHERE} after a relation inside an operator's parentheses, at
+     * the {@code WHERE}, with the relation read from {@code consumed[inputStart]}. Where
+     * the condition parses and the parenthesis closes after it, the error writes
+     * {@code written} over {@code (SELECT condition (relation))}; else it names SELECT.
+     */
+    private void rejectWhereInInput(String written, int inputStart, boolean glyph) {
+        Token where = current;
+        String relation = writtenFrom(inputStart);
+        String rewrite = null;
+        try {
+            advance();
+            int condition = consumed.size();
+            parsePredicate();
+            if (current.type() == TokenType.RPAREN) {
+                rewrite = written + " (" + (glyph ? "σ " : "SELECT ") + writtenFrom(condition)
+                        + " (" + relation + "))";
+            }
+        } catch (ParseException e) {
+            // The condition does not parse: the error names SELECT without a rewrite.
+        }
+        throw ParseException.at("Relix has no WHERE: filter the input with SELECT"
+                + (rewrite == null ? "" : ": write " + rewrite), lexer.input(), where);
+    }
+
+    /** The aggregates ROLLING runs over a frame, by name. */
+    private static final Set<String> ROLLING_NAMES = Set.of("SUM", "AVG", "COUNT", "MIN", "MAX",
+            "STDDEV", "STDDEV_SAMP", "STDDEV_POP", "VARIANCE", "VAR_SAMP", "VAR_POP");
+
+    /** The ranking and offset functions WINDOW computes, by name. */
+    private static final Set<String> WINDOW_NAMES = Set.of("ROW_NUMBER", "RANK", "DENSE_RANK",
+            "PERCENT_RANK", "NTILE", "CUME_DIST", "LAG", "LEAD", "FIRST_VALUE", "LAST_VALUE", "NTH_VALUE");
+
+    /**
+     * Refuses SQL's window syntax in a projection's items, {@code SUM(v) OVER (SORT at
+     * PER grp) -> running}, at {@code OVER}, with the items read from
+     * {@code consumed[itemsStart]} and the windowed call the last of them. A running or
+     * sliding aggregate is ROLLING, a ranking or offset function WINDOW, each its own
+     * operator under the projection: {@code PROJECT id, running (ROLLING SUM(v) OVER ALL
+     * ROWS SORT at PER grp AS running (R))}. The window may be written as Relix's
+     * {@code SORT} and {@code PER} or SQL's {@code ORDER BY} and {@code PARTITION BY}.
+     */
+    private void rejectOverInProjection(Token project, int itemsStart) {
+        Token over = current;
+        int itemStart = itemsStart;
+        int depth = 0;
+        for (int i = consumed.size() - 1; i >= itemsStart; i--) {
+            TokenType type = consumed.get(i).type();
+            depth += type == TokenType.RPAREN ? 1 : type == TokenType.LPAREN ? -1 : 0;
+            if (depth == 0 && type == TokenType.COMMA) {
+                itemStart = i + 1;
+                break;
+            }
+        }
+        String function = consumed.get(itemStart).lexeme().toUpperCase(Locale.ROOT);
+        boolean rolling = ROLLING_NAMES.contains(function);
+        String call = writtenFrom(itemStart);
+        String before = writtenBetween(itemsStart, itemStart);
+        String rewrite = null;
+        try {
+            advance();
+            expect(TokenType.LPAREN, "Expected '(' after 'OVER'");
+            String sort = null;
+            String per = null;
+            while (current.type() != TokenType.RPAREN) {
+                int start = consumed.size();
+                if (current.type() == TokenType.SORT
+                        || current.type() == TokenType.ORDER && isWord(peek(1), "BY")) {
+                    advance();
+                    if (isWord(current, "BY")) {
+                        advance();
+                    }
+                    int specs = consumed.size();
+                    parseSortSpecificationList();
+                    sort = "SORT " + writtenFrom(specs);
+                } else if (current.type() == TokenType.PER
+                        || isWord(current, "PARTITION") && isWord(peek(1), "BY")) {
+                    advance();
+                    if (isWord(current, "BY")) {
+                        advance();
+                    }
+                    List<String> keys = new ArrayList<>(List.of(expectName("Expected a partition key").lexeme()));
+                    while (match(TokenType.COMMA)) {
+                        keys.add(expectName("Expected a partition key").lexeme());
+                    }
+                    per = "PER " + String.join(", ", keys);
+                }
+                if (consumed.size() == start) {
+                    throw error(current, "Expected SORT or PER in the window");
+                }
+            }
+            advance();
+            String name = "running";
+            if (current.type() == TokenType.ARROW || current.type() == TokenType.AS) {
+                advance();
+                name = expectName("Expected the column's name").lexeme();
+            }
+            int afterStart = consumed.size();
+            if (match(TokenType.COMMA)) {
+                parseProjectionOperandList();
+            }
+            String after = writtenFrom(afterStart);
+            int inputStart = consumed.size();
+            parseParenthesizedRelation("Expected '(' after projection attribute list");
+            String input = writtenFrom(inputStart);
+            String partition = per == null ? "" : " " + per;
+            String operator = rolling
+                    ? "ROLLING " + call + " OVER " + (sort == null ? "PARTITION" : "ALL ROWS " + sort)
+                            + partition + " AS " + name + " " + input
+                    : WINDOW_NAMES.contains(function) && sort != null
+                            ? "WINDOW " + call + " " + sort + partition + " AS " + name + " " + input
+                            : null;
+            if (operator != null) {
+                rewrite = project.lexeme() + " " + before + (before.isEmpty() ? "" : " ") + name + after
+                        + " (" + operator + ")";
+            }
+        } catch (ParseException e) {
+            // The window does not read: the error names the operators without a rewrite.
+        }
+        String problem = rolling ? "A running or sliding aggregate is ROLLING, its own operator"
+                : WINDOW_NAMES.contains(function) ? "A ranking or offset function is WINDOW, its own operator"
+                : "Relix has no OVER in a projection: a running or sliding aggregate is ROLLING,"
+                        + " a ranking or offset function WINDOW";
+        throw ParseException.at(problem + (rewrite == null ? "" : ": write " + rewrite), lexer.input(), over);
     }
 
     private ProjectionOperands parseProjectionOperandList() {
@@ -3572,12 +3883,36 @@ public final class RelAlgebraParser {
         Operand expression = parseOperand();
         rejectForeignAlias(start, this::parseOperand);
 
-        if (match(TokenType.ARROW)) {
+        if (current.type() == TokenType.ARROW) {
+            Token arrow = current;
+            advance();
             Token aliasToken = expectName("Expected alias after '→'");
+            rejectQualifiedAlias(arrow, start, aliasToken);
             return ProjectedAttribute.aliased(expression, aliasToken.lexeme());
         }
 
         return ProjectedAttribute.simple(expression);
+    }
+
+    /**
+     * Refuses a qualified name after an item's arrow, {@code id -> R.ident}, at the
+     * {@code .}, with the item read from {@code consumed[start]}: the name is a new
+     * column's, and no relation has it yet, so the error writes it with its last part.
+     */
+    private void rejectQualifiedAlias(Token arrow, int start, Token name) {
+        if (current.type() != TokenType.DOT || !isNameToken(peek(1))) {
+            return;
+        }
+        Token dot = current;
+        String item = writtenBetween(start, consumed.size() - 2);
+        while (current.type() == TokenType.DOT && isNameToken(peek(1))) {
+            advance();
+            name = current;
+            advance();
+        }
+        throw ParseException.at("The name after " + arrow.lexeme() + " is a new column's, and takes no"
+                + " relation: write " + item + " " + arrow.lexeme() + " " + name.lexeme(),
+                lexer.input(), dot);
     }
 
     /**
@@ -4027,9 +4362,14 @@ public final class RelAlgebraParser {
         String column = writtenFrom(selectionAt)
                 + (isColumnName(selectionAt, consumed.size()) ? "" : (glyph ? " → c" : " -> c"));
         int inputStart = consumed.size();
+        String projection = (glyph ? "π " : "PROJECT ") + column;
+        boolean where = whereInGroup();
         try {
-            parseParenthesizedRelation("Expected '(' after the column");
+            parseParenthesizedRelation("Expected '(' after the column", () -> projection, glyph);
         } catch (ParseException e) {
+            if (where) {
+                throw e;
+            }
             throw error(paren, "Expected comparison operator");
         }
         String written = glyph ? "'σ'" : "'" + select.lexeme() + "' (σ)";
@@ -4589,6 +4929,62 @@ public final class RelAlgebraParser {
     }
 
     /**
+     * Refuses SQL's {@code CASE} expression at {@code CASE}, written as the function
+     * Relix has for it: {@code CASE WHEN c THEN a ELSE b END} is {@code IIf(c, a, b)},
+     * and more than one {@code WHEN}, or none with no {@code ELSE}, is
+     * {@code Switch(c1, a, c2, b, d)}. A simple {@code CASE x WHEN 1 THEN …} compares
+     * {@code x = 1}. Where the CASE does not read to its {@code END}, both are named.
+     */
+    private void rejectCase() {
+        Token caseTok = current;
+        String rewrite = null;
+        Token enclosing = selection;
+        selection = null;
+        try {
+            advance();
+            String subject = null;
+            if (!isWord(current, "WHEN")) {
+                int start = consumed.size();
+                parseOperand();
+                subject = writtenFrom(start);
+            }
+            List<String> arguments = new ArrayList<>();
+            while (matchWord("WHEN")) {
+                int start = consumed.size();
+                if (subject == null) {
+                    parsePredicate();
+                    arguments.add(writtenFrom(start));
+                } else {
+                    parseOperand();
+                    arguments.add(subject + " = " + writtenFrom(start));
+                }
+                if (!matchWord("THEN")) {
+                    throw error(current, "Expected THEN");
+                }
+                start = consumed.size();
+                parseOperand();
+                arguments.add(writtenFrom(start));
+            }
+            if (matchWord("ELSE")) {
+                int start = consumed.size();
+                parseOperand();
+                arguments.add(writtenFrom(start));
+            }
+            if (matchWord("END")) {
+                rewrite = (arguments.size() == 3 ? "IIf(" : "Switch(")
+                        + String.join(", ", arguments) + ")";
+            }
+        } catch (ParseException e) {
+            // The CASE does not read: the error names both functions without a rewrite.
+        } finally {
+            selection = enclosing;
+        }
+        throw ParseException.at("Relix has no CASE: write " + (rewrite != null ? rewrite
+                : "IIf(condition, a, b), or Switch(c1, a, c2, b, …, default) for more than one WHEN"),
+                lexer.input(), caseTok);
+    }
+
+    /**
      * SQL's {@code ts AT TIME ZONE zone}, which binds tighter than any arithmetic, as in
      * PostgreSQL: it is {@code TIMEZONE(zone, ts)}, the wall-clock time in the zone. The
      * three words are matched by their text, so none is reserved.
@@ -4618,6 +5014,9 @@ public final class RelAlgebraParser {
         }
         if (isWord(current, "TIMESTAMPTZ") && peek(1).type() == TokenType.STRING) {
             return parseTemporalLiteral();
+        }
+        if (isWord(current, "CASE") && (isWord(peek(1), "WHEN") || isWord(peek(2), "WHEN"))) {
+            rejectCase();
         }
 
         return switch (current.type()) {
