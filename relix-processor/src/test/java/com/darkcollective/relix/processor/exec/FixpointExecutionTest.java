@@ -138,6 +138,19 @@ final class FixpointExecutionTest extends ProcessorTestSupport {
     }
 
     @Test
+    @DisplayName("a step joining an input that shares its columns, qualified by the recursive name, reads each side's own (#241)")
+    void qualifiedSelfShapedJoin() {
+        // E and Reach both have src and dst. With E on the left, Reach.src once fell back
+        // to the left input's src, making the condition E.dst = E.src: no new pairs.
+        String query =
+                "Reach := { FIX Reach (Edges,\n" +
+                "  π Edges.src, Reach.dst (Edges ⨝ Edges.dst = Reach.src Reach)) };\n" +
+                "query Reach;\n";
+        assertThat(pairs(CHAIN_EDGES + query))
+                .containsExactlyInAnyOrder("1->2", "2->3", "3->4", "1->3", "2->4", "1->4");
+    }
+
+    @Test
     @DisplayName("FIX terminates on a cyclic graph and reaches every node")
     void cycleTerminates() {
         String cycle =
