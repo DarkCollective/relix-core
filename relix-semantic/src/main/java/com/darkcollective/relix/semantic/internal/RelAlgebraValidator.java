@@ -712,25 +712,26 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     }
 
     /**
-     * {@code sum} without its factor of the allocation {@code column}: {@code 1} for the
-     * column alone, the other side of a product with it, and empty for anything else.
+     * {@code sum}, which names the allocation {@code column}, without that factor:
+     * {@code 1} for the column alone, the other side of a product with it, and empty for
+     * anything else.
      */
     private static Optional<Operand> withoutAllocation(Operand sum, String column) {
-        if (sum instanceof AttributeOperand a && a.unqualifiedName().equalsIgnoreCase(column)) {
-            return Optional.of(new NumberOperand("1", a.location()));
-        }
-        if (sum instanceof BinaryArithmeticExpression product
-                && product.operator() == ArithmeticOperator.MULTIPLY) {
-            if (product.right() instanceof AttributeOperand a
-                    && a.unqualifiedName().equalsIgnoreCase(column)) {
-                return Optional.of(product.left());
-            }
-            if (product.left() instanceof AttributeOperand a
-                    && a.unqualifiedName().equalsIgnoreCase(column)) {
-                return Optional.of(product.right());
-            }
-        }
-        return Optional.empty();
+        return switch (sum) {
+            // A lone column that names the allocation is the allocation.
+            case AttributeOperand a -> Optional.of(new NumberOperand("1", a.location()));
+            case BinaryArithmeticExpression product
+                    when product.operator() == ArithmeticOperator.MULTIPLY ->
+                    isColumn(product.right(), column) ? Optional.of(product.left())
+                            : isColumn(product.left(), column) ? Optional.of(product.right())
+                            : Optional.empty();
+            default -> Optional.empty();
+        };
+    }
+
+    /** Whether {@code operand} is the bare column {@code column}. */
+    private static boolean isColumn(Operand operand, String column) {
+        return operand instanceof AttributeOperand a && a.unqualifiedName().equalsIgnoreCase(column);
     }
 
     /**

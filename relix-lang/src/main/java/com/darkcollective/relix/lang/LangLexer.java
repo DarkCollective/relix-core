@@ -396,6 +396,9 @@ final class LangLexer {
                     }
                     advance();
                 }
+                if (pos >= input.length()) {
+                    break;   // unterminated: the expression parser says so
+                }
             } else if (c == '-' && pos + 1 < input.length() && input.charAt(pos + 1) == '-') {
                 while (pos < input.length() && input.charAt(pos) != '\n') {
                     advance();
