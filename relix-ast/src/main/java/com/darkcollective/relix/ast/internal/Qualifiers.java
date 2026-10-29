@@ -45,10 +45,12 @@ public final class Qualifiers {
     /**
      * Returns the relation names in scope as qualifiers for {@code node}'s columns.
      *
-     * <p>A leaf relation answers to its own name. A {@code ρ} that gives a new relation
-     * name answers to that name only, shadowing everything beneath it; a column-only
-     * {@code ρ} leaves the names beneath it in scope. Every other operator answers to the
-     * names of all of its inputs.
+     * <p>A leaf relation answers to its own name, and so does a reference to a {@code FIX}
+     * or {@code ITERATE} binder in its step: analysis anchors the relation being built to
+     * that name, so {@code Reach.src} there is a column of the reference. A {@code ρ} that
+     * gives a new relation name answers to that name only, shadowing everything beneath
+     * it; a column-only {@code ρ} leaves the names beneath it in scope. Every other
+     * operator answers to the names of all of its inputs.
      *
      * @param node the expression; must not be null
      * @return the names, lowercased; a new mutable set
