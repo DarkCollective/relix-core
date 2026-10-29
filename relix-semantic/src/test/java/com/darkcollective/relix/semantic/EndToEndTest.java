@@ -825,4 +825,23 @@ final class EndToEndTest {
                     assertThat(e.message()).contains("is not recursive"));
         }
     }
+
+    @Nested
+    @DisplayName("Slips the parser accepted")
+    class ParseWarnings {
+
+        @Test
+        @DisplayName("each script's slips, an imported one's too, are reported as warnings")
+        void reportedAsWarnings() {
+            String lib = "Ids := [| id |\n| 1 |];\nLib := PROJECT id (Ids);\n";
+            String main = "import \"lib.relix\";\nquery { Lib; };\n";
+            SemanticResult r = analyze(main, Map.of("lib.relix", lib));
+
+            assertThat(r)
+                    .hasNoErrors()
+                    .hasDiagnosticCount(2)
+                    .hasErrorContaining("The ';' before '}' was ignored")
+                    .hasErrorContaining("write Lib := { PROJECT id (Ids) };");
+        }
+    }
 }

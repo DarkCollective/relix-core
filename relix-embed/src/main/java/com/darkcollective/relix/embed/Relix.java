@@ -69,6 +69,7 @@ import com.darkcollective.relix.semantic.ScriptLoader;
 import com.darkcollective.relix.semantic.internal.SemanticAnalyzer;
 import com.darkcollective.relix.semantic.internal.SchemaInference;
 import com.darkcollective.relix.semantic.SemanticModel;
+import com.darkcollective.relix.semantic.Severity;
 import com.darkcollective.relix.cost.ObservedCardinalities;
 import com.darkcollective.relix.semantic.internal.SemanticResult;
 import com.darkcollective.relix.symbol.graph.SchemaGraph;
@@ -1192,7 +1193,12 @@ public final class Relix implements AutoCloseable {
         List<Statement> combined = new ArrayList<>(statements);
         combined.addAll(parsed.statements());
         SemanticResult result = analyzed(new Script(namespace, combined));
-        return result.errors().stream().map(Diagnostic::of).toList();
+        List<Diagnostic> diagnostics = new ArrayList<>();
+        // The slips the parser accepted; the script analysed above no longer carries them.
+        parsed.warnings().forEach(w -> diagnostics.add(new Diagnostic(w.message(),
+                Optional.of(w.location()), Severity.WARNING)));
+        result.errors().stream().map(Diagnostic::of).forEach(diagnostics::add);
+        return List.copyOf(diagnostics);
     }
 
     /**

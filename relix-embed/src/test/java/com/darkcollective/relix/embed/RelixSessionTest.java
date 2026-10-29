@@ -483,6 +483,27 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("a ';' before '}' and a view without braces are accepted, each with a warning saying how it is written")
+        void bracesSlipsWarned() {
+            String table = "R := [| id |\n| 1 |];\n";
+            try (Relix relix = Relix.open()) {
+                List<Diagnostic> diagnostics = relix.validate(table
+                        + "V := PROJECT id (R);\nquery { V; };\n");
+                assertThat(diagnostics).extracting(Diagnostic::isError).containsOnly(false);
+                assertThat(diagnostics).extracting(Diagnostic::message).containsExactly(
+                        "A view's expression goes in braces, and was read as if it were in"
+                                + " them: write V := { PROJECT id (R) };",
+                        "The ';' before '}' was ignored: a statement ends with ';' after its"
+                                + " closing brace, as in query { R };");
+                assertThat(diagnostics.getFirst().location().orElseThrow().line()).isEqualTo(3);
+                assertThat(diagnostics.getFirst().location().orElseThrow().column()).isEqualTo(6);
+
+                List<Relation> results = relix.script(table + "V := PROJECT id (R);\nquery { V; };\n");
+                assertThat(results.getFirst().toList()).hasSize(1);
+            }
+        }
+
+        @Test
         @DisplayName("a join written with SQL's ON or LEFT/INNER JOIN is one error, at ON or the keyword, naming the Relix join")
         void sqlJoinDiagnosed() {
             String tables = "loans := [| loan_id | member_id |\n| 1 | 2 |];\n"
@@ -626,15 +647,14 @@ final class RelixSessionTest {
         void statementStructureDiagnosed() {
             String tables = "orders := [| customer_id | total |\n| 1 | 120 |];\n"
                     + "customers := [| customer_id | name |\n| 1 | a |];\n";
-            // script, line, column, the message's end, the rewrite that validates
+            // script, line, column, the message's end, the rewrite that validates. A lone ';'
+            // before '}' and a view without braces are read with a warning instead (#239):
+            // see bracesSlipsWarned.
             String[][] cases = {
                     {"customers ANTI customers.customer_id = orders.customer_id orders;", "5", "11",
                             "a result is written query { … }: write"
                                     + " query { customers ANTI customers.customer_id = orders.customer_id orders };"},
                     {"orders;", "5", "7", "a result is written query { … }: write query orders;"},
-                    {"query { SELECT total > 100 (orders); };", "5", "36",
-                            "a ';' ends a statement and goes after the closing brace:"
-                                    + " write query { SELECT total > 100 (orders) };"},
                     {"Avg := { GROUP SUM(total) -> s, COUNT(*) -> n (orders); PROJECT s / n -> avg (Avg) };\n"
                             + "query Avg;", "5", "55",
                             "a view holds one expression; give the first its own name:"
@@ -643,9 +663,6 @@ final class RelixSessionTest {
                     {"query { SELECT total > 100 (orders) ;", "5", "7",
                             "Unterminated brace block; put '}' before the ';':"
                                     + " write query { SELECT total > 100 (orders) };"},
-                    {"Joined := customers >< customers.customer_id = orders.customer_id orders;\nquery Joined;",
-                            "5", "11", "a view's expression goes in braces: write Joined :="
-                                    + " { customers >< customers.customer_id = orders.customer_id orders };"},
                     {"Big := { SELECT total > 100 (orders) ;\nquery Big;", "5", "8",
                             "Unterminated brace block; put '}' before the ';':"
                                     + " write Big := { SELECT total > 100 (orders) };"},

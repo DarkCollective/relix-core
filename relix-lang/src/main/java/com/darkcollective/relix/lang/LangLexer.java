@@ -336,6 +336,77 @@ final class LangLexer {
         throw new LangParseException("Unterminated bracket block", startLine, startCol);
     }
 
+    /**
+     * Whether what follows, past whitespace and comments, is an expression written
+     * without the braces a view's body takes: anything but <code>&#123;</code>,
+     * {@code [}, {@code csv[}, a {@code ;} or the end of the input.
+     */
+    boolean atUnbracedExpression() {
+        skipWhitespaceAndComments();
+        if (pos >= input.length()) {
+            return false;
+        }
+        char c = input.charAt(pos);
+        if (c == '{' || c == '[' || c == ';') {
+            return false;
+        }
+        if (input.regionMatches(true, pos, "csv", 0, 3)) {
+            int after = pos + 3;
+            while (after < input.length() && Character.isWhitespace(input.charAt(after))) {
+                after++;
+            }
+            return after >= input.length() || input.charAt(after) != '[';
+        }
+        return true;
+    }
+
+    /**
+     * Extracts the raw text from the current position up to the {@code ;} that ends the
+     * statement, outside any bracket, string or comment, and leaves that {@code ;} to be
+     * read next. Single-quoted strings double a quote to escape it, double-quoted ones
+     * take a backslash, as the expression grammar reads them.
+     *
+     * @return the extracted text, running to the end of the input if no {@code ;} ends it
+     */
+    RawBlock consumeRawStatement() {
+        int startLine = line;
+        int startCol = col;
+        int start = pos;
+        int depth = 0;
+        while (pos < input.length()) {
+            char c = input.charAt(pos);
+            if (c == ';' && depth == 0) {
+                break;
+            }
+            if (c == '(' || c == '[' || c == '{') {
+                depth++;
+            } else if ((c == ')' || c == ']' || c == '}') && depth > 0) {
+                depth--;
+            } else if (c == '\'' || c == '"') {
+                advance();   // the opening quote; the closing one is passed below
+                while (pos < input.length()) {
+                    char d = input.charAt(pos);
+                    boolean escaped = c == '"' && d == '\\'
+                            || c == '\'' && d == '\'' && pos + 1 < input.length()
+                                    && input.charAt(pos + 1) == '\'';
+                    if (escaped) {
+                        advance();
+                    } else if (d == c) {
+                        break;
+                    }
+                    advance();
+                }
+            } else if (c == '-' && pos + 1 < input.length() && input.charAt(pos + 1) == '-') {
+                while (pos < input.length() && input.charAt(pos) != '\n') {
+                    advance();
+                }
+                continue;
+            }
+            advance();
+        }
+        return new RawBlock(input.substring(start, pos), startLine, startCol);
+    }
+
     // =========================================================================
     // Internal helpers
     // =========================================================================

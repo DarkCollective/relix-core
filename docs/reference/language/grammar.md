@@ -753,6 +753,11 @@ are easy to miss in the rules above.
   bound and followed by the end, `)`, `,` or a binary operator is the relation
   being built; followed by anything else it is the keyword, so in
   `FIX Sort (E, SORT src (Sort))` the first `SORT` sorts.
+- **Two slips are read as what was meant, with a warning.** A `;` written before a
+  statement's closing brace, `query { R; };`, is ignored: the statement's `;` comes
+  after the brace. A view written without its braces, `Reach := FIX Reach (Base,
+  Step);`, is read as if they were there, up to the `;` that ends it. Both run, and
+  analysis warns of each with the form the grammar gives.
 - **A join's condition comes before its right input.** `A ⨝ A.id = B.a_id B`. An
   AS-OF join puts `INNER`, `WITHIN` and `TIES` there too.
 - **A predicate always compares.** A condition is a comparison, a membership or

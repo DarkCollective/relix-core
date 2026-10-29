@@ -91,6 +91,9 @@ public final class ScriptParser {
     /** The comments read inside braces, by the expression parser rather than this lexer. */
     private final List<Comment> expressionComments = new ArrayList<>();
 
+    /** The slips accepted so far, for the script to carry; see {@link ParseWarning}. */
+    private final List<ParseWarning> warnings = new ArrayList<>();
+
     /** The names the statements so far give relations and functions, as written. */
     private final Set<String> definedNames = new HashSet<>();
 
@@ -226,7 +229,7 @@ public final class ScriptParser {
         }
 
         return new Script(namespace, Collections.unmodifiableList(statements),
-                placeComments(namespaceSpan, spans));
+                placeComments(namespaceSpan, spans), warnings);
     }
 
     // =========================================================================
@@ -718,6 +721,9 @@ public final class ScriptParser {
             rejectExpressionStatement(current);
         }
         String name = requireName("assignment target name");
+        if (current.type() == LangTokenType.ASSIGN && lexer.atUnbracedExpression()) {
+            return parseUnbracedView(exported, name, startTok);
+        }
         consume(LangTokenType.ASSIGN);
 
         AssignmentBody body;
@@ -741,7 +747,6 @@ public final class ScriptParser {
         } else {
             // { ... } — relational algebra expression
             // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
-            rejectUnbracedView();
             LangToken brace = requireBraceToken();
             LangLexer.RawBlock raw = rawBraceBlock(brace);
             rejectBracedTable(raw, brace);
@@ -759,6 +764,25 @@ public final class ScriptParser {
 
         consumeSemicolon();
         return new AssignmentStatement(exported, name, body, loc(startTok));
+    }
+
+    /**
+     * Parses a view written without its braces, {@code Reach := FIX Reach (Base, Step);},
+     * as if they were there, and warns that they belong. The text runs to the
+     * {@code ;} that ends the statement. {@code current} is the {@code :=}, and the
+     * lexer is at what follows it.
+     */
+    private Statement parseUnbracedView(boolean exported, String name, LangToken startTok) {
+        LangLexer.RawBlock raw = lexer.consumeRawStatement();
+        current = lexer.next();
+        RelNode expression = delegateToRaParser(raw, startTok, name);
+        String text = raw.text().strip().replaceAll("\\s+", " ");
+        warnings.add(new ParseWarning("A view's expression goes in braces, and was read as if"
+                + " it were in them: write " + name + " := { " + (text.length() > 80 ? "…" : text)
+                + " };", new SourceLocation(filePath, raw.startLine(), raw.startCol())));
+        consumeSemicolon();
+        return new AssignmentStatement(exported, name, new QueryAssignmentBody(expression),
+                loc(startTok));
     }
 
     /**
@@ -1151,6 +1175,7 @@ public final class ScriptParser {
      *             function's body
      */
     private RelNode delegateToRaParser(LangLexer.RawBlock raw, LangToken openBrace, String view) {
+        raw = withoutClosingSemicolon(raw);
         try {
             return RelAlgebraParser.parse(raw.text(), filePath, raw.startLine(), raw.startCol(),
                     expressionComments::add);
@@ -1364,28 +1389,6 @@ public final class ScriptParser {
     }
 
     /**
-     * Refuses a view whose expression is written without braces,
-     * {@code V := A >< cond B;}, at the expression's first token, with the statement
-     * written again in braces: {@code V := { A >< cond B };}. When the expression does
-     * not parse either, the braces are shown around {@code …}, since echoing it would
-     * offer a fix that fails. Nothing written after {@code :=} is left to the parser.
-     */
-    private void rejectUnbracedView() {
-        if (current.type() == LangTokenType.LBRACE || current.type() == LangTokenType.SEMICOLON
-                || current.type() == LangTokenType.EOF) {
-            return;
-        }
-        String input = lexer.input();
-        int start = offsetOf(current.line(), current.column());
-        int end = statementEnd(input, start);
-        String expression = withoutComments(input.substring(start, end));
-        String target = input.substring(offsetOf(statementStart.line(), statementStart.column()), start)
-                .strip().replaceAll("\\s+", " ");
-        throw new LangParseException("a view's expression goes in braces: write " + target + " { "
-                + (tryParse(start, end) == null ? expression : "…") + " };", current.line(), current.column());
-    }
-
-    /**
      * Where the statement starting at {@code start} ends: its {@code ;} outside strings
      * and comments, or the end of the source. An expression has no other {@code ;}.
      */
@@ -1484,6 +1487,7 @@ public final class ScriptParser {
     }
 
     private Operand delegateToOperandParser(LangLexer.RawBlock raw, LangToken openBrace) {
+        raw = withoutClosingSemicolon(raw);
         try {
             return RelAlgebraParser.parseOperand(raw.text(), filePath, raw.startLine(), raw.startCol(),
                     expressionComments::add);
@@ -1492,6 +1496,34 @@ public final class ScriptParser {
                     "Syntax error in operand expression: " + withoutPosition(e),
                     e.line(), e.column());
         }
+    }
+
+    /**
+     * {@code raw} without a {@code ;} written as its last character, before the closing
+     * brace: {@code query { R; };}. The expression grammar has no {@code ;}, and the
+     * statement's own comes after the brace, so the slip is unambiguous: it is dropped,
+     * and a warning says where the {@code ;} goes.
+     */
+    private LangLexer.RawBlock withoutClosingSemicolon(LangLexer.RawBlock raw) {
+        String text = raw.text().stripTrailing();
+        if (!text.endsWith(";")) {
+            return raw;
+        }
+        int at = text.length() - 1;
+        int line = raw.startLine();
+        int column = raw.startCol();
+        for (int i = 0; i < at; i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+                column = 1;
+            } else {
+                column++;
+            }
+        }
+        warnings.add(new ParseWarning("The ';' before '}' was ignored: a statement ends with"
+                + " ';' after its closing brace, as in query { R };",
+                new SourceLocation(filePath, line, column)));
+        return new LangLexer.RawBlock(text.substring(0, at), raw.startLine(), raw.startCol());
     }
 
     /**
