@@ -295,7 +295,8 @@ final class ExpressionAliasingTest extends ParserTestSupport {
     @Test
     public void failsOnArrowWithoutParenthesizedRelation() {
         assertParseError("π id → user_id")
-                .hasMessageContaining("Expected");
+                .hasMessageContaining("π takes its input relation in parentheses after the list:"
+                        + " write π id → user_id (R)");
     }
 }
 
