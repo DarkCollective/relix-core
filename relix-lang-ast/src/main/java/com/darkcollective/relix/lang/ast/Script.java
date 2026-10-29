@@ -54,15 +54,32 @@ import java.util.Optional;
  * @param comments   the comments the parsed text carried, placed by the statements
  *                   they were written next to, for {@link ScriptPrinter} to put back;
  *                   {@link ScriptComments#NONE} for a script that was not parsed
+ * @param warnings   the slips the parser accepted in the text, in the order written,
+ *                   which analysis reports as warnings; empty for a script that was not
+ *                   parsed
  */
 public record Script(Optional<String> namespace, List<Statement> statements,
-                     ScriptComments comments) {
+                     ScriptComments comments, List<ParseWarning> warnings) {
 
     public Script {
         Objects.requireNonNull(namespace, "namespace");
         Objects.requireNonNull(statements, "statements");
         Objects.requireNonNull(comments, "comments");
+        Objects.requireNonNull(warnings, "warnings");
         statements = List.copyOf(statements);
+        warnings = List.copyOf(warnings);
+    }
+
+    /**
+     * A script with its comments and no warnings.
+     *
+     * @param namespace  the declared namespace, or empty
+     * @param statements the statements, in order
+     * @param comments   the comments, placed by statement
+     */
+    public Script(Optional<String> namespace, List<Statement> statements,
+                  ScriptComments comments) {
+        this(namespace, statements, comments, List.of());
     }
 
     /**
@@ -72,6 +89,6 @@ public record Script(Optional<String> namespace, List<Statement> statements,
      * @param statements the statements, in order
      */
     public Script(Optional<String> namespace, List<Statement> statements) {
-        this(namespace, statements, ScriptComments.NONE);
+        this(namespace, statements, ScriptComments.NONE, List.of());
     }
 }

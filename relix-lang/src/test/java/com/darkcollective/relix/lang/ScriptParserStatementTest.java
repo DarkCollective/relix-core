@@ -292,23 +292,28 @@ class ScriptParserStatementTest {
         }
 
         @Test
-        @DisplayName("a view written without braces is reported at its expression, written again in braces (#198)")
+        @DisplayName("a view written without braces is read as if in them, with a warning at its expression (#198, #239)")
         void unbracedView() {
-            assertThatThrownBy(() -> parse("JoinedDevices := RoomsRenamed >< r_room_id = DevicesRenamed.d_room_id"
-                    + " DevicesRenamed;"))
-                    .isInstanceOf(LangParseException.class)
-                    .hasMessage("a view's expression goes in braces: write JoinedDevices := { RoomsRenamed ><"
-                            + " r_room_id = DevicesRenamed.d_room_id DevicesRenamed }; (line 1, col 18)");
-            assertThatThrownBy(() -> parse("private  Big :=\n  SELECT total > 100 -- big ones\n  (orders);"))
-                    .hasMessage("a view's expression goes in braces: write private Big := {"
-                            + " SELECT total > 100 (orders) }; (line 2, col 3)");
-            assertThatThrownBy(() -> parse("V := σ a > 1 (R);"))
-                    .hasMessageContaining(": write V := { σ a > 1 (R) };");
+            Script joined = parse("JoinedDevices := RoomsRenamed >< r_room_id = DevicesRenamed.d_room_id"
+                    + " DevicesRenamed;");
+            assertThat(joined.statements()).hasSize(1);
+            assertThat(joined.warnings()).singleElement().satisfies(w -> {
+                assertThat(w.message()).isEqualTo("A view's expression goes in braces, and was read as"
+                        + " if it were in them: write JoinedDevices := { RoomsRenamed >< r_room_id ="
+                        + " DevicesRenamed.d_room_id DevicesRenamed };");
+                assertThat(w.location()).extracting("line", "column").containsExactly(1, 18);
+            });
+            assertThat(parse("private  Big :=\n  SELECT total > 100 -- big ones\n  (orders);").warnings())
+                    .singleElement().satisfies(w ->
+                            assertThat(w.location()).extracting("line", "column").containsExactly(2, 3));
+            assertThat(parse("V := σ a > 1 (R);").warnings().getFirst().message())
+                    .endsWith(": write V := { σ a > 1 (R) };");
+            // With no ';' after it, the statement is still unterminated.
             assertThatThrownBy(() -> parse("V := orders"))
-                    .hasMessageContaining(": write V := { orders };");
-            // An expression in error itself: the braces, not a rewrite that fails.
+                    .hasMessageContaining("Expected ';' to terminate statement");
+            // An expression in error itself reports its own error.
             assertThatThrownBy(() -> parse("V := SELECT a > (R);"))
-                    .hasMessageContaining(": write V := { … };");
+                    .hasMessageStartingWith("Syntax error in RA expression:");
             // Nothing after ':=': the parser's own message.
             assertThatThrownBy(() -> parse("V := ;")).hasMessageContaining("Expected '{'");
             assertThatThrownBy(() -> parse("V :=")).hasMessageContaining("Expected '{'");
@@ -348,15 +353,15 @@ class ScriptParserStatementTest {
         }
 
         @Test
-        @DisplayName("a ';' inside braces is reported at the ';', moved after the brace or splitting the expressions")
+        @DisplayName("a ';' before '}' is ignored with a warning; one between expressions is reported, splitting them")
         void semicolonInBraces() {
-            assertThatThrownBy(() -> parse("query { SELECT a > 1 (R); };"))
-                    .hasMessage("Syntax error in RA expression: a ';' ends a statement and goes after the closing"
-                            + " brace: write query { SELECT a > 1 (R) }; (line 1, col 25)");
-            assertThatThrownBy(() -> parse("private  V :=\n{ R ; };"))
-                    .hasMessageContaining(": write private V := { R };");
-            assertThatThrownBy(() -> parse("query {\n  SELECT a > 1 -- big ones\n    (R);\n};"))
-                    .hasMessageContaining(": write query { SELECT a > 1 (R) };");
+            // A single expression ending in ';': read without it, and warned of (#239).
+            Script query = parse("query { SELECT a > 1 (R); };");
+            assertThat(query.statements()).hasSize(1);
+            assertThat(query.warnings()).singleElement().satisfies(w ->
+                    assertThat(w.location()).extracting("line", "column").containsExactly(1, 25));
+            assertThat(parse("private  V :=\n{ R ; };").warnings()).hasSize(1);
+            assertThat(parse("query {\n  SELECT a > 1 -- big ones\n    (R);\n};").warnings()).hasSize(1);
             assertThatThrownBy(() -> parse("query { R; S };"))
                     .hasMessageContaining("a query holds one expression; write each as its own:"
                             + " query { R }; query { S };");
