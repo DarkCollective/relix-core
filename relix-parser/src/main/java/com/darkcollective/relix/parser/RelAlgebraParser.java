@@ -4146,6 +4146,7 @@ public final class RelAlgebraParser {
      * follows (a bare operand argument stays an operand).
      */
     private Operand parseArgument() {
+        rejectSqlSubquery();
         Token start = current;
         if (current.type() == TokenType.NOT
                 || (current.type() == TokenType.LPAREN && isParenthesizedPredicate())) {
@@ -4232,6 +4233,9 @@ public final class RelAlgebraParser {
     }
 
     private Predicate parsePrimaryPredicate(Operand seed) {
+        if (seed == null) {
+            rejectSqlSubquery();
+        }
         if (seed == null && current.type() == TokenType.LPAREN && isParenthesizedPredicate()) {
             Token open = current;
             advance();
@@ -4386,8 +4390,9 @@ public final class RelAlgebraParser {
      * Refuses SQL's {@code SELECT} column list: {@code SELECT 'TOTAL' -> Item, SUM(v) -> v (R)}.
      *
      * <p>{@code SELECT} is σ, a filter, so its condition was being read and the
-     * comparison it needs is missing. Where a {@code ->} or a {@code ,} stands in the
-     * comparison's place, the condition was never a condition: it is a column list, and
+     * comparison it needs is missing. Where a {@code ->}, a {@code ,} or SQL's
+     * {@code FROM} stands in the comparison's place, the condition was never a condition:
+     * it is a column list, and
      * saying "expected comparison operator" sends the writer to the literal or the arrow.
      * The error names the operator that chooses columns instead.
      *
@@ -4964,6 +4969,42 @@ public final class RelAlgebraParser {
     }
 
     /**
+     * Refuses SQL's subquery in operand position: {@code (SELECT v FROM R WHERE …)} as a
+     * value, a comparison's side or an IN set, and {@code EXISTS (SELECT … FROM …)}.
+     *
+     * <p>{@code SELECT} is σ, so the subquery was being read as a condition and failed
+     * at its column list, with a message about a comparison. Relix has no subqueries as
+     * values: what one usually does is a join, a GROUP or a WINDOW offset, and the error
+     * names those. Only SQL's shape is refused, a {@code SELECT} followed by a
+     * {@code FROM} inside the same parenthesis, so a column called {@code select} still
+     * reads as one.
+     */
+    private void rejectSqlSubquery() {
+        int open = current.type() == TokenType.LPAREN ? 0
+                : isWord(current, "EXISTS") && peek(1).type() == TokenType.LPAREN ? 1 : -1;
+        if (open < 0 || peek(open + 1).type() != TokenType.SELECT) {
+            return;
+        }
+        int depth = 0;
+        for (int offset = open; ; offset++) {
+            Token token = peek(offset);
+            if (token.type() == TokenType.EOF) {
+                return;
+            }
+            if (token.type() == TokenType.LPAREN) {
+                depth++;
+            } else if (token.type() == TokenType.RPAREN && --depth == 0) {
+                return;
+            } else if (depth == 1 && isWord(token, "FROM")) {
+                break;
+            }
+        }
+        throw refusal(peek(open + 1), "Relix has no subqueries as values: join the relation"
+                + " instead (a SEMI join, ⋉, keeps the rows that have a match), use GROUP for"
+                + " a count or a total, or WINDOW LAG / LEAD for the previous or next row");
+    }
+
+    /**
      * Refuses SQL's subquery after {@code IN}, {@code x IN (SELECT y FROM S)} or
      * {@code x IN (SELECT y (S))}, at its {@code SELECT}, and the same subquery in a set's
      * braces, {@code x IN { SELECT y (S) }}: IN takes a set, and membership
@@ -5260,6 +5301,7 @@ public final class RelAlgebraParser {
                 // and handed to an operator that takes an operand. The lookahead is
                 // the one parseArgument uses, so the two positions agree about what
                 // a parenthesis opens.
+                rejectSqlSubquery();
                 if (isParenthesizedPredicate()) {
                     Token open = current;
                     advance();

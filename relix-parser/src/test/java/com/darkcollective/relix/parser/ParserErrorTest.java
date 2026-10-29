@@ -175,6 +175,23 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("SQL's subquery as a value is told what Relix writes instead")
+    public void reportsSqlSubqueryAsValue() {
+        String message = "Relix has no subqueries as values: join the relation instead"
+                + " (a SEMI join, ⋉, keeps the rows that have a match), use GROUP for a count"
+                + " or a total, or WINDOW LAG / LEAD for the previous or next row";
+        assertParseError("PROJECT id, (SELECT v FROM R WHERE grp = 1) -> w (R)")
+                .hasMessageContaining(message)
+                .at(1, 14);
+        assertParseError("SELECT v > (SELECT MAX(v) FROM R) (R)").hasMessageContaining(message);
+        assertParseError("SELECT EXISTS (SELECT id FROM S) (R)").hasMessageContaining(message);
+        assertParseError("PROJECT Coalesce((SELECT v FROM R), 0) -> w (R)")
+                .hasMessageContaining(message);
+        // A column called select is still a column.
+        assertPrettyPrints(parse("PROJECT (select > 1) -> big (R)"), "π (`select` > 1) → big (R)");
+    }
+
+    @Test
     @DisplayName("a projected column renamed with =, : or AS names expr -> name, at the sign")
     public void reportsForeignAliasInProjection() {
         assertParseError("PROJECT loan_id, days = loan_id * 2 (loans)")
