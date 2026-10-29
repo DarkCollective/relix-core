@@ -465,7 +465,7 @@ final class InputStreamParserTest extends ParserTestSupport {
                 try {
                     RelAlgebraParser.parse(is, 1, 1);
                 } catch (ParseException e) {
-                    Assertions.assertThat(e.getMessage()).contains("Expected");
+                    Assertions.assertThat(e.getMessage()).contains("was read as a column, and the input relation is missing");
                 }
             }
         }
