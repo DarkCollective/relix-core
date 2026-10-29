@@ -5923,10 +5923,12 @@ public final class RelAlgebraParser {
         }
         clauses.add(end);
         // A projection's clauses apply in SQL's order: WHERE to its input, GROUP BY in
-        // its place, and the rest to its result.
+        // its place, and the rest to its result. A GROUP BY over a projection with no
+        // aggregate keeps the projection's distinct rows, since GROUP needs an aggregate.
         int open = projectionInput(start);
         String head = open < 0 ? null : joined(consumed.subList(start, open));
         String inner = open < 0 ? null : joined(consumed.subList(open + 1, consumed.size() - 1));
+        String distinct = null;
         String rewrite = input;
         for (int c = 0; c + 1 < clauses.size(); c++) {
             int from = clauses.get(c);
@@ -5938,11 +5940,15 @@ public final class RelAlgebraParser {
                 continue;
             }
             if (head != null && keyword.type() == TokenType.AGGREGATION && by) {
-                head = keyword.lexeme() + head.substring(consumed.get(start).lexeme().length());
+                if (callsBetween(start + 1, open).isEmpty()) {
+                    distinct = isGlyph(keyword) ? "δ" : "DISTINCT";
+                } else {
+                    head = keyword.lexeme() + head.substring(consumed.get(start).lexeme().length());
+                }
                 continue;
             }
             if (head != null) {
-                rewrite = shortened(head + " (" + inner + ")");
+                rewrite = projected(head, inner, distinct);
                 head = null;
             }
             String clause;
@@ -5958,7 +5964,7 @@ public final class RelAlgebraParser {
             rewrite = clause + " (" + rewrite + ")";
         }
         if (head != null) {
-            rewrite = shortened(head + " (" + inner + ")");
+            rewrite = projected(head, inner, distinct);
         }
         boolean by = peek(1).type() == TokenType.BY;
         String problem;
@@ -5968,6 +5974,8 @@ public final class RelAlgebraParser {
         } else if (current.type() == TokenType.ORDER && by) {
             problem = "'" + current.lexeme() + " BY' is SORT, written before its input, which"
                     + " it takes in parentheses: ";
+        } else if (current.type() == TokenType.AGGREGATION && by && distinct != null) {
+            problem = "'" + current.lexeme() + " BY' with no aggregate is " + distinct + ": write ";
         } else if (current.type() == TokenType.AGGREGATION && by) {
             problem = "'" + current.lexeme() + " BY' is written before its input, which it"
                     + " takes in parentheses, with its keys and then its aggregates: ";
@@ -5976,6 +5984,12 @@ public final class RelAlgebraParser {
                     + " in parentheses: ";
         }
         throw refusal(current, problem + rewrite);
+    }
+
+    /** A projection's rewrite, {@code head (inner)}, under {@code distinct}'s operator when not null. */
+    private static String projected(String head, String inner, String distinct) {
+        String projection = head + " (" + inner + ")";
+        return shortened(distinct == null ? projection : distinct + " (" + projection + ")");
     }
 
     /**

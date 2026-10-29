@@ -387,6 +387,14 @@ final class RelixSessionTest {
                 assertThat(sort.message()).isEqualTo("Syntax error in RA expression:"
                         + " 'SORT' is written before its input, which it takes in parentheses:"
                         + " SORT Item ASC (PROJECT Item, Value (Items))");
+
+                Diagnostic group = relix.validate(table
+                        + "query { PROJECT Item (Items) GROUP BY Item };\n").getFirst();
+                assertThat(group.message()).isEqualTo("Syntax error in RA expression:"
+                        + " 'GROUP BY' with no aggregate is DISTINCT: write"
+                        + " DISTINCT (PROJECT Item (Items))");
+                assertThat(relix.validate(table + "query { DISTINCT (PROJECT Item (Items)) };\n"))
+                        .isEmpty();
             }
         }
 
