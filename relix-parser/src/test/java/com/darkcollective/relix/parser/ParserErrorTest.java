@@ -236,7 +236,7 @@ final class ParserErrorTest extends ParserTestSupport {
         assertParseError("R ⋈ S WHERE v IN {1, 2} (S)")
                 .hasMessageContaining("SELECT v IN { 1, 2 } (S) (R ⋈ S)");
         assertParseError("PROJECT a (R) WHERE a > 1 GROUP BY a ORDER BY a")
-                .hasMessageContaining("SORT a (GROUP a (SELECT a > 1 (R)))");
+                .hasMessageContaining("SORT a (DISTINCT (PROJECT a (SELECT a > 1 (R))))");
         assertParseError("PROJECT a (R) LIMIT 2")
                 .hasMessageContaining("LIMIT 2 (PROJECT a (R))");
         assertParseError("PROJECT a (R) ⋈ (S) WHERE a > 1")
@@ -468,6 +468,19 @@ final class ParserErrorTest extends ParserTestSupport {
                 .hasMessageContaining("'GROUP BY' is written before its input, which it takes in"
                         + " parentheses, with its keys and then its aggregates:"
                         + " GROUP k, SUM(x) -> total (R ⋈ S)");
+        // With no aggregate in the projection, GROUP BY's rows are its distinct rows.
+        assertParseError("PROJECT grp (R) GROUP BY grp")
+                .hasMessageContaining("'GROUP BY' with no aggregate is DISTINCT: write"
+                        + " DISTINCT (PROJECT grp (R))")
+                .at(1, 17);
+        RelAlgebraParser.parse("DISTINCT (PROJECT grp (R))");
+        assertParseError("PROJECT a, b (R) WHERE v > 0 GROUP BY a, b ORDER BY a LIMIT 2")
+                .hasMessageContaining("Relix has no WHERE: a filter is SELECT, written before its"
+                        + " input, which it takes in parentheses: LIMIT 2 (SORT a"
+                        + " (DISTINCT (PROJECT a, b (SELECT v > 0 (R)))))");
+        RelAlgebraParser.parse("LIMIT 2 (SORT a (DISTINCT (PROJECT a, b (SELECT v > 0 (R)))))");
+        assertParseError("π a (R) γ BY a")
+                .hasMessageContaining("'γ BY' with no aggregate is δ: write δ (π a (R))");
         assertParseError("(PROJECT id, v (R) FROM R)")
                 .hasMessageContaining("Relix has no FROM: an operator takes its input in"
                         + " parentheses after it, as in PROJECT a, b (R)");
