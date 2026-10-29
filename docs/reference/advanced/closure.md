@@ -17,7 +17,9 @@ you everything reachable. Over an edge relation like (parent, child) it computes
 all ancestor/descendant pairs; over (manager, report) it gives the full
 management chain; over (part, subpart) it gives a complete bill-of-materials
 explosion. CLOSURE gives pairs that are one or more hops apart; RCLOSURE also
-includes each node paired with itself.
+includes each node paired with itself. Two rows linked through a chain of pairs
+are a pair of the closure; read both ways, `CLOSURE a ↔ b (Edges)`, the chain may
+run in either direction.
 
 # Technical Description:
 Given a binary edge relation projected to two columns, CLOSURE computes R⁺ (the

@@ -82,6 +82,22 @@ final class ReferencePagesTest {
     }
 
     @Test
+    @DisplayName("the words a question uses for an offset, a path, a full join or a closure find its page")
+    void questionWords() {
+        Map<String, String> pages = Map.of(
+                "operators/window-offset.md", "prior|replaced|just before|the one after|previous row",
+                "advanced/path.md", "levels|below|steps|hops",
+                "joins/full-outer-join.md", "only one of|either table|both tables",
+                "advanced/closure.md", "linked|chain|either direction");
+        pages.forEach((path, words) -> {
+            for (String word : words.split("\\|")) {
+                assertThat(lookup(word)).as(word).isEqualTo(path);
+                assertThat(RelixDocs.referencePage(path).orElseThrow()).as(word).contains(word);
+            }
+        });
+    }
+
+    @Test
     @DisplayName("a page is keyed by the ASCII spellings the spellings table gives its operator")
     void asciiSpellingsAreKeys() {
         assertThat(lookup("anti")).isEqualTo("joins/anti-join.md");

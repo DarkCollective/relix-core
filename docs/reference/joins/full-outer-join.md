@@ -13,7 +13,8 @@ A full outer join keeps every row from BOTH relations: matched rows are paired,
 and any row without a partner on the other side is kept with the other side's
 columns filled with NULL. It is the join to use when you want a complete picture
 that loses nothing — for example, reconciling two lists to see what is in each,
-in both, or in only one.
+in both, or in only one: the devices that appear in only one of the two tables,
+in either table, or in both tables.
 
 The ASCII `|><|` has a `|` on each side: both relations contribute all rows.
 
