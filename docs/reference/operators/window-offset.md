@@ -32,6 +32,9 @@ For `LAG`/`LEAD` the offset `n` defaults to `1` (the immediately adjacent row) a
 must be a positive integer literal. `FIRST_VALUE`/`LAST_VALUE` take only the value
 expression.
 
+It is the operator for a value just before or just after in order: the prior
+status, the price a row replaced, the reading that came next, the one after.
+
 The output schema is the input schema with the `AS` column appended; its type
 follows the referenced expression's type (`ANY` for a complex expression). Every
 input row is preserved.
