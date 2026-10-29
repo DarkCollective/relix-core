@@ -404,6 +404,13 @@ public final class SemanticAnalyzer {
             return SemanticResult.failure(errors);
         }
 
+        // The slips each script's parser accepted, reported as it read them.
+        for (String path : graph.paths()) {
+            graph.script(path).ifPresent(script -> script.warnings().forEach(w ->
+                    errors.add(SemanticError.warning(w.location().filePath(),
+                            w.location().line(), w.location().column(), w.message()))));
+        }
+
         // ── Phase 2: Symbol table — register built-ins first ─────────────────
         SymbolTable symbolTable = new InMemorySymbolTable();
         builtins.register(symbolTable);
