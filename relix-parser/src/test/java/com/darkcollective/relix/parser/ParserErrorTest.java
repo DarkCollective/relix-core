@@ -360,6 +360,35 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("SQL's clauses after an expression are rewritten into Relix's operators, in SQL's order")
+    public void reportsSqlClausesAfterTheirInput() {
+        assertParseError("PROJECT read_at, value (readings) WHERE capability_id = 703")
+                .hasMessageContaining("Relix has no WHERE: a filter is SELECT, written before its"
+                        + " input, which it takes in parentheses: PROJECT read_at, value"
+                        + " (SELECT capability_id = 703 (readings))")
+                .at(1, 35);
+        assertParseError("PROJECT grp, COUNT(id) -> n (R) WHERE v > 0 GROUP BY grp ORDER BY n DESC LIMIT 2")
+                .hasMessageContaining("parentheses: LIMIT 2 (SORT n DESC"
+                        + " (GROUP grp, COUNT(id) -> n (SELECT v > 0 (R))))");
+        assertParseError("SELECT v > 1 (R) ORDER BY v DESC")
+                .hasMessageContaining("'ORDER BY' is SORT, written before its input, which it"
+                        + " takes in parentheses: SORT v DESC (SELECT v > 1 (R))");
+        assertParseError("R ⋈ S GROUP BY k")
+                .hasMessageContaining("'GROUP BY' is written before its input, which it takes in"
+                        + " parentheses, with its keys and then its aggregates:"
+                        + " GROUP k, SUM(x) -> total (R ⋈ S)");
+        assertParseError("(PROJECT id, v (R) FROM R)")
+                .hasMessageContaining("Relix has no FROM: an operator takes its input in"
+                        + " parentheses after it, as in PROJECT a, b (R)");
+        assertParseError("PROJECT id (R) AS x")
+                .hasMessageContaining("Relix has no AS for a relation: to name one, write RENAME"
+                        + " before it, which takes it in parentheses: RENAME x (PROJECT id (R))");
+        // A projection joined to something else takes the clause around the whole join.
+        assertParseError("PROJECT id (R) >< R.id = S.id S WHERE v > 1")
+                .hasMessageContaining("parentheses: SELECT v > 1 (PROJECT id (R) >< R.id = S.id S)");
+    }
+
+    @Test
     @DisplayName("a binary operator written before its inputs is reported at the operator, with its infix form")
     public void reportsInfixOperatorWrittenFirst() {
         assertParseError("JOIN A >< A.id = B.a_id B")

@@ -1014,7 +1014,7 @@ public final class RelAlgebraParser {
                 int start = consumed.size();
                 advance();
                 RelNode expression = parseExpression(0);
-                expect(TokenType.RPAREN, "Expected ')' after relational expression");
+                expectCloseOfRelation(start + 1);
                 rejectTableAlias(relationText(start + 1, consumed.size() - 1), 0);
                 yield expression;
             }
@@ -3713,7 +3713,7 @@ public final class RelAlgebraParser {
         if (isWord(current, "WHERE")) {
             rejectWhereInInput(written, inputStart, glyph);
         }
-        expect(TokenType.RPAREN, "Expected ')' after relational expression");
+        expectCloseOfRelation(inputStart);
         return input;
     }
 
@@ -5824,37 +5824,185 @@ public final class RelAlgebraParser {
     /**
      * Expects the end of the input, after a whole expression has parsed.
      *
-     * <p>An operator keyword there is SQL's order, the clause written after what it
-     * applies to: {@code PROJECT a (R) SORT a ASC}. Relix writes the operator first and
-     * its input in parentheses, and the error rewrites the writer's own expression into
-     * that order, rather than reporting the end of input it expected.
+     * <p>A SQL clause or an operator keyword there is refused by
+     * {@link #rejectTrailingClause}, rather than reported as the end of input expected.
      */
     private void expectEnd() {
-        if (isPrefixOperator(current.type())) {
+        if (current.type() == TokenType.AGGREGATION) {
+            // SQL's SELECT k, MAX(x) … GROUP BY k: the aggregates move into GROUP.
             int end = 0;
             while (peek(end).type() != TokenType.EOF) {
                 end++;
             }
-            if (current.type() == TokenType.AGGREGATION) {
-                // SQL's SELECT k, MAX(x) … GROUP BY k: the aggregates move into GROUP.
-                int keys = peek(1).type() == TokenType.BY ? 2 : 1;
-                String grouped = end > keys
-                        ? groupedProject(current, sourceText(keys, end), 0, consumed.size()) : null;
-                if (grouped != null) {
-                    throw ParseException.at(grouped, lexer.input(), current);
-                }
+            int keys = peek(1).type() == TokenType.BY ? 2 : 1;
+            String grouped = end > keys
+                    ? groupedProject(current, sourceText(keys, end), 0, consumed.size()) : null;
+            if (grouped != null) {
+                throw ParseException.at(grouped, lexer.input(), current);
             }
-            String operator = sourceText(0, end);
-            String input = joined(consumed);
-            if (input.length() > 80) {
-                input = "…";
-            }
-            throw ParseException.at("'" + current.lexeme() + "' is written before its input,"
-                    + " which it takes in parentheses: " + operator + " (" + input + ")",
-                    lexer.input(), current);
         }
+        rejectTrailingClause(0);
         rejectColumnListWithoutProject();
         expect(TokenType.EOF, "Expected end of input");
+    }
+
+    /**
+     * Expects the {@code )} that closes a parenthesised relational expression, whose
+     * text begins at {@code start} in {@link #consumed}.
+     */
+    private void expectCloseOfRelation(int start) {
+        if (current.type() != TokenType.RPAREN) {
+            rejectTrailingClause(start);
+        }
+        expect(TokenType.RPAREN, "Expected ')' after relational expression");
+    }
+
+    /**
+     * Refuses SQL's clauses, and an operator keyword, written after the expression they
+     * apply to, whose text begins at {@code start} in {@link #consumed}.
+     *
+     * <p>That is SQL's order: {@code PROJECT a (R) WHERE a > 1 ORDER BY a LIMIT 3}.
+     * Relix writes each operator first and its input in parentheses, and the error
+     * rewrites the writer's own expression into that order, clause by clause:
+     * {@code LIMIT 3 (SORT a (SELECT a > 1 (PROJECT a (R))))}. {@code WHERE} becomes
+     * {@code SELECT}, {@code ORDER BY} becomes {@code SORT}, and {@code GROUP BY} is
+     * given the aggregate list it needs. {@code FROM} and a relation's {@code AS} are
+     * told what Relix writes instead.
+     */
+    private void rejectTrailingClause(int start) {
+        String input = shortened(joined(consumed.subList(start, consumed.size())));
+        if (isWord(current, "FROM")) {
+            String relation = isNameToken(peek(1)) ? peek(1).lexeme() : "R";
+            throw refusal(current, "Relix has no FROM: an operator takes its input in"
+                    + " parentheses after it, as in PROJECT a, b (" + relation + ")");
+        }
+        if (current.type() == TokenType.AS && isNameToken(peek(1))) {
+            throw refusal(current, "Relix has no AS for a relation: to name one, write"
+                    + " RENAME before it, which takes it in parentheses: RENAME "
+                    + peek(1).lexeme() + " (" + input + ")");
+        }
+        if (!isWord(current, "WHERE") && !isPrefixOperator(current.type())) {
+            return;
+        }
+        int end = 0;
+        for (int depth = 0; ; end++) {
+            TokenType type = peek(end).type();
+            if (type == TokenType.EOF || type == TokenType.RPAREN && depth == 0) {
+                break;
+            }
+            if (type == TokenType.LPAREN) {
+                depth++;
+            } else if (type == TokenType.RPAREN) {
+                depth--;
+            }
+        }
+        List<Integer> clauses = new ArrayList<>();
+        for (int offset = 0, depth = 0; offset < end; offset++) {
+            Token token = peek(offset);
+            if (token.type() == TokenType.LPAREN) {
+                depth++;
+            } else if (token.type() == TokenType.RPAREN) {
+                depth--;
+            } else if (offset == 0 || depth == 0 && startsClause(token)) {
+                clauses.add(offset);
+            }
+        }
+        clauses.add(end);
+        // A projection's clauses apply in SQL's order: WHERE to its input, GROUP BY in
+        // its place, and the rest to its result.
+        int open = projectionInput(start);
+        String head = open < 0 ? null : joined(consumed.subList(start, open));
+        String inner = open < 0 ? null : joined(consumed.subList(open + 1, consumed.size() - 1));
+        String rewrite = input;
+        for (int c = 0; c + 1 < clauses.size(); c++) {
+            int from = clauses.get(c);
+            Token keyword = peek(from);
+            boolean by = peek(from + 1).type() == TokenType.BY;
+            String body = sourceText(from + (by ? 2 : 1), clauses.get(c + 1));
+            if (head != null && isWord(keyword, "WHERE")) {
+                inner = "SELECT " + body + " (" + inner + ")";
+                continue;
+            }
+            if (head != null && keyword.type() == TokenType.AGGREGATION && by) {
+                head = keyword.lexeme() + head.substring(consumed.get(start).lexeme().length());
+                continue;
+            }
+            if (head != null) {
+                rewrite = shortened(head + " (" + inner + ")");
+                head = null;
+            }
+            String clause;
+            if (isWord(keyword, "WHERE")) {
+                clause = "SELECT " + body;
+            } else if (keyword.type() == TokenType.ORDER && by) {
+                clause = "SORT " + body;
+            } else if (keyword.type() == TokenType.AGGREGATION && by && !body.contains("->")) {
+                clause = keyword.lexeme() + " " + body + ", SUM(x) -> total";
+            } else {
+                clause = keyword.lexeme() + " " + body;
+            }
+            rewrite = clause + " (" + rewrite + ")";
+        }
+        if (head != null) {
+            rewrite = shortened(head + " (" + inner + ")");
+        }
+        boolean by = peek(1).type() == TokenType.BY;
+        String problem;
+        if (isWord(current, "WHERE")) {
+            problem = "Relix has no WHERE: a filter is SELECT, written before its input,"
+                    + " which it takes in parentheses: ";
+        } else if (current.type() == TokenType.ORDER && by) {
+            problem = "'" + current.lexeme() + " BY' is SORT, written before its input, which"
+                    + " it takes in parentheses: ";
+        } else if (current.type() == TokenType.AGGREGATION && by) {
+            problem = "'" + current.lexeme() + " BY' is written before its input, which it"
+                    + " takes in parentheses, with its keys and then its aggregates: ";
+        } else {
+            problem = "'" + current.lexeme() + "' is written before its input, which it takes"
+                    + " in parentheses: ";
+        }
+        throw refusal(current, problem + rewrite);
+    }
+
+    /**
+     * Where the input's {@code (} is in {@link #consumed} when the expression whose text
+     * begins at {@code start} is one projection, {@code PROJECT list (input)}, or -1.
+     */
+    private int projectionInput(int start) {
+        int last = consumed.size() - 1;
+        if (consumed.get(start).type() != TokenType.PROJECT
+                || consumed.get(last).type() != TokenType.RPAREN) {
+            return -1;
+        }
+        int depth = 0;
+        int open = last;
+        for (; open > start; open--) {
+            TokenType type = consumed.get(open).type();
+            if (type == TokenType.RPAREN) {
+                depth++;
+            } else if (type == TokenType.LPAREN && --depth == 0) {
+                break;
+            }
+        }
+        for (int i = start + 1, inner = 0; i < open; i++) {
+            TokenType type = consumed.get(i).type();
+            if (type == TokenType.LPAREN) {
+                inner++;
+            } else if (type == TokenType.RPAREN) {
+                inner--;
+            } else if (inner == 0 && isBinaryRelOperator(type)) {
+                return -1;
+            }
+        }
+        return open > start ? open : -1;
+    }
+
+    /** True for the words that start one of SQL's trailing clauses, or Relix's own operator for one. */
+    private boolean startsClause(Token token) {
+        return isWord(token, "WHERE") || switch (token.type()) {
+            case ORDER, SORT, AGGREGATION, LIMIT -> true;
+            default -> false;
+        };
     }
 
     /**
