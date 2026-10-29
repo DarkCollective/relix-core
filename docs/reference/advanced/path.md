@@ -19,6 +19,8 @@ stamps each with its shortest hop distance. It is the operator behind "accounts
 within N transfer hops of a flagged account" (AML tracing), "people within 3
 introductions" (networking), and "components within K dependency levels" (impact
 analysis) — work that otherwise needs a `WITH RECURSIVE` CTE plus a depth guard.
+Ask it how many levels below a node something sits, or what is reached in at
+most two steps: a hop is a step, or one level down a hierarchy.
 
 # Technical Description:
 Given an edge relation, PATH reads the two named columns as **directed** edges
