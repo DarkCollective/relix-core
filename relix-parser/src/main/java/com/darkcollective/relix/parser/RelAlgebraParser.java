@@ -3927,21 +3927,16 @@ public final class RelAlgebraParser {
         String before = written(start, lastStart, keyword).replaceAll(",$", "");
         String beside = lastStart == start + 1 ? before + " " : before + ", ";
 
-        if (last instanceof FunctionCall call
-                && WINDOW_FUNCTIONS.contains(call.functionName().toUpperCase(Locale.ROOT))
-                && (current.type() == TokenType.SORT || current.type() == TokenType.OVER)) {
-            String rewrite = beside + "rn (WINDOW " + lastText
-                    + " SORT k ASC PER g AS rn (R))";
-            if (current.type() == TokenType.SORT) {
-                String tail = restOfExpression();
-                java.util.regex.Matcher alias = java.util.regex.Pattern
-                        .compile("\\bAS (\\w+) \\(", java.util.regex.Pattern.CASE_INSENSITIVE)
-                        .matcher(tail);
-                if (alias.find() && tail.length() <= 80) {
-                    rewrite = beside + alias.group(1) + " (WINDOW " + lastText + " "
-                            + tail + ")";
-                }
-            }
+        // SQL's OVER after a window function is refused before this, by rejectOverInProjection.
+        if (current.type() == TokenType.SORT && last instanceof FunctionCall call
+                && WINDOW_FUNCTIONS.contains(call.functionName().toUpperCase(Locale.ROOT))) {
+            String tail = shortened(restOfExpression());
+            java.util.regex.Matcher alias = java.util.regex.Pattern
+                    .compile("\\bAS (\\w+) \\(", java.util.regex.Pattern.CASE_INSENSITIVE)
+                    .matcher(tail);
+            String rewrite = alias.find()
+                    ? beside + alias.group(1) + " (WINDOW " + lastText + " " + tail + ")"
+                    : beside + "rn (WINDOW " + lastText + " SORT k ASC PER g AS rn (R))";
             throw refusal(current, "A window function is WINDOW, its own operator, and"
                     + " cannot be a column of " + keyword + ": write " + rewrite);
         }

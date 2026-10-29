@@ -2153,6 +2153,34 @@ final class SemanticValidationTest {
         }
 
         @Test
+        @DisplayName("LP mode: the allocation column's factor is dropped from either side of a product, and anything else gets the general form")
+        void lpModeAllocationRewrites() {
+            var mul = com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY;
+            var add = com.darkcollective.relix.ast.ArithmeticOperator.PLUS;
+            RelNode tree = AstBuilders.optimize(
+                    ObjectiveSense.MAXIMIZE, arith(attr("weight"), mul, attr("amount")),
+                    List.of(constraint(arith(attr("amount"), mul, attr("order_id")),
+                                    ComparisonOperator.LESS_EQUAL, 1),
+                            constraint(arith(attr("amount"), add, attr("weight")),
+                                    ComparisonOperator.LESS_EQUAL, 1),
+                            constraint(arith(arith(attr("amount"), mul, attr("weight")), mul,
+                                    attr("order_id")), ComparisonOperator.LESS_EQUAL, 1),
+                            constraint(func("Abs", attr("weight")), ComparisonOperator.LESS_EQUAL, 1)),
+                    List.of(), Optional.of(allocation(0.1, 0.5, "weight")), rel("Orders"));
+            assertThat(inferAndValidate(tree)).extracting(SemanticError::message).containsExactly(
+                    "Optimize OPTIMIZE ALLOCATE: SUM(x) already multiplies x by the allocation"
+                            + " 'weight', so 'weight' is not written inside it: write"
+                            + " SUM(amount) for SUM(weight * amount);"
+                            + " SUM(1) is the sum of the allocations");
+            RelNode general = AstBuilders.optimize(
+                    ObjectiveSense.MAXIMIZE, func("Abs", attr("weight")),
+                    List.of(constraint(attr("amount"), ComparisonOperator.LESS_EQUAL, 1)),
+                    List.of(), Optional.of(allocation(0.1, 0.5, "weight")), rel("Orders"));
+            assertThat(inferAndValidate(general)).extracting(SemanticError::message)
+                    .singleElement().asString().contains("write SUM(x) for SUM(x * weight)");
+        }
+
+        @Test
         @DisplayName("LP mode: allocation column name clashing with an input column is rejected")
         void lpModeAllocationColumnClash() {
             // "amount" already exists in Orders (order_id, user_id, amount, status)

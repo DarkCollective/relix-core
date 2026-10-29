@@ -86,6 +86,36 @@ final class ScriptParserSlipTest {
     }
 
     @Test
+    @DisplayName("a view without braces keeps its brackets, braces, strings and comments whole")
+    void viewWithoutBracesKeepsItsGroups() {
+        acceptedAs("V := SELECT a IN {1, 2} (PROJECT [a, b] -> c, a (R));",
+                "V := { SELECT a IN {1, 2} (PROJECT [a, b] -> c, a (R)) };");
+        acceptedAs("V := PROJECT a - 1 -> b (R);", "V := { PROJECT a - 1 -> b (R) };");
+        acceptedAs("V := SELECT a = 'it''s;' (R);", "V := { SELECT a = 'it''s;' (R) };");
+        acceptedAs("V := SELECT a = \"x\\\\;\" (R);", "V := { SELECT a = \"x\\\\;\" (R) };");
+        acceptedAs("V := csvdata;", "V := { csvdata };");
+        // Running to the end: an unclosed string or group, a comment, or a ')' closing nothing.
+        assertThatThrownBy(() -> ScriptParser.parse("V := SELECT a = 'x"))
+                .isInstanceOf(LangParseException.class);
+        assertThatThrownBy(() -> ScriptParser.parse("V := SELECT a = \"x"))
+                .isInstanceOf(LangParseException.class);
+        assertThatThrownBy(() -> ScriptParser.parse("V := PROJECT a (R -- x"))
+                .isInstanceOf(LangParseException.class);
+        assertThatThrownBy(() -> ScriptParser.parse("V := R);"))
+                .isInstanceOf(LangParseException.class);
+        assertThatThrownBy(() -> ScriptParser.parse("V := csv"))
+                .isInstanceOf(LangParseException.class);
+        assertThatThrownBy(() -> ScriptParser.parse("V := SELECT a = 'x'"))
+                .isInstanceOf(LangParseException.class);
+        assertThatThrownBy(() -> ScriptParser.parse("V := PROJECT a -"))
+                .isInstanceOf(LangParseException.class);
+        // A ';' inside a group is the group's, so the statement runs on to the one after it.
+        assertThatThrownBy(() -> ScriptParser.parse("V := PROJECT a (R;);"))
+                .isInstanceOf(LangParseException.class);
+        assertThat(ScriptParser.parse("T := csv  [a\n1\n];").warnings()).isEmpty();
+    }
+
+    @Test
     @DisplayName("an inline table and a CSV table keep their brackets, and nothing after := is still refused")
     void othersUnchanged() {
         assertThat(ScriptParser.parse("T := [| a |\n| 1 |];").warnings()).isEmpty();

@@ -67,6 +67,17 @@ final class LikePatternChecksTest {
     }
 
     @Test
+    @DisplayName("underscores after different characters, or at the start, are each escaped")
+    void mixedPrefixes() {
+        assertThat(query("SELECT code LIKE '%!_%_' (Promotions)"))
+                .hasErrorContaining("write LIKE '%!#_%#_' ESCAPE '#'");
+        assertThat(query("SELECT code LIKE '_%' (Promotions)"))
+                .hasErrorContaining("write LIKE '!_%' ESCAPE '!'");
+        assertThat(query("SELECT code LIKE '%!_%!_%' (Promotions)"))
+                .hasErrorContaining("write LIKE '%!_%!_%' ESCAPE '!'");
+    }
+
+    @Test
     @DisplayName("a LIKE in a projected condition is checked too")
     void projectedCondition() {
         assertThat(query("PROJECT code, (code LIKE 'A_%') -> a (Promotions)"))

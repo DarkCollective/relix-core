@@ -109,6 +109,12 @@ abstract class ParserTestSupport extends AstBuilders {
             return this;
         }
 
+        ParseExceptionAssert hasMessageNotContaining(String unexpected) {
+            isNotNull();
+            assertThat(actual.getMessage()).doesNotContain(unexpected);
+            return this;
+        }
+
         ParseExceptionAssert at(int line, int column) {
             isNotNull();
             assertThat(actual.line()).isEqualTo(line);

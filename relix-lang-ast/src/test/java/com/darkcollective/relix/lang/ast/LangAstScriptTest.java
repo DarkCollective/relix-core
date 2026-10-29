@@ -55,6 +55,14 @@ final class LangAstScriptTest {
         }
 
         @Test
+        @DisplayName("Built with comments and no warnings, as before ParseWarning existed")
+        void commentsWithoutWarnings() {
+            Script s = new Script(Optional.empty(), List.of(), ScriptComments.NONE);
+            assertThat(s.comments()).isSameAs(ScriptComments.NONE);
+            assertThat(s.warnings()).isEmpty();
+        }
+
+        @Test
         @DisplayName("Empty namespace is allowed")
         void emptyNamespaceAllowed() {
             Script s = new Script(Optional.empty(), List.of());
