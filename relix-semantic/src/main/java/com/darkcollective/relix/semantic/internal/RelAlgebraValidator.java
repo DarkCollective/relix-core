@@ -2536,6 +2536,12 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             case PatternPredicate pp -> {
                 validateTemporalRules(pp.operand(), schema, inferrer);
                 validateTemporalRules(pp.pattern(), schema, inferrer);
+                // The projection's walk is the only one this condition gets.
+                LikePatternChecks.underscoreWarning(pp).ifPresent(message -> {
+                    SourceLocation loc = pp.location();
+                    errors.add(SemanticError.warning(loc.filePath(), loc.line(), loc.column(),
+                            "Projection π: " + message));
+                });
             }
         }
     }
