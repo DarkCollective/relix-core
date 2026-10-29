@@ -441,6 +441,23 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("SQL's WHERE and ORDER BY after an expression are rewritten into SELECT and SORT")
+        void trailingSqlClausesDiagnosed() {
+            String table = "readings := [| read_at | value | capability_id |\n| 1 | 2.5 | 703 |];\n";
+            try (Relix relix = Relix.open()) {
+                Diagnostic where = relix.validate(table + "Readings703 := { PROJECT read_at, value"
+                        + " (readings) WHERE capability_id = 703 ORDER BY read_at };\n").getFirst();
+                assertThat(where.message()).isEqualTo("Syntax error in RA expression:"
+                        + " Relix has no WHERE: a filter is SELECT, written before its input, which"
+                        + " it takes in parentheses: SORT read_at (PROJECT read_at, value"
+                        + " (SELECT capability_id = 703 (readings)))");
+                assertThat(where.location().orElseThrow().line()).isEqualTo(3);
+                assertThat(relix.validate(table + "Readings703 := { SORT read_at (PROJECT read_at,"
+                        + " value (SELECT capability_id = 703 (readings))) };\n")).isEmpty();
+            }
+        }
+
+        @Test
         @DisplayName("a column renamed with =, : or AS in PROJECT or GROUP is one error, at the sign, naming expr -> name")
         void foreignAliasDiagnosed() {
             String tables = "loans := [| loan_id | member_id | name |\n| 1 | 2 | 3 |];\n";
