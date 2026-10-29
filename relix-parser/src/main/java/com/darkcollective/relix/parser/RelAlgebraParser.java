@@ -1004,6 +1004,11 @@ public final class RelAlgebraParser {
     }
 
     private RelNode parsePrefixAtStart() {
+        if (current.type() != TokenType.IDENTIFIER && isRecursiveReference()) {
+            Token startTok = current;
+            advance();
+            return parseRelationFromNameToken(startTok);
+        }
         return switch (current.type()) {
             case IDENTIFIER -> {
                 Token startTok = current;
@@ -1267,6 +1272,21 @@ public final class RelAlgebraParser {
         }
 
         return new RelationNode(sb.toString(), loc(startTok));
+    }
+
+    /**
+     * Whether the keyword at {@code current} is a reference to an in-scope {@code FIX} or
+     * {@code ITERATE} binder spelled as that keyword, {@code FIX Path (E, … Path)}: written
+     * as the binder is, and followed by what can follow a relation, not by its operator's
+     * arguments.
+     */
+    private boolean isRecursiveReference() {
+        if (!isNameToken(current) || !recursiveBinders.contains(current.lexeme())) {
+            return false;
+        }
+        TokenType next = peek(1).type();
+        return next == TokenType.EOF || next == TokenType.RPAREN || next == TokenType.COMMA
+                || isBinaryRelOperator(next);
     }
 
     /**
@@ -2089,8 +2109,8 @@ public final class RelAlgebraParser {
     private FixpointNode parseFixpoint() {
         Token opTok = current;
         expect(TokenType.FIX, "Expected 'FIX'");
-        Token nameTok = expect(TokenType.IDENTIFIER,
-                "Expected the recursive relation name after 'FIX'");
+        // Only a name can stand here, so a keyword's spelling is one: FIX Path (…).
+        Token nameTok = expectName("Expected the recursive relation name after 'FIX'");
         String name = nameTok.lexeme();
 
         expect(TokenType.LPAREN, "Expected '(' after the FIX relation name");
@@ -2129,8 +2149,7 @@ public final class RelAlgebraParser {
     private IterateNode parseIterate() {
         Token opTok = current;
         expect(TokenType.ITERATE, "Expected 'ITERATE'");
-        Token nameTok = expect(TokenType.IDENTIFIER,
-                "Expected the iterated relation name after 'ITERATE'");
+        Token nameTok = expectName("Expected the iterated relation name after 'ITERATE'");
         String name = nameTok.lexeme();
 
         expect(TokenType.LPAREN, "Expected '(' after the ITERATE relation name");

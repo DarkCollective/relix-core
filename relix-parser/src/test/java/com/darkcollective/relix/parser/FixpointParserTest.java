@@ -16,11 +16,14 @@
 package com.darkcollective.relix.parser;
 
 import com.darkcollective.relix.ast.FixpointNode;
+import com.darkcollective.relix.ast.IterateNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.RecursiveRefNode;
+import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.UnionNode;
+import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -158,6 +161,36 @@ final class FixpointParserTest extends ParserTestSupport {
                                     naturalJoin(
                                             recRef("R"),
                                             recRef("S")))));
+        }
+    }
+
+    @Nested
+    class KeywordNames {
+
+        @Test
+        void namesTheRecursiveRelationWithAKeywordsSpelling() {
+            // PATH and TREE are operators, but only a name can follow FIX.
+            assertParsesTo("FIX Path (E, E ⋈ Path)",
+                    fixpoint("Path", rel("E"), naturalJoin(rel("E"), recRef("Path"))));
+            assertParsesTo("FIX Tree (E, Tree ∪ E)",
+                    fixpoint("Tree", rel("E"), union(recRef("Tree"), rel("E"))));
+            IterateNode iterate = (IterateNode) parse("ITERATE Path (E, Path) ROUNDS 2");
+            org.assertj.core.api.Assertions.assertThat(iterate.name()).isEqualTo("Path");
+            com.darkcollective.relix.ast.AstAssertions.assertThat(iterate.step())
+                    .isNode(RecursiveRefNode.class);
+        }
+
+        @Test
+        void readsTheKeywordAsItsOperatorWhereTheOperatorsArgumentsFollow() {
+            // In the step, SORT is still the operator when its sort keys follow it.
+            assertParsesTo("FIX Sort (E, SORT src (Sort))",
+                    fixpoint("Sort", rel("E"), sort(List.of(asc("src")), recRef("Sort"))));
+        }
+
+        @Test
+        void roundTripsThroughParseAndPrettyPrint() {
+            RelNode parsed = parse("FIX Path (E, E ⋈ Path)");
+            assertParsesTo(parsed.prettyPrint(), parsed);
         }
     }
 

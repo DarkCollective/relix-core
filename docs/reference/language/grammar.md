@@ -449,13 +449,14 @@ path              ::= "PATH" name edge_separator name "HOPS" INTEGER ( "TO" INTE
 trace             ::= "TRACE" name edge_separator name "VIA" name
                       ( "MINIMIZE" | "MAXIMIZE" ) "AS" name input
 
-/* FIX Reach (base, step): inside step, Reach names the relation being built. */
-fixpoint          ::= "FIX" IDENTIFIER "(" rel_expr "," rel_expr ")"
+/* FIX Reach (base, step): inside step, Reach names the relation being built.
+   The name may be a keyword's spelling, FIX Path (…): see the rules below. */
+fixpoint          ::= "FIX" name "(" rel_expr "," rel_expr ")"
 
 /* ITERATE Board (base, step) ROUNDS 4: inside step, Board names the previous
    round, and each round replaces it. ROUNDS, UNTIL and STABLE are matched by
    their text rather than reserved, so they remain usable as names. */
-iterate           ::= "ITERATE" IDENTIFIER "(" rel_expr "," rel_expr ")" iterate_stop
+iterate           ::= "ITERATE" name "(" rel_expr "," rel_expr ")" iterate_stop
 iterate_stop      ::= "ROUNDS" INTEGER
                     | "UNTIL" ( "STABLE" | name ( "," name )* "WITHIN" NUMBER
                                 "PER" name ( "," name )* ) "MAX" INTEGER "ROUNDS"
@@ -669,9 +670,9 @@ array_construction  ::= "[" ( operand ( "," operand )* )? "]"
 
 ```ebnf
 /* In most positions any word is accepted as a name, reserved or not.
-   IDENTIFIER is the stricter form a few positions require (FIX, ITERATE, the PER
-   list of OPTIMIZE and TOP, struct field names); a reserved word there
-   must be backticked. */
+   IDENTIFIER is the stricter form a few positions require (the PER list of
+   OPTIMIZE and TOP, struct field names); a reserved word there must be
+   backticked. */
 name              ::= WORD | DELIMITED_IDENTIFIER
 dotted_name       ::= name ( "." name )*
 IDENTIFIER        ::= ( WORD - reserved_word ) | DELIMITED_IDENTIFIER
@@ -747,6 +748,11 @@ are easy to miss in the rules above.
 - **A function call's parenthesis touches the name.** `Round(price, 2)` is a call.
   `Round (price, 2)` is a column called `Round` followed by a parenthesis. This is
   what lets `τ name (Users)` sort `Users` by the column `name`.
+- **A FIX or ITERATE relation may be named with a keyword's spelling.**
+  `FIX Path (E, E ⋈ Path)` binds `Path`. In the step, the name written as it was
+  bound and followed by the end, `)`, `,` or a binary operator is the relation
+  being built; followed by anything else it is the keyword, so in
+  `FIX Sort (E, SORT src (Sort))` the first `SORT` sorts.
 - **A join's condition comes before its right input.** `A ⨝ A.id = B.a_id B`. An
   AS-OF join puts `INNER`, `WITHIN` and `TIES` there too.
 - **A predicate always compares.** A condition is a comparison, a membership or
