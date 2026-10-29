@@ -152,6 +152,20 @@ query { σ label LIKE "%0!%%" ESCAPE "!" (Discounts) };
 
 `_` is escaped the same way: `"save!_%"` matches `save_20` and not `save 20`.
 
+Left unescaped, `_` is easy to misread. `"%_%"`, written for "the labels that
+contain an underscore", matches every label of one character or more. Analysis
+warns, without refusing, when a pattern has no `ESCAPE` and every `_` in it stands
+beside a `%`, where one is almost never meant as "any one character", and rewrites
+the pattern:
+
+```
+Selection σ: '_' in LIKE matches any one character; to match an underscore,
+write LIKE '%!_%' ESCAPE '!'
+```
+
+A `_` between other characters or at an end, as in `"A_C"`, `"___"` or `"AB-_"`, is
+taken as meant.
+
 # Limitations:
 A pattern that is not a string literal is not pushed down to MongoDB, so that
 predicate runs in the engine. SQL sources receive it as written. Matching is case-sensitive; use UCase() or LCase() on both sides for

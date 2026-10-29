@@ -214,7 +214,19 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
     public Void visit(PatternPredicate node) {
         validateOperand(node.operand());
         validateOperand(node.pattern());
+        warnOfUnderscoreWildcard(node);
         return null;
+    }
+
+    /** Warns of a LIKE pattern whose {@code _} is probably meant as an underscore. */
+    private void warnOfUnderscoreWildcard(PatternPredicate node) {
+        LikePatternChecks.underscoreWarning(node).ifPresent(message -> {
+            SourceLocation where = node.location().line() > 0 ? node.location() : fallback;
+            errors.add(where.line() > 0
+                    ? SemanticError.warning(where.filePath(), where.line(), where.column(),
+                            context + ": " + message)
+                    : SemanticError.warning(filePath, 0, 0, context + ": " + message));
+        });
     }
 
     // =========================================================================
