@@ -175,6 +175,97 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("each shape after a projection's list is told apart, and anything else keeps the plain message")
+    public void projectionInputShapes() {
+        // A row of constants of every literal kind is an inline table.
+        assertParseError("PROJECT true -> b, NULL -> n, DATE '2026-01-01' -> d, TIME '10:00' -> t,"
+                + " TIMESTAMP '2026-01-01T10:00:00' -> ts, DURATION 'PT1H' -> du, 'x' -> s")
+                .hasMessageContaining("write Name := [| b | n | d | t | ts | du | s |]");
+        assertParseError("PROJECT 1, 2")
+                .hasMessageContaining("[| c | c |], with the row | 1 | 2 |");
+        // A list with a column in it is a projection missing its input.
+        assertParseError("PROJECT 1 -> one, v")
+                .hasMessageContaining("PROJECT takes its input relation in parentheses after the list");
+        // A window function's rewrite falls back to a general one when no AS names its column,
+        // or when what follows is too long to quote.
+        assertParseError("PROJECT id, RANK() SORT at (R)")
+                .hasMessageContaining("write PROJECT id, rn (WINDOW RANK() SORT k ASC PER g AS rn (R))");
+        assertParseError("PROJECT RANK() SORT a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v,"
+                + " w, x, y, z AS rn (R)")
+                .hasMessageContaining("write PROJECT rn (WINDOW RANK() SORT k ASC PER g AS rn (R))");
+        // A column before SORT, or a call that is not a window function, is the operator case.
+        assertParseError("PROJECT a SORT a (R)")
+                .hasMessageContaining("The input goes in parentheses: write PROJECT a (SORT a (R))");
+        assertParseError("PROJECT Upper(name) SORT name (R)")
+                .hasMessageContaining("The input goes in parentheses: write PROJECT Upper(name) (SORT name (R))");
+        // A condition joined by AND or OR, and one that does not parse, or has no name after '->'.
+        assertParseError("PROJECT a, b AND c = 1 (R)")
+                .hasMessageContaining("A condition as a value goes in parentheses");
+        assertParseError("PROJECT a, b OR c = 1 (R)")
+                .hasMessageContaining("A condition as a value goes in parentheses");
+        assertParseError("PROJECT a, b > , c (R)")
+                .hasMessageContaining("write (a > 2) -> big");
+        assertParseError("PROJECT a, b > 1 -> (R)")
+                .hasMessageContaining("write (b > 1) -> name");
+        assertParseError("PROJECT a DIV , b (R)")
+                .hasMessageContaining("write Int(a / b)");
+        assertParseError("PROJECT a FROM")
+                .hasMessageContaining("as in PROJECT a (R)");
+    }
+
+    @Test
+    @DisplayName("EXISTS without a subquery, and a parenthesis holding no SELECT … FROM, are left to the rest of the grammar")
+    public void subqueryShapeOnly() {
+        assertParseError("SELECT EXISTS (R)").hasMessageNotContaining("subqueries");
+        assertParseError("SELECT EXISTS = (R)").hasMessageNotContaining("subqueries");
+        assertParseError("SELECT Exists(x) = (SELECT v > 1 (S)) (R)").hasMessageNotContaining("subqueries");
+        assertParseError("PROJECT (SELECT v > 1 (R)) -> w (R)").hasMessageNotContaining("subqueries");
+        assertParseError("PROJECT (SELECT v").hasMessageNotContaining("subqueries");
+    }
+
+    @Test
+    @DisplayName("each SQL clause after an expression takes its Relix spelling, and Relix's own keep theirs")
+    public void trailingClauseShapes() {
+        assertParseError("R ⋈ S ORDER k")
+                .hasMessageContaining("'ORDER' is written before its input, which it takes in parentheses:"
+                        + " ORDER k (R ⋈ S)");
+        assertParseError("R ⋈ S GROUP BY k, SUM(x) -> t")
+                .hasMessageContaining("GROUP k, SUM(x) -> t (R ⋈ S)");
+        assertParseError("R ⋈ S SORT k WHERE v > 1 LIMIT (2)")
+                .hasMessageContaining("LIMIT (2) (SELECT v > 1 (SORT k (R ⋈ S)))");
+        assertParseError("R ⋈ S WHERE v IN {1, 2} (S)")
+                .hasMessageContaining("SELECT v IN { 1, 2 } (S) (R ⋈ S)");
+        assertParseError("PROJECT a (R) WHERE a > 1 GROUP BY a ORDER BY a")
+                .hasMessageContaining("SORT a (GROUP a (SELECT a > 1 (R)))");
+        assertParseError("PROJECT a (R) LIMIT 2")
+                .hasMessageContaining("LIMIT 2 (PROJECT a (R))");
+        assertParseError("PROJECT a (R) ⋈ (S) WHERE a > 1")
+                .hasMessageContaining("SELECT a > 1 (PROJECT a (R) ⋈ (S))");
+        assertParseError("(R) WHERE a > 1")
+                .hasMessageContaining("SELECT a > 1 ((R))");
+        assertParseError("PROJECT a ((R)) WHERE a > 1")
+                .hasMessageContaining("PROJECT a (SELECT a > 1 ((R)))");
+        // A ')' that closes nothing ends the clause.
+        assertParseError("(R WHERE a > 1) )").hasMessageContaining("Relix has no WHERE");
+        assertParseError("R AS (x)").hasMessageNotContaining("RENAME");
+        assertParseError("R FROM (S)").hasMessageContaining("as in PROJECT a, b (R)");
+    }
+
+    @Test
+    @DisplayName("a keyword-named binder is a reference only where a relation's end follows it")
+    public void keywordBinderReferences() {
+        parse("FIX Path (E, Path)");
+        // Followed by ',' or the end, it is still the reference, and the FIX's own error follows.
+        assertParseError("FIX Path (E, Path, E)").hasMessageContaining("Expected ')' after the FIX step");
+        assertParseError("FIX Path (E, Path").hasMessageContaining("Expected ')' after the FIX step");
+        // Followed by a name, it is the PATH operator.
+        assertParseError("FIX Path (E, Path x)").hasMessageNotContaining("FIX step");
+        parse("FIX Path (E, (Path))");
+        parse("FIX Path (E, Path ∪ E)");
+        assertParseError("FIX Path (E, Path ⋈)").hasMessageNotContaining("recursive relation name");
+    }
+
+    @Test
     @DisplayName("SQL's subquery as a value is told what Relix writes instead")
     public void reportsSqlSubqueryAsValue() {
         String message = "Relix has no subqueries as values: join the relation instead"
