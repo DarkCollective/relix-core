@@ -2136,6 +2136,23 @@ final class SemanticValidationTest {
         }
 
         @Test
+        @DisplayName("LP mode: the allocation column written inside a SUM is told that SUM already multiplies by it")
+        void lpModeAllocationColumnInSum() {
+            RelNode tree = AstBuilders.optimize(
+                    ObjectiveSense.MAXIMIZE,
+                    arith(attr("amount"), com.darkcollective.relix.ast.ArithmeticOperator.MULTIPLY,
+                            attr("weight")),
+                    List.of(constraint(attr("weight"), ComparisonOperator.EQUAL, 1)),
+                    List.of(), Optional.of(allocation(0.1, 0.5, "weight")), rel("Orders"));
+            List<SemanticError> errors = inferAndValidate(tree);
+            assertThat(errors).extracting(SemanticError::message).containsExactly(
+                    "Optimize OPTIMIZE ALLOCATE: SUM(x) already multiplies x by the allocation"
+                            + " 'weight', so 'weight' is not written inside it: write"
+                            + " SUM(amount) for SUM(amount * weight), and SUM(1) for SUM(weight);"
+                            + " SUM(1) is the sum of the allocations");
+        }
+
+        @Test
         @DisplayName("LP mode: allocation column name clashing with an input column is rejected")
         void lpModeAllocationColumnClash() {
             // "amount" already exists in Orders (order_id, user_id, amount, status)

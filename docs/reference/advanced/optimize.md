@@ -10,8 +10,12 @@ OPTIMIZE MAXIMIZE|MINIMIZE SUM(<objective>)
 OPTIMIZE ALLOCATE (<lo>, <hi>) MAXIMIZE|MINIMIZE SUM(<objective>)
   SUBJECT TO SUM(<expr>) <=|>=|= <bound> -> <col> [PER <keys>] (Relation)
 -- returns every input row plus the allocation column <col>
+-- each SUM(x) already multiplies x by <col>, so <col> is not written inside it;
+-- SUM(1) is the sum of the allocations
 
 OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(weight) <= 100 PER region (Candidates)
+OPTIMIZE ALLOCATE (0.1, 0.5) MAXIMIZE SUM(expected_return)
+  SUBJECT TO SUM(1) = 1.0 -> share (Channels)
 
 # Description:
 OPTIMIZE solves an optimisation problem directly in a query. In its default mode
@@ -27,7 +31,11 @@ subset of candidate rows that maximises/minimises SUM(objective) subject to one
 or more SUM(expr) ≤|≥|= bound constraints; output = the chosen input rows (schema
 = input — a windowed filter). ALLOCATE mode is an LP: each row gets a continuous
 variable in [lo, hi]; all rows are returned with an appended allocation column
-(-> col). PER is optional (absent = whole relation). Solved by the installed
+(-> col). That column is the LP's variable, so each SUM(x) of ALLOCATE, in the
+objective and in every constraint, is Σ x · col over the rows: MAXIMIZE
+SUM(expected_return) maximises the allocation's expected return, and SUM(1) = 1.0
+makes the allocations sum to 1. The column is not one of the input's and is not
+written inside a SUM; SUM(expected_return * share) is refused with the rewrite. PER is optional (absent = whole relation). Solved by the installed
 mathematical-programming solver (ojAlgo ships with Relix). Tied optima are
 settled by rule: the fewest rows, then the earliest in input order, so the
 result does not depend on the solver's search. A group the solver

@@ -489,7 +489,7 @@ equation          ::= operand "=" operand
 solve_start       ::= name "=" operand
 
 /* OPTIMIZE MAXIMIZE SUM(value) SUBJECT TO SUM(weight) <= 50 PER owner (Items)
-   OPTIMIZE ALLOCATE (0, 1) MINIMIZE SUM(cost) SUBJECT TO SUM(share) = 1 -> share (Plans) */
+   OPTIMIZE ALLOCATE (0, 1) MINIMIZE SUM(cost) SUBJECT TO SUM(1) = 1 -> share (Plans) */
 optimize          ::= "OPTIMIZE" objective "SUBJECT" "TO" constraints per_identifiers? input
                     | "OPTIMIZE" "ALLOCATE" "(" signed_number "," signed_number ")"
                       objective "SUBJECT" "TO" constraints arrow IDENTIFIER
