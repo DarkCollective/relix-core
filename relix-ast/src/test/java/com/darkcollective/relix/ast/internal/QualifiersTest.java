@@ -60,6 +60,16 @@ final class QualifiersTest {
     }
 
     @Test
+    @DisplayName("a reference to a FIX binder answers to the binder's name (#241)")
+    void recursiveReference() {
+        assertThat(Qualifiers.inScope(recRef("Reach"))).containsExactly("reach");
+        RelNode step = join(rel("E"), recRef("Reach"),
+                cmp(attr("E.dst"), ComparisonOperator.EQUAL, attr("Reach.src")));
+        assertThat(Qualifiers.inScope(fixpoint("Reach", rel("E"), step)))
+                .containsExactlyInAnyOrder("e", "reach");
+    }
+
+    @Test
     @DisplayName("a leaf with no relation name contributes nothing")
     void truthLiteral() {
         assertThat(Qualifiers.inScope(unitRel())).isEmpty();
