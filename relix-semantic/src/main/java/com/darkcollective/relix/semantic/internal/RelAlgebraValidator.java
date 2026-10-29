@@ -20,8 +20,10 @@ import com.darkcollective.relix.semantic.SemanticError;
 import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.AggregateOperator;
 import com.darkcollective.relix.ast.AggregationNode;
+import com.darkcollective.relix.ast.AllocationSpec;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.AntiJoinNode;
+import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.AsOfJoinNode;
 import com.darkcollective.relix.ast.internal.AttributeNames;
@@ -93,6 +95,7 @@ import com.darkcollective.relix.ast.ShuffleNode;
 import com.darkcollective.relix.ast.SortNode;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.SourceLocation;
+import com.darkcollective.relix.ast.Spelling;
 import com.darkcollective.relix.ast.StructConstruction;
 import com.darkcollective.relix.ast.SymmetricDifferenceNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
@@ -636,14 +639,20 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             }
         }
 
-        checkColumnsExist(node.objective(), input, node.location());
+        // The allocation column is the LP's variable, implied in every SUM(…) of ALLOCATE.
+        Optional<String> allocation = node.allocation()
+                .map(AllocationSpec::columnName)
+                .filter(name -> !input.declares(name));
+        allocation.ifPresent(column -> rejectAllocationInSums(node, column));
+
+        checkColumnsExist(node.objective(), input, node.location(), allocation);
 
         if (node.constraints().isEmpty()) {
             error(node.location(),
                     "Optimize OPTIMIZE: at least one constraint (SUBJECT TO …) is required");
         }
         for (OptimizeConstraint c : node.constraints()) {
-            checkColumnsExist(c.expr(), input, node.location());
+            checkColumnsExist(c.expr(), input, node.location(), allocation);
             if (c.op() != ComparisonOperator.LESS_EQUAL
                     && c.op() != ComparisonOperator.GREATER_EQUAL
                     && c.op() != ComparisonOperator.EQUAL) {
@@ -663,13 +672,81 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     }
 
     /**
+     * Refuses the allocation column written inside ALLOCATE's sums, as an LP is written
+     * on paper: {@code MAXIMIZE SUM(expected_return * share) SUBJECT TO SUM(share) = 1
+     * -> share}.
+     *
+     * <p>Each {@code SUM(x)} of ALLOCATE already means the sum of {@code x} times each
+     * row's allocation, so the column is not one of the input's, and reporting it as
+     * missing sends the writer looking for another name for it. The error says what the
+     * sums mean, and rewrites each one that names the column: a product with it drops
+     * the factor, and the column alone is {@code SUM(1)}, the sum of the allocations.
+     */
+    private void rejectAllocationInSums(OptimizeNode node, String column) {
+        List<Operand> sums = new ArrayList<>();
+        sums.add(node.objective());
+        node.constraints().forEach(c -> sums.add(c.expr()));
+        Set<String> rewrites = new LinkedHashSet<>();
+        boolean named = false;
+        for (Operand sum : sums) {
+            boolean[] mentions = {false};
+            OperandWalker.walk(sum,
+                    a -> mentions[0] |= a.unqualifiedName().equalsIgnoreCase(column),
+                    f -> { });
+            if (!mentions[0]) {
+                continue;
+            }
+            named = true;
+            withoutAllocation(sum, column).ifPresent(rewritten -> rewrites.add("SUM("
+                    + rewritten.prettyPrint(Spelling.KEYWORDS) + ") for SUM("
+                    + sum.prettyPrint(Spelling.KEYWORDS) + ")"));
+        }
+        if (!named) {
+            return;
+        }
+        error(node.location(), "Optimize OPTIMIZE ALLOCATE: SUM(x) already multiplies x by"
+                + " the allocation '" + column + "', so '" + column + "' is not written inside"
+                + " it: write " + (rewrites.isEmpty() ? "SUM(x) for SUM(x * " + column + ")"
+                        : String.join(", and ", rewrites))
+                + "; SUM(1) is the sum of the allocations");
+    }
+
+    /**
+     * {@code sum} without its factor of the allocation {@code column}: {@code 1} for the
+     * column alone, the other side of a product with it, and empty for anything else.
+     */
+    private static Optional<Operand> withoutAllocation(Operand sum, String column) {
+        if (sum instanceof AttributeOperand a && a.unqualifiedName().equalsIgnoreCase(column)) {
+            return Optional.of(new NumberOperand("1", a.location()));
+        }
+        if (sum instanceof BinaryArithmeticExpression product
+                && product.operator() == ArithmeticOperator.MULTIPLY) {
+            if (product.right() instanceof AttributeOperand a
+                    && a.unqualifiedName().equalsIgnoreCase(column)) {
+                return Optional.of(product.left());
+            }
+            if (product.left() instanceof AttributeOperand a
+                    && a.unqualifiedName().equalsIgnoreCase(column)) {
+                return Optional.of(product.right());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Verifies that every {@link AttributeOperand} reachable in {@code expr} names
      * a column of {@code input}.  Functions, arithmetic, and literals are walked
-     * (their column references checked); other constructs are ignored.
+     * (their column references checked); other constructs are ignored. The ALLOCATE
+     * column {@code allocation}, refused by {@link #rejectAllocationInSums}, is not
+     * reported again.
      */
-    private void checkColumnsExist(Operand expr, Schema input, SourceLocation loc) {
+    private void checkColumnsExist(Operand expr, Schema input, SourceLocation loc,
+                                   Optional<String> allocation) {
         OperandWalker.walk(expr,
                 a -> {
+                    if (allocation.filter(a.unqualifiedName()::equalsIgnoreCase).isPresent()) {
+                        return;
+                    }
                     if (input.column(a.unqualifiedName()).isEmpty()) {
                         columnNotFound(loc, "Optimize OPTIMIZE: column", a.name(), input);
                     }
