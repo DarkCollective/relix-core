@@ -71,7 +71,12 @@ public final class RelAlgebraParser {
      */
     private final Deque<String> recursiveBinders = new ArrayDeque<>();
 
-    private record ProjectionOperands(List<ProjectedAttribute> operands, boolean hadComma) {
+    /**
+     * A projection's parsed list, and where in {@link #consumed} its last attribute's
+     * text begins, for an error that quotes it back.
+     */
+    private record ProjectionOperands(List<ProjectedAttribute> operands, boolean hadComma,
+                                      int lastStart) {
     }
 
     private RelAlgebraParser(String input) {
@@ -1284,6 +1289,7 @@ public final class RelAlgebraParser {
 
     private ProjectionNode parseProjection() {
         Token opTok = current;
+        int start = consumed.size();
         expect(TokenType.PROJECT, "Expected 'π'");
         if (current.type() == TokenType.DISTINCT && startsSqlDistinctColumns(1)) {
             rejectSqlDistinct(opTok.lexeme() + " takes no DISTINCT");
@@ -1300,18 +1306,11 @@ public final class RelAlgebraParser {
         }
         int itemsEnd = consumed.size();
 
-        if (attributes.hadComma() && current.type() == TokenType.EOF) {
-            throw error(new Token(
-                    current.type(),
-                    current.lexeme(),
-                    current.literal(),
-                    current.line(),
-                    current.column() + 1
-            ), "Expected '(' after projection attribute list");
-        }
-
         if (current.type() == TokenType.OVER) {
             rejectOverInProjection(opTok, itemsStart);
+        }
+        if (current.type() != TokenType.LPAREN) {
+            rejectMisplacedProjectionInput(start, attributes);
         }
         int inputStart = consumed.size();
         RelNode input = parseParenthesizedRelation("Expected '(' after projection attribute list");
@@ -3866,16 +3865,201 @@ public final class RelAlgebraParser {
 
     private ProjectionOperands parseProjectionOperandList() {
         List<ProjectedAttribute> operands = new ArrayList<>();
+        int lastStart = consumed.size();
         operands.add(parseProjectedAttribute());
         boolean hadComma = false;
 
         while (match(TokenType.COMMA)) {
             hadComma = true;
             rejectStarItem();
+            lastStart = consumed.size();
             operands.add(parseProjectedAttribute());
         }
 
-        return new ProjectionOperands(List.copyOf(operands), hadComma);
+        return new ProjectionOperands(List.copyOf(operands), hadComma, lastStart);
+    }
+
+    /** The window functions {@code WINDOW} takes, by their upper-cased names. */
+    private static final Set<String> WINDOW_FUNCTIONS = Set.of("ROW_NUMBER", "RANK",
+            "DENSE_RANK", "PERCENT_RANK", "NTILE", "CUME_DIST", "LAG", "LEAD", "FIRST_VALUE",
+            "LAST_VALUE", "NTH_VALUE");
+
+    /**
+     * Refuses a projection whose list is not followed by its input in parentheses,
+     * saying which mistake put something else there.
+     *
+     * <p>What follows the list tells them apart: a relation name or an operator written
+     * without the parentheses, nothing at all after a row of constants (which is an
+     * inline table, not a projection), SQL's {@code FROM}, {@code WHERE} or {@code DIV},
+     * a condition written as a value, or a window function written as a column. Each
+     * message rewrites the writer's own expression where it can. Anything else keeps
+     * the plain message.
+     *
+     * @param start      where in {@link #consumed} the {@code PROJECT} keyword is
+     * @param attributes the list as parsed
+     */
+    private void rejectMisplacedProjectionInput(int start, ProjectionOperands attributes) {
+        Token opTok = consumed.get(start);
+        String keyword = opTok.lexeme();
+        String list = written(start, consumed.size(), keyword);
+        int lastStart = attributes.lastStart();
+        Operand last = attributes.operands().getLast().expression();
+        String lastText = joined(consumed.subList(lastStart, consumed.size()));
+        String before = written(start, lastStart, keyword).replaceAll(",$", "");
+        String beside = lastStart == start + 1 ? before + " " : before + ", ";
+
+        if (last instanceof FunctionCall call
+                && WINDOW_FUNCTIONS.contains(call.functionName().toUpperCase(Locale.ROOT))
+                && (current.type() == TokenType.SORT || current.type() == TokenType.OVER)) {
+            String rewrite = beside + "rn (WINDOW " + lastText
+                    + " SORT k ASC PER g AS rn (R))";
+            if (current.type() == TokenType.SORT) {
+                String tail = restOfExpression();
+                java.util.regex.Matcher alias = java.util.regex.Pattern
+                        .compile("\\bAS (\\w+) \\(", java.util.regex.Pattern.CASE_INSENSITIVE)
+                        .matcher(tail);
+                if (alias.find() && tail.length() <= 80) {
+                    rewrite = beside + alias.group(1) + " (WINDOW " + lastText + " "
+                            + tail + ")";
+                }
+            }
+            throw refusal(current, "A window function is WINDOW, its own operator, and"
+                    + " cannot be a column of " + keyword + ": write " + rewrite);
+        }
+        if (isWord(current, "DIV")) {
+            Token div = current;
+            String rewrite = "Int(a / b)";
+            try {
+                advance();
+                int rightStart = consumed.size();
+                parseOperand();
+                rewrite = "Int(" + lastText + " / "
+                        + joined(consumed.subList(rightStart, consumed.size())) + ")";
+            } catch (ParseException ignored) {
+                // The example stays generic.
+            }
+            throw refusal(div, "Relix has no DIV: for the whole part of a division, write " + rewrite);
+        }
+        if (startsConditionTail() || current.type() == TokenType.OR
+                || current.type() == TokenType.AND) {
+            Token at = current;
+            String rewrite = "(a > 2) -> big";
+            try {
+                parseOrPredicate(last);
+                String condition = "("
+                        + joined(consumed.subList(lastStart, consumed.size())) + ")";
+                rewrite = condition + " -> name";
+                if (match(TokenType.ARROW) && isNameToken(current)) {
+                    rewrite = condition + " -> " + current.lexeme();
+                }
+            } catch (ParseException ignored) {
+                // The example stays generic.
+            }
+            throw refusal(at, "A condition as a value goes in parentheses: write " + rewrite);
+        }
+        if (isWord(current, "FROM")) {
+            String input = isNameToken(peek(1)) ? peek(1).lexeme() : "R";
+            throw refusal(current, "Relix has no FROM: the input relation goes in parentheses"
+                    + " after the list, as in " + list + " (" + input + ")");
+        }
+        if (isWord(current, "WHERE")) {
+            throw refusal(current, "Relix has no WHERE: a filter is SELECT, written around"
+                    + " the input, as in " + list + " (SELECT v > 1 (R))");
+        }
+        if (current.type() == TokenType.EOF) {
+            // After a comma, the place the input is missing from is past the end.
+            Token end = attributes.hadComma() ? new Token(current.type(), current.lexeme(),
+                    current.literal(), current.line(), current.column() + 1) : current;
+            if (attributes.operands().stream().allMatch(a -> isConstant(a.expression()))) {
+                List<String> columns = attributes.operands().stream()
+                        .map(a -> a.alias().orElse("c")).toList();
+                List<String> values = new ArrayList<>();
+                for (ProjectedAttribute a : attributes.operands()) {
+                    values.add(a.expression() instanceof StringOperand text ? text.value()
+                            : a.expression().prettyPrint(Spelling.KEYWORDS));
+                }
+                throw refusal(end, keyword + " needs an input relation in parentheses."
+                        + " A row of constants is an inline table, a statement of its own:"
+                        + " write Name := [| " + String.join(" | ", columns) + " |], with the"
+                        + " row | " + String.join(" | ", values) + " | on the next line, then ];");
+            }
+            if (consumed.get(lastStart).type() == TokenType.LPAREN
+                    && last instanceof AttributeOperand) {
+                // π (Users), or π id, (Users): the input was read as a column.
+                String columns = lastStart == start + 1 ? keyword + " a, b" : before;
+                throw refusal(end, "'" + lastText + "' was read as a column, and the input"
+                        + " relation is missing: the list of columns comes first, then the"
+                        + " input in parentheses, as in " + columns + " " + lastText);
+            }
+            throw refusal(end, keyword + " takes its input relation in parentheses after"
+                    + " the list: write " + list + " (R)");
+        }
+        if (isNameToken(current) && !isPrefixOperator(current.type())
+                && current.type() != TokenType.AS) {
+            throw refusal(current, "The input relation goes in parentheses: write " + list
+                    + " (" + shortened(restOfExpression()) + ")");
+        }
+        if (startsRelationOperator(current.type())) {
+            throw refusal(current, "The input goes in parentheses: write " + list
+                    + " (" + shortened(restOfExpression()) + ")");
+        }
+    }
+
+    /** Whether {@code operand} is a literal: a number, string, boolean, temporal or null. */
+    private static boolean isConstant(Operand operand) {
+        return operand instanceof NumberOperand || operand instanceof StringOperand
+                || operand instanceof BooleanOperand || operand instanceof DateOperand
+                || operand instanceof TimeOperand || operand instanceof TimestampOperand
+                || operand instanceof DurationOperand || operand instanceof NullOperand;
+    }
+
+    /** True for the keywords {@link #parsePrefix} reads as an operator over an input. */
+    private static boolean startsRelationOperator(TokenType type) {
+        return switch (type) {
+            case PROJECT, SELECT, RENAME, AGGREGATION, SORT, ORDER, LIMIT, DISTINCT, UNNEST,
+                 CLOSURE, RCLOSURE, CLUSTER, PATH, TRACE, FIX, ITERATE, FORALL, SAMPLE,
+                 SHUFFLE, ROLL, SOLVE, OPTIMIZE, TOP, COVER, DOWNSAMPLE, ROLLING, WINDOW,
+                 SESSIONIZE, UNPIVOT, PIVOT, TREE, WHY -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * The text of {@code consumed} from {@code from} to {@code to}, or {@code keyword …}
+     * when it is too long to quote back.
+     */
+    private String written(int from, int to, String keyword) {
+        String text = joined(consumed.subList(from, to));
+        return text.length() > 80 ? keyword + " …" : text;
+    }
+
+    /** {@code text}, or {@code …} when it is too long to quote back. */
+    private static String shortened(String text) {
+        return text.length() > 80 ? "…" : text;
+    }
+
+    /**
+     * The source text from the current token to the end of the expression it is in:
+     * the end of the input, or the {@code )} that closes a parenthesis opened before it.
+     */
+    private String restOfExpression() {
+        int depth = 0;
+        int end = 0;
+        for (; ; end++) {
+            TokenType type = peek(end).type();
+            if (type == TokenType.EOF) {
+                break;
+            }
+            if (type == TokenType.LPAREN) {
+                depth++;
+            } else if (type == TokenType.RPAREN) {
+                if (depth == 0) {
+                    break;
+                }
+                depth--;
+            }
+        }
+        return sourceText(0, end);
     }
 
     private ProjectedAttribute parseProjectedAttribute() {
@@ -5504,7 +5688,8 @@ public final class RelAlgebraParser {
     /**
      * The lookahead tokens from {@code from} up to but excluding {@code to}, spaced as
      * they would be written: nothing around a dot, after an opening parenthesis or before
-     * a closing one or a comma.
+     * a closing one or a comma, and nothing before an opening one written against what
+     * precedes it, as a call's is.
      */
     private String sourceText(int from, int to) {
         List<Token> tokens = new ArrayList<>();
@@ -5517,18 +5702,26 @@ public final class RelAlgebraParser {
     /** {@code tokens} as source text, spaced as {@link #sourceText} describes. */
     private static String joined(List<Token> tokens) {
         StringBuilder text = new StringBuilder();
-        TokenType previous = null;
+        Token previous = null;
         for (Token token : tokens) {
             TokenType type = token.type();
-            if (previous != null && previous != TokenType.DOT && previous != TokenType.LPAREN
+            if (previous != null && previous.type() != TokenType.DOT
+                    && previous.type() != TokenType.LPAREN
                     && type != TokenType.DOT && type != TokenType.RPAREN
-                    && type != TokenType.COMMA) {
+                    && type != TokenType.COMMA
+                    && !(type == TokenType.LPAREN && adjacent(previous, token))) {
                 text.append(' ');
             }
             text.append(token.lexeme());
-            previous = type;
+            previous = token;
         }
         return text.toString();
+    }
+
+    /** Whether {@code next} was written against {@code previous}, as a call's {@code (} is. */
+    private static boolean adjacent(Token previous, Token next) {
+        return previous.line() == next.line()
+                && previous.column() + previous.lexeme().length() == next.column();
     }
 
     private static boolean isBinaryRelOperator(TokenType type) {
@@ -5770,6 +5963,11 @@ public final class RelAlgebraParser {
             lookahead.add(lexer.next());
         }
         return lookahead.get(offset);
+    }
+
+    /** An error whose message says all there is to say, without the token it found. */
+    private ParseException refusal(Token token, String message) {
+        return ParseException.at(message, lexer.input(), token);
     }
 
     private ParseException error(Token token, String message) {

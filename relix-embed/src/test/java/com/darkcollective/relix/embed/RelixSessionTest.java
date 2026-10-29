@@ -391,6 +391,34 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("a projection list followed by something other than its input in parentheses is told which mistake it is")
+        void projectionInputMistakesDiagnosed() {
+            String table = "Next := [| id | v |\n| 1 | 3 |];\n";
+            try (Relix relix = Relix.open()) {
+                Diagnostic bare = relix.validate(table + "q := { PROJECT id, v Next };\n").getFirst();
+                assertThat(bare.message()).isEqualTo("Syntax error in RA expression:"
+                        + " The input relation goes in parentheses: write PROJECT id, v (Next)");
+                assertThat(bare.location().orElseThrow().line()).isEqualTo(3);
+                assertThat(bare.location().orElseThrow().column()).isEqualTo(22);
+
+                Diagnostic constants = relix.validate(table
+                        + "Init := { PROJECT 201 -> room, 0 -> dist };\n").getFirst();
+                assertThat(constants.message()).isEqualTo("Syntax error in RA expression:"
+                        + " PROJECT needs an input relation in parentheses. A row of constants is"
+                        + " an inline table, a statement of its own: write"
+                        + " Name := [| room | dist |], with the row | 201 | 0 | on the next line,"
+                        + " then ];");
+
+                Diagnostic condition = relix.validate(table
+                        + "q := { PROJECT id, v > 2 -> big (Next) };\n").getFirst();
+                assertThat(condition.message()).isEqualTo("Syntax error in RA expression:"
+                        + " A condition as a value goes in parentheses: write (v > 2) -> big");
+                assertThat(relix.validate(table
+                        + "q := { PROJECT id, (v > 2) -> big (Next) };\n")).isEmpty();
+            }
+        }
+
+        @Test
         @DisplayName("a join or set operator written before its inputs is one error, at the operator, naming its infix form")
         void infixOperatorWrittenFirstDiagnosed() {
             String tables = "A := [| id |\n| 1 |];\nB := [| a_id |\n| 1 |];\n";

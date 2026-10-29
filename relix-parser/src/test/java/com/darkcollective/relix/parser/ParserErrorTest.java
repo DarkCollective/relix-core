@@ -54,22 +54,64 @@ final class ParserErrorTest extends ParserTestSupport {
     @Test
     public void reportsMissingProjectionAttribute() {
         assertParseError("π (Users)")
-                .hasMessageContaining("Expected '(' after projection attribute list")
+                .hasMessageContaining("'(Users)' was read as a column, and the input relation is"
+                        + " missing: the list of columns comes first, then the input in"
+                        + " parentheses, as in π a, b (Users)")
                 .at(1, 10);
     }
 
     @Test
     public void reportsTrailingProjectionComma() {
         assertParseError("π id, (Users)")
-                .hasMessageContaining("Expected '(' after projection attribute list")
+                .hasMessageContaining("as in π id (Users)")
                 .at(1, 15);
     }
 
     @Test
     public void reportsMissingProjectionInputParen() {
         assertParseError("π id Users")
-                .hasMessageContaining("Expected '(' after projection attribute list")
+                .hasMessageContaining("The input relation goes in parentheses: write π id (Users)")
                 .at(1, 6);
+    }
+
+    @Test
+    @DisplayName("what follows a projection's list says which mistake left out its input's parentheses")
+    public void reportsWhatFollowsTheProjectionList() {
+        assertParseError("PROJECT id SELECT v > 1 (R)")
+                .hasMessageContaining("The input goes in parentheses: write PROJECT id (SELECT v > 1 (R))")
+                .at(1, 12);
+        assertParseError("PROJECT 201 -> room, 0 -> dist")
+                .hasMessageContaining("PROJECT needs an input relation in parentheses. A row of"
+                        + " constants is an inline table, a statement of its own: write"
+                        + " Name := [| room | dist |], with the row | 201 | 0 | on the next"
+                        + " line, then ];");
+        assertParseError("PROJECT id, v")
+                .hasMessageContaining("PROJECT takes its input relation in parentheses after the"
+                        + " list: write PROJECT id, v (R)");
+        assertParseError("PROJECT r1.id FROM R r1")
+                .hasMessageContaining("Relix has no FROM: the input relation goes in parentheses"
+                        + " after the list, as in PROJECT r1.id (R)")
+                .at(1, 15);
+        assertParseError("PROJECT id, v WHERE v > 1 (R)")
+                .hasMessageContaining("Relix has no WHERE: a filter is SELECT, written around the"
+                        + " input, as in PROJECT id, v (SELECT v > 1 (R))");
+        assertParseError("PROJECT id, v > 2 -> big (R)")
+                .hasMessageContaining("A condition as a value goes in parentheses: write (v > 2) -> big")
+                .at(1, 15);
+        assertParseError("PROJECT id, v IS NULL OR v < 0 (R)")
+                .hasMessageContaining("write (v IS NULL OR v < 0) -> name");
+        assertParseError("PROJECT id, ROW_NUMBER() SORT at ASC PER grp AS rn (R)")
+                .hasMessageContaining("A window function is WINDOW, its own operator, and cannot"
+                        + " be a column of PROJECT: write PROJECT id, rn (WINDOW ROW_NUMBER()"
+                        + " SORT at ASC PER grp AS rn (R))")
+                .at(1, 26);
+        assertParseError("PROJECT id, v DIV 2 -> half (R)")
+                .hasMessageContaining("Relix has no DIV: for the whole part of a division,"
+                        + " write Int(v / 2)")
+                .at(1, 15);
+        // A token none of these explains keeps the plain message.
+        assertParseError("PROJECT id ] (R)")
+                .hasMessageContaining("Expected '(' after projection attribute list");
     }
 
     @Test
@@ -162,10 +204,11 @@ final class ParserErrorTest extends ParserTestSupport {
     public void foreignAliasNeedsItsShape() {
         assertParseError("PROJECT a AS (loans)")
                 .hasMessageContaining("Expected '(' after projection attribute list");
+        // Not renames: a comparison, which as a column is a condition in parentheses.
         assertParseError("PROJECT 1 = a (loans)")
-                .hasMessageContaining("Expected '(' after projection attribute list");
+                .hasMessageContaining("A condition as a value goes in parentheses: write (1 = a) -> name");
         assertParseError("PROJECT a + 1 = b (loans)")
-                .hasMessageContaining("Expected '(' after projection attribute list");
+                .hasMessageContaining("write (a + 1 = b) -> name");
         assertParseError("GROUP k, COUNT(*) -> n, total (loans)")
                 .hasMessageContaining("Expected '(' after aggregation expression");
     }
