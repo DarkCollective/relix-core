@@ -760,6 +760,8 @@ public final class ScriptParser {
                 throw error("A schema block applies to inline tables, whose cells it types;"
                         + " a view's columns take the types of its expression");
             }
+            consumeSemicolonAfterBrace(raw, brace);
+            return new AssignmentStatement(exported, name, body, loc(startTok));
         }
 
         consumeSemicolon();
@@ -851,7 +853,7 @@ public final class ScriptParser {
             current = lexer.next();
             RelNode relBody = delegateToRaParser(relRaw, relBrace, null);
 
-            consumeSemicolon();
+            consumeSemicolonAfterBrace(relRaw, relBrace);
             return new DefRelationStatement(exported, name,
                     Collections.unmodifiableList(params), relBody, loc(startTok));
         }
@@ -872,7 +874,7 @@ public final class ScriptParser {
         current = lexer.next();
         Operand body = delegateToOperandParser(raw, brace);
 
-        consumeSemicolon();
+        consumeSemicolonAfterBrace(raw, brace);
         return new DefStatement(exported, name,
                 Collections.unmodifiableList(params), returnType, body, loc(startTok));
     }
@@ -932,12 +934,12 @@ public final class ScriptParser {
             LangLexer.RawBlock raw = rawBraceBlock(brace);
             current = lexer.next();
             target = new ExpressionQueryTarget(delegateToRaParser(raw, brace, null));
+            consumeSemicolonAfterBrace(raw, brace);
         } else {
             // query NAME ;
             target = new NamedQueryTarget(requireName("query target name"));
+            consumeSemicolon();
         }
-
-        consumeSemicolon();
         return new QueryStatement(target, loc(startTok));
     }
 
@@ -1591,6 +1593,29 @@ public final class ScriptParser {
         }
         lastSemicolon = current;
         advance();
+    }
+
+    /**
+     * Consumes the {@code ;} after a braced statement's closing brace. Without it, the
+     * message shows the statement with its {@code ;} in place, since a writer who put one
+     * inside the braces, {@code query { R ; }}, believes the statement already ends with
+     * one.
+     */
+    private void consumeSemicolonAfterBrace(LangLexer.RawBlock raw, LangToken brace) {
+        if (current.type() == LangTokenType.SEMICOLON) {
+            consumeSemicolon();
+            return;
+        }
+        boolean inside = raw.text().strip().endsWith(";");
+        throw new LangParseException("A statement ends with ';' after its closing brace"
+                + (inside ? ", not before it" : "") + ": write " + statementText(brace) + " { "
+                + expressionText(raw.text()) + " };", current.line(), current.column());
+    }
+
+    /** A braced expression's text on one line, without its comments or a ';' before its '}'. */
+    private static String expressionText(String text) {
+        String line = withoutComments(text);
+        return line.endsWith(";") ? line.substring(0, line.length() - 1).strip() : line;
     }
 
     /**
