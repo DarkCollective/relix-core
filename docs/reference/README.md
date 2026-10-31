@@ -30,6 +30,7 @@ detail on one of those four moves.
 |------|--------------|
 | [Getting started](getting-started.md) | Your first script — declare data, name a result, run it |
 | [Glossary](glossary.md) | The vocabulary: relation, tuple, bag vs set, materialisation, pushdown |
+| [Operators by task](operators-by-task.md) | The operator for each task SQL has no operator for, named in a question's words |
 
 ## 2. Language & scripts
 

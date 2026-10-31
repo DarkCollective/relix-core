@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.docs;
 
+import com.darkcollective.relix.function.FunctionCatalog;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +24,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -95,6 +98,28 @@ final class ReferencePagesTest {
                 assertThat(RelixDocs.referencePage(path).orElseThrow()).as(word).contains(word);
             }
         });
+    }
+
+    @Test
+    @DisplayName("every page the operators-by-task page links is served, so a renamed page fails here")
+    void operatorsByTaskLinksResolve() {
+        String page = RelixDocs.referencePage("operators-by-task.md").orElseThrow();
+        FunctionCatalog functions = FunctionCatalog.discover();
+        List<String> links = new ArrayList<>();
+        Matcher m = Pattern.compile("\\]\\(([^)#]+\\.md)\\)").matcher(page);
+        while (m.find()) {
+            links.add(m.group(1));
+        }
+        assertThat(links).hasSizeGreaterThan(30)
+                .contains("operators/window-offset.md", "advanced/closure.md", "operators/why.md",
+                        "set-operations/symmetric-difference.md", "set-operations/union-all.md",
+                        "operators/rolling.md", "functions/datetime/age.md");
+        assertThat(links).as("links neither the reference nor an installed library serves")
+                .filteredOn(path -> RelixDocs.referencePage(path).isEmpty()
+                        && functions.documentation(path).isEmpty())
+                .isEmpty();
+        assertThat(lookup("operators by task")).isEqualTo("operators-by-task.md");
+        assertThat(lookup("which operator")).isEqualTo("operators-by-task.md");
     }
 
     @Test
