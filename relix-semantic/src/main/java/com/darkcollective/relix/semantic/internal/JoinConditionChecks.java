@@ -143,7 +143,10 @@ final class JoinConditionChecks {
      *
      * <p>The result keeps the left input's column under the shared name and calls the
      * right's {@code name_r}, so a later {@code PROJECT name} reads the left one whether
-     * or not that was meant, and the result's heading does not show it. A column the
+     * or not that was meant, and the result's heading does not show it. So the warning
+     * says what a later bare name reads, and that the right column is read by its new
+     * name, which a reference through a view can use too, where a qualified
+     * {@code devices.name} no longer resolves (#249). A column the
      * condition equates across the inputs ({@code A.id = B.id}) is quiet when
      * {@code keyCopiesEqual}, since its two copies then hold the same value on every row;
      * under a right or full outer join they do not, as an unmatched right row has no left
@@ -200,12 +203,16 @@ final class JoinConditionChecks {
                         .map(r -> "RENAME (" + rightColumn + " -> " + r.toLowerCase(Locale.ROOT) + "_"
                                 + rightColumn + ") (" + r + ")")
                         .orElse("RENAME (" + rightColumn + " -> new_name) (…) around the right input");
+                String read = "A later " + name + " reads "
+                        + leftName.map(l -> l + "." + name).orElse("the left input's " + name) + "; write "
+                        + renamed + " to read "
+                        + rightName.map(r -> r + "." + rightColumn).orElse("the right input's " + rightColumn) + ". ";
                 warnings.add(opName + ": both inputs have '" + name + "': the result keeps "
                         + leftName.map(l -> l + "." + name).orElse("the left input's " + name)
                         + " as '" + name + "' and calls "
                         + rightName.map(r -> r + "." + rightColumn).orElse("the right input's " + rightColumn)
-                        + " '" + renamed + "'. To keep both under names of your own, rename one first: "
-                        + rename);
+                        + " '" + renamed + "'. " + read + "To keep both under names of your own,"
+                        + " rename one first: " + rename);
             }
         }
         return warnings;

@@ -55,8 +55,29 @@ final class JoinColumnClashTest {
                 .hasNoErrors()
                 .hasDiagnosticCount(1)
                 .hasErrorContaining("both inputs have 'name': the result keeps GarageRooms.name as 'name' "
-                        + "and calls devices.name 'name_r'. To keep both under names of your own, rename "
+                        + "and calls devices.name 'name_r'. A later name reads GarageRooms.name; write "
+                        + "name_r to read devices.name. To keep both under names of your own, rename "
                         + "one first: RENAME (name -> devices_name) (devices)");
+    }
+
+    @Test
+    @DisplayName("the warning says what a later bare name reads, and names the right column's new name (#249)")
+    void laterReadNamed() {
+        String view = "J := { rooms >< rooms.room_id = devices.room_id devices };\n";
+        assertThat(analyze(TABLES + view + "query { GROUP room_id, COLLECT(name) -> device_names (J) };"))
+                .hasNoErrors()
+                .hasDiagnosticCount(1)
+                .hasErrorContaining("A later name reads rooms.name; write name_r to read devices.name.");
+        // The name it gives reads the right column through the view.
+        assertThat(analyze(TABLES + view + "query { GROUP room_id, COLLECT(name_r) -> device_names (J) };"))
+                .hasNoErrors()
+                .hasDiagnosticCount(1);
+        // An input with no name is described by its position.
+        assertThat(query("rooms >< rooms.room_id = devices.room_id (devices × UNIT)"))
+                .hasErrorContaining("A later name reads rooms.name; write name_r to read the right input's name.");
+        assertThat(query("rooms ⨝ 1 = 1 rooms"))
+                .hasErrorContaining("A later name reads the left input's name; write name_r to read the right"
+                        + " input's name.");
     }
 
     @ParameterizedTest(name = "{0}")
