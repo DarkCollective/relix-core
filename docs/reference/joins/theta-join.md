@@ -54,7 +54,7 @@ result's heading does not show it. So `⨝`, `⟕`, `⟖`, `⟗` and `ASOF` give
 name and what the other's is called:
 
 ```
-warning: Theta join ⋈: both inputs have 'name': the result keeps GarageRooms.name as 'name' and calls devices.name 'name_r'. To keep both under names of your own, rename one first: RENAME (name -> devices_name) (devices)
+warning: Theta join ⋈: both inputs have 'name': the result keeps GarageRooms.name as 'name' and calls devices.name 'name_r'. A later name reads GarageRooms.name; write name_r to read devices.name. To keep both under names of your own, rename one first: RENAME (name -> devices_name) (devices)
 ```
 
 A column the condition equates across the inputs, as `room_id` in
