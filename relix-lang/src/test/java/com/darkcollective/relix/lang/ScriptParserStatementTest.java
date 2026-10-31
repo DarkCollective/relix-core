@@ -404,5 +404,27 @@ class ScriptParserStatementTest {
             assertThatThrownBy(() -> parse("E := { PROJECT id \\ (R) };"))
                     .hasMessageContaining("Unexpected character");
         }
+    
+
+        @Test
+        @DisplayName("a missing ';' after a braced statement shows the statement with its ';' in place (#248)")
+        void semicolonAfterBrace() {
+            assertThatThrownBy(() -> parse("Result := { PROJECT path -> stop, pos -> position (Edges) ; };\n"
+                    + "query { SORT position ASC (Result) ; }"))
+                    .hasMessage("A statement ends with ';' after its closing brace, not before it:"
+                            + " write query { SORT position ASC (Result) }; (line 2, col 39)");
+            assertThatThrownBy(() -> parse("V := { R }\nquery V;"))
+                    .hasMessage("A statement ends with ';' after its closing brace: write V := { R };"
+                            + " (line 2, col 1)");
+            assertThatThrownBy(() -> parse("def f(x: NUMBER) : NUMBER := { x * 2 }"))
+                    .hasMessageContaining(": write def f(x: NUMBER) : NUMBER := { x * 2 };");
+            assertThatThrownBy(() -> parse("def g(E: RELATION(a)) : RELATION := { E }"))
+                    .hasMessageContaining(": write def g(E: RELATION(a)) : RELATION := { E };");
+            // A named query, and an inline table, keep the plain message.
+            assertThatThrownBy(() -> parse("query R"))
+                    .hasMessageContaining("Expected ';' to terminate statement");
+            assertThatThrownBy(() -> parse("T := [| a |\n| 1 |]"))
+                    .hasMessageContaining("Expected ';' to terminate statement");
+        }
     }
 }
