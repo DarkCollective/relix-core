@@ -82,6 +82,14 @@ public final class ScriptParser {
     private final String filePath;
     LangToken current;
 
+    /**
+     * A set operator written after a closing brace and before an opening one, as SQL writes
+     * {@code (SELECT …) UNION (SELECT …)}: {@code { A } UNION { B }}.
+     */
+    private static final Pattern SET_OPERATOR_BETWEEN_BRACES = Pattern.compile(
+            "\\s*(UNION\\s+ALL|UNION|UALL|OUNION|DIFF|MINUS|EXCEPT|INTERSECT|INTER|SYMDIFF|[∪⊎⊔−∆∩-])\\s*\\{",
+            Pattern.CASE_INSENSITIVE);
+
     /** The first token of the statement being parsed, {@code private} included: where its text starts. */
     private LangToken statementStart;
 
@@ -750,6 +758,7 @@ public final class ScriptParser {
             LangToken brace = requireBraceToken();
             LangLexer.RawBlock raw = rawBraceBlock(brace);
             rejectBracedTable(raw, brace);
+            rejectSetOperatorBetweenBraces(raw, brace);
             current = lexer.next();
             body = new QueryAssignmentBody(delegateToRaParser(raw, brace, name));
             if (current.type() == LangTokenType.REFERENCES) {
@@ -850,6 +859,7 @@ public final class ScriptParser {
             // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
             LangToken relBrace = requireBraceToken();
             LangLexer.RawBlock relRaw = rawBraceBlock(relBrace);
+            rejectSetOperatorBetweenBraces(relRaw, relBrace);
             current = lexer.next();
             RelNode relBody = delegateToRaParser(relRaw, relBrace, null);
 
@@ -932,6 +942,7 @@ public final class ScriptParser {
             // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
             LangToken brace = current;
             LangLexer.RawBlock raw = rawBraceBlock(brace);
+            rejectSetOperatorBetweenBraces(raw, brace);
             current = lexer.next();
             target = new ExpressionQueryTarget(delegateToRaParser(raw, brace, null));
             consumeSemicolonAfterBrace(raw, brace);
@@ -1610,6 +1621,106 @@ public final class ScriptParser {
         throw new LangParseException("A statement ends with ';' after its closing brace"
                 + (inside ? ", not before it" : "") + ": write " + statementText(brace) + " { "
                 + expressionText(raw.text()) + " };", current.line(), current.column());
+    }
+
+    /**
+     * Refuses a set operator written between two braced blocks, {@code V := { A } UNION
+     * { B };}, as SQL writes {@code (SELECT …) UNION (SELECT …)}: the operator joins two
+     * expressions inside one pair of braces. Checked before the next token is read, since
+     * the statement lexer has no token for a glyph such as {@code ∪}.
+     *
+     * <p>The message writes the statement with the blocks' braces removed. Where that
+     * would bind differently from the braces, {@code { A } ∩ { B ∪ C }}, each block keeps
+     * parentheses instead; where a block does not parse, the operator is shown between
+     * ellipses.
+     */
+    private void rejectSetOperatorBetweenBraces(LangLexer.RawBlock raw, LangToken brace) {
+        String input = lexer.input();
+        int end = input.length();
+        List<String> blocks = new ArrayList<>(List.of(expressionText(raw.text())));
+        List<String> operators = new ArrayList<>();
+        int at = lexer.position();
+        int first = -1;
+        String written = null;
+        Matcher m = SET_OPERATOR_BETWEEN_BRACES.matcher(input).region(at, end);
+        while (m.lookingAt()) {
+            int close = closingBrace(input, m.end(), end);
+            if (close < 0) {
+                break;
+            }
+            String operator = m.group(1).replaceAll("\\s+", " ");
+            if (first < 0) {
+                first = m.start(1);
+                written = operator;
+            }
+            operators.add(operator.equalsIgnoreCase("UNION ALL") ? "UALL" : operator);
+            blocks.add(expressionText(input.substring(m.end(), close)));
+            at = close + 1;
+            m.region(at, end);
+        }
+        if (operators.isEmpty()) {
+            return;
+        }
+        String bare = joined(blocks, operators, "", "");
+        String grouped = joined(blocks, operators, "(", ")");
+        String expression;
+        try {
+            String meaning = RelAlgebraParser.parse(grouped).prettyPrint();
+            expression = parsesTo(bare, meaning) ? bare : grouped;
+        } catch (ParseException e) {
+            expression = "… " + operators.getFirst() + " …";
+        }
+        int[] position = positionOf(first);
+        throw new LangParseException("'" + written + "' combines two expressions inside one pair of"
+                + " braces, not two braced blocks: write " + statementText(brace) + " { " + expression
+                + " };", position[0], position[1]);
+    }
+
+    /** The blocks with the operators between them, each block between {@code open} and {@code close}. */
+    private static String joined(List<String> blocks, List<String> operators, String open, String close) {
+        StringBuilder out = new StringBuilder(open + blocks.getFirst() + close);
+        for (int i = 0; i < operators.size(); i++) {
+            out.append(' ').append(operators.get(i)).append(' ').append(open).append(blocks.get(i + 1)).append(close);
+        }
+        return out.toString();
+    }
+
+    /** Whether {@code text} parses to the tree printed as {@code meaning}. */
+    private static boolean parsesTo(String text, String meaning) {
+        try {
+            return RelAlgebraParser.parse(text).prettyPrint().equals(meaning);
+        } catch (ParseException e) {
+            return false;
+        }
+    }
+
+    /**
+     * The offset of the <code>&#125;</code> closing the brace whose content starts at
+     * {@code from}, outside strings and comments, before {@code end}; -1 when there is none.
+     */
+    private static int closingBrace(String input, int from, int end) {
+        int depth = 0;
+        for (int i = from; i < end; i++) {
+            char c = input.charAt(i);
+            if (input.startsWith("--", i) || input.startsWith("/*", i)) {
+                int close = input.startsWith("--", i) ? input.indexOf('\n', i) : input.indexOf("*/", i + 2);
+                if (close < 0) {
+                    return -1;
+                }
+                i = close;
+            } else if (c == '"' || c == '\'') {
+                int close = input.indexOf(c, i + 1);
+                if (close < 0) {
+                    return -1;
+                }
+                i = close;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}' && depth-- == 0) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /** A braced expression's text on one line, without its comments or a ';' before its '}'. */

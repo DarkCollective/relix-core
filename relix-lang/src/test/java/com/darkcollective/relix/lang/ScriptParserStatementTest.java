@@ -23,6 +23,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
 import static com.darkcollective.relix.ast.AstAssertions.assertThat;
@@ -405,6 +406,62 @@ class ScriptParserStatementTest {
                     .hasMessageContaining("Unexpected character");
         }
     
+
+        @Test
+        @DisplayName("a set operator between two braced blocks is told it goes inside one pair of braces (#246)")
+        void setOperatorBetweenBraces() {
+            assertThatThrownBy(() -> parse("Adj := { PROJECT room_a -> a, room_b -> b (room_links) } UNION"
+                    + " { PROJECT room_b -> a, room_a -> b (room_links) };"))
+                    .hasMessage("'UNION' combines two expressions inside one pair of braces, not two braced"
+                            + " blocks: write Adj := { PROJECT room_a -> a, room_b -> b (room_links) UNION"
+                            + " PROJECT room_b -> a, room_a -> b (room_links) }; (line 1, col 58)");
+            // A glyph, which the statement lexer has no token for; a query; a ';' left inside.
+            assertThatThrownBy(() -> parse("query { R ; }\n  ∪ { S };"))
+                    .hasMessage("'∪' combines two expressions inside one pair of braces, not two braced"
+                            + " blocks: write query { R ∪ S }; (line 2, col 3)");
+            assertThatThrownBy(() -> parse("def both(A: RELATION(x), B: RELATION(x)) : RELATION :="
+                    + " { A } except { B };"))
+                    .hasMessageContaining("write def both(A: RELATION(x), B: RELATION(x)) : RELATION :="
+                            + " { A except B };");
+            // SQL's UNION ALL is UALL; each further block joins in.
+            assertThatThrownBy(() -> parse("V := { R } UNION ALL { S } ⊎ { T };"))
+                    .hasMessageStartingWith("'UNION ALL' combines")
+                    .hasMessageContaining("write V := { R UALL S ⊎ T };");
+            // Where dropping the braces would bind differently, each block keeps parentheses.
+            assertThatThrownBy(() -> parse("V := { R } INTERSECT { S UNION T };"))
+                    .hasMessageContaining("write V := { (R) INTERSECT (S UNION T) };");
+            // A block that does not parse: the operator between ellipses.
+            assertThatThrownBy(() -> parse("V := { R } − { SELECT (S) };"))
+                    .hasMessageContaining("write V := { … − … };");
+            // Every suggested rewrite parses.
+            for (String rewrite : List.of(
+                    "Adj := { PROJECT room_a -> a, room_b -> b (room_links) UNION"
+                            + " PROJECT room_b -> a, room_a -> b (room_links) };",
+                    "V := { R UALL S ⊎ T };", "V := { (R) INTERSECT (S UNION T) };")) {
+                assertThat(parse(rewrite).statements()).as(rewrite).hasSize(1);
+            }
+            // A '}' in a comment or a string, or a nested brace, does not close the block.
+            assertThatThrownBy(() -> parse("V := { R } UNION { S -- not }\n};"))
+                    .hasMessageContaining("write V := { R UNION S };");
+            assertThatThrownBy(() -> parse("V := { R } UNION { S /* } */ };"))
+                    .hasMessageContaining("write V := { R UNION S };");
+            assertThatThrownBy(() -> parse("V := { R } UNION { SELECT a = \"}\" (S) };"))
+                    .hasMessageContaining("write V := { R UNION SELECT a = \"}\" (S) };");
+            assertThatThrownBy(() -> parse("V := { R } UNION { SELECT a = '}' (S) };"))
+                    .hasMessageContaining("write V := { R UNION SELECT a = '}' (S) };");
+            assertThatThrownBy(() -> parse("V := { R } UNION { PROJECT {k: a} -> s (S) };"))
+                    .hasMessageContaining("write V := { R UNION PROJECT {k: a} -> s (S) };");
+            // An unclosed comment or string after the operator: as before.
+            assertThatThrownBy(() -> parse("V := { R } UNION { S /* };"))
+                    .hasMessageNotContaining("combines");
+            assertThatThrownBy(() -> parse("V := { R } UNION { S \" };"))
+                    .hasMessageNotContaining("combines");
+            // An operator not followed by a brace, or a block never closed: as before.
+            assertThatThrownBy(() -> parse("V := { R } UNION S;"))
+                    .hasMessageStartingWith("A statement ends with ';' after its closing brace");
+            assertThatThrownBy(() -> parse("V := { R } UNION { S"))
+                    .hasMessageNotContaining("combines");
+        }
 
         @Test
         @DisplayName("a missing ';' after a braced statement shows the statement with its ';' in place (#248)")
