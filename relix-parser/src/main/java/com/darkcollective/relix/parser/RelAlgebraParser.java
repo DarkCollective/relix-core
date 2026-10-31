@@ -1295,6 +1295,7 @@ public final class RelAlgebraParser {
      * {@link Operand} expressions; an empty argument list is permitted.
      */
     private RelationFunctionCall parseRelationFunctionCall(String name, Token startTok) {
+        rejectExpressionArgument(name);
         expect(TokenType.LPAREN, "Expected '(' for function call arguments");
         List<Operand> args = new ArrayList<>();
         if (current.type() != TokenType.RPAREN) {
@@ -1305,6 +1306,72 @@ public final class RelAlgebraParser {
         }
         expect(TokenType.RPAREN, "Expected ')' after function call arguments");
         return new RelationFunctionCall(name, args, loc(startTok));
+    }
+
+    /**
+     * Refuses a relational expression written as a table-valued function's argument,
+     * {@code out_degree(σ kind = "blocks" (E))}. An argument is a scalar, or the name of a
+     * relation for a relation parameter, so the expression fails as a scalar and the
+     * message would describe that failure; it is named as a view instead. An argument
+     * counts only when it parses as a relation expression and is more than a name or a
+     * call, which a scalar argument can also be. {@code current} is the call's {@code (}.
+     */
+    private void rejectExpressionArgument(String name) {
+        List<List<Token>> arguments = new ArrayList<>();
+        List<Token> argument = new ArrayList<>();
+        int depth = 0;
+        try {
+            for (int i = 1; ; i++) {
+                Token token = peek(i);
+                if (token.type() == TokenType.EOF) {
+                    return;
+                }
+                if (depth == 0 && (token.type() == TokenType.COMMA || token.type() == TokenType.RPAREN)) {
+                    arguments.add(argument);
+                    if (token.type() == TokenType.RPAREN) {
+                        break;
+                    }
+                    argument = new ArrayList<>();
+                    continue;
+                }
+                if (token.type() == TokenType.LPAREN) {
+                    depth++;
+                } else if (token.type() == TokenType.RPAREN) {
+                    depth--;
+                }
+                argument.add(token);
+            }
+        } catch (ParseException e) {
+            return;   // the call's own parse reports it
+        }
+        for (int i = 0; i < arguments.size(); i++) {
+            List<Token> tokens = arguments.get(i);
+            if (tokens.isEmpty() || !isRelationExpression(joined(tokens))) {
+                continue;
+            }
+            List<String> written = new ArrayList<>();
+            for (List<Token> each : arguments) {
+                written.add(each == tokens ? "Input" : joined(each));
+            }
+            String expression = joined(tokens);
+            if (tokens.getFirst().type() == TokenType.LPAREN && tokens.getLast().type() == TokenType.RPAREN
+                    && isRelationExpression(joined(tokens.subList(1, tokens.size() - 1)))) {
+                expression = joined(tokens.subList(1, tokens.size() - 1));
+            }
+            throw refusal(tokens.getFirst(), name + " takes a relation's name as its argument, not an"
+                    + " expression: name the expression as a view first, Input := { " + expression
+                    + " }; then " + name + "(" + String.join(", ", written) + ")");
+        }
+    }
+
+    /** Whether {@code text} parses as a relation expression that is more than a name or a call. */
+    private static boolean isRelationExpression(String text) {
+        try {
+            RelNode node = parse(text);
+            return !(node instanceof RelationNode) && !(node instanceof RelationFunctionCall);
+        } catch (ParseException e) {
+            return false;
+        }
     }
 
     private ProjectionNode parseProjection() {

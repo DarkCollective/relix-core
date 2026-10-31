@@ -399,6 +399,37 @@ final class RelixSessionTest {
         }
 
         @Test
+        @DisplayName("the issues' scripts get the message that names their fix (#246, #247, #248)")
+        void issueScriptsNameTheirFix() {
+            String links = "issue_links := [| from_issue | to_issue | kind |\n| 1 | 2 | blocks |];\n";
+            try (Relix relix = Relix.open()) {
+                Diagnostic argument = relix.validate(links
+                        + "def out_degree(E: RELATION(src, dst)) : RELATION := { γ src, COUNT(*) -> out (E) };\n"
+                        + "query { out_degree(σ kind = \"blocks\" (RENAME (from_issue -> src, to_issue -> dst)"
+                        + " (issue_links))) };\n").getFirst();
+                assertThat(argument.message()).isEqualTo("Syntax error in RA expression: out_degree takes"
+                        + " a relation's name as its argument, not an expression: name the expression as a view"
+                        + " first, Input := { σ kind = \"blocks\" (RENAME (from_issue -> src, to_issue -> dst)"
+                        + " (issue_links)) }; then out_degree(Input)");
+                assertThat(relix.validate(links
+                        + "def out_degree(E: RELATION(src, dst)) : RELATION := { γ src, COUNT(*) -> out (E) };\n"
+                        + "Input := { σ kind = \"blocks\" (RENAME (from_issue -> src, to_issue -> dst)"
+                        + " (issue_links)) };\nquery { out_degree(Input) };\n")).isEmpty();
+
+                Diagnostic union = relix.validate("room_links := [| room_a | room_b |\n| 1 | 2 |];\n"
+                        + "Adj := { PROJECT room_a -> a, room_b -> b (room_links) } UNION"
+                        + " { PROJECT room_b -> a, room_a -> b (room_links) };\nquery { Adj };\n").getFirst();
+                assertThat(union.message()).startsWith("'UNION' combines two expressions inside one pair"
+                        + " of braces, not two braced blocks: write Adj := {");
+
+                Diagnostic semicolon = relix.validate("Edges := [| path | pos |\n| a | 1 |];\n"
+                        + "query { SORT pos ASC (Edges) ; }").getFirst();
+                assertThat(semicolon.message()).isEqualTo("A statement ends with ';' after its closing"
+                        + " brace, not before it: write query { SORT pos ASC (Edges) };");
+            }
+        }
+
+        @Test
         @DisplayName("a projection list followed by something other than its input in parentheses is told which mistake it is")
         void projectionInputMistakesDiagnosed() {
             String table = "Next := [| id | v |\n| 1 | 3 |];\n";
