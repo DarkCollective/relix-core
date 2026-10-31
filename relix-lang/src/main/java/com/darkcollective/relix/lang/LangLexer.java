@@ -148,6 +148,11 @@ final class LangLexer {
         return input;
     }
 
+    /** Returns the offset of the next character to be read: just past a raw block's close. */
+    int position() {
+        return pos;
+    }
+
     // =========================================================================
     // Token scanning
     // =========================================================================
