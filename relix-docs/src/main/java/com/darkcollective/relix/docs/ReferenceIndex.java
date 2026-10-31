@@ -175,6 +175,9 @@ final class ReferenceIndex {
             e("glossary.md",               "guide", "Glossary",          "glossary",
               "The vocabulary — relation, tuple, bag vs set, materialisation, pushdown",
               "glossary", "terms", "terminology", "vocabulary"),
+            e("operators-by-task.md",      "guide", "Operators by task", "operators-by-task",
+              "The operator for each task SQL has no operator for, named in a question's words",
+              "operators by task", "task", "tasks", "which operator", "sql lacks"),
 
             // ── Unary operators ──────────────────────────────────────────────
             e("operators/select.md",       "operator", "Selection",         "σ",
