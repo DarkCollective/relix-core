@@ -357,6 +357,7 @@ final class PushdownCorpus {
         groups.put("DATE_TRUNC — one truncation, spelled differently per dialect", dateTrunc());
         groups.put("NOW() — evaluated once here, and pushed as the value", clockCalls());
         groups.put("string functions, over names chosen to break a careless spelling", strings());
+        groups.put("hash functions, over names whose UTF-8 bytes are not ASCII", hashes());
         groups.put("math functions, over exact decimals", maths());
         groups.put("the transcendentals, which answer in floating point", transcendentals());
         groups.put("the transcendentals outside their domain", transcendentalDomains());
@@ -666,6 +667,22 @@ final class PushdownCorpus {
                 "π oid, Nz(amount, 0) → c (Orders)",
                 "π oid, IsNull(amount) → missing (Orders)",
                 "σ Coalesce(code, region) = 'east' (Orders)");
+    }
+
+    /**
+     * The digests, over the names chosen for the string functions: a tab, an 'ß' and an
+     * astral character are each bytes a backend hashing anything but UTF-8 would hash
+     * differently. Each folds where its spelling is offered and nowhere else.
+     */
+    private static List<Case> hashes() {
+        Set<Dialect> md5 = EnumSet.of(Dialect.POSTGRES, Dialect.MYSQL, Dialect.DUCKDB);
+        return List.of(
+                Case.of("π cid, MD5(name) → h (Customers)", md5),
+                Case.of("π cid, SHA256(name) → h (Customers)", md5),
+                Case.of("π cid, SHA1(name) → h (Customers)", EnumSet.of(Dialect.MYSQL)),
+                Case.of("π cid, SHA2(name, 512) → h (Customers)", EnumSet.of(Dialect.MYSQL)),
+                Case.of("σ MD5(tier) = 'e07e81c20cf5935f5225765f0af81755' (Customers)", md5),
+                Case.declined("π cid, HASHBYTES('MD5', name) → h (Customers)"));
     }
 
     /**
