@@ -1,8 +1,9 @@
-# Name: Union All (⊎ / UALL)
+# Name: Union All (⊎ / UALL / UNION ALL)
 
 # Syntax:
 Relation1 ⊎ Relation2
 Relation1 UALL Relation2
+Relation1 UNION ALL Relation2
 
 JanuarySales ⊎ FebruarySales
 

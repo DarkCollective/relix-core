@@ -17,6 +17,7 @@ package com.darkcollective.relix.parser;
 
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.AntiJoinNode;
+import com.darkcollective.relix.ast.DifferenceNode;
 import com.darkcollective.relix.ast.DistinctNode;
 import com.darkcollective.relix.ast.LeftOuterJoinNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
@@ -25,6 +26,7 @@ import com.darkcollective.relix.ast.RenameNode;
 import com.darkcollective.relix.ast.SelectionNode;
 import com.darkcollective.relix.ast.ThetaJoinNode;
 import com.darkcollective.relix.ast.TopKNode;
+import com.darkcollective.relix.ast.UnionAllNode;
 import com.darkcollective.relix.ast.UnionNode;
 import com.darkcollective.relix.ast.UsingJoinNode;
 import java.util.List;
@@ -781,6 +783,56 @@ final class ParserErrorTest extends ParserTestSupport {
         // A column named distinct still reads as one.
         assertThat(parse("SELECT distinct = 1 (T)")).isNode(SelectionNode.class);
         assertThat(parse("PROJECT distinct, a (T)")).isNode(ProjectionNode.class);
+    }
+
+    @Test
+    @DisplayName("an aggregate GROUP does not have is reported as unknown, listing those it has (#254)")
+    public void reportsUnknownAggregate() {
+        String list = "; GROUP's aggregates are SUM, AVG, COUNT, MIN, MAX, COLLECT, ARGMAX, ARGMIN,";
+        assertParseError("GROUP g, MODE(x) -> m (T)")
+                .hasMessageContaining("Unknown aggregate: 'MODE'" + list)
+                .hasMessageContaining(", MEDIAN, STRING_AGG and GROUPING")
+                .at(1, 10);
+        assertParseError("GROUP g, CORR(x, k) -> c (T)").hasMessageContaining("Unknown aggregate: 'CORR';");
+        assertParseError("γ BOOL_AND(b) -> all_b (T)").hasMessageContaining("Unknown aggregate: 'BOOL_AND';");
+        // After a known aggregate, too.
+        assertParseError("GROUP g, COUNT(*) -> n, MODE(x) -> m (T)")
+                .hasMessageContaining("Unknown aggregate: 'MODE'" + list)
+                .at(1, 25);
+        // A typo of one is named.
+        assertParseError("GROUP g, COUNT(*) -> n, MEDAIN(x) -> m (T)")
+                .hasMessageContaining("Unknown aggregate: 'MEDAIN' — did you mean 'MEDIAN'?;");
+        // Of two as close, the first: MIN before MAX.
+        assertParseError("GROUP g, MAN(x) -> m (T)")
+                .hasMessageContaining("Unknown aggregate: 'MAN' — did you mean 'MIN'?;");
+        // A call without an alias, or within one, is passed over for the one that has it.
+        assertParseError("GROUP COALESCE(a, b), MODE(x) -> m (T)")
+                .hasMessageContaining("Unknown aggregate: 'MODE';");
+        // Keys with no call keep the DISTINCT rewrite; a key beside an aggregate is a key.
+        assertParseError("GROUP g, k (T)").hasMessageContaining("GROUP needs an aggregate after its keys");
+        assertThat(parse("GROUP UPPER(g) -> u, COUNT(*) -> n (T)")).isNode(AggregationNode.class);
+        assertParseError("GROUP g, COUNT(*) -> n, k (T)")
+                .hasMessageContaining("Expected '(' after aggregation expression");
+    }
+
+    @Test
+    @DisplayName("EXCEPT ALL and INTERSECT ALL are refused, and UNION ALL is ⊎ (#255)")
+    public void reportsSetOperatorAll() {
+        assertParseError("(PROJECT x (T)) EXCEPT ALL (PROJECT x (T))")
+                .hasMessageContaining("EXCEPT ALL is SQL's multiset form, and Relix's set operators"
+                        + " work on sets: EXCEPT returns each row once. Write EXCEPT without ALL;"
+                        + " the operator that keeps repeats is UNION ALL (⊎)")
+                .at(1, 24);
+        assertParseError("T INTERSECT ALL (T)")
+                .hasMessageContaining("INTERSECT ALL is SQL's multiset form")
+                .hasMessageContaining("Write INTERSECT without ALL");
+        assertParseError("T EXCEPT ALL(Input)").hasMessageContaining("EXCEPT ALL is SQL's multiset form");
+        assertThat(parse("(PROJECT x (T)) UNION ALL (PROJECT x (T))")).isNode(UnionAllNode.class);
+        assertThat(parse("A UNION ALL B ∪ C")).isNode(UnionNode.class);
+        // A relation named ALL is still one.
+        assertThat(parse("T EXCEPT ALL")).isNode(DifferenceNode.class);
+        assertThat(parse("(T UNION ALL)")).isNode(UnionNode.class);
+        assertThat(parse("T EXCEPT ALL ∪ S")).isNode(UnionNode.class);
     }
 
     @Test

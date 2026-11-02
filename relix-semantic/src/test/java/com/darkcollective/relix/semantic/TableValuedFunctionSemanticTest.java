@@ -86,11 +86,17 @@ final class TableValuedFunctionSemanticTest {
         }
 
         @Test
-        @DisplayName("calling an undefined table-valued function is an error")
+        @DisplayName("calling an undefined table-valued function is one error")
         void unknownFunction() {
             SemanticResult r = analyze(ORDERS + "query { mystery(2) };");
-            assertThat(r).messages().anyMatch(e -> e.contains("Undefined table-valued function")
-                    || e.contains("Unknown table-valued function"));
+            assertThat(r).messages().containsExactly("Unknown table-valued function: 'mystery'");
+        }
+
+        @Test
+        @DisplayName("an undefined table-valued function in LATERAL is one error")
+        void unknownLateralFunction() {
+            SemanticResult r = analyze(ORDERS + "query { Orders LATERAL mystery(2) };");
+            assertThat(r).messages().containsExactly("Unknown table-valued function: 'mystery'");
         }
 
         @Test
