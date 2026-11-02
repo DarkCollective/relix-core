@@ -248,6 +248,18 @@ final class Category {
                 returnTypes, pushdown, body);
     }
 
+    /**
+     * {@code function}, with the argument at {@code index} accepting {@code types} rather
+     * than its declared type: a parameter declared ANY because it takes two types, say,
+     * which analysis would otherwise accept any argument for.
+     */
+    static ScalarFunction accepting(ScalarFunction function, int index, Set<ScalarType> types) {
+        if (!(function instanceof StrictScalarFunction strict)) {
+            throw new IllegalArgumentException(function.name() + " is not a strict function");
+        }
+        return new Accepting(strict, index, Set.copyOf(types));
+    }
+
     private ScalarFunction strict(String name, ScalarType returns,
                                   Set<FunctionProperty> properties,
                                   List<ParameterDefinition> parameters, Arity arity,
@@ -312,6 +324,41 @@ final class Category {
         @Override
         public ScalarType returnTypeFor(List<ScalarType> argumentTypes) {
             return returnTypes.apply(argumentTypes);
+        }
+    }
+
+    /** A strict function with a narrower set of types for one argument; otherwise the function itself. */
+    private record Accepting(StrictScalarFunction function, int index,
+                             Set<ScalarType> types) implements StrictScalarFunction {
+
+        @Override
+        public FunctionSignature signature() {
+            return function.signature();
+        }
+
+        @Override
+        public Value invoke(FunctionContext context, List<Value> arguments) {
+            return function.invoke(context, arguments);
+        }
+
+        @Override
+        public ScalarType returnTypeFor(List<ScalarType> argumentTypes) {
+            return function.returnTypeFor(argumentTypes);
+        }
+
+        @Override
+        public Set<ScalarType> argumentTypes(int argument) {
+            return argument == index ? types : function.argumentTypes(argument);
+        }
+
+        @Override
+        public PushdownSpelling pushdown() {
+            return function.pushdown();
+        }
+
+        @Override
+        public Optional<Blocking> blocking(Blocking.Bound bound, BigDecimal threshold) {
+            return function.blocking(bound, threshold);
         }
     }
 

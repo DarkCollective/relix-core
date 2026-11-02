@@ -15,11 +15,14 @@
  */
 package com.darkcollective.relix.function;
 
+import com.darkcollective.relix.symbol.ParameterDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
 
 import java.math.BigDecimal;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * One scalar function a library supplies: its {@linkplain FunctionSignature form} plus
@@ -74,6 +77,32 @@ public sealed interface ScalarFunction permits StrictScalarFunction, LazyScalarF
      */
     default ScalarType returnTypeFor(List<ScalarType> argumentTypes) {
         return signature().returnTypeFor(argumentTypes);
+    }
+
+    /**
+     * The types the argument at {@code index} may have, for analysis to accept a call
+     * before it runs.
+     *
+     * <p>Defaults to the parameter's declared type, or every type when the parameter is
+     * declared {@link ScalarType#ANY}, or {@code index} is past the declared parameters,
+     * or the function takes a range of argument counts, where an argument's position
+     * need not be its parameter's: {@code InStr(start, s, find)} beside
+     * {@code InStr(s, find)}.
+     * Override it for a parameter that takes several types but not every one — a date
+     * part that reads a {@code DATE} or a {@code TIMESTAMP} — so that a call passing
+     * any other is refused at analysis rather than when it runs. An argument whose type
+     * analysis cannot tell is always accepted.
+     *
+     * @param index the argument's position, from 0
+     * @return the accepted types; never empty
+     */
+    default Set<ScalarType> argumentTypes(int index) {
+        List<ParameterDefinition> parameters = signature().parameters();
+        if (index >= parameters.size() || parameters.get(index).type() == ScalarType.ANY
+                || !signature().arity().equals(Arity.exactly(parameters.size()))) {
+            return EnumSet.allOf(ScalarType.class);
+        }
+        return EnumSet.of(parameters.get(index).type());
     }
 
     /**

@@ -28,8 +28,11 @@ Monthly buckets:
   π id, DATE_TRUNC('month', created_at) → month (Accounts)
 
 # Limitations:
-The value must be a TIMESTAMP (not DATE/TIME). Units are year/month/day/hour/
-minute/second only. Truncation is at UTC. NULL in → NULL out.
+The value must be a TIMESTAMP or TIMESTAMPTZ, and analysis refuses any other type
+before the query runs. For a DATE, truncate its midnight:
+`DATE_TRUNC('month', CAST(d AS TIMESTAMP))`; for text that holds a timestamp, cast
+it the same way. Units are year/month/day/hour/minute/second only. Truncation is at
+UTC. NULL in → NULL out.
 
 # Pushdown:
 SQL: dialect-dependent, and the one built-in whose spelling differs in shape
