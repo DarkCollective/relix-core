@@ -285,6 +285,12 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                         error(fn.location(), "function '" + fn.functionName()
                                 + "' called with " + argCount
                                 + " argument(s) but expects " + resolved.expectedArity());
+                    } else {
+                        String argumentError = ArgumentTypes.error(fn, resolved,
+                                arg -> typeInferrer.infer(arg, schema));
+                        if (argumentError != null) {
+                            error(fn.location(), argumentError);
+                        }
                     }
                 }
             }

@@ -35,7 +35,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.darkcollective.relix.function.builtin.Arguments.integer;
@@ -160,9 +162,20 @@ final class SqlNames {
     /** A built-in called by another name. */
     private record Alias(FunctionSignature signature, StrictScalarFunction of) implements StrictScalarFunction {
 
+        /** Calls the built-in, and a failure it reports under its own name is reported under this one. */
         @Override
         public Value invoke(FunctionContext context, List<Value> arguments) {
-            return of.invoke(context, arguments);
+            try {
+                return of.invoke(context, arguments);
+            } catch (IllegalArgumentException e) {
+                throw reject(name() + ": " + String.valueOf(e.getMessage())
+                        .replaceFirst("^" + Pattern.quote(of.name()) + ": ", ""));
+            }
+        }
+
+        @Override
+        public Set<ScalarType> argumentTypes(int index) {
+            return of.argumentTypes(index);
         }
 
         @Override

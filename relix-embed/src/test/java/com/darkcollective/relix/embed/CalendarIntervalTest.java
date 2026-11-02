@@ -147,9 +147,9 @@ final class CalendarIntervalTest {
             for (String[] c : new String[][]{
                     {"DATEADD(fortnight, 1, DATE '2026-01-01')", "unknown unit"},
                     {"DATEADD(hour, 1, DATE '2026-01-01')", "a DATE moved by part of a day"},
-                    {"DATEADD(day, 'x', DATE '2026-01-01')", "expected a NUMBER"},
+                    {"DATEADD(day, 'x', DATE '2026-01-01')", "DATEADD's argument n must be a NUMBER, not a STRING"},
                     {"DATEADD(day, 1, 'x')", "expected DATE or TIMESTAMP"},
-                    {"DATE_ADD(DATE '2026-01-01', 3)", "expected a DURATION"}}) {
+                    {"DATE_ADD(DATE '2026-01-01', 3)", "DATE_ADD's argument interval must be a DURATION, not a NUMBER"}}) {
                 assertThatThrownBy(() -> value(relix, c[0])).as(c[0]).hasMessageContaining(c[1]);
             }
         }

@@ -2473,6 +2473,14 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 for (Operand arg : fn.arguments()) {
                     validateTemporalRules(arg, schema, inferrer);
                 }
+                // An unknown name or a wrong count is validateFunctionCall's to report.
+                ResolvedFunction resolved = ResolvedFunction.of(functions, fn.functionName(), symbolTable);
+                String argumentError = resolved.accepts(fn.arguments().size())
+                        ? ArgumentTypes.error(fn, resolved, arg -> inferrer.infer(arg, schema))
+                        : null;
+                if (argumentError != null) {
+                    error(fn.location(), "Projection π: " + argumentError);
+                }
             }
             case ConditionOperand cond ->
                     validateTemporalRules(cond.predicate(), schema, inferrer);

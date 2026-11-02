@@ -450,8 +450,27 @@ public final class OperandEvaluator {
             // A function must never leak a raw Java exception to the user: a bad
             // value in the data is an ordinary condition, and a stack trace is not
             // a diagnostic.
-            throw new EvaluationException(call.functionName() + ": " + e.getMessage(), e);
+            throw new EvaluationException(call.functionName() + ": "
+                    + unprefixed(e.getMessage(), function.name(), call.functionName()), e);
         }
+    }
+
+    /**
+     * {@code message} without the function's name in front, which a built-in writes by
+     * its own name ({@code "Sqr: …"} for SQRT). The call's name goes in front instead, so
+     * the message names the function once, as the script wrote it.
+     */
+    private static String unprefixed(String message, String... names) {
+        if (message == null) {
+            return null;
+        }
+        for (String name : names) {
+            String prefix = name + ": ";
+            if (message.regionMatches(true, 0, prefix, 0, prefix.length())) {
+                return message.substring(prefix.length());
+            }
+        }
+        return message;
     }
 
     /**
