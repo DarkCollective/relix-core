@@ -172,6 +172,20 @@ final class SqlPredicateSpellingsParserTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("SQL's COLLATE is refused with the spellings that compare and sort ignoring case")
+    void collateIsRefused() {
+        for (String input : new String[] {"τ s COLLATE 'en_US' (R)", "σ s COLLATE NOCASE = 'abc' (R)",
+                "π s COLLATE \"C\" → t (R)"}) {
+            assertParseError(input).hasMessageContaining(
+                    "Relix has no COLLATE: strings compare and sort by code point, so case matters."
+                    + " To compare ignoring case write LCase(s) = 'abc', or s ~* '^abc$';"
+                    + " to sort ignoring case write SORT LCase(s) (R)");
+        }
+        assertParsesTo("π collate (R)", parse("π `collate` (R)"));
+        assertParseError("σ s = t collate (R)").hasMessageNotContaining("COLLATE");
+    }
+
+    @Test
     @DisplayName("SQL's JSON arrows are refused with the call each one is")
     void jsonArrowsAreRefused() {
         for (String input : new String[] {"π doc ->> '$.a' (R)", "π doc -> '$.a' (R)"}) {
