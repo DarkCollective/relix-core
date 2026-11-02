@@ -63,9 +63,9 @@ import java.util.regex.Pattern;
  * itself in its {@code # Name: X (…)} heading, or the name when it has none. A function
  * with no {@code docKey}, or whose library serves no page under it, is not indexed.
  *
- * <p>SQL writes a conditional value with keywords, not a function, so the conditional
- * functions are keyed by them too: {@code case} and {@code case when} find
- * {@code Switch}, the multi-branch form, and {@code if} finds {@code IIf}. So are two
+ * <p>SQL writes a two-way conditional value as {@code IF}, which Relix has no function
+ * of that name for, so {@code if} finds {@code IIf}; SQL's {@code CASE} is a language
+ * page of its own. So are two
  * whose SQL name Relix does not take as a function: {@code timestampdiff} finds
  * {@code DATEDIFF}, which counts differently, and {@code ifnull} and {@code nvl} find
  * {@code Coalesce}.
@@ -89,7 +89,6 @@ public final class ReferenceLookup {
      * with, and SQL functions Relix has no function of that name for.
      */
     private static final Map<String, List<String>> SQL_KEYWORDS = Map.of(
-            "switch", List.of("case", "case when"),
             "iif", List.of("if"),
             "datediff", List.of("timestampdiff"),
             "coalesce", List.of("ifnull", "nvl"));

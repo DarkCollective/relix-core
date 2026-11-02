@@ -79,6 +79,9 @@ final class PredicateAttributeCollectorTest {
         Map<String, Operand> forms = new LinkedHashMap<>();
         forms.put("arithmetic", arith(attr("a"), ArithmeticOperator.PLUS, attr("b")));
         forms.put("function call", func("Coalesce", attr("a"), attr("b")));
+        // A condition argument, as IIf and a CASE (Switch) carry: its columns were missed.
+        forms.put("condition argument", func("IIf", condition(cmp(attr("a"), ComparisonOperator.GREATER, attr("b"))),
+                num("1"), num("0")));
         forms.put("unary", unary(arith(attr("a"), ArithmeticOperator.PLUS, attr("b"))));
         forms.put("set literal", set(attr("a"), attr("b")));
         forms.put("struct", structOf(field("l", attr("a")), field("r", attr("b"))));

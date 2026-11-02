@@ -110,6 +110,8 @@ parse to the identical tree; the canonical form is what gets printed back.
 | `COUNT(*)` | `COUNT(1)` | AggregateFunction(COUNT, number `1`) |
 | `a \|\| b` | `a + b` | arithmetic `+` |
 | `x % y` | `Mod(x, y)` | function call |
+| `CASE WHEN x > 1 THEN a ELSE b END` | `Switch(x > 1, a, b)` | function call |
+| `CASE x WHEN 1 THEN a END` | `Switch(x = 1, a)` | function call |
 | `'it''s'` | `"it's"` | string literal |
 | `1e6`, `2.5E-3` | `1000000`, `0.0025` | number literal |
 

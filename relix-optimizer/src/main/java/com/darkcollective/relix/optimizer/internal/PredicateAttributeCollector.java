@@ -15,29 +15,15 @@
  */
 package com.darkcollective.relix.optimizer.internal;
 
-import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.internal.AttributeNames;
-import com.darkcollective.relix.ast.AttributeOperand;
-import com.darkcollective.relix.ast.BinaryArithmeticExpression;
-import com.darkcollective.relix.ast.ComparisonPredicate;
-import com.darkcollective.relix.ast.ElementOfPredicate;
-import com.darkcollective.relix.ast.FunctionCall;
-import com.darkcollective.relix.ast.NotPredicate;
-import com.darkcollective.relix.ast.NullPredicate;
-import com.darkcollective.relix.ast.Operand;
-import com.darkcollective.relix.ast.OrPredicate;
-import com.darkcollective.relix.ast.PatternPredicate;
+import com.darkcollective.relix.ast.internal.OperandWalker;
 import com.darkcollective.relix.ast.Predicate;
-import com.darkcollective.relix.ast.ArrayConstruction;
-import com.darkcollective.relix.ast.SetLiteralOperand;
-import com.darkcollective.relix.ast.StructConstruction;
-import com.darkcollective.relix.ast.UnaryOperand;
 
 import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Utility that collects all {@link AttributeOperand} names referenced anywhere
+ * Utility that collects all {@link com.darkcollective.relix.ast.AttributeOperand} names referenced anywhere
  * in a {@link Predicate} tree.
  *
  * <p>Used by selection pushdown rules (SEL-003..005) to decide which columns a
@@ -64,7 +50,9 @@ public final class PredicateAttributeCollector {
      */
     static Set<String> collectNames(Predicate predicate) {
         var names = new HashSet<String>();
-        collectFromPredicate(predicate, names);
+        // The walker is exhaustive over the sealed operand kinds, so a column read inside
+        // a condition argument — IIf(x > 3, …), or a CASE, which is Switch — is counted.
+        OperandWalker.walk(predicate, attr -> names.add(attr.name()), fn -> { });
         return Set.copyOf(names);
     }
 
@@ -80,52 +68,5 @@ public final class PredicateAttributeCollector {
      */
     static String columnPart(String attrName) {
         return AttributeNames.stripQualifier(attrName);
-    }
-
-    // =========================================================================
-    // Private traversal
-    // =========================================================================
-
-    private static void collectFromPredicate(Predicate p, Set<String> names) {
-        switch (p) {
-            case ComparisonPredicate c -> {
-                collectFromOperand(c.left(), names);
-                collectFromOperand(c.right(), names);
-            }
-            case AndPredicate a -> {
-                collectFromPredicate(a.left(), names);
-                collectFromPredicate(a.right(), names);
-            }
-            case OrPredicate o -> {
-                collectFromPredicate(o.left(), names);
-                collectFromPredicate(o.right(), names);
-            }
-            case NotPredicate n       -> collectFromPredicate(n.predicate(), names);
-            case NullPredicate n      -> collectFromOperand(n.operand(), names);
-            case ElementOfPredicate e -> {
-                collectFromOperand(e.element(), names);
-                collectFromOperand(e.setExpression(), names);
-            }
-            case PatternPredicate pp -> {
-                collectFromOperand(pp.operand(), names);
-                collectFromOperand(pp.pattern(), names);
-            }
-        }
-    }
-
-    private static void collectFromOperand(Operand op, Set<String> names) {
-        switch (op) {
-            case AttributeOperand a           -> names.add(a.name());
-            case BinaryArithmeticExpression b -> {
-                collectFromOperand(b.left(), names);
-                collectFromOperand(b.right(), names);
-            }
-            case FunctionCall f               -> f.arguments().forEach(arg -> collectFromOperand(arg, names));
-            case UnaryOperand u               -> collectFromOperand(u.operand(), names);
-            case SetLiteralOperand s          -> s.elements().forEach(el -> collectFromOperand(el, names));
-            case StructConstruction struct    -> struct.fields().forEach(f -> collectFromOperand(f.value(), names));
-            case ArrayConstruction array      -> array.elements().forEach(el -> collectFromOperand(el, names));
-            default                           -> {} // NumberOperand, StringOperand, BooleanOperand — no attrs
-        }
     }
 }

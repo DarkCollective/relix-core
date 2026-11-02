@@ -55,13 +55,14 @@ when they differ; a NULL branch takes the other's. A NULL condition yields NULL 
 Nz / Coalesce specifically for substituting a value when something is NULL.
 
 # SQL names:
-SQL's `CASE WHEN c THEN a ELSE b END` is `IIf(c, a, b)`, and MySQL's and a spreadsheet's
-`IF(c, a, b)` is the same, except that a NULL condition gives NULL here where `IF` and
-`ELSE` give `b`. There is no IF function or CASE expression: a `CASE` with more than one
-`WHEN` is [Switch](switch.md).
+MySQL's and a spreadsheet's `IF(c, a, b)` is `IIf(c, a, b)`, except that a NULL
+condition gives NULL here where `IF` gives `b`. SQL's `CASE WHEN c THEN a ELSE b END`
+is written as it is ([CASE](../../language/case.md)), and takes the `ELSE` for a NULL
+condition as SQL's does: it is `Switch(c, a, b)` rather than `IIf(c, a, b)`. There is no
+IF function.
 
 # See Also:
-[switch](switch.md), [choose](choose.md), [nz](nz.md), [coalesce](coalesce.md), [isnull](../typecheck/isnull.md), [comparison](../../predicates/comparison.md)
+[CASE](../../language/case.md), [switch](switch.md), [choose](choose.md), [nz](nz.md), [coalesce](coalesce.md), [isnull](../typecheck/isnull.md), [comparison](../../predicates/comparison.md)
 
 # Notes:
 For "replace NULL with a default" the dedicated Nz/Coalesce read more clearly than
