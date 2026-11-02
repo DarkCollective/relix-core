@@ -183,6 +183,18 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
                 "π Switch(x = 1, a) → c (R)");
         row("`'it''s'`", "π 'it''s' → s (R)", "π \"it's\" → s (R)");
         row("`1e6`, `2.5E-3`", "π 1e6 → a, 2.5E-3 → b (R)", "π 1000000 → a, 0.0025 → b (R)");
+        rowOfGroups("`b IS TRUE` / `b IS NOT TRUE`", List.of(
+                List.of("σ b IS TRUE (R)", "σ b = TRUE ∧ b ≠ ⊥ (R)"),
+                List.of("σ b IS NOT TRUE (R)", "σ b = FALSE ∨ b = ⊥ (R)")));
+        row("`b IS UNKNOWN`", "σ b IS UNKNOWN (R)", "σ b = ⊥ (R)");
+        row("`(a, b) = (1, 2)`", "σ (a, b) = (1, 2) (R)", "σ a = 1 ∧ b = 2 (R)");
+        row("`(a, b) < (1, 2)`", "σ (a, b) < (1, 2) (R)", "σ a < 1 ∨ (a = 1 ∧ b < 2) (R)");
+        row("`(a, b) IN ((1, 2), (3, 4))`", "σ (a, b) IN ((1, 2), (3, 4)) (R)",
+                "σ (a = 1 ∧ b = 2) ∨ (a = 3 ∧ b = 4) (R)");
+        row("`x IN (1, 2)`", "σ x IN (1, 2) (R)", "σ x ∈ {1, 2} (R)");
+        row("`x > ALL (1, 2)`", "σ x > ALL (1, 2) (R)", "σ x > 1 ∧ x > 2 (R)");
+        row("`x = ANY (1, 2)`, `x = SOME (1, 2)`", "σ x = ANY (1, 2) (R)", "σ x = SOME (1, 2) (R)",
+                "σ x = 1 ∨ x = 2 (R)");
         row("`a IS NOT DISTINCT FROM b`", "σ a IS NOT DISTINCT FROM b (R)",
                 "σ (a = b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b = ⊥) (R)");
     }

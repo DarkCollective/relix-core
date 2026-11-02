@@ -89,6 +89,32 @@ final class PredicateSimplificationPassTest {
             assertThat(ctx).fired(OptimizationCode.PRED_001, 1);
         }
 
+        @Test @DisplayName("p AND (q AND TRUE) → p AND q  (only the right side simplifies)")
+        void onlyTheRightSideSimplifies() {
+            var p         = cmp(attr("age"), ComparisonOperator.GREATER, num("18"));
+            var q         = cmp(attr("score"), ComparisonOperator.LESS, num("5"));
+            var tautology = cmp(num("5"), ComparisonOperator.LESS, num("10"));
+
+            RelNode result = apply(sel(and(p, and(q, tautology))));
+
+            var newSel = (SelectionNode) result;
+            assertThat(newSel.predicate()).isEqualTo(and(p, q));
+            assertThat(ctx).fired(OptimizationCode.PRED_001, 1);
+        }
+
+        @Test @DisplayName("(q AND TRUE) AND p → q AND p  (only the left side simplifies)")
+        void onlyTheLeftSideSimplifies() {
+            var p         = cmp(attr("age"), ComparisonOperator.GREATER, num("18"));
+            var q         = cmp(attr("score"), ComparisonOperator.LESS, num("5"));
+            var tautology = cmp(num("5"), ComparisonOperator.LESS, num("10"));
+
+            RelNode result = apply(sel(and(and(q, tautology), p)));
+
+            var newSel = (SelectionNode) result;
+            assertThat(newSel.predicate()).isEqualTo(and(q, p));
+            assertThat(ctx).fired(OptimizationCode.PRED_001, 1);
+        }
+
         @Test @DisplayName("p AND TRUE → p  (right is constant-true)")
         void pAndTrue() {
             var p         = cmp(attr("age"), ComparisonOperator.GREATER, num("18"));

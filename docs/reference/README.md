@@ -86,6 +86,9 @@ The conditions that go inside a `σ` (selection) or join.
 | [Comparison](predicates/comparison.md) | `= ≠ < ≤ > ≥` | Compare two values |
 | [Range test](predicates/between.md) | `BETWEEN`, `NOT BETWEEN` | Value within a range, both ends included |
 | [Null-safe comparison](predicates/is-distinct-from.md) | `IS [NOT] DISTINCT FROM` | Compare two values, NULL equal to NULL |
+| [Truth test](predicates/truth-test.md) | `IS [NOT] TRUE / FALSE / UNKNOWN` | Which of its three values a boolean has, never UNKNOWN |
+| [Row value comparison](predicates/row-value.md) | `(a, b) = (c, d)`, `(a, b) IN {…}` | Compare several columns as one, ordering lexicographically |
+| [Quantified comparison](predicates/quantified.md) | `ANY` / `SOME` / `ALL` | Compare a value with each value of a list |
 | [And](predicates/and.md) | `∧` / `AND` | Both conditions hold |
 | [Or](predicates/or.md) | `∨` / `OR` | Either condition holds |
 | [Not](predicates/not.md) | `¬` / `NOT` | Negate a condition |

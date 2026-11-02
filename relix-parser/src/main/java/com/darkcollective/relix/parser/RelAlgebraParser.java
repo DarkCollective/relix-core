@@ -4459,8 +4459,22 @@ public final class RelAlgebraParser {
     }
 
     private Predicate parsePrimaryPredicate(Operand seed) {
+        Predicate predicate = parseSimplePredicate(seed);
+        // SQL's truth tests bind more loosely than a comparison: `a > 1 IS NOT TRUE`
+        // tests the comparison, as in PostgreSQL.
+        while (startsTruthTest()) {
+            Token is = current;
+            predicate = parseTruthTest(new ConditionOperand(predicate, loc(is)), is);
+        }
+        return predicate;
+    }
+
+    private Predicate parseSimplePredicate(Operand seed) {
         if (seed == null) {
             rejectSqlSubquery();
+        }
+        if (seed == null && current.type() == TokenType.LPAREN && isRowValue()) {
+            return parseRowValuePredicate();
         }
         if (seed == null && current.type() == TokenType.LPAREN && isParenthesizedPredicate()) {
             Token open = current;
@@ -4475,7 +4489,7 @@ public final class RelAlgebraParser {
             // parseArgument already performs for a function argument, and without it
             // the grammar cannot read back a tree AstBuilders can build.
             if (startsConditionTail()) {
-                return parsePrimaryPredicate(new ConditionOperand(predicate, loc(open)));
+                return parseSimplePredicate(new ConditionOperand(predicate, loc(open)));
             }
             return predicate;
         }
@@ -4541,6 +4555,9 @@ public final class RelAlgebraParser {
 
         // SQL-prior null predicate: `x IS NULL` / `x IS NOT NULL`,
         // parsing to the same NullPredicate as `x = ⊥` / `x ≠ ⊥`.
+        if (startsTruthTest()) {
+            return parseTruthTest(left, current);
+        }
         if (current.type() == TokenType.IS) {
             Token opTok = current;
             advance(); // consume IS
@@ -4556,7 +4573,7 @@ public final class RelAlgebraParser {
                 return isNull ? distinctFrom(left, right, loc(opTok))
                         : notDistinctFrom(left, right, loc(opTok));
             }
-            expect(TokenType.NULL, "Expected 'NULL' or 'DISTINCT FROM' after 'IS'");
+            expect(TokenType.NULL, "Expected NULL, DISTINCT FROM, TRUE, FALSE or UNKNOWN after IS");
             return new NullPredicate(left, isNull, loc(opTok));
         }
 
@@ -4577,8 +4594,315 @@ public final class RelAlgebraParser {
         };
 
         advance();
+        if (startsQuantifiedList()) {
+            return parseQuantifiedComparison(left, operator, loc(opToken));
+        }
         Operand right = parseOperand();
         return new ComparisonPredicate(left, operator, right, loc(opToken));
+    }
+
+    // -------------------------------------------------------------------------
+    // SQL's truth tests, row values and quantified comparisons. Each is read into the
+    // predicates it means, so the analyser, the evaluator and every pushdown dialect
+    // carry it without knowing it was written this way.
+    // -------------------------------------------------------------------------
+
+    /** Whether {@code IS [NOT] TRUE}, {@code FALSE} or {@code UNKNOWN} follows. */
+    private boolean startsTruthTest() {
+        if (current.type() != TokenType.IS) {
+            return false;
+        }
+        Token word = peek(1).type() == TokenType.NOT ? peek(2) : peek(1);
+        return word.type() == TokenType.TRUE || word.type() == TokenType.FALSE || isWord(word, "UNKNOWN");
+    }
+
+    /**
+     * Reads {@code IS [NOT] TRUE|FALSE|UNKNOWN} after {@code value}, a boolean, into a
+     * test that is never UNKNOWN itself: {@code IS TRUE} is {@code v = TRUE ∧ v ≠ ⊥},
+     * {@code IS NOT TRUE} is {@code v = FALSE ∨ v = ⊥}, and {@code IS UNKNOWN} is
+     * {@code v = ⊥}. Unlike {@code v = TRUE}, {@code IS NOT TRUE} holds for NULL.
+     */
+    private Predicate parseTruthTest(Operand value, Token is) {
+        SourceLocation at = loc(is);
+        advance(); // IS
+        boolean negated = match(TokenType.NOT);
+        Token word = current;
+        advance();
+        if (isWord(word, "UNKNOWN")) {
+            return new NullPredicate(value, !negated, at);
+        }
+        boolean truth = word.type() == TokenType.TRUE;
+        if (!negated) {
+            return new AndPredicate(
+                    new ComparisonPredicate(value, ComparisonOperator.EQUAL, new BooleanOperand(truth, at), at),
+                    new NullPredicate(value, false, at), at);
+        }
+        return new OrPredicate(
+                new ComparisonPredicate(value, ComparisonOperator.EQUAL, new BooleanOperand(!truth, at), at),
+                new NullPredicate(value, true, at), at);
+    }
+
+    /**
+     * Whether {@code ANY}, {@code SOME} or {@code ALL} opens a list of values after a
+     * comparison: braces, or a parenthesis that is empty, holds a comma or opens on a literal.
+     * The words are not reserved, so {@code σ x = any (R)} still compares with a
+     * column called {@code any} over {@code R}.
+     */
+    private boolean startsQuantifiedList() {
+        if (!isWord(current, "ANY") && !isWord(current, "SOME") && !isWord(current, "ALL")) {
+            return false;
+        }
+        Token open = peek(1);
+        if (open.type() == TokenType.LBRACE) {
+            return true;
+        }
+        if (open.type() != TokenType.LPAREN) {
+            return false;
+        }
+        TokenType first = peek(2).type();
+        if (first == TokenType.SELECT || first == TokenType.RPAREN) {
+            return true;
+        }
+        return isLiteralStart(peek(2)) || groupHoldsComma(1);
+    }
+
+    private static boolean isLiteralStart(Token token) {
+        return switch (token.type()) {
+            case NUMBER, STRING, TRUE, FALSE, NULL, MINUS -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Whether the group opened at {@code peek(open)} holds a comma outside any group
+     * nested in it.
+     */
+    private boolean groupHoldsComma(int open) {
+        int depth = 0;
+        for (int offset = open; ; offset++) {
+            Token token = peek(offset);
+            switch (token.type()) {
+                case LPAREN, LBRACE, LBRACKET -> depth++;
+                case RPAREN, RBRACE, RBRACKET -> {
+                    if (--depth == 0) {
+                        return false;
+                    }
+                }
+                case COMMA -> {
+                    if (depth == 1) {
+                        return true;
+                    }
+                }
+                case EOF -> {
+                    return false;
+                }
+                default -> { }
+            }
+        }
+    }
+
+    /** The offset just past the group opened at {@code peek(open)}. */
+    private int afterGroup(int open) {
+        int depth = 0;
+        for (int offset = open; ; offset++) {
+            Token token = peek(offset);
+            switch (token.type()) {
+                case LPAREN, LBRACE, LBRACKET -> depth++;
+                case RPAREN, RBRACE, RBRACKET -> {
+                    if (--depth == 0) {
+                        return offset + 1;
+                    }
+                }
+                case EOF -> {
+                    return offset;
+                }
+                default -> { }
+            }
+        }
+    }
+
+    /**
+     * Reads {@code x op ANY|SOME|ALL list}, the list in braces or SQL's parentheses.
+     * {@code ANY} holds when the comparison holds for some element, so it is their
+     * disjunction, and FALSE over an empty list; {@code ALL} is their conjunction, and
+     * TRUE over an empty list. Either is UNKNOWN as SQL's is when a NULL decides it.
+     */
+    private Predicate parseQuantifiedComparison(Operand left, ComparisonOperator operator, SourceLocation at) {
+        Token quantifier = current;
+        boolean all = isWord(quantifier, "ALL");
+        advance();
+        if (current.type() == TokenType.LPAREN && peek(1).type() == TokenType.SELECT) {
+            throw refusal(peek(1), quantifier.lexeme().toUpperCase(Locale.ROOT)
+                    + " takes a list of values such as {1, 2}; to compare with every row of another"
+                    + " relation join it, or compare with its GROUP MIN or MAX");
+        }
+        List<Operand> elements = parseValueList();
+        if (elements.isEmpty()) {
+            return constant(all, at);
+        }
+        Predicate result = null;
+        for (Operand element : elements) {
+            Predicate one = new ComparisonPredicate(left, operator, element, at);
+            result = result == null ? one : all ? new AndPredicate(result, one, at) : new OrPredicate(result, one, at);
+        }
+        return result;
+    }
+
+    /**
+     * {@code {a, b}} or {@code (a, b)}, the list a quantifier or IN takes; the caller
+     * has seen the brace or parenthesis that opens it.
+     */
+    private List<Operand> parseValueList() {
+        boolean braced = current.type() == TokenType.LBRACE;
+        advance();
+        TokenType close = braced ? TokenType.RBRACE : TokenType.RPAREN;
+        List<Operand> elements = new ArrayList<>();
+        if (current.type() != close) {
+            do {
+                elements.add(parseOperand());
+            } while (match(TokenType.COMMA));
+        }
+        expect(close, braced ? "Expected '}' to close the list" : "Expected ')' to close the list");
+        return elements;
+    }
+
+    /**
+     * A predicate that is {@code value} on every row, spelled as the optimizer spells
+     * one: a comparison of two boolean literals.
+     */
+    private static Predicate constant(boolean value, SourceLocation at) {
+        return new ComparisonPredicate(new BooleanOperand(value, at), ComparisonOperator.EQUAL,
+                new BooleanOperand(true, at), at);
+    }
+
+    /**
+     * Whether a row value opens here: a parenthesis holding a comma, followed by a
+     * comparison or {@code [NOT] IN}.
+     */
+    private boolean isRowValue() {
+        if (!groupHoldsComma(0)) {
+            return false;
+        }
+        int after = afterGroup(0);
+        TokenType next = peek(after).type();
+        return isComparison(next) || next == TokenType.ELEMENT_OF || next == TokenType.NOT_ELEMENT_OF
+                || next == TokenType.NOT && peek(after + 1).type() == TokenType.ELEMENT_OF;
+    }
+
+    /**
+     * Reads a comparison of row values, {@code (a, b) op (c, d)}, or a row's membership
+     * of a list of rows, {@code (a, b) IN {(1, 2), (3, 4)}}. Equality is the
+     * conjunction of the columns' equalities, so {@code (1, ⊥) = (1, 2)} is UNKNOWN as
+     * in SQL; {@code ≠} is the disjunction of their inequalities; an ordering is
+     * lexicographic, {@code a < c ∨ (a = c ∧ b < d)}. {@code IN} is the disjunction of
+     * row equalities, and FALSE over an empty list.
+     */
+    private Predicate parseRowValuePredicate() {
+        Token open = current;
+        List<Operand> left = parseRow("row value");
+        Token opTok = current;
+        SourceLocation at = loc(opTok);
+        boolean in = opTok.type() == TokenType.ELEMENT_OF || opTok.type() == TokenType.NOT_ELEMENT_OF
+                || opTok.type() == TokenType.NOT;
+        if (in) {
+            boolean negated = opTok.type() != TokenType.ELEMENT_OF;
+            advance();
+            if (opTok.type() == TokenType.NOT) {
+                advance(); // IN
+            }
+            List<List<Operand>> rows = parseRowList(left.size());
+            Predicate any = rows.isEmpty() ? constant(false, at) : null;
+            for (List<Operand> row : rows) {
+                Predicate one = rowComparison(left, ComparisonOperator.EQUAL, row, at);
+                any = any == null ? one : new OrPredicate(any, one, at);
+            }
+            return negated ? new NotPredicate(any, at) : any;
+        }
+        ComparisonOperator operator = switch (opTok.type()) {
+            case EQUAL         -> ComparisonOperator.EQUAL;
+            case NOT_EQUAL     -> ComparisonOperator.NOT_EQUAL;
+            case LESS          -> ComparisonOperator.LESS;
+            case LESS_EQUAL    -> ComparisonOperator.LESS_EQUAL;
+            case GREATER       -> ComparisonOperator.GREATER;
+            default            -> ComparisonOperator.GREATER_EQUAL;
+        };
+        advance();
+        if (current.type() != TokenType.LPAREN) {
+            throw refusal(current, "A row value " + open.lexeme() + "…) compares with another row of the"
+                    + " same width, such as (a, b) = (1, 2)");
+        }
+        List<Operand> right = parseRow("row value");
+        requireWidth(left.size(), right, opTok);
+        return rowComparison(left, operator, right, at);
+    }
+
+    private List<Operand> parseRow(String what) {
+        expect(TokenType.LPAREN, "Expected '(' to open a " + what);
+        List<Operand> row = new ArrayList<>();
+        do {
+            row.add(parseOperand());
+        } while (match(TokenType.COMMA));
+        expect(TokenType.RPAREN, "Expected ')' to close the " + what);
+        return row;
+    }
+
+    /** {@code {(1, 2), (3, 4)}} or SQL's {@code ((1, 2), (3, 4))}, each row {@code width} wide. */
+    private List<List<Operand>> parseRowList(int width) {
+        boolean braced = current.type() == TokenType.LBRACE;
+        if (!braced && current.type() != TokenType.LPAREN) {
+            throw error(current, "Expected a list of rows such as {(1, 2), (3, 4)} after IN");
+        }
+        advance();
+        TokenType close = braced ? TokenType.RBRACE : TokenType.RPAREN;
+        List<List<Operand>> rows = new ArrayList<>();
+        if (current.type() != close) {
+            do {
+                if (current.type() != TokenType.LPAREN) {
+                    throw refusal(current, "A row value IN takes a list of rows of the same width,"
+                            + " such as (a, b) IN {(1, 2), (3, 4)}");
+                }
+                Token rowStart = current;
+                List<Operand> row = parseRow("row");
+                requireWidth(width, row, rowStart);
+                rows.add(row);
+            } while (match(TokenType.COMMA));
+        }
+        expect(close, braced ? "Expected '}' to close the list of rows" : "Expected ')' to close the list of rows");
+        return rows;
+    }
+
+    private void requireWidth(int width, List<Operand> row, Token at) {
+        if (row.size() != width) {
+            throw refusal(at, "Row values compare only at the same width: one has " + width
+                    + " values and the other " + row.size());
+        }
+    }
+
+    private static Predicate rowComparison(List<Operand> left, ComparisonOperator operator,
+                                           List<Operand> right, SourceLocation at) {
+        int n = left.size();
+        if (operator == ComparisonOperator.EQUAL || operator == ComparisonOperator.NOT_EQUAL) {
+            Predicate result = null;
+            for (int i = 0; i < n; i++) {
+                Predicate one = new ComparisonPredicate(left.get(i), operator, right.get(i), at);
+                result = result == null ? one
+                        : operator == ComparisonOperator.EQUAL ? new AndPredicate(result, one, at)
+                        : new OrPredicate(result, one, at);
+            }
+            return result;
+        }
+        ComparisonOperator strict = switch (operator) {
+            case LESS, LESS_EQUAL -> ComparisonOperator.LESS;
+            default -> ComparisonOperator.GREATER;
+        };
+        Predicate result = new ComparisonPredicate(left.get(n - 1), operator, right.get(n - 1), at);
+        for (int i = n - 2; i >= 0; i--) {
+            result = new OrPredicate(
+                    new ComparisonPredicate(left.get(i), strict, right.get(i), at),
+                    new AndPredicate(new ComparisonPredicate(left.get(i), ComparisonOperator.EQUAL, right.get(i), at),
+                            result, at), at);
+        }
+        return result;
     }
 
     /** Whether a regular-expression match follows: {@code ~}, {@code !~} (each with {@code *}), or {@code [NOT] MATCHES}. */
@@ -5185,6 +5509,10 @@ public final class RelAlgebraParser {
 
             expect(TokenType.RBRACE, "Expected '}' after set elements");
             return new SetLiteralOperand(elements, loc(lbraceTok));
+        } else if (current.type() == TokenType.LPAREN && groupHoldsComma(0)) {
+            // SQL's IN (1, 2), the same set as {1, 2}
+            Token open = current;
+            return new SetLiteralOperand(parseValueList(), loc(open));
         } else if (current.type() == TokenType.LPAREN) {
             return parseOperand();
         } else if (current.type() == TokenType.IDENTIFIER) {

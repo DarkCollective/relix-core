@@ -567,10 +567,15 @@ predicate         ::= and_predicate ( ( "∨" | "OR" ) and_predicate )*
 and_predicate     ::= not_predicate ( ( "∧" | "AND" ) not_predicate )*
 not_predicate     ::= ( "¬" | "NOT" ) not_predicate
                     | primary_predicate
-primary_predicate ::= "(" predicate ")"
+/* A truth test after a predicate tests it whole: a > 1 IS NOT TRUE. */
+primary_predicate ::= simple_predicate truth_test*
+simple_predicate  ::= "(" predicate ")"
                     | operand condition_tail
+                    | row_value comparison_op row_value
+                    | row_value ( ( "∈" | "IN" ) | ( "∉" | ( "¬" | "NOT" ) "IN" ) ) row_list
 
 condition_tail    ::= comparison_op operand
+                    | comparison_op quantifier value_list   /* x > ALL {1, 2} */
                     | ( "∈" | "IN" ) set_expr
                     | ( "∉" | ( "¬" | "NOT" ) "IN" ) set_expr
                     | ( ( "¬" | "NOT" ) )? "LIKE" operand ( "ESCAPE" STRING )?
@@ -580,13 +585,24 @@ condition_tail    ::= comparison_op operand
                     | ( "=" | "≠" | "!=" | "<>" ) null_word     /* a null test */
                     | "IS" ( ( "¬" | "NOT" ) )? null_word        /* a null test */
                     | "IS" ( ( "¬" | "NOT" ) )? "DISTINCT" "FROM" operand
+                    | truth_test
+
+truth_test        ::= "IS" ( ( "¬" | "NOT" ) )? ( "TRUE" | "FALSE" | "UNKNOWN" )
+quantifier        ::= "ANY" | "SOME" | "ALL"
+value_list        ::= "{" ( operand ( "," operand )* )? "}"
+                    | "(" ( operand ( "," operand )* )? ")"
+/* (year, month) >= (2026, 3): two or more values, compared pair by pair. */
+row_value         ::= "(" operand ( "," operand )+ ")"
+row_list          ::= "{" ( row_value ( "," row_value )* )? "}"
+                    | "(" row_value ( "," row_value )* ")"
 
 comparison_op     ::= "=" | "≠" | "!=" | "<>" | "<" | "≤" | "<=" | ">" | "≥" | ">="
 null_word         ::= "⊥" | "NULL"
 
-/* x IN {1, 2, 3}: a set is written in braces, never in parentheses.
+/* x IN {1, 2, 3}, or SQL's x IN (1, 2, 3) with two or more values.
    x IN tags: an array-valued column. */
 set_expr          ::= "{" ( operand ( "," operand )* )? "}"
+                    | "(" operand ( "," operand )+ ")"
                     | operand
 ```
 
@@ -779,8 +795,18 @@ are easy to miss in the rules above.
   pattern test, or a null test, joined by `∧`, `∨` and `¬`. A bare boolean does not
   stand alone: write `σ active = true (R)`, not `σ active (R)`, and
   `σ IsNull(x) = true (R)` rather than `σ IsNull(x) (R)`.
-- **Sets use braces.** `x IN {1, 2}` tests membership. `x IN (1, 2)` is a syntax
-  error: a parenthesis opens a single expression.
+- **Sets use braces, and SQL's list is read too.** `x IN {1, 2}` tests membership,
+  and so does `x IN (1, 2)`: a parenthesis holding a comma is a list. One value in
+  parentheses is a single expression, so a one-member set is `x IN {1}`.
+- **`ANY`, `SOME` and `ALL` quantify over a list.** `x > ALL {1, 2}` is
+  `x > 1 ∧ x > 2`, and `ANY` the disjunction; an empty list makes `ALL` true and
+  `ANY` false. The words are not reserved: one is a quantifier only before braces,
+  or a parenthesis holding a comma or opening on a literal.
+- **A row value compares column by column.** `(a, b) = (1, 2)` is `a = 1 ∧ b = 2`,
+  and `(a, b) < (c, d)` orders lexicographically; both sides have the same width.
+- **`IS TRUE`, `IS FALSE` and `IS UNKNOWN` are never UNKNOWN.** `b IS NOT TRUE` holds
+  for a NULL `b`, where `b = FALSE` does not. A comparison before `IS` is tested
+  whole: `a > 1 IS TRUE` is `(a > 1) IS TRUE`.
 - **Braces elsewhere build a struct.** Outside a set, `{a}` is a struct with one
   field `a`. A grouping key is an operand, so `γ {region}, COUNT(*) (Orders)`
   parses and groups by a struct, not by the column. Write `γ region, COUNT(*) (Orders)`.
@@ -908,9 +934,9 @@ A set is written in braces:
 query { σ status IN {'open', 'held'} (Orders) };
 ```
 
-Parentheses do not make a set:
+SQL's parenthesised list is the same set:
 
-```relix-invalid
+```relix
 query { σ status IN ('open', 'held') (Orders) };
 ```
 
