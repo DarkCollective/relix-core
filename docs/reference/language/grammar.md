@@ -804,6 +804,9 @@ are easy to miss in the rules above.
   or a parenthesis holding a comma or opening on a literal.
 - **A row value compares column by column.** `(a, b) = (1, 2)` is `a = 1 ∧ b = 2`,
   and `(a, b) < (c, d)` orders lexicographically; both sides have the same width.
+- **Strings compare and sort by code point.** Case matters, so `'B'` sorts before
+  `'a'`, and there is no `COLLATE`. `LCase(s) = 'abc'` or `s ~* '^abc$'` compares
+  ignoring case, and `SORT LCase(s)` sorts that way.
 - **`IS TRUE`, `IS FALSE` and `IS UNKNOWN` are never UNKNOWN.** `b IS NOT TRUE` holds
   for a NULL `b`, where `b = FALSE` does not. A comparison before `IS` is tested
   whole: `a > 1 IS TRUE` is `(a > 1) IS TRUE`.
