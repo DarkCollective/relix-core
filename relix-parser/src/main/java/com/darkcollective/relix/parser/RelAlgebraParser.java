@@ -5677,7 +5677,24 @@ public final class RelAlgebraParser {
     // =========================================================================
 
     private Operand parseOperand() {
-        return parseArithmeticExpression(0);
+        Operand operand = parseArithmeticExpression(0);
+        rejectCollate();
+        return operand;
+    }
+
+    /**
+     * Refuses SQL's {@code COLLATE} after an operand, {@code s COLLATE 'en_US'}, with the
+     * spellings that do what it is usually there for. {@code COLLATE} is matched by its
+     * text and only before a collation's name, so a column called {@code collate} is
+     * still a column.
+     */
+    private void rejectCollate() {
+        if (isWord(current, "COLLATE")
+                && (peek(1).type() == TokenType.STRING || isNameToken(peek(1)))) {
+            throw refusal(current, "Relix has no COLLATE: strings compare and sort by code point,"
+                    + " so case matters. To compare ignoring case write LCase(s) = 'abc', or"
+                    + " s ~* '^abc$'; to sort ignoring case write SORT LCase(s) (R)");
+        }
     }
 
     /**
