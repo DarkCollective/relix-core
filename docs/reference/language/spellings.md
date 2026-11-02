@@ -104,6 +104,14 @@ parse to the identical tree; the canonical form is what gets printed back.
 | `x NOT BETWEEN a AND b` | `x < a ∨ x > b` | two comparisons |
 | `a IS DISTINCT FROM b` | `(a ≠ b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b ≠ ⊥) ∨ (a ≠ ⊥ ∧ b = ⊥)` | null tests and a comparison |
 | `a IS NOT DISTINCT FROM b` | `(a = b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b = ⊥)` | null tests and a comparison |
+| `b IS TRUE` / `b IS NOT TRUE` | `b = TRUE ∧ b ≠ ⊥` / `b = FALSE ∨ b = ⊥` | a comparison and a null test |
+| `b IS UNKNOWN` | `b = ⊥` | Null predicate |
+| `(a, b) = (1, 2)` | `a = 1 ∧ b = 2` | comparisons |
+| `(a, b) < (1, 2)` | `a < 1 ∨ (a = 1 ∧ b < 2)` | comparisons |
+| `(a, b) IN ((1, 2), (3, 4))` | `(a = 1 ∧ b = 2) ∨ (a = 3 ∧ b = 4)` | comparisons |
+| `x IN (1, 2)` | `x ∈ {1, 2}` | ElementOfPredicate |
+| `x > ALL (1, 2)` | `x > 1 ∧ x > 2` | comparisons |
+| `x = ANY (1, 2)`, `x = SOME (1, 2)` | `x = 1 ∨ x = 2` | comparisons |
 | `ORDER`, `ORDER BY` | `SORT` / `τ` | SortNode |
 | `GROUP BY` | `GROUP` / `γ` | AggregationNode |
 | `LJOIN` / `RJOIN` / `FJOIN` | `\|><` / `><\|` / `\|><\|` | outer joins |

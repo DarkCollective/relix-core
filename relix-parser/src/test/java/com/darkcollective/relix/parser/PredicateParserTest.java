@@ -354,7 +354,7 @@ final class PredicateParserTest extends ParserTestSupport {
         assertParseError("σ a LIKE 'x' ESCAPE c (R)")
                 .hasMessageContaining("ESCAPE takes one character");
         assertParseError("σ a IS DISTINCT b (R)")
-                .hasMessageContaining("Expected 'NULL' or 'DISTINCT FROM' after 'IS'");
+                .hasMessageContaining("Expected NULL, DISTINCT FROM, TRUE, FALSE or UNKNOWN after IS");
         assertParseError("σ a < > b (R)");
     }
 

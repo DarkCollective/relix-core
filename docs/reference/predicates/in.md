@@ -3,6 +3,7 @@
 # Syntax:
 attr ∈ { value1, value2, ... }      attr IN { value1, value2, ... }
 attr ∉ { value1, value2, ... }      attr NOT IN { value1, value2, ... }
+attr IN (value1, value2, ...)       SQL's parentheses, with at least two values
 
 σ dept ∈ {"hr", "eng"} (Employees)
 σ dept NOT IN {"mgmt"} (Employees)
@@ -16,6 +17,11 @@ or paid" without a long chain of OR equalities.
 ∈ forms an ElementOfPredicate against a set literal `{…}`; ∉ is its negated form.
 Equivalent to a disjunction of equalities but expressed once. ASCII: IN, and NOT
 IN (two tokens). The set literal holds constant operands.
+
+SQL's `x IN (1, 2)` is the same set as `x IN {1, 2}`. A parenthesis is read as a
+list when it holds a comma; one value in parentheses is a single expression, so a
+one-member list is written in braces, `x IN {1}`. A row of columns tests membership
+of a list of rows, `(a, b) IN {(1, 2), (3, 4)}`: see [row values](row-value.md).
 
 # Examples:
 One of several departments:
@@ -89,7 +95,7 @@ A SEMI join (⋉) for "value appears in another relation". A chain of `= … ∨
 is the long-hand form IN replaces.
 
 # See Also:
-[or](or.md), [comparison](comparison.md), [semi-join](../joins/semi-join.md), [select](../operators/select.md)
+[or](or.md), [comparison](comparison.md), [row-value](row-value.md), [quantified](quantified.md), [semi-join](../joins/semi-join.md), [select](../operators/select.md)
 
 # Notes:
 Prefer IN over a long OR chain for readability; for dynamic sets drawn from data,

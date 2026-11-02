@@ -467,6 +467,10 @@ public final class SqlExpressions {
 
     private static Optional<String> elementOf(ElementOfPredicate e, ColumnRenderer cols, Dialect dialect,
                                            PushdownFunctions functions) {
+        // SQL has no empty list, IN (), and nothing is a member of the empty set
+        if (e.setExpression() instanceof SetLiteralOperand set && set.elements().isEmpty()) {
+            return Optional.of(e.isNegated() ? "1 = 1" : "1 = 0");
+        }
         Optional<String> element = operand(e.element(), cols, dialect, functions);
         Optional<String> set = operand(e.setExpression(), cols, dialect, functions);
         if (element.isEmpty() || set.isEmpty()) {
