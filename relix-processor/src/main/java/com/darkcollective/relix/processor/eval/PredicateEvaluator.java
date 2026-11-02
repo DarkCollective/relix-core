@@ -19,9 +19,12 @@ import com.darkcollective.relix.processor.EvaluationException;
 
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.AttributeOperand;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.ElementOfPredicate;
+import com.darkcollective.relix.ast.internal.Collations;
+import com.darkcollective.relix.ast.internal.Collations.Collation;
 import com.darkcollective.relix.ast.internal.LikePatterns;
 import com.darkcollective.relix.ast.NotPredicate;
 import com.darkcollective.relix.ast.NullPredicate;
@@ -35,6 +38,7 @@ import com.darkcollective.relix.value.Value;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -168,6 +172,19 @@ public final class PredicateEvaluator {
         Value left  = operandEvaluator.evaluate(pred.left(),  row);
         Value right = operandEvaluator.evaluate(pred.right(), row);
         if (left.isNull() || right.isNull()) return Truth.UNKNOWN;
+        Optional<Collation> collation = Collations.of(pred.left(), pred.right());
+        if (collation.isPresent() && left instanceof StringValue l && right instanceof StringValue r) {
+            Collation c = collation.get();
+            int order = c.compare(l.value(), r.value());
+            return Truth.of(switch (pred.operator()) {
+                case EQUAL         ->  c.key(l.value()).equals(c.key(r.value()));
+                case NOT_EQUAL     -> !c.key(l.value()).equals(c.key(r.value()));
+                case LESS          -> order <  0;
+                case LESS_EQUAL    -> order <= 0;
+                case GREATER       -> order >  0;
+                case GREATER_EQUAL -> order >= 0;
+            });
+        }
         return Truth.of(switch (pred.operator()) {
             case EQUAL         ->  valuesEqual(left, right);
             case NOT_EQUAL     -> !valuesEqual(left, right);
@@ -195,8 +212,16 @@ public final class PredicateEvaluator {
             throw new EvaluationException(
                     "LIKE pattern must be a string; got " + patternVal.type());
         }
-        Truth matches = Truth.of(likeMatch(sv.value(), pv.value(), pred.escape()));
+        // NOCASE matches the two lower-cased; analysis allows no other collation but BINARY.
+        boolean nocase = isNoCase(pred.operand()) || isNoCase(pred.pattern());
+        Truth matches = Truth.of(nocase
+                ? likeMatch(sv.value().toLowerCase(Locale.ROOT), pv.value().toLowerCase(Locale.ROOT), pred.escape())
+                : likeMatch(sv.value(), pv.value(), pred.escape()));
         return pred.negated() ? matches.not() : matches;
+    }
+
+    private static boolean isNoCase(Operand operand) {
+        return operand instanceof CollateOperand c && c.collation().equals(CollateOperand.NOCASE);
     }
 
     private static boolean likeMatch(String text, String pattern, Optional<String> escape) {
@@ -231,9 +256,12 @@ public final class PredicateEvaluator {
                 .map(el -> operandEvaluator.evaluate(el, row))
                 .toList();
 
+        Optional<Collation> collation = Collations.of(pred.element());
         boolean inSet = setValues.stream()
                 .filter(v -> !v.isNull())
-                .anyMatch(v -> valuesEqual(element, v));
+                .anyMatch(v -> collation.isPresent() && element instanceof StringValue e && v instanceof StringValue s
+                        ? collation.get().key(e.value()).equals(collation.get().key(s.value()))
+                        : valuesEqual(element, v));
         Truth member = inSet
                 ? Truth.TRUE
                 : setValues.stream().anyMatch(Value::isNull) ? Truth.UNKNOWN : Truth.FALSE;

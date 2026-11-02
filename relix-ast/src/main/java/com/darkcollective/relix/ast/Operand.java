@@ -49,6 +49,7 @@ public sealed interface Operand permits
         StructConstruction,
         ArrayConstruction,
         ConditionOperand,
+        CollateOperand,
         ParameterOperand {
     <R> R accept(OperandVisitor<R> visitor);
 

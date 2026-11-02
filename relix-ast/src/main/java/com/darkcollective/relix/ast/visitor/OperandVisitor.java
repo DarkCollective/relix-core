@@ -63,6 +63,8 @@ public interface OperandVisitor<R> {
     R visit(ArrayConstruction node);
     /** Visits a boolean-valued condition operand (a predicate in operand position). */
     R visit(ConditionOperand node);
+    /** Visits a string compared under a collation ({@code s COLLATE NOCASE}). */
+    R visit(CollateOperand node);
     /** Visits a bound query parameter ({@code $name}). */
     R visit(ParameterOperand node);
 }

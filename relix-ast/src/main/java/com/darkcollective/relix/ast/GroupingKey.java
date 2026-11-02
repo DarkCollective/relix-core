@@ -88,6 +88,7 @@ public record GroupingKey(Operand expression, Optional<String> alias) {
         return alias.orElseGet(() -> switch (expression) {
             case AttributeOperand a -> a.unqualifiedName();
             case FunctionCall fn    -> fn.functionName();
+            case CollateOperand c   -> GroupingKey.of(c.operand()).outputName();
             default                 -> "group";
         });
     }

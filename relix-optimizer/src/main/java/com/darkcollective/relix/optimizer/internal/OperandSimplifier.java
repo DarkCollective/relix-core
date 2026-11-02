@@ -23,6 +23,7 @@ import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
 import com.darkcollective.relix.ast.ComparisonPredicate;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.ElementOfPredicate;
 import com.darkcollective.relix.ast.NotPredicate;
@@ -161,6 +162,10 @@ final class OperandSimplifier {
             // No arithmetic law applies to the boolean operand *itself* — but it wraps
             // a predicate, which is exactly what the predicate rules simplify.
             case ConditionOperand   c -> simplifyCondition(c);
+            case CollateOperand     c -> {
+                Operand inner = simplify(c.operand());
+                yield inner == c.operand() ? c : new CollateOperand(inner, c.collation(), c.location());
+            }
         };
     }
 
