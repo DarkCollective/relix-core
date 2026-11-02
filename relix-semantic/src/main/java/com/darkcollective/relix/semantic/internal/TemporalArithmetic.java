@@ -295,7 +295,24 @@ final class TemporalArithmetic {
     }
 
     private static String binaryMessage(ArithmeticOperator op, ScalarType l, ScalarType r) {
-        return cannot(op, l, r) + "; see ADR-0013 for the legal temporal arithmetic combinations";
+        String message = cannot(op, l, r) + "; temporal arithmetic is DATE, TIME, TIMESTAMP or"
+                + " TIMESTAMPTZ plus or minus a DURATION, DATE - DATE, TIMESTAMP - TIMESTAMP,"
+                + " DURATION plus or minus a DURATION, DURATION * NUMBER, DURATION / NUMBER"
+                + " and DURATION / DURATION";
+        // A count added to a calendar value is the commonest slip: say how to add days.
+        boolean plus = op == ArithmeticOperator.PLUS;
+        if ((plus || op == ArithmeticOperator.MINUS)
+                && ((calendar(l) && r == ScalarType.NUMBER)
+                        || (plus && l == ScalarType.NUMBER && calendar(r)))) {
+            message += "; to move a date by days write d " + (plus ? "+" : "-")
+                    + " DURATION 'P1D' or DATEADD('day', " + (plus ? "1" : "-1") + ", d)";
+        }
+        return message;
+    }
+
+    /** Whether {@code t} is a point on the calendar: a DATE or an instant. */
+    private static boolean calendar(ScalarType t) {
+        return t == ScalarType.DATE || instant(t);
     }
 
     private static boolean isScaling(ArithmeticOperator op) {

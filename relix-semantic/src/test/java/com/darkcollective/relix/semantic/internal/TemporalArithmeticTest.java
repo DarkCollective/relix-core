@@ -279,6 +279,19 @@ final class TemporalArithmeticTest {
         @Test void cannotMultiplyDateByNumber() {
             assertThat(binaryError(DATE, MULTIPLY, NUMBER)).contains("cannot multiply");
         }
+        @Test void statesTheLegalCombinationsRatherThanCitingARecord() {
+            assertThat(binaryError(DATE, PLUS, DATE))
+                    .contains("TIMESTAMPTZ plus or minus a DURATION", "DATE - DATE")
+                    .doesNotContain("ADR-")
+                    .doesNotContain("DATEADD");
+        }
+        @Test void aNumberAddedToADateIsShownHowToAddDays() {
+            assertThat(binaryError(DATE, PLUS, NUMBER))
+                    .contains("d + DURATION 'P1D' or DATEADD('day', 1, d)");
+            assertThat(binaryError(NUMBER, PLUS, TIMESTAMP)).contains("DATEADD('day', 1, d)");
+            assertThat(binaryError(DATE, MINUS, NUMBER))
+                    .contains("d - DURATION 'P1D' or DATEADD('day', -1, d)");
+        }
     }
 
     @Nested
