@@ -83,6 +83,9 @@ side's columns in the left side's order.
 Both sides must be union-compatible. To "subtract" based on a key while keeping
 extra columns from the left, an ANTI join (▷) is usually the better tool.
 
+There is no multiset difference. SQL's `EXCEPT ALL` is refused with a message: the
+difference works on sets, and each row of its result appears once.
+
 # Alternatives:
 Anti join (▷) when matching is by key and you want to keep the left's full
 columns. Symmetric difference (∆) for "in one or the other but not both".
