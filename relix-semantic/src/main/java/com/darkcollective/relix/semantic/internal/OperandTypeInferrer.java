@@ -21,6 +21,7 @@ import com.darkcollective.relix.ast.internal.AttributeNames;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.DurationOperand;
@@ -139,6 +140,8 @@ final class OperandTypeInferrer {
                     new ArrayType(arrayElementType(array.elements(), inputSchema));
             // A predicate in operand position is a boolean value.
             case ConditionOperand    ignored -> ScalarType.BOOLEAN;
+            // A collation changes how a string compares, not what it is.
+            case CollateOperand c -> infer(c.operand(), inputSchema);
             // A parameter's type is read from where it is used, not from the parameter
             // itself (QueryParameters); on its own it is whatever its value turns out to be.
             case ParameterOperand    ignored -> ScalarType.ANY;

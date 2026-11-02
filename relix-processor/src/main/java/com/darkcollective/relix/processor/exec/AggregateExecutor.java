@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.processor.exec;
 
+import com.darkcollective.relix.processor.eval.ValueComparator;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.AggregateOperator;
 import com.darkcollective.relix.ast.AggregationNode;
@@ -87,7 +89,7 @@ final class AggregateExecutor {
         IndexedRelation indexed;
         try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
             indexed = IndexedRelation.build(inputSchema, input,
-                    row -> ExecSupport.canonicalKey(groupKey(row, groupKeys, eval),
+                    row -> ExecSupport.canonicalKey(bucketKey(row, groupKeys, eval),
                             ExecSupport.keyTypes(outputSchema, groupKeys.size())));
         }
 
@@ -135,14 +137,14 @@ final class AggregateExecutor {
                     throw new java.util.NoSuchElementException();
                 }
                 List<Value> key = ExecSupport.canonicalKey(
-                        groupKey(pending, groupKeys, eval), keyTypes);
+                        bucketKey(pending, groupKeys, eval), keyTypes);
                 List<Row> groupRows = new ArrayList<>();
                 groupRows.add(pending);
                 pending = null;
                 while (src.hasNext()) {
                     Row row = src.next();
                     if (key.equals(ExecSupport.canonicalKey(
-                            groupKey(row, groupKeys, eval), keyTypes))) {
+                            bucketKey(row, groupKeys, eval), keyTypes))) {
                         groupRows.add(row);
                     } else {
                         pending = row;   // first row of the next group; held for the next call
@@ -173,12 +175,9 @@ final class AggregateExecutor {
         try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
             rows = input.toList();
         }
-        List<List<Value>> keyValues = new ArrayList<>(rows.size());
         List<List<Value>> canonical = new ArrayList<>(rows.size());
         for (Row row : rows) {
-            List<Value> values = groupKey(row, groupKeys, eval);
-            keyValues.add(values);
-            canonical.add(ExecSupport.canonicalKey(values, keyTypes));
+            canonical.add(ExecSupport.canonicalKey(bucketKey(row, groupKeys, eval), keyTypes));
         }
 
         List<Row> outputRows = new ArrayList<>();
@@ -197,9 +196,10 @@ final class AggregateExecutor {
             for (List<Integer> members : groups.values()) {
                 List<Row> groupRows = members.stream().map(rows::get).toList();
                 List<Value> output = new ArrayList<>(outputSchema.width());
+                List<Value> shown = shownKey(groupRows, groupKeys, eval);
                 for (int i = 0; i < groupKeys.size(); i++) {
-                    // As in aggregateRow, the key a row shows is its group's first row's.
-                    output.add(set.contains(i) ? keyValues.get(members.getFirst()).get(i) : NullValue.INSTANCE);
+                    // As in aggregateRow, the key a row shows is the one shownKey picks.
+                    output.add(set.contains(i) ? shown.get(i) : NullValue.INSTANCE);
                 }
                 for (AggregateFunction agg : node.aggregates()) {
                     output.add(agg.operator() == AggregateOperator.GROUPING
@@ -236,6 +236,46 @@ final class AggregateExecutor {
     }
 
     /**
+     * The tuple {@code row} is grouped by: its {@link #groupKey}, with a key written under
+     * a collation replaced by the collation's key, so that {@code name COLLATE NOCASE}
+     * puts {@code 'Ada'} and {@code 'ADA'} in one group.
+     */
+    private static List<Value> bucketKey(Row row, List<GroupingKey> groupKeys, OperandEvaluator eval) {
+        return groupKeys.stream()
+                .map(k -> ExecSupport.bucketValue(k.expression(), eval.evaluate(k.expression(), row)))
+                .toList();
+    }
+
+    /**
+     * The key a group's output row shows. Any row of the group would do for a key with
+     * no collation, they being the rows it could not tell apart, and the first is the one
+     * a stable sort would have put there. A collated key's rows do differ, {@code 'Ada'}
+     * and {@code 'ADA'}, so it shows the group's least by code point: what a database
+     * answers for {@code GROUP BY LOWER(name)} with {@code MIN(name)}, whichever order
+     * the rows arrived in.
+     */
+    private static List<Value> shownKey(List<Row> groupRows, List<GroupingKey> groupKeys, OperandEvaluator eval) {
+        if (groupRows.isEmpty()) {
+            return List.of();
+        }
+        List<Value> shown = new ArrayList<>(groupKey(groupRows.getFirst(), groupKeys, eval));
+        for (int i = 0; i < groupKeys.size(); i++) {
+            Operand expression = groupKeys.get(i).expression();
+            if (!(expression instanceof CollateOperand)) {
+                continue;
+            }
+            for (Row row : groupRows) {
+                Value value = eval.evaluate(expression, row);
+                // A group's rows are all NULL or none is, NULL keying only with NULL.
+                if (!value.isNull() && ValueComparator.compareNonNull(value, shown.get(i)) < 0) {
+                    shown.set(i, value);
+                }
+            }
+        }
+        return shown;
+    }
+
+    /**
      * Builds one aggregated output row: the group key tuple followed by each
      * aggregate computed over {@code groupRows}.
      */
@@ -249,7 +289,7 @@ final class AggregateExecutor {
         // row of the group would do — they are the rows the key could not tell apart —
         // and the first is the one a stable sort would have put there. The empty list is
         // the scalar aggregate over no rows, which has no key to emit.
-        output.addAll(groupRows.isEmpty() ? List.of() : groupKey(groupRows.getFirst(), groupKeys, eval));
+        output.addAll(shownKey(groupRows, groupKeys, eval));
         for (AggregateFunction agg : aggregates) {
             // An ordinary grouping rolls no key up, so its GROUPING is 0.
             output.add(agg.operator() == AggregateOperator.GROUPING

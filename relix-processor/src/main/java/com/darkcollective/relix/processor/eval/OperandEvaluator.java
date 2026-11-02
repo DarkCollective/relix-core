@@ -21,6 +21,7 @@ import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.TimeOperand;
@@ -287,6 +288,8 @@ public final class OperandEvaluator {
                 case FALSE   -> BooleanValue.of(false);
                 case UNKNOWN -> NullValue.INSTANCE;
             };
+            // The value is the string's own; the collation is read where it is compared.
+            case CollateOperand c -> evaluate(c.operand(), row);
         };
     }
 

@@ -23,6 +23,7 @@ import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
 import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.ComparisonPredicate;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.DurationOperand;
@@ -174,6 +175,9 @@ public final class AstEquivalence {
                     && allEquivalent(x.arguments(), y.arguments());
             case ConditionOperand x -> b instanceof ConditionOperand y
                     && equivalent(x.predicate(), y.predicate());
+            case CollateOperand x -> b instanceof CollateOperand y
+                    && x.collation().equalsIgnoreCase(y.collation())
+                    && equivalent(x.operand(), y.operand());
             case SetLiteralOperand x -> b instanceof SetLiteralOperand y
                     && allEquivalent(x.elements(), y.elements());
             case ArrayConstruction x -> b instanceof ArrayConstruction y

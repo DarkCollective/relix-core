@@ -38,6 +38,7 @@
 #     EmptyRelationNodeTest, TruthRelationNodeTest, ConditionalJoinNodeTest — each its
 #     own node
 #   ProduceBoundTest          ProduceBound
+#   CollationsTest            CollateOperand     (its name normalisation and blank guard)
 #   RelationFunctionCallTest  RelationFunctionCall
 #   AggregateFunctionTest     AggregateFunction
 #   LangAstSourceTest         InlineTableBody, MarkdownInlineTable and CsvInlineTable (their row locations)
@@ -71,7 +72,7 @@
 7	relix-ast/src/test/java/com/darkcollective/relix/ast/internal/RelNodeOperandsTest.java
 15	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/internal/ColumnPruningPassTest.java
 81	relix-ast/src/test/java/com/darkcollective/relix/ast/AstNodeUnaryTest.java
-82	relix-ast/src/testFixtures/java/com/darkcollective/relix/ast/AstLocations.java
+83	relix-ast/src/testFixtures/java/com/darkcollective/relix/ast/AstLocations.java
 58	relix-ast/src/test/java/com/darkcollective/relix/ast/AstNodeRelationTest.java
 1	relix-optimizer/src/test/java/com/darkcollective/relix/optimizer/internal/ExpressionSimplificationPassTest.java
 53	relix-ast/src/test/java/com/darkcollective/relix/ast/AstValidationTest.java
@@ -92,6 +93,7 @@
 13	relix-ast/src/test/java/com/darkcollective/relix/ast/WhyNodeTest.java
 12	relix-ast/src/test/java/com/darkcollective/relix/ast/ProduceBoundTest.java
 9	relix-ast/src/test/java/com/darkcollective/relix/ast/WindowNodeTest.java
+5	relix-ast/src/test/java/com/darkcollective/relix/ast/internal/CollationsTest.java
 10	relix-ast/src/test/java/com/darkcollective/relix/ast/AstLocationsTest.java
 10	relix-lang-ast/src/test/java/com/darkcollective/relix/lang/ast/LangAstValidationTest.java
 9	relix-ast/src/test/java/com/darkcollective/relix/ast/RelationFunctionCallTest.java

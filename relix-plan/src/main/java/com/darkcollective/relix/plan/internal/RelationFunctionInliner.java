@@ -33,6 +33,7 @@ import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.TimeOperand;
@@ -315,6 +316,7 @@ final class RelationFunctionInliner {
                     .toList(), sc.location());
             case ArrayConstruction ac -> new ArrayConstruction(substitute(ac.elements(), b), ac.location());
             case ConditionOperand c -> new ConditionOperand(substitute(c.predicate(), b), c.location());
+            case CollateOperand c -> new CollateOperand(substituteOperand(c.operand(), b), c.collation(), c.location());
             case StringOperand s -> s;
             // `$name` is the query's parameter, never the function's, which is a bare name.
             case ParameterOperand p -> p;

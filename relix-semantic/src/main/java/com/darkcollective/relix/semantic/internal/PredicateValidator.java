@@ -23,7 +23,9 @@ import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.StructConstruction;
 import com.darkcollective.relix.ast.BooleanOperand;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.ConditionOperand;
+import com.darkcollective.relix.ast.internal.Collations;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.TimeOperand;
 import com.darkcollective.relix.ast.TimestampOperand;
@@ -45,6 +47,7 @@ import com.darkcollective.relix.ast.UnaryOperand;
 import com.darkcollective.relix.ast.visitor.PredicateVisitor;
 import com.darkcollective.relix.function.FunctionCatalog;
 import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Schema;
 import com.darkcollective.relix.symbol.function.FunctionSymbol;
 import com.darkcollective.relix.symbol.table.SymbolTable;
@@ -109,6 +112,11 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
     /** Types operands so temporal arithmetic/comparison rules can be checked. */
     private final OperandTypeInferrer     typeInferrer;
 
+    /** Where a collation applies, said wherever one is written anywhere else. */
+    static final String COLLATE_PLACEMENT = "COLLATE applies where strings are compared: to a whole"
+            + " side of a comparison, the subject of IN or LIKE, a SORT key or a GROUP key,"
+            + " as in σ name COLLATE NOCASE = 'ada' (R)";
+
     PredicateValidator(Schema schema,
                        SymbolTable symbolTable,
                        FunctionCatalog functions,
@@ -137,6 +145,52 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
      */
     void validateExpression(Operand operand) {
         validateOperand(operand);
+    }
+
+    /**
+     * Validates a sort or grouping key, which, unlike any other bare operand, may be
+     * written under a collation: {@code τ name COLLATE NOCASE}.
+     *
+     * @param operand the key; must not be null
+     */
+    void validateKey(Operand operand) {
+        validateCollatable(operand);
+    }
+
+    /**
+     * Validates an operand in a position a collation applies to — a side of a
+     * comparison, the subject of a membership or pattern test, a sort or grouping key —
+     * where it may be a {@link CollateOperand}.
+     */
+    private void validateCollatable(Operand operand) {
+        if (!(operand instanceof CollateOperand collated)) {
+            validateOperand(operand);
+            return;
+        }
+        validateOperand(collated.operand());
+        if (Collations.resolve(collated.collation()).isEmpty()) {
+            error(collated.location(), "unknown collation '" + collated.collation() + "': COLLATE takes"
+                    + " BINARY (code-point order), NOCASE (ignoring case), or a locale such as 'en-US'");
+            return;
+        }
+        ScalarType type = typeInferrer.infer(collated.operand(), schema) instanceof ScalarType scalar
+                ? scalar : null;
+        if (type != ScalarType.STRING && type != ScalarType.ANY) {
+            error(collated.location(), "COLLATE applies to a string, and "
+                    + collated.operand().prettyPrint() + " is " + (type == null ? "not one" : "a " + type));
+        }
+    }
+
+    /**
+     * Refuses two sides of one comparison written under different collations: which one
+     * the comparison is made under is not something either side can decide.
+     */
+    private void requireOneCollation(Operand left, Operand right, SourceLocation at) {
+        if (left instanceof CollateOperand l && right instanceof CollateOperand r
+                && !l.collation().equalsIgnoreCase(r.collation())) {
+            error(at, "the two sides are collated differently, " + l.collation() + " and "
+                    + r.collation() + ": write COLLATE on one side, which the comparison is made under");
+        }
     }
 
     // =========================================================================
@@ -169,8 +223,9 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
 
     @Override
     public Void visit(ComparisonPredicate node) {
-        validateOperand(node.left());
-        validateOperand(node.right());
+        validateCollatable(node.left());
+        validateCollatable(node.right());
+        requireOneCollation(node.left(), node.right(), node.location());
         // x < NULL, NULL = x: a comparison with the missing value is UNKNOWN on every
         // row, so it can only be a null test written the wrong way round.
         if (node.left() instanceof NullOperand || node.right() instanceof NullOperand) {
@@ -197,7 +252,7 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
 
     @Override
     public Void visit(ElementOfPredicate node) {
-        validateOperand(node.element());
+        validateCollatable(node.element());
         validateOperand(node.setExpression());
         if (node.setExpression() instanceof SetLiteralOperand set) {
             String setError = ComparisonTypes.membershipError(
@@ -212,8 +267,13 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
 
     @Override
     public Void visit(PatternPredicate node) {
-        validateOperand(node.operand());
-        validateOperand(node.pattern());
+        validateCollatable(node.operand());
+        validateCollatable(node.pattern());
+        requireOneCollation(node.operand(), node.pattern(), node.location());
+        Collations.of(node.operand(), node.pattern())
+                .filter(c -> (node.operand() instanceof CollateOperand o ? o : (CollateOperand) node.pattern()).isLocale())
+                .ifPresent(c -> error(node.location(), "LIKE matches under BINARY or NOCASE only:"
+                        + " a locale orders strings, and has no rule for a wildcard"));
         warnOfUnderscoreWildcard(node);
         return null;
     }
@@ -317,6 +377,10 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
             // wrapped predicate exactly as a σ predicate — attribute refs and
             // nested function calls are checked by this same visitor.
             case ConditionOperand cond -> cond.predicate().accept(this);
+            case CollateOperand collated -> {
+                validateOperand(collated.operand());
+                error(collated.location(), COLLATE_PLACEMENT);
+            }
             case SetLiteralOperand set -> {
                 for (Operand elem : set.elements()) {
                     validateOperand(elem);

@@ -22,6 +22,7 @@ import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
 import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.ComparisonPredicate;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.DurationOperand;
@@ -112,6 +113,7 @@ public final class OperandWalker {
             }
             case UnaryOperand unary -> walk(unary.operand(), onAttribute, onFunction, onParameter);
             case ConditionOperand cond -> walk(cond.predicate(), onAttribute, onFunction, onParameter);
+            case CollateOperand collated -> walk(collated.operand(), onAttribute, onFunction, onParameter);
             case SetLiteralOperand set -> {
                 for (Operand elem : set.elements()) {
                     walk(elem, onAttribute, onFunction, onParameter);

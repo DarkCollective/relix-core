@@ -1720,6 +1720,12 @@ public final class RelAlgebraParser {
         if (grouped != null) {
             throw ParseException.at(grouped, lexer.input(), open);
         }
+        if (keys.toUpperCase(Locale.ROOT).contains(" COLLATE ")) {
+            // A projection carries no collation, so δ (π k COLLATE NOCASE (R)) is refused.
+            throw ParseException.at(opTok.lexeme() + " needs an aggregate after its keys; for one row per"
+                    + " collated key write " + opTok.lexeme() + " " + keys + ", COUNT(*) " + (glyph ? "→" : "->")
+                    + " n " + input, lexer.input(), open);
+        }
         throw ParseException.at(opTok.lexeme() + " needs an aggregate after its keys; for distinct rows write "
                 + (glyph ? "δ (π " : "DISTINCT (PROJECT ") + keys + " " + input + ")", lexer.input(), open);
     }
@@ -5677,24 +5683,7 @@ public final class RelAlgebraParser {
     // =========================================================================
 
     private Operand parseOperand() {
-        Operand operand = parseArithmeticExpression(0);
-        rejectCollate();
-        return operand;
-    }
-
-    /**
-     * Refuses SQL's {@code COLLATE} after an operand, {@code s COLLATE 'en_US'}, with the
-     * spellings that do what it is usually there for. {@code COLLATE} is matched by its
-     * text and only before a collation's name, so a column called {@code collate} is
-     * still a column.
-     */
-    private void rejectCollate() {
-        if (isWord(current, "COLLATE")
-                && (peek(1).type() == TokenType.STRING || isNameToken(peek(1)))) {
-            throw refusal(current, "Relix has no COLLATE: strings compare and sort by code point,"
-                    + " so case matters. To compare ignoring case write LCase(s) = 'abc', or"
-                    + " s ~* '^abc$'; to sort ignoring case write SORT LCase(s) (R)");
-        }
+        return parseArithmeticExpression(0);
     }
 
     /**
@@ -5712,7 +5701,7 @@ public final class RelAlgebraParser {
     }
 
     private Operand parseArithmeticExpression(int minPrecedence) {
-        Operand left = parseAtTimeZone(parsePrimaryOperand());
+        Operand left = parseCollate(parseAtTimeZone(parsePrimaryOperand()));
 
         while (isArithmeticOperator(current.type()) && arithmeticPrecedence(current.type()) >= minPrecedence) {
             Token operator = current;
@@ -5837,6 +5826,28 @@ public final class RelAlgebraParser {
      * PostgreSQL: it is {@code TIMEZONE(zone, ts)}, the wall-clock time in the zone. The
      * three words are matched by their text, so none is reserved.
      */
+    /**
+     * Reads SQL's {@code operand COLLATE name}, the collation a string compares under:
+     * {@code BINARY}, {@code NOCASE}, or a locale written as a string,
+     * {@code COLLATE 'en-US'}. It binds tightest, as in SQL, so {@code a || b COLLATE
+     * NOCASE} collates {@code b}. {@code COLLATE} is matched by its text and only before
+     * a name or a string, so a column called {@code collate} is still a column.
+     */
+    private Operand parseCollate(Operand operand) {
+        if (isWord(current, "COLLATE") && (peek(1).type() == TokenType.STRING || isNameToken(peek(1)))) {
+            Token collate = current;
+            advance();
+            Token name = current;
+            advance();
+            String collation = name.type() == TokenType.STRING ? name.literal() : name.lexeme();
+            if (collation.isBlank()) {
+                throw refusal(name, "COLLATE names a collation: BINARY, NOCASE, or a locale such as 'en-US'");
+            }
+            return new CollateOperand(operand, collation, loc(collate));
+        }
+        return operand;
+    }
+
     private Operand parseAtTimeZone(Operand operand) {
         while (isWord(current, "AT") && peek(1).type() == TokenType.TIME && isWord(peek(2), "ZONE")) {
             Token at = current;

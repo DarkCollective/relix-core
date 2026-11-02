@@ -291,6 +291,17 @@ final class SqlExpressionsTest {
         }
 
         @Test
+        @DisplayName("BINARY renders the value as written; NOCASE and a locale render nothing")
+        void collations() {
+            assertThat(renderP(cmp(collate(attr("a"), "BINARY"), ComparisonOperator.EQUAL, str("x"))))
+                    .hasValue("(a = 'x')");
+            assertThat(renderP(cmp(str("x"), ComparisonOperator.LESS, collate(attr("a"), "BINARY"))))
+                    .hasValue("('x' < a)");
+            assertThat(renderP(cmp(collate(attr("a"), "NOCASE"), ComparisonOperator.EQUAL, str("x")))).isEmpty();
+            assertThat(renderP(cmp(collate(attr("a"), "en-US"), ComparisonOperator.LESS, str("x")))).isEmpty();
+        }
+
+        @Test
         @DisplayName("IN over the empty set is false and NOT IN true, SQL having no IN ()")
         void elementOfTheEmptySet() {
             assertThat(renderP(AstBuilders.elementOf(attr("a"), set()))).hasValue("1 = 0");

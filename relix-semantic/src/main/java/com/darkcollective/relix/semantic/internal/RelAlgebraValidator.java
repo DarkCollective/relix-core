@@ -35,6 +35,7 @@ import com.darkcollective.relix.ast.ClusterNode;
 import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.CompositionNode;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.ConsolidationFunction;
 import com.darkcollective.relix.ast.CoverNode;
@@ -2137,7 +2138,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 // references and function calls just like an aggregate argument.
                 new PredicateValidator(input, symbolTable, functions, errors, filePath,
                         node.location(), "Aggregation γ group-by", parameters)
-                        .validateExpression(key.expression());
+                        .validateKey(key.expression());
             }
         }
 
@@ -2238,7 +2239,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         } else {
             new PredicateValidator(input, symbolTable, functions, errors, filePath, loc, context,
                     parameters)
-                    .validateExpression(spec.expression());
+                    .validateKey(spec.expression());
         }
     }
 
@@ -2484,6 +2485,10 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             }
             case ConditionOperand cond ->
                     validateTemporalRules(cond.predicate(), schema, inferrer);
+            case CollateOperand collated -> {
+                validateTemporalRules(collated.operand(), schema, inferrer);
+                error(collated.location(), "Projection π: " + PredicateValidator.COLLATE_PLACEMENT);
+            }
             case SetLiteralOperand set -> {
                 for (Operand elem : set.elements()) {
                     validateTemporalRules(elem, schema, inferrer);

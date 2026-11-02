@@ -616,7 +616,9 @@ operand           ::= sum ( "||" sum )*
 sum               ::= term ( ( "+" | "-" ) term )*
 term              ::= factor ( ( "*" | "/" | "%" ) factor )*
 factor            ::= "-" factor
-                    | primary_operand ( "AT" "TIME" "ZONE" zone_operand )*
+                    | primary_operand ( "AT" "TIME" "ZONE" zone_operand )* collation?
+/* s COLLATE NOCASE = 'ada': the collation the value compares under. */
+collation         ::= "COLLATE" ( name | STRING )
 /* ts AT TIME ZONE 'Europe/London' is TIMEZONE('Europe/London', ts). */
 zone_operand      ::= "-" zone_operand
                     | primary_operand
@@ -804,9 +806,11 @@ are easy to miss in the rules above.
   or a parenthesis holding a comma or opening on a literal.
 - **A row value compares column by column.** `(a, b) = (1, 2)` is `a = 1 ∧ b = 2`,
   and `(a, b) < (c, d)` orders lexicographically; both sides have the same width.
-- **Strings compare and sort by code point.** Case matters, so `'B'` sorts before
-  `'a'`, and there is no `COLLATE`. `LCase(s) = 'abc'` or `s ~* '^abc$'` compares
-  ignoring case, and `SORT LCase(s)` sorts that way.
+- **Strings compare and sort by code point, unless a collation says otherwise.**
+  Case matters, so `'B'` sorts before `'a'`. `COLLATE` binds tightest and names how
+  the value before it compares: `s COLLATE NOCASE = 'ada'`, `τ s COLLATE 'en-US'`. It
+  applies to a whole side of a comparison, the subject of `IN` or `LIKE`, a sort key
+  and a grouping key, and is refused anywhere else.
 - **`IS TRUE`, `IS FALSE` and `IS UNKNOWN` are never UNKNOWN.** `b IS NOT TRUE` holds
   for a NULL `b`, where `b = FALSE` does not. A comparison before `IS` is tested
   whole: `a > 1 IS TRUE` is `(a > 1) IS TRUE`.

@@ -203,6 +203,11 @@ public abstract class AstBuilders {
         return new ConditionOperand(predicate);
     }
 
+    /** A string compared under a collation: {@code BINARY}, {@code NOCASE} or a locale tag. */
+    public static CollateOperand collate(Operand operand, String collation) {
+        return new CollateOperand(operand, collation);
+    }
+
     // -------------------------------------------------------------------------
     // Predicate factories — one per Predicate kind
     // -------------------------------------------------------------------------

@@ -15,6 +15,10 @@
  */
 package com.darkcollective.relix.processor.exec;
 
+import java.util.Optional;
+import com.darkcollective.relix.value.StringValue;
+import com.darkcollective.relix.ast.internal.Collations.Collation;
+import com.darkcollective.relix.ast.internal.Collations;
 import com.darkcollective.relix.ast.NullPlacement;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.SortDirection;
@@ -55,13 +59,22 @@ final class ExecSupport {
      * Builds a row comparator from sort specs, honouring direction and NULL
      * placement.  Each key's expression is evaluated per row via {@code eval}, so a
      * bare column sorts by {@code row.get(name)} and a derived key
-     * (e.g. {@code to_timestamp(logged)}) by its computed value.
+     * (e.g. {@code to_timestamp(logged)}) by its computed value. A key written under a
+     * collation, {@code name COLLATE NOCASE}, orders two strings as the collation does,
+     * and two it calls equal are a tie, so they are peers to a ranking as well.
      */
     static Comparator<Row> rowComparator(List<SortSpecification> specs, OperandEvaluator eval) {
         Comparator<Row> comparator = null;
         for (SortSpecification spec : specs) {
             Comparator<Value> valCmp = spec.nullPlacement() == NullPlacement.NULLS_FIRST
                     ? ValueComparator.NULLS_FIRST : ValueComparator.NULLS_LAST;
+            Optional<Collation> collation = Collations.of(spec.expression());
+            if (collation.isPresent()) {
+                Comparator<Value> plain = valCmp;
+                Collation c = collation.get();
+                valCmp = (a, b) -> a instanceof StringValue x && b instanceof StringValue y
+                        ? c.compare(x.value(), y.value()) : plain.compare(a, b);
+            }
             if (spec.direction() == SortDirection.DESC) valCmp = valCmp.reversed();
             Operand expr = spec.expression();
             Comparator<Row> step = Comparator.comparing(row -> eval.evaluate(expr, row), valCmp);
@@ -86,6 +99,21 @@ final class ExecSupport {
      * has always worked this way, which is what {@code μ … WITH ORDINALITY} was
      * already relying on.
      */
+    /**
+     * The value a grouping or a hash-join bucket keys {@code key} by: the collation's key
+     * for a string written under one ({@code name COLLATE NOCASE}), so strings it calls
+     * equal share a bucket, and the value itself otherwise.
+     *
+     * @param key   the key's expression
+     * @param value its value in a row
+     * @return the value to bucket by
+     */
+    static Value bucketValue(Operand key, Value value) {
+        Optional<Collation> collation = Collations.of(key);
+        return collation.isPresent() && value instanceof StringValue s
+                ? new StringValue(collation.get().key(s.value())) : value;
+    }
+
     static Row appendColumn(Schema outputSchema, Schema inputSchema, Row row,
                             String column, Value value) {
         if (row instanceof DocumentRow document) {
