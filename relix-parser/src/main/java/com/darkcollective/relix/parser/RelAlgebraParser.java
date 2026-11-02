@@ -31,6 +31,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -1041,6 +1042,9 @@ public final class RelAlgebraParser {
     }
 
     private RelNode parsePrefixAtStart() {
+        if (startsSqlPaging()) {
+            return parseSqlPaging();
+        }
         if (current.type() != TokenType.IDENTIFIER && isRecursiveReference()) {
             Token startTok = current;
             advance();
@@ -3225,10 +3229,16 @@ public final class RelAlgebraParser {
         }
     }
 
+    /** The paging forms, named in every error a malformed one reports. */
+    private static final String PAGING_FORMS = "LIMIT n (R), LIMIT m, n (R), LIMIT n OFFSET m (R),"
+            + " or OFFSET m ROWS FETCH NEXT n ROWS ONLY (R)";
+
     /**
-     * Parses a λ. With SQL's {@code WITH TIES} it keeps the rows tied with the last one
-     * too, which needs the order that decides a tie, so its input must be a τ; the pair
-     * is then the global {@code TOP} that means the same thing, with the ties kept.
+     * Parses a λ: {@code LIMIT n}, {@code LIMIT m, n} (offset first, MySQL's order) or
+     * SQL's {@code LIMIT n OFFSET m}, all to one {@link LimitNode}. With SQL's
+     * {@code WITH TIES} it keeps the rows tied with the last one too, which needs the
+     * order that decides a tie, so its input must be a τ; the pair is then the global
+     * {@code TOP} that means the same thing, with the ties kept.
      */
     private RelNode parseLimit() {
         Token opTok = current;
@@ -3238,7 +3248,7 @@ public final class RelAlgebraParser {
         long firstValue = parseRowCount(firstNum, "'λ'");
 
         Optional<Long> offset = Optional.empty();
-        Long count;
+        long count;
 
         if (match(TokenType.COMMA)) {
             // Two arguments: offset, count
@@ -3246,12 +3256,73 @@ public final class RelAlgebraParser {
             Token countNum = expect(TokenType.NUMBER, "Expected count after offset");
             count = parseRowCount(countNum, "'λ'");
         } else {
-            // One argument: count
+            // One argument: count, and SQL's OFFSET after it
             count = firstValue;
+            if (matchWord("OFFSET")) {
+                Token offsetNum = expect(TokenType.NUMBER,
+                        "Expected a row count after OFFSET: write " + PAGING_FORMS);
+                offset = Optional.of(parseRowCount(offsetNum, "OFFSET"));
+                matchRowsWord();
+            }
         }
-        boolean withTies = parseWithTies();
+        return limited(opTok, offset, count, parseWithTies(), "Expected '(' after limit specification");
+    }
 
-        RelNode input = parseParenthesizedRelation("Expected '(' after limit specification");
+    /**
+     * Whether SQL's {@code OFFSET m ROWS …} or {@code FETCH FIRST n ROWS …} starts here,
+     * as the operator rather than a relation named {@code offset} or {@code fetch}: a row
+     * count follows OFFSET, and FIRST or NEXT follows FETCH.
+     */
+    private boolean startsSqlPaging() {
+        return isWord(current, "OFFSET") && peek(1).type() == TokenType.NUMBER
+                || isWord(current, "FETCH") && (isWord(peek(1), "FIRST") || isWord(peek(1), "NEXT"));
+    }
+
+    /**
+     * Parses the standard's paging clause, {@code OFFSET m ROWS [FETCH {FIRST|NEXT} [n]
+     * {ROW|ROWS} {ONLY|WITH TIES}] (R)}, or its {@code FETCH} alone, to the λ it means.
+     * {@code ROW} and {@code ROWS}, and {@code FIRST} and {@code NEXT}, are interchangeable,
+     * and a FETCH with no count takes one row, as in the standard. An OFFSET with no FETCH
+     * keeps every row after the offset.
+     */
+    private RelNode parseSqlPaging() {
+        Token opTok = current;
+        Optional<Long> offset = Optional.empty();
+        if (matchWord("OFFSET")) {
+            Token offsetNum = expect(TokenType.NUMBER, "Expected a row count after OFFSET");
+            offset = Optional.of(parseRowCount(offsetNum, "OFFSET"));
+            matchRowsWord();
+        }
+        long count = Long.MAX_VALUE;
+        boolean withTies = false;
+        if (matchWord("FETCH")) {
+            if (!matchWord("FIRST") && !matchWord("NEXT")) {
+                throw error(current, "Expected FIRST or NEXT after FETCH: write " + PAGING_FORMS);
+            }
+            count = 1;
+            if (current.type() == TokenType.NUMBER) {
+                count = parseRowCount(current, "FETCH");
+                advance();
+            }
+            if (!matchRowsWord()) {
+                throw error(current, "Expected ROWS after the FETCH count: write " + PAGING_FORMS);
+            }
+            withTies = parseWithTies();
+            if (!withTies && !matchWord("ONLY")) {
+                throw error(current, "Expected ONLY or WITH TIES to end the FETCH: write " + PAGING_FORMS);
+            }
+        }
+        return limited(opTok, offset, count, withTies, "Expected '(' after the paging clause: write " + PAGING_FORMS);
+    }
+
+    /** Consumes SQL's {@code ROW} or {@code ROWS} after a row count, and says whether it was written. */
+    private boolean matchRowsWord() {
+        return match(TokenType.ROWS) || matchWord("ROW");
+    }
+
+    /** The λ over the relation read next, or the TOP it is with {@code WITH TIES}. */
+    private RelNode limited(Token opTok, Optional<Long> offset, long count, boolean withTies, String expected) {
+        RelNode input = parseParenthesizedRelation(expected);
         if (withTies) {
             if (!(input instanceof SortNode sort)) {
                 throw error(opTok, "WITH TIES needs a sorted input, to know what ties: "
@@ -5564,6 +5635,35 @@ public final class RelAlgebraParser {
      * Shared logic for parsing a bare name token (IDENTIFIER or word-shaped keyword)
      * in operand position: handles dotted attribute names and function calls.
      */
+    /**
+     * SQL's datetime keywords, which are written without parentheses, and the function
+     * each is: the session's instant, its date and its time of day, all at UTC.
+     * {@code CURRENT_TIMESTAMP} and {@code LOCALTIMESTAMP} are {@code NOW()}.
+     */
+    private static final Map<String, String> NILADIC_DATETIME = Map.of(
+            "CURRENT_TIMESTAMP", "NOW",
+            "LOCALTIMESTAMP", "NOW",
+            "CURRENT_DATE", "CURRENT_DATE",
+            "CURRENT_TIME", "CURRENT_TIME");
+
+    /**
+     * Reads one of SQL's datetime keywords, bare or with an empty argument list, as the
+     * function it is. The keyword wins over a column of the same name, as in SQL; such a
+     * column is reached qualified ({@code R.current_date}) or delimited
+     * ({@code `current_date`}).
+     */
+    private Operand parseNiladicDatetime(Token nameToken, String function) {
+        if (current.type() == TokenType.LPAREN && adjacent(nameToken, current)) {
+            if (peek(1).type() != TokenType.RPAREN) {
+                throw error(peek(1), nameToken.lexeme() + " takes no argument: write "
+                        + nameToken.lexeme() + " or " + nameToken.lexeme() + "()");
+            }
+            advance();
+            advance();
+        }
+        return new FunctionCall(function, List.of(), loc(nameToken));
+    }
+
     private Operand parseOperandFromNameToken(Token nameToken) {
         StringBuilder sb = new StringBuilder(nameToken.lexeme());
 
@@ -5572,6 +5672,12 @@ public final class RelAlgebraParser {
             rejectQualifiedStar(sb);
             Token next = expectName("Expected identifier after '.'");
             sb.append(next.lexeme());
+        }
+
+        String niladic = sb.indexOf(".") < 0 && !lexer.isDelimited(nameToken)
+                ? NILADIC_DATETIME.get(sb.toString().toUpperCase(Locale.ROOT)) : null;
+        if (niladic != null) {
+            return parseNiladicDatetime(nameToken, niladic);
         }
 
         if (current.type() == TokenType.LPAREN && current.column() == nameToken.column() + sb.length()) {

@@ -291,6 +291,14 @@ final class DialectTest {
         }
 
         @Test
+        @DisplayName("an OFFSET with no FETCH is the OFFSET alone in the standard's form, where Db2 would overflow")
+        void unboundedCount() {
+            assertThat(Dialect.DB2.limit(Long.MAX_VALUE, 3)).isEqualTo("OFFSET 3 ROWS");
+            assertThat(Dialect.SQLSERVER.limit(Long.MAX_VALUE, 3)).isEqualTo("OFFSET 3 ROWS");
+            assertThat(Dialect.MYSQL.limit(Long.MAX_VALUE, 3)).isEqualTo("LIMIT " + Long.MAX_VALUE + " OFFSET 3");
+        }
+
+        @Test
         @DisplayName("and only SQL Server needs an ORDER BY for it to be legal")
         void needsOrderBy() {
             for (Dialect d : Dialect.values()) {

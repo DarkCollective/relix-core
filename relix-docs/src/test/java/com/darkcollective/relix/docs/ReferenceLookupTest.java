@@ -159,6 +159,10 @@ final class ReferenceLookupTest {
                         .map(ReferencePage::path).contains("language/case.md");
             }
             assertThat(INSTALLED.entry("IF")).contains(iif);
+            ReferencePage now = INSTALLED.function("NOW").orElseThrow();
+            for (String name : List.of("CURRENT_TIMESTAMP", "localtimestamp")) {
+                assertThat(INSTALLED.entry(name)).as(name).contains(now);
+            }
             assertThat(INSTALLED.entry("iif")).contains(iif);
             assertThat(INSTALLED.page(switchPage).orElseThrow())
                     .contains("# SQL names:", "`CASE WHEN c1 THEN v1 WHEN c2 THEN v2 ELSE d END` is `Switch(c1, v1, c2, v2, d)`");

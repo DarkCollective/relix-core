@@ -1,6 +1,7 @@
 # Name: CURRENT_DATE (today)
 
 # Syntax:
+CURRENT_DATE
 CURRENT_DATE()
 
 σ due_date = CURRENT_DATE() (Invoices)
@@ -47,6 +48,11 @@ clock they still advance, so the optimizer must never fold or dedupe them.
 # Limitations:
 Non-deterministic (reads the clock); not folded. UTC-based, so "today" is the UTC
 day.
+
+# SQL names:
+SQL writes CURRENT_DATE without parentheses, and so may a script: `CURRENT_DATE` and `CURRENT_DATE()`
+are the same call. The keyword wins over a column of the same name, as in SQL: such a
+column is read qualified (`R.current_date`) or delimited (`` `current_date` ``).
 
 # Alternatives:
 NOW() for a full timestamp; CURRENT_TIME() for the clock time only.

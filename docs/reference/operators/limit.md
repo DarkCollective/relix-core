@@ -4,10 +4,15 @@
 λ <count> (Relation)             -- first N rows
 λ <offset>, <count> (Relation)   -- skip offset rows, then take count
 λ <count> WITH TIES (τ ... (Relation))   -- and every row tied with the last
+LIMIT <count> OFFSET <offset> (Relation)                       -- SQL's order
+OFFSET <offset> ROWS [FETCH FIRST|NEXT [<count>] ROW|ROWS ONLY|WITH TIES] (Relation)
+FETCH FIRST|NEXT [<count>] ROW|ROWS ONLY|WITH TIES (Relation)
 LIMIT ...
 
 λ 10 (Orders)
 λ 20, 10 (Orders)                -- skip 20, take 10 (pagination)
+LIMIT 10 OFFSET 20 (Orders)      -- the same page
+OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY (Orders)   -- the same page
 
 # Description:
 Limit restricts how many rows come out. The one-number form keeps the first N
@@ -20,6 +25,9 @@ predictable (e.g. the 10 largest, the 5 most recent).
 `WITH TIES` keeps going past the Nth row while the rows that follow tie with it on
 every sort key, so that two rows the order cannot tell apart are kept or dropped
 together: the top 3 scores with a tie for third is four rows.
+
+SQL's two paging spellings are written as SQL writes them, and are the same λ:
+`LIMIT 10 OFFSET 20`, and the standard's `OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY`.
 
 # Technical Description:
 λ applies an optional offset and a row cap to its input. It is a streaming
@@ -35,12 +43,28 @@ taken on all the keys. Equal means equal to the sort, so two NULLs tie and `5` t
 with `5.0`. It folds into SQL as `FETCH FIRST n ROWS WITH TIES` on PostgreSQL (13 or
 later) and runs in the engine elsewhere.
 
+`LIMIT n OFFSET m` and `OFFSET m ROWS FETCH NEXT n ROWS ONLY` parse to `λ m, n` and
+print back that way. In the standard's form `ROW` and `ROWS` are the same word, as are
+`FIRST` and `NEXT`; `ROWS` after `OFFSET m` may be left out. A `FETCH` with no count
+fetches one row, a `FETCH` with no `OFFSET` skips none, and an `OFFSET` with no `FETCH`
+keeps every row after the offset. `FETCH … WITH TIES` is `λ n WITH TIES`, and takes a
+`τ` as its input in the same way.
+
 # Examples:
 First 10 orders:
   λ 10 (Orders)
 
 Page 3 of results, 10 per page (skip 20, take 10):
   λ 20, 10 (Orders)
+
+The same page, in SQL's order:
+  LIMIT 10 OFFSET 20 (Orders)
+
+The same page, in the standard's spelling:
+  OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY (Orders)
+
+Every order after the first 20:
+  OFFSET 20 ROWS (Orders)
 
 Top 10 salaries (sort then limit):
   λ 10 (τ salary DESC (Employees))
@@ -111,6 +135,12 @@ The count and the offset are whole numbers. A fraction, or a number too large fo
 query { λ 2.5 (Orders) };
 ```
 
+A `FETCH` ends with `ONLY` or `WITH TIES`:
+
+```relix-invalid
+query { FETCH FIRST 10 ROWS (Orders) };
+```
+
 `WITH TIES` needs a sorted input, since without one nothing ties:
 
 ```relix-invalid
@@ -122,14 +152,14 @@ For a random subset use SAMPLE p (probabilistic) or SAMPLE n ROWS (exact count).
 For "N per group" rather than N overall use TOP … PER.
 
 # SQL names:
-SQL's `LIMIT n`, `TOP n`, `FETCH FIRST n ROWS ONLY` and `ROWNUM <= n` are `LIMIT n (R)`,
-and `LIMIT n OFFSET m` or `OFFSET m ROWS FETCH NEXT n ROWS ONLY` is `LIMIT m, n (R)`, the
-offset first. Its `ORDER BY` is a [sort](sort.md) below it:
-`ORDER BY amount DESC LIMIT 10` is `LIMIT 10 (SORT amount DESC (R))`, and
-`FETCH FIRST n ROWS WITH TIES` is `LIMIT n WITH TIES (SORT … (R))`. Relix's
-[TOP](../advanced/top.md) is the top rows per group, SQL's `ROW_NUMBER() OVER (PARTITION
-BY …)` filtered to `<= n`; `ORDER BY RANDOM() LIMIT n` is
-[SAMPLE n ROWS](../advanced/sample-reservoir.md).
+SQL's `LIMIT n OFFSET m` and `OFFSET m ROWS FETCH NEXT n ROWS ONLY` are written as they
+are, and MySQL's `LIMIT m, n` is `λ m, n`, the offset first. SQL's `LIMIT n`, `TOP n`,
+`FETCH FIRST n ROWS ONLY` and `ROWNUM <= n` are `LIMIT n (R)`. Its `ORDER BY` is a
+[sort](sort.md) below it: `ORDER BY amount DESC LIMIT 10` is
+`LIMIT 10 (SORT amount DESC (R))`, and `FETCH FIRST n ROWS WITH TIES` is
+`FETCH FIRST n ROWS WITH TIES (SORT … (R))`. Relix's [TOP](../advanced/top.md) is the
+top rows per group, SQL's `ROW_NUMBER() OVER (PARTITION BY …)` filtered to `<= n`;
+`ORDER BY RANDOM() LIMIT n` is [SAMPLE n ROWS](../advanced/sample-reservoir.md).
 
 # See Also:
 [sort](sort.md), [top](../advanced/top.md), [sample-bernoulli](../advanced/sample-bernoulli.md), [sample-reservoir](../advanced/sample-reservoir.md)

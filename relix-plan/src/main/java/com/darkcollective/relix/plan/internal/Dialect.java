@@ -250,11 +250,19 @@ public enum Dialect {
      * {@code ORDER BY} — see {@link #limitNeedsOrderBy}, which is what stops the planner
      * asking for one without.
      *
+     * <p>A count of {@link Long#MAX_VALUE} is no limit at all: SQL's
+     * {@code OFFSET m ROWS} with no {@code FETCH}. The standard's form then writes the
+     * {@code OFFSET} alone, since Db2 adds the two and overflows; {@code LIMIT} has no
+     * form without a count, and takes the largest one as MySQL documents.
+     *
      * @param count  the maximum number of rows
      * @param offset the number of leading rows to skip (0 = none)
      * @return the SQL clause, without a leading space
      */
     public String limit(long count, long offset) {
+        if (count == Long.MAX_VALUE && (this == SQLSERVER || this == DB2)) {
+            return "OFFSET " + offset + " ROWS";
+        }
         return switch (this) {
             case GENERIC, POSTGRES, MYSQL, DUCKDB, SQLITE ->
                     offset > 0 ? "LIMIT " + count + " OFFSET " + offset : "LIMIT " + count;

@@ -166,6 +166,10 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
                 List.of("A ⟕ A.i = B.j B", "A |>< A.i = B.j B", "A LJOIN A.i = B.j B"),
                 List.of("A ⟖ A.i = B.j B", "A ><| A.i = B.j B", "A RJOIN A.i = B.j B"),
                 List.of("A ⟗ A.i = B.j B", "A |><| A.i = B.j B", "A FJOIN A.i = B.j B")));
+        row("`LIMIT 10 OFFSET 20`, `OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY`", "λ 20, 10 (R)",
+                "LIMIT 10 OFFSET 20 (R)", "OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY (R)");
+        row("`CURRENT_TIMESTAMP`, `LOCALTIMESTAMP`", "π CURRENT_TIMESTAMP → t (R)",
+                "π LOCALTIMESTAMP → t (R)", "π NOW() → t (R)");
         row("`COUNT(*)`", "γ d, COUNT(*) -> n (R)", "γ d, COUNT(1) -> n (R)");
         row("`x BETWEEN a AND b`", "σ x BETWEEN a AND b (R)", "σ x >= a ∧ x <= b (R)");
         row("`x NOT BETWEEN a AND b`", "σ x NOT BETWEEN a AND b (R)", "σ x < a ∨ x > b (R)");

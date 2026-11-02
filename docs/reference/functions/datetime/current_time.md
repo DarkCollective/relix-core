@@ -1,6 +1,7 @@
 # Name: CURRENT_TIME (current clock time)
 
 # Syntax:
+CURRENT_TIME
 CURRENT_TIME()
 
 π id, CURRENT_TIME() → at (Hits)
@@ -42,6 +43,11 @@ clock they still advance, so the optimizer must never fold or dedupe them.
 
 # Limitations:
 Non-deterministic (reads the clock); not folded. UTC-based.
+
+# SQL names:
+SQL writes CURRENT_TIME without parentheses, and so may a script: `CURRENT_TIME` and `CURRENT_TIME()`
+are the same call. The keyword wins over a column of the same name, as in SQL: such a
+column is read qualified (`R.current_time`) or delimited (`` `current_time` ``).
 
 # Alternatives:
 NOW() for a full timestamp; CURRENT_DATE() for today's date only.

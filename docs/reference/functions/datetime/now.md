@@ -2,6 +2,8 @@
 
 # Syntax:
 NOW()
+CURRENT_TIMESTAMP
+LOCALTIMESTAMP
 
 π id, NOW() → fetched_at (Records)
 
@@ -53,6 +55,14 @@ clock they still advance, so the optimizer must never fold or dedupe them.
 
 # Limitations:
 Non-deterministic (reads the clock); not folded by the optimizer. Always UTC.
+
+# SQL names:
+SQL's `CURRENT_TIMESTAMP` and `LOCALTIMESTAMP` are NOW(), written without parentheses
+as in SQL or with them, as in `CURRENT_TIMESTAMP()`. Both are the session's instant in
+UTC, so `LOCALTIMESTAMP` is not shifted to a local zone. The keyword wins over a column
+of the same name, as in SQL: such a column is read qualified (`R.current_timestamp`)
+or delimited (`` `current_timestamp` ``). A precision, as in `CURRENT_TIMESTAMP(3)`, is
+not taken.
 
 # Alternatives:
 CURRENT_DATE for today's date only; CURRENT_TIME for the clock time only.
