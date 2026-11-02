@@ -19,6 +19,7 @@ import com.darkcollective.relix.function.Arity;
 import com.darkcollective.relix.function.PushdownSpelling;
 import com.darkcollective.relix.function.PushdownTarget;
 import com.darkcollective.relix.function.ScalarFunction;
+import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.value.DateValue;
 import com.darkcollective.relix.value.DurationValue;
 import com.darkcollective.relix.value.NullValue;
@@ -40,10 +41,12 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.IsoFields;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.ToIntFunction;
 import java.util.function.ToLongFunction;
 
@@ -51,6 +54,7 @@ import static com.darkcollective.relix.function.builtin.Arguments.reject;
 import static com.darkcollective.relix.function.builtin.Arguments.string;
 import static com.darkcollective.relix.function.builtin.Category.PURE_DETERMINISTIC;
 import static com.darkcollective.relix.function.builtin.Category.STABLE;
+import static com.darkcollective.relix.function.builtin.Category.accepting;
 import static com.darkcollective.relix.function.builtin.Category.p;
 import static com.darkcollective.relix.symbol.ScalarType.ANY;
 import static com.darkcollective.relix.symbol.ScalarType.DATE;
@@ -82,6 +86,16 @@ import static com.darkcollective.relix.symbol.ScalarType.TIMESTAMPTZ;
  * once and send the <em>value</em> to a backend even though it may not send the call.
  */
 final class DateTimeFunctions {
+
+    /** What a date part reads: a DATE, or the date of an instant. */
+    private static final Set<ScalarType> DATES = EnumSet.of(DATE, TIMESTAMP, TIMESTAMPTZ);
+
+    /** What a time part reads: a TIME, or the time of day of an instant. */
+    private static final Set<ScalarType> TIMES = EnumSet.of(TIME, TIMESTAMP, TIMESTAMPTZ);
+
+    /** An instant, either kind. */
+    private static final Set<ScalarType> INSTANTS = EnumSet.of(TIMESTAMP, TIMESTAMPTZ);
+
 
     private static final Category DATETIME = Category.of("datetime");
 
@@ -133,60 +147,61 @@ final class DateTimeFunctions {
 
                 // YEAR/MONTH/DAY accept a DATE or a TIMESTAMP and HOUR/MINUTE/SECOND a
                 // TIME or a TIMESTAMP. The parameter is declared ANY because a union of
-                // two types is not expressible as one; the body states which it means.
-                DATETIME.fn("YEAR", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                // two types is not expressible as one; accepting says which it means, so
+                // analysis refuses YEAR(5) and HOUR(DATE '…') before they run.
+                accepting(DATETIME.fn("YEAR", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
                         part("YEAR", "$year"),
-                        args -> datePart(args, "YEAR", LocalDate::getYear)),
+                        args -> datePart(args, "YEAR", LocalDate::getYear)), 0, DATES),
 
-                DATETIME.fn("MONTH", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                accepting(DATETIME.fn("MONTH", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
                         part("MONTH", "$month"),
-                        args -> datePart(args, "MONTH", LocalDate::getMonthValue)),
+                        args -> datePart(args, "MONTH", LocalDate::getMonthValue)), 0, DATES),
 
-                DATETIME.fn("DAY", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                accepting(DATETIME.fn("DAY", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
                         part("DAY", "$dayOfMonth"),
-                        args -> datePart(args, "DAY", LocalDate::getDayOfMonth)),
+                        args -> datePart(args, "DAY", LocalDate::getDayOfMonth)), 0, DATES),
 
-                DATETIME.fn("HOUR", NUMBER, PURE_DETERMINISTIC, List.of(p("t", ANY)),
+                accepting(DATETIME.fn("HOUR", NUMBER, PURE_DETERMINISTIC, List.of(p("t", ANY)),
                         part("HOUR", "$hour"),
-                        args -> timePart(args, "HOUR", LocalTime::getHour)),
+                        args -> timePart(args, "HOUR", LocalTime::getHour)), 0, TIMES),
 
-                DATETIME.fn("MINUTE", NUMBER, PURE_DETERMINISTIC, List.of(p("t", ANY)),
+                accepting(DATETIME.fn("MINUTE", NUMBER, PURE_DETERMINISTIC, List.of(p("t", ANY)),
                         part("MINUTE", "$minute"),
-                        args -> timePart(args, "MINUTE", LocalTime::getMinute)),
+                        args -> timePart(args, "MINUTE", LocalTime::getMinute)), 0, TIMES),
 
-                DATETIME.fn("SECOND", NUMBER, PURE_DETERMINISTIC, List.of(p("t", ANY)),
+                accepting(DATETIME.fn("SECOND", NUMBER, PURE_DETERMINISTIC, List.of(p("t", ANY)),
                         part("SECOND", "$second"),
-                        args -> timePart(args, "SECOND", LocalTime::getSecond)),
+                        args -> timePart(args, "SECOND", LocalTime::getSecond)), 0, TIMES),
 
                 // The calendar fields SQL's EXTRACT names beyond the six above, each a
                 // function of its own and each answering as PostgreSQL's field does.
                 // DOW counts Sunday as 0; ISODOW counts Monday as 1 and Sunday as 7.
-                DATETIME.fn("DOW", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                accepting(DATETIME.fn("DOW", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
                         DateTimeFunctions::dowSpelling,
-                        args -> datePart(args, "DOW", d -> d.getDayOfWeek().getValue() % 7)),
+                        args -> datePart(args, "DOW", d -> d.getDayOfWeek().getValue() % 7)), 0, DATES),
 
-                DATETIME.fn("ISODOW", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                accepting(DATETIME.fn("ISODOW", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
                         DateTimeFunctions::isodowSpelling,
-                        args -> datePart(args, "ISODOW", d -> d.getDayOfWeek().getValue())),
+                        args -> datePart(args, "ISODOW", d -> d.getDayOfWeek().getValue())), 0, DATES),
 
-                DATETIME.fn("DOY", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                accepting(DATETIME.fn("DOY", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
                         field("DOY", "DAYOFYEAR", "dayofyear", "$dayOfYear"),
-                        args -> datePart(args, "DOY", LocalDate::getDayOfYear)),
+                        args -> datePart(args, "DOY", LocalDate::getDayOfYear)), 0, DATES),
 
                 // The ISO week: weeks start on Monday, and week 1 is the one holding the
                 // year's first Thursday, so 1 January may fall in week 52 or 53 of the
                 // year before. ISOYEAR is the year that week belongs to.
-                DATETIME.fn("WEEK", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                accepting(DATETIME.fn("WEEK", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
                         field("WEEK", null, "iso_week", "$isoWeek"),
-                        args -> datePart(args, "WEEK", d -> d.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR))),
+                        args -> datePart(args, "WEEK", d -> d.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR))), 0, DATES),
 
-                DATETIME.fn("ISOYEAR", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                accepting(DATETIME.fn("ISOYEAR", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
                         field("ISOYEAR", null, null, "$isoWeekYear"),
-                        args -> datePart(args, "ISOYEAR", d -> d.get(IsoFields.WEEK_BASED_YEAR))),
+                        args -> datePart(args, "ISOYEAR", d -> d.get(IsoFields.WEEK_BASED_YEAR))), 0, DATES),
 
-                DATETIME.fn("QUARTER", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
+                accepting(DATETIME.fn("QUARTER", NUMBER, PURE_DETERMINISTIC, List.of(p("d", ANY)),
                         field("QUARTER", "QUARTER", "quarter", null),
-                        args -> datePart(args, "QUARTER", d -> d.get(IsoFields.QUARTER_OF_YEAR))),
+                        args -> datePart(args, "QUARTER", d -> d.get(IsoFields.QUARTER_OF_YEAR))), 0, DATES),
 
                 // EPOCH is seconds since 1970-01-01T00:00:00Z for a timestamp or a date (its
                 // midnight at UTC), seconds since midnight for a time, and a duration's
@@ -218,10 +233,11 @@ final class DateTimeFunctions {
                         DateTimeFunctions::dateDiffSpelling, DateTimeFunctions::dateDiff),
 
                 // A TIMESTAMPTZ is truncated on its own clock and keeps its offset.
-                DATETIME.contextual("DATE_TRUNC", TIMESTAMP, PURE_DETERMINISTIC,
+                accepting(DATETIME.contextual("DATE_TRUNC", TIMESTAMP, PURE_DETERMINISTIC,
                         List.of(p("unit", STRING), p("ts", TIMESTAMP)), Arity.exactly(2),
                         types -> types.get(1) == TIMESTAMPTZ ? TIMESTAMPTZ : TIMESTAMP,
                         DateTimeFunctions::dateTruncSpelling, (context, args) -> dateTrunc(args)),
+                        1, INSTANTS),
 
                 // DATEADD(unit, n, d): SQL Server's, and MySQL's TIMESTAMPADD. A month from the
                 // 31st lands on a shorter month's last day, as d + INTERVAL does.

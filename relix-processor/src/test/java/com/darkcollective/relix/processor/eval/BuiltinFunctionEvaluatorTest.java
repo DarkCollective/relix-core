@@ -424,6 +424,15 @@ final class BuiltinFunctionEvaluatorTest extends ProcessorTestSupport {
                     .hasMessageContaining("expected NUMBER");
         }
 
+        @Test @DisplayName("a failure names the function once, as the call spelled it (#252)")
+        void namesTheFunctionOnce() {
+            assertThatThrownBy(() -> eval.evaluate(func("SQRT", AstBuilders.str("hello")), row))
+                    .isInstanceOf(EvaluationException.class)
+                    .hasMessage("SQRT: expected NUMBER argument, got STRING");
+            assertThatThrownBy(() -> eval.evaluate(func("UCase", AstBuilders.num("42")), row))
+                    .hasMessage("UCase: expected STRING argument, got NUMBER");
+        }
+
         @Test @DisplayName("IIf rejects non-boolean first argument")
         void iifNonBooleanCondition() {
             var call = func("IIf",AstBuilders.num("1"),

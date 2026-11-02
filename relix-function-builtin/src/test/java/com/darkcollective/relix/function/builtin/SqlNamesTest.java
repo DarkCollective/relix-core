@@ -62,6 +62,15 @@ final class SqlNamesTest {
     }
 
     @Test
+    @DisplayName("an alias's failure names the alias, not the built-in it calls (#252)")
+    void aliasFailureNamesTheAlias() {
+        assertThatThrownBy(() -> call("SQRT", s("x")))
+                .hasMessage("SQRT: expected NUMBER argument, got STRING");
+        assertThatThrownBy(() -> call("SQRT", n("-1")))
+                .hasMessage("SQRT: argument must be non-negative");
+    }
+
+    @Test
     @DisplayName("SUBSTRING counts a start before the first character, as PostgreSQL's does")
     void substring() {
         assertThat(text(call("SUBSTRING", s("hello"), n("2"), n("3")))).isEqualTo("ell");
