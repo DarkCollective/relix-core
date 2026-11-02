@@ -174,10 +174,10 @@ final class GrammarReferenceTest {
         @Test
         @DisplayName("a grammar accepting a rejected form is caught by the relix-invalid examples")
         void overAcceptanceIsNoticed() {
-            EbnfGrammar broken = mutate("set_expr          ::= \"{\"",
-                    "set_expr          ::= \"(\" operand ( \",\" operand )* \")\" | \"{\"");
+            EbnfGrammar broken = mutate("condition_tail    ::= comparison_op operand",
+                    "condition_tail    ::= \"DISTINCT\" \"FROM\" operand | comparison_op operand");
             assertThat(disagreements(broken, documentedExamples()))
-                    .anyMatch(d -> d.contains("IN ('open', 'held')"));
+                    .anyMatch(d -> d.contains("before DISTINCT FROM after"));
         }
 
         @Test

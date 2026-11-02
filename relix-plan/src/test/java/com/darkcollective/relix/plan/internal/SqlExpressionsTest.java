@@ -291,6 +291,15 @@ final class SqlExpressionsTest {
         }
 
         @Test
+        @DisplayName("IN over the empty set is false and NOT IN true, SQL having no IN ()")
+        void elementOfTheEmptySet() {
+            assertThat(renderP(AstBuilders.elementOf(attr("a"), set()))).hasValue("1 = 0");
+            assertThat(renderP(notElementOf(attr("a"), set()))).hasValue("1 = 1");
+            assertThat(renderP(AstBuilders.elementOf(attr("a"), func("Len", attr("n")))))
+                    .as("a set that is not a literal, and does not render").isEmpty();
+        }
+
+        @Test
         @DisplayName("a predicate over an untranslatable operand is empty")
         void unsupportedOperandMakesPredicateEmpty() {
             Predicate p = cmp(func("Len",attr("name")),

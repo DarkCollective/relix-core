@@ -211,17 +211,22 @@ public final class PredicateEvaluator {
      * SQL's membership rule, which has two ways to be UNKNOWN: a NULL element, and
      * a NULL <em>in the set</em> when nothing else matched. {@code 3 ∈ {1, NULL}}
      * is not false — the NULL might have been the 3 — so {@code 3 ∉ {1, NULL}} is
-     * not true either, and neither keeps the row.
+     * not true either, and neither keeps the row. Nothing is a member of the empty
+     * set, a NULL included, so {@code ⊥ ∈ {}} is false, as SQL's {@code = ANY} over
+     * an empty array is.
      */
     private Truth evaluateElementOf(ElementOfPredicate pred, Row row) {
-        Value element = operandEvaluator.evaluate(pred.element(), row);
-        if (element.isNull()) return Truth.UNKNOWN;
-
         if (!(pred.setExpression() instanceof SetLiteralOperand setLiteral)) {
             throw new EvaluationException(
                     "IN predicate expects a set literal; got "
                     + pred.setExpression().getClass().getSimpleName());
         }
+        if (setLiteral.elements().isEmpty()) {
+            return Truth.of(pred.isNegated());
+        }
+        Value element = operandEvaluator.evaluate(pred.element(), row);
+        if (element.isNull()) return Truth.UNKNOWN;
+
         List<Value> setValues = setLiteral.elements().stream()
                 .map(el -> operandEvaluator.evaluate(el, row))
                 .toList();
