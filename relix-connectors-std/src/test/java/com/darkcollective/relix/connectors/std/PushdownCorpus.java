@@ -692,7 +692,14 @@ final class PushdownCorpus {
                 "σ IIf(amount > 99, 1, 0) = 1 (Orders)",
                 "π oid, Switch(amount ≥ 200, 'large', amount ≥ 100, 'medium', 'small') → band (Orders)",
                 "π oid, Switch(amount ≥ 200, 'large', amount ≥ 100, 'medium') → band (Orders)",
-                "π oid, Choose(qty, 'one', 'two', 'three') → c (Orders)");
+                "π oid, Choose(qty, 'one', 'two', 'three') → c (Orders)",
+                // SQL's CASE is Switch, so it takes the ELSE where the condition is
+                // unknown — the row IIf answers NULL on — and a simple CASE over the
+                // NULL code matches no WHEN.
+                "π oid, CASE WHEN amount > 99 THEN 'big' ELSE 'small' END → size (Orders)",
+                "π oid, CASE WHEN amount ≥ 200 THEN 'large' WHEN amount ≥ 100 THEN 'medium' END → band (Orders)",
+                "π oid, CASE region WHEN 'east' THEN 1 WHEN 'west' THEN 2 ELSE 0 END → r (Orders)",
+                "σ CASE WHEN amount > 99 THEN 1 ELSE 0 END = 1 (Orders)");
     }
 
     /**

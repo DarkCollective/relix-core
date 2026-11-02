@@ -5308,60 +5308,97 @@ public final class RelAlgebraParser {
         return left;
     }
 
+    /** How far {@link #startsCase} looks for the WHEN of a simple CASE's subject. */
+    private static final int CASE_SUBJECT_LOOKAHEAD = 64;
+
     /**
-     * Refuses SQL's {@code CASE} expression at {@code CASE}, written as the function
-     * Relix has for it: {@code CASE WHEN c THEN a ELSE b END} is {@code IIf(c, a, b)},
-     * and more than one {@code WHEN}, or none with no {@code ELSE}, is
-     * {@code Switch(c1, a, c2, b, d)}. A simple {@code CASE x WHEN 1 THEN …} compares
-     * {@code x = 1}. Where the CASE does not read to its {@code END}, both are named.
+     * Whether {@code CASE} at the current token opens a CASE expression rather than naming
+     * a column called {@code case}: a WHEN follows it, directly or after a simple CASE's
+     * subject ({@code CASE price * qty WHEN …}). A column is never followed by a WHEN, so
+     * the subject is scanned, outside any brackets, until something that would end an
+     * operand — a comma, an arrow, a closing bracket or the end of the input.
      */
-    private void rejectCase() {
+    private boolean startsCase() {
+        if (!isWord(current, "CASE")) {
+            return false;
+        }
+        int nesting = 0;
+        for (int i = 1; i <= CASE_SUBJECT_LOOKAHEAD; i++) {
+            Token token = peek(i);
+            switch (token.type()) {
+                case LPAREN, LBRACE, LBRACKET -> nesting++;
+                case RPAREN, RBRACE, RBRACKET -> {
+                    if (nesting-- == 0) {
+                        return false;
+                    }
+                }
+                case COMMA, ARROW -> {
+                    if (nesting == 0) {
+                        return false;
+                    }
+                }
+                case EOF -> {
+                    return false;
+                }
+                default -> {
+                    if (nesting == 0 && isWord(token, "WHEN")) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /** The shape of a CASE, named in every error a malformed one reports. */
+    private static final String CASE_FORMS = "CASE WHEN condition THEN value [WHEN …] [ELSE value] END,"
+            + " or CASE x WHEN v THEN value [WHEN …] [ELSE value] END";
+
+    /**
+     * Parses SQL's {@code CASE} expression, which is {@code Switch}: the searched form
+     * {@code CASE WHEN c1 THEN a WHEN c2 THEN b ELSE d END} is
+     * {@code Switch(c1, a, c2, b, d)}, and the simple form {@code CASE x WHEN 1 THEN a …}
+     * compares {@code x = 1}. With no {@code ELSE} an unmatched row is NULL, and a NULL
+     * condition is not a match, as in SQL — which is why a single-{@code WHEN} CASE is
+     * {@code Switch} and not {@code IIf}, whose NULL condition yields NULL even where an
+     * {@code ELSE} is written. The simple form names its subject once per {@code WHEN}.
+     */
+    private Operand parseCase() {
         Token caseTok = current;
-        String rewrite = null;
+        SourceLocation at = loc(caseTok);
         Token enclosing = selection;
         selection = null;
         try {
             advance();
-            String subject = null;
+            Operand subject = isWord(current, "WHEN") ? null : parseOperand();
+            List<Operand> arguments = new ArrayList<>();
             if (!isWord(current, "WHEN")) {
-                int start = consumed.size();
-                parseOperand();
-                subject = writtenFrom(start);
+                throw error(current, "Expected WHEN after the CASE subject: write " + CASE_FORMS);
             }
-            List<String> arguments = new ArrayList<>();
-            while (matchWord("WHEN")) {
-                int start = consumed.size();
+            while (isWord(current, "WHEN")) {
+                Token when = current;
+                advance();
                 if (subject == null) {
-                    parsePredicate();
-                    arguments.add(writtenFrom(start));
+                    arguments.add(new ConditionOperand(parsePredicate(), loc(when)));
                 } else {
-                    parseOperand();
-                    arguments.add(subject + " = " + writtenFrom(start));
+                    arguments.add(new ConditionOperand(new ComparisonPredicate(subject,
+                            ComparisonOperator.EQUAL, parseOperand(), loc(when)), loc(when)));
                 }
                 if (!matchWord("THEN")) {
-                    throw error(current, "Expected THEN");
+                    throw error(current, "Expected THEN after the WHEN condition: write " + CASE_FORMS);
                 }
-                start = consumed.size();
-                parseOperand();
-                arguments.add(writtenFrom(start));
+                arguments.add(parseOperand());
             }
             if (matchWord("ELSE")) {
-                int start = consumed.size();
-                parseOperand();
-                arguments.add(writtenFrom(start));
+                arguments.add(parseOperand());
             }
-            if (matchWord("END")) {
-                rewrite = (arguments.size() == 3 ? "IIf(" : "Switch(")
-                        + String.join(", ", arguments) + ")";
+            if (!matchWord("END")) {
+                throw error(current, "Expected END to close the CASE: write " + CASE_FORMS);
             }
-        } catch (ParseException e) {
-            // The CASE does not read: the error names both functions without a rewrite.
+            return new FunctionCall("Switch", arguments, at);
         } finally {
             selection = enclosing;
         }
-        throw ParseException.at("Relix has no CASE: write " + (rewrite != null ? rewrite
-                : "IIf(condition, a, b), or Switch(c1, a, c2, b, …, default) for more than one WHEN"),
-                lexer.input(), caseTok);
     }
 
     /**
@@ -5395,8 +5432,8 @@ public final class RelAlgebraParser {
         if (isWord(current, "TIMESTAMPTZ") && peek(1).type() == TokenType.STRING) {
             return parseTemporalLiteral();
         }
-        if (isWord(current, "CASE") && (isWord(peek(1), "WHEN") || isWord(peek(2), "WHEN"))) {
-            rejectCase();
+        if (startsCase()) {
+            return parseCase();
         }
 
         return switch (current.type()) {

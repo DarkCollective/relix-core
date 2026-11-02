@@ -1205,33 +1205,25 @@ final class ParserErrorTest extends ParserTestSupport {
     }
 
     @Test
-    @DisplayName("SQL's CASE names IIf or Switch, written with the CASE's own conditions and values (#230)")
-    public void reportsCase() {
-        assertParseError("PROJECT id, CASE WHEN v > 1 THEN 'big' ELSE 'small' END -> size (R)")
-                .hasMessageContaining("Relix has no CASE: write IIf(v > 1, 'big', 'small')")
-                .at(1, 13);
-        parse("PROJECT id, IIf(v > 1, 'big', 'small') -> size (R)");
-        String many = "Switch(v > 1, 'big', v > 0, 'mid', 'small')";
-        assertParseError("PROJECT id, CASE WHEN v > 1 THEN 'big' WHEN v > 0 THEN 'mid' ELSE 'small' END -> size (R)")
-                .hasMessageContaining("Relix has no CASE: write " + many);
-        parse("PROJECT id, " + many + " -> size (R)");
-        assertParseError("PROJECT id, CASE WHEN v > 1 THEN 'big' END -> size (R)")
-                .hasMessageContaining("Relix has no CASE: write Switch(v > 1, 'big')");
-        parse("PROJECT id, Switch(v > 1, 'big') -> size (R)");
+    @DisplayName("a CASE that does not read to its END names both CASE forms (#257)")
+    public void reportsMalformedCase() {
+        String forms = "CASE WHEN condition THEN value [WHEN …] [ELSE value] END,"
+                + " or CASE x WHEN v THEN value [WHEN …] [ELSE value] END";
         assertParseError("PROJECT CASE WHEN v > 1 'big' END -> size (R)")
-                .hasMessageContaining("Relix has no CASE: write IIf(condition, a, b)");
-        String simple = "Switch(kind = 'a', 1, kind = 'b', 2)";
-        assertParseError("PROJECT id, CASE kind WHEN 'a' THEN 1 WHEN 'b' THEN 2 END -> k (R)")
-                .hasMessageContaining("Relix has no CASE: write " + simple);
-        parse("PROJECT id, " + simple + " -> k (R)");
-        assertParseError("SELECT CASE WHEN v > 1 THEN 1 ELSE 0 END = 1 (R)")
-                .hasMessageContaining("Relix has no CASE: write IIf(v > 1, 1, 0)");
-        parse("SELECT IIf(v > 1, 1, 0) = 1 (R)");
-        // A CASE with no END: both functions are named.
+                .hasMessageContaining("Expected THEN after the WHEN condition: write " + forms)
+                .at(1, 25);
         assertParseError("PROJECT CASE WHEN v > 1 THEN 1 -> k (R)")
-                .hasMessageContaining("Relix has no CASE: write IIf(condition, a, b), or Switch(");
-        // A column named case is still a column.
+                .hasMessageContaining("Expected END to close the CASE: write " + forms);
+        assertParseError("PROJECT CASE kind WHEN 'a' THEN 1 ELSE 0 (R)")
+                .hasMessageContaining("Expected END to close the CASE: write " + forms);
+        assertParseError("PROJECT CASE kind other WHEN 'a' THEN 1 END (R)")
+                .hasMessageContaining("Expected WHEN after the CASE subject: write " + forms);
+        // Brackets hide a WHEN from the lookahead, and a long subject is read in full.
+        parse("PROJECT CASE (kind) WHEN 'a' THEN [1] ELSE [{x: 1}] END -> k (R)");
+        // A column named case is still a column, in a projection and in a condition.
         parse("PROJECT case (R)");
+        parse("SELECT case = 1 (R)");
+        parse("PROJECT case, (case + 1) -> next (R)");
     }
 
     @Test

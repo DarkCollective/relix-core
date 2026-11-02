@@ -150,20 +150,20 @@ final class ReferenceLookupTest {
         }
 
         @Test
-        @DisplayName("SQL's CASE, CASE WHEN and IF find Switch and IIf, whose pages name them (#189)")
+        @DisplayName("SQL's CASE finds its own page, and IF finds IIf, whose pages name them (#189, #257)")
         void sqlConditionalNames() {
             ReferencePage iif = INSTALLED.function("IIf").orElseThrow();
             ReferencePage switchPage = INSTALLED.function("Switch").orElseThrow();
             for (String name : new String[] {"CASE", "case when", "Case When "}) {
-                assertThat(INSTALLED.entry(name)).as(name).contains(switchPage);
+                assertThat(INSTALLED.entry(name)).as(name)
+                        .map(ReferencePage::path).contains("language/case.md");
             }
             assertThat(INSTALLED.entry("IF")).contains(iif);
             assertThat(INSTALLED.entry("iif")).contains(iif);
             assertThat(INSTALLED.page(switchPage).orElseThrow())
-                    .contains("# SQL names:", "`CASE WHEN c1 THEN v1 WHEN c2 THEN v2 ELSE d END`",
-                            "`Switch(c1, v1, c2, v2, True, d)`");
+                    .contains("# SQL names:", "`CASE WHEN c1 THEN v1 WHEN c2 THEN v2 ELSE d END` is `Switch(c1, v1, c2, v2, d)`");
             assertThat(INSTALLED.page(iif).orElseThrow())
-                    .contains("# SQL names:", "`CASE WHEN c THEN a ELSE b END` is `IIf(c, a, b)`");
+                    .contains("# SQL names:", "`IF(c, a, b)` is `IIf(c, a, b)`");
         }
 
         @Test

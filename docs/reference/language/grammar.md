@@ -602,6 +602,7 @@ zone_operand      ::= "-" zone_operand
 
 primary_operand   ::= literal
                     | bound_parameter
+                    | case_expr
                     | cast_call
                     | extract_call
                     | substring_call
@@ -635,6 +636,11 @@ substring_call    ::= "SUBSTRING" CALL_OPEN operand
 position_call     ::= "POSITION" CALL_OPEN operand ( "∈" | "IN" ) operand ")"
 extract_field     ::= "YEAR" | "MONTH" | "DAY" | "HOUR" | "MINUTE" | "SECOND"
                     | "DOW" | "ISODOW" | "DOY" | "WEEK" | "ISOYEAR" | "QUARTER" | "EPOCH"
+/* CASE WHEN amount > 100 THEN 'big' ELSE 'small' END is Switch(amount > 100, 'big', 'small');
+   CASE x WHEN 1 THEN a END compares x = 1. With no ELSE an unmatched row is NULL. */
+case_expr         ::= "CASE" ( ( "WHEN" predicate "THEN" operand )+
+                             | operand ( "WHEN" operand "THEN" operand )+ )
+                      ( "ELSE" operand )? "END"
 /* An argument may be a condition: IIf(amount > 100, 'big', 'small'). */
 argument          ::= operand
                     | predicate
@@ -795,6 +801,9 @@ are easy to miss in the rules above.
   and puts it once, first, in the output; any other column both inputs have stays
   twice, the right one suffixed `_r`. A full join's `id` is whichever side has one.
   A column may not be named twice.
+- **`CASE` is SQL's, and is `Switch`.** Both forms read as SQL's: a NULL condition is
+  not a match, and with no `ELSE` an unmatched row is NULL. None of its words is
+  reserved, so a column called `case` is a column wherever no `WHEN` follows it.
 - **`CAST` and `EXTRACT` are SQL's.** `CAST(x AS NUMBER)` is the conversion to the
   type, and a NULL casts to NULL. `EXTRACT(WEEK FROM d)` is `WEEK(d)`. `CAST` is not
   a name a function can have; `EXTRACT` without `FROM` is an ordinary call.
