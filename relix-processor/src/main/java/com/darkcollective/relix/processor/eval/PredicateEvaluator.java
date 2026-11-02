@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.processor.EvaluationException;
 
 import com.darkcollective.relix.ast.AndPredicate;
@@ -133,7 +135,15 @@ public final class PredicateEvaluator {
             case NullPredicate        n -> Truth.of(evaluateNull(n, row));
             case ElementOfPredicate   e -> evaluateElementOf(e, row);
             case PatternPredicate     p -> evaluatePattern(p, row);
+            // The planner turns a subquery into a lateral join before a row is read.
+            case ExistsPredicate      e -> throw unplanned(e);
+            case QuantifiedPredicate  q -> throw unplanned(q);
         };
+    }
+
+    private static IllegalStateException unplanned(Predicate subquery) {
+        return new IllegalStateException("a subquery reached the evaluator unplanned at "
+                + subquery.location());
     }
 
     /**

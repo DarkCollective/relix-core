@@ -460,12 +460,13 @@ final class ExpressionSimplificationPassTest {
             assertThat(result.arguments().get(1)).isEqualTo(num("2"));
         }
 
-        @Test @DisplayName("a LATERAL join's arguments — children() reports only the left input")
+        @Test @DisplayName("a LATERAL join's arguments — the function call is its right child")
         void lateralArguments() {
             var node = lateral(base, "ordersFor",foldable());
 
             var result = (LateralJoinNode) folded(node, 1);
-            assertThat(result.arguments().getFirst()).isInstanceOf(AttributeOperand.class);
+            assertThat(((RelationFunctionCall) result.right()).arguments().getFirst())
+                    .isInstanceOf(AttributeOperand.class);
             assertThat(result.left()).isSameAs(base);
         }
 

@@ -28,6 +28,9 @@ import com.darkcollective.relix.ast.ConditionOperand;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.ElementOfPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ScalarSubqueryOperand;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.NotPredicate;
 import com.darkcollective.relix.ast.NullPredicate;
@@ -184,6 +187,8 @@ public final class AstEquivalence {
                     && allEquivalent(x.elements(), y.elements());
             case StructConstruction x -> b instanceof StructConstruction y
                     && sameFields(x.fields(), y.fields());
+            case ScalarSubqueryOperand x -> b instanceof ScalarSubqueryOperand y
+                    && equivalent(x.query(), y.query());
         };
     }
 
@@ -234,6 +239,13 @@ public final class AstEquivalence {
                     && x.escape().equals(y.escape())
                     && equivalent(x.operand(), y.operand())
                     && equivalent(x.pattern(), y.pattern());
+            case ExistsPredicate x -> b instanceof ExistsPredicate y
+                    && equivalent(x.query(), y.query());
+            case QuantifiedPredicate x -> b instanceof QuantifiedPredicate y
+                    && x.operator() == y.operator()
+                    && x.quantifier() == y.quantifier()
+                    && equivalent(x.left(), y.left())
+                    && equivalent(x.query(), y.query());
         };
     }
 

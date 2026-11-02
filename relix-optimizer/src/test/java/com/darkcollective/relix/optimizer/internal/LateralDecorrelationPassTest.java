@@ -118,6 +118,30 @@ final class LateralDecorrelationPassTest {
         }
 
         @Test
+        @DisplayName("an expression that reads nothing of the outer row decorrelates to L × e")
+        void uncorrelatedExpression() {
+            RelNode body = select(cmp(attr("customer_id"), ComparisonOperator.EQUAL, num("2")), rel("Orders"));
+
+            assertThat(apply(AstBuilders.lateral(rel("Customers"), body))).isEqualTo(product(rel("Customers"), body));
+            assertThat(firings()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("an expression reading the outer row, and an OUTER lateral, are left alone")
+        void correlatedExpressionAndOuterKept() {
+            RelNode correlated = AstBuilders.lateral(rel("Customers"), select(cmp(attr("customer_id"),
+                    ComparisonOperator.EQUAL, attr("Customers.customer_id")), rel("Orders")));
+            RelNode outer = AstBuilders.outerLateral(rel("Customers"), tvf("ordersFor", num("2")));
+
+            RelNode unvouched = AstBuilders.lateral(rel("Customers"), rel("Unregistered"));
+
+            assertThat(apply(correlated)).isSameAs(correlated);
+            assertThat(apply(outer)).isSameAs(outer);
+            assertThat(apply(unvouched)).as("a relation analysis cannot vouch for").isSameAs(unvouched);
+            assertThat(firings()).isZero();
+        }
+
+        @Test
         @DisplayName("the TVF call keeps the function name and every argument, in order")
         void argumentsPreserved() {
             RelNode result = apply(AstBuilders.lateral(rel("Customers"), "topOrders",num("2"), str("open")));
@@ -343,13 +367,13 @@ final class LateralDecorrelationPassTest {
     class Visibility {
 
         @Test
-        @DisplayName("the TVF call becomes a structural child, which under the lateral it was not")
+        @DisplayName("the TVF call stays a structural child, now of a × every rule understands")
         void bodyBecomesVisibleToTraversal() {
             RelNode lateral = lateral(rel("Customers"), num("2"));
 
             assertThat(lateral.children())
-                    .as("the lateral hides the TVF from traversal — only the left input shows")
-                    .containsExactly(rel("Customers"));
+                    .as("the lateral's call is its right child")
+                    .containsExactly(rel("Customers"), tvf("ordersFor", num("2")));
 
             assertThat(apply(lateral).children())
                     .as("as a × the call is a child every pass walks")

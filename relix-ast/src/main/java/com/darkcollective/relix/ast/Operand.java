@@ -50,7 +50,8 @@ public sealed interface Operand permits
         ArrayConstruction,
         ConditionOperand,
         CollateOperand,
-        ParameterOperand {
+        ParameterOperand,
+        ScalarSubqueryOperand {
     <R> R accept(OperandVisitor<R> visitor);
 
     /** Returns the source location of the first token of this operand. */

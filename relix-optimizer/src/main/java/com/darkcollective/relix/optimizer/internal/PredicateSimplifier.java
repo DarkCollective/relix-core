@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.optimizer.internal;
 
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.optimizer.OptimizationCode;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.internal.AstEquivalence;
@@ -136,6 +138,8 @@ final class PredicateSimplifier {
             case NullPredicate      n  -> n;
             case ElementOfPredicate e  -> e;
             case PatternPredicate   p  -> p;
+            case ExistsPredicate    e  -> e;
+            case QuantifiedPredicate q -> q;
         };
     }
 

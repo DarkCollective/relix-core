@@ -218,6 +218,8 @@ final class PlaceholdersTest {
                         .contains("items").doesNotContain("other");
                 assertThat(Placeholders.reached(relix.relation("Other LATERAL Scoped(1)").node(), symbols))
                         .contains("other", "items");
+                assertThat(Placeholders.reached(relix.relation("σ EXISTS (σ v = 'x' (Items)) (Other)").node(), symbols))
+                        .contains("other", "items");
             }
         }
 

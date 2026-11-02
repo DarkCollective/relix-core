@@ -771,9 +771,10 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(LateralJoinNode node) {
-        String args = node.arguments().stream()
-                .map(arg -> arg.accept(operandPrinter))
-                .collect(java.util.stream.Collectors.joining(", "));
-        return "(" + print(node.left()) + ") LATERAL " + node.functionName() + "(" + args + ")";
+        String keyword = node.kind() == LateralKind.OUTER ? "OUTER LATERAL " : "LATERAL ";
+        // A function call is written bare, an expression in the parentheses that tell the
+        // two forms apart.
+        String right = node.isFunctionCall() ? print(node.right()) : "(" + print(node.right()) + ")";
+        return "(" + print(node.left()) + ") " + keyword + right;
     }
 }

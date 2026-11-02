@@ -426,13 +426,21 @@ public final class RelAlgebraParser {
         RelNode left = parsePrefix();
         left = parseKleenePostfix(left);
 
-        while (isBinaryRelOperator(current.type()) && precedence(current.type()) >= minPrecedence) {
+        while ((isBinaryRelOperator(current.type()) || startsOuterLateral())
+                && precedence(startsOuterLateral() ? TokenType.LATERAL : current.type()) >= minPrecedence) {
+            boolean outerLateral = startsOuterLateral();
+            if (outerLateral) {
+                advance(); // OUTER
+            }
             Token operator = current;
             int precedence = precedence(operator.type());
             int operatorAt = consumed.size();
             advance();
             if (isWord(operator, "CROSS") && isWord(current, "JOIN")) {
                 rejectSqlJoin(operator, "×", leftStart, operatorAt);
+            }
+            if (isWord(operator, "CROSS") && isWord(current, "APPLY")) {
+                rejectSqlApply(operator, "LATERAL", leftStart);
             }
             if (isWord(current, "ALL") && !endsRelation(peek(1).type())) {
                 operator = setOperatorAll(operator);
@@ -532,22 +540,31 @@ public final class RelAlgebraParser {
                 expect(TokenType.RPAREN, "Expected ')' after the IJOIN column list");
             }
 
-            // LATERAL is special: the right side must be a TVF call name(args…),
-            // not a general relational expression, so we parse it directly.
+            // LATERAL's right side is a function call, name(args…), or a relation
+            // expression in parentheses; either may read the left row.
             if (operator.type() == TokenType.LATERAL) {
-                Token fnTok = current;
-                String fnName = expectName("Expected table-valued function name after 'LATERAL'").lexeme();
-                expect(TokenType.LPAREN, "Expected '(' after function name in LATERAL " + fnName);
-                List<Operand> lateralArgs = new ArrayList<>();
-                if (current.type() != TokenType.RPAREN) {
-                    lateralArgs.add(parseOperand());
-                    while (match(TokenType.COMMA)) {
+                RelNode right;
+                if (current.type() == TokenType.LPAREN) {
+                    right = parseRelationInParens("Expected ')' after the LATERAL expression");
+                    rejectLateralAlias("the expression", leftStart);
+                } else {
+                    Token fnTok = current;
+                    String fnName = expectName("Expected a table-valued function call, or '(' and a"
+                            + " relation, after 'LATERAL'").lexeme();
+                    expect(TokenType.LPAREN, "Expected '(' after function name in LATERAL " + fnName);
+                    List<Operand> lateralArgs = new ArrayList<>();
+                    if (current.type() != TokenType.RPAREN) {
                         lateralArgs.add(parseOperand());
+                        while (match(TokenType.COMMA)) {
+                            lateralArgs.add(parseOperand());
+                        }
                     }
+                    expect(TokenType.RPAREN, "Expected ')' after LATERAL function arguments");
+                    rejectLateralAlias(fnName, leftStart);
+                    right = new RelationFunctionCall(fnName, lateralArgs, loc(fnTok));
                 }
-                expect(TokenType.RPAREN, "Expected ')' after LATERAL function arguments");
-                rejectLateralAlias(fnName, leftStart);
-                left = new LateralJoinNode(left, fnName, lateralArgs, loc(operator));
+                left = new LateralJoinNode(left, right,
+                        outerLateral ? LateralKind.OUTER : LateralKind.INNER, loc(operator));
                 continue;
             }
 
@@ -861,6 +878,20 @@ public final class RelAlgebraParser {
      * own word for ×, and its {@code CROSS JOIN} is caught where the operator is read.)
      */
     private void rejectSqlJoinKeywords(int leftStart) {
+        if (isWord(current, "OUTER") && isWord(peek(1), "APPLY")) {
+            Token first = current;
+            advance(); // OUTER
+            rejectSqlApply(first, "OUTER LATERAL", leftStart);
+        }
+        if (isWord(current, "LEFT") && (peek(1).type() == TokenType.LATERAL
+                || isWord(peek(1), "JOIN") && peek(2).type() == TokenType.LATERAL)) {
+            Token first = current;
+            int words = peek(1).type() == TokenType.LATERAL ? 1 : 2;
+            for (int i = 0; i < words; i++) {
+                advance();
+            }
+            rejectSqlApply(first, "OUTER LATERAL", leftStart);
+        }
         String kind = current.lexeme().toUpperCase(Locale.ROOT);
         if (!isNameToken(current) || !List.of("LEFT", "RIGHT", "FULL", "INNER", "NATURAL").contains(kind)) {
             return;
@@ -881,6 +912,36 @@ public final class RelAlgebraParser {
             default -> "JOIN";
         };
         rejectSqlJoin(first, relix, leftStart, leftEnd);
+    }
+
+    /** Whether {@code OUTER LATERAL} starts here. */
+    private boolean startsOuterLateral() {
+        return isWord(current, "OUTER") && peek(1).type() == TokenType.LATERAL;
+    }
+
+    /**
+     * Refuses SQL's spelling of a lateral join, {@code CROSS APPLY}, {@code OUTER APPLY},
+     * {@code LEFT LATERAL} or {@code LEFT JOIN LATERAL … ON TRUE}, at its first word, with
+     * {@code current} on the word that ends it; names {@code relix}, Relix's operator, and
+     * rewrites the reader's join with it when the right side reads as a relation.
+     */
+    private void rejectSqlApply(Token first, String relix, int leftStart) {
+        int firstAt = consumed.lastIndexOf(first);
+        String left = writtenBetween(leftStart, firstAt);
+        advance(); // APPLY or LATERAL
+        String sql = writtenBetween(firstAt, consumed.size());
+        String right = "(expression)";
+        if (current.type() == TokenType.LPAREN) {
+            int rightStart = consumed.size();
+            try {
+                parseRelationInParens("Expected ')'");
+                right = writtenBetween(rightStart, consumed.size());
+            } catch (ParseException e) {
+                // Not a relation this reads: the general form.
+            }
+        }
+        throw ParseException.at("'" + sql + "' is SQL's spelling of " + relix + ": write " + left
+                + " " + relix + " " + right, lexer.input(), first);
     }
 
     /**
@@ -4382,7 +4443,7 @@ public final class RelAlgebraParser {
         rejectSqlSubquery();
         Token start = current;
         if (current.type() == TokenType.NOT
-                || (current.type() == TokenType.LPAREN && isParenthesizedPredicate())) {
+                || (current.type() == TokenType.LPAREN && !opensRelation(0) && isParenthesizedPredicate())) {
             return new ConditionOperand(parsePredicate(), loc(start));
         }
         Operand op = parseOperand();
@@ -4480,10 +4541,14 @@ public final class RelAlgebraParser {
         if (seed == null) {
             rejectSqlSubquery();
         }
-        if (seed == null && current.type() == TokenType.LPAREN && isRowValue()) {
+        if (seed == null && startsExists()) {
+            return parseExists();
+        }
+        boolean relation = seed == null && opensRelation(0);
+        if (seed == null && !relation && current.type() == TokenType.LPAREN && isRowValue()) {
             return parseRowValuePredicate();
         }
-        if (seed == null && current.type() == TokenType.LPAREN && isParenthesizedPredicate()) {
+        if (seed == null && !relation && current.type() == TokenType.LPAREN && isParenthesizedPredicate()) {
             Token open = current;
             advance();
             Predicate predicate = parsePredicate();
@@ -4511,6 +4576,10 @@ public final class RelAlgebraParser {
             boolean isNegated = opTok.type() == TokenType.NOT_ELEMENT_OF;
             advance();
             rejectSubquery(leftStart, leftEnd, isNegated);
+            if (opensRelation(0)) {
+                return membership(left, parseRelationInParens("Expected ')' after the relation"),
+                        isNegated, loc(opTok));
+            }
 
             Operand setExpr = parseSetExpression();
             return new ElementOfPredicate(left, setExpr, isNegated, loc(opTok));
@@ -4521,6 +4590,10 @@ public final class RelAlgebraParser {
             advance(); // consume NOT
             advance(); // consume IN
             rejectSubquery(leftStart, leftEnd, true);
+            if (opensRelation(0)) {
+                return membership(left, parseRelationInParens("Expected ')' after the relation"),
+                        true, loc(notTok));
+            }
             Operand setExpr = parseSetExpression();
             return new ElementOfPredicate(left, setExpr, true, loc(notTok));
         }
@@ -4650,10 +4723,11 @@ public final class RelAlgebraParser {
     }
 
     /**
-     * Whether {@code ANY}, {@code SOME} or {@code ALL} opens a list of values after a
-     * comparison: braces, or a parenthesis that is empty, holds a comma or opens on a literal.
-     * The words are not reserved, so {@code σ x = any (R)} still compares with a
-     * column called {@code any} over {@code R}.
+     * Whether {@code ANY}, {@code SOME} or {@code ALL} opens a list of values or a relation
+     * after a comparison: braces, or a parenthesis that is empty, holds a comma, opens on a
+     * literal or holds a relation. The words are not reserved, so {@code σ x = any (R)}
+     * still compares with a column called {@code any} over {@code R}: see
+     * {@link #quantifiesRelation}.
      */
     private boolean startsQuantifiedList() {
         if (!isWord(current, "ANY") && !isWord(current, "SOME") && !isWord(current, "ALL")) {
@@ -4667,8 +4741,11 @@ public final class RelAlgebraParser {
             return false;
         }
         TokenType first = peek(2).type();
-        if (first == TokenType.SELECT || first == TokenType.RPAREN) {
+        if (first == TokenType.RPAREN || isSqlSubquery(1)) {
             return true;
+        }
+        if (startsRelationPrefix(first) || opensRelation(1)) {
+            return quantifiesRelation(1);
         }
         return isLiteralStart(peek(2)) || groupHoldsComma(1);
     }
@@ -4738,10 +4815,14 @@ public final class RelAlgebraParser {
         Token quantifier = current;
         boolean all = isWord(quantifier, "ALL");
         advance();
-        if (current.type() == TokenType.LPAREN && peek(1).type() == TokenType.SELECT) {
-            throw refusal(peek(1), quantifier.lexeme().toUpperCase(Locale.ROOT)
-                    + " takes a list of values such as {1, 2}; to compare with every row of another"
-                    + " relation join it, or compare with its GROUP MIN or MAX");
+        if (isSqlSubquery(0)) {
+            throw refusal(peek(1), "SELECT is σ in Relix, which keeps rows: write the relation "
+                    + quantifier.lexeme().toUpperCase(Locale.ROOT)
+                    + " compares with as (π v (S)), a relation of one column");
+        }
+        if (opensRelation(0)) {
+            return new QuantifiedPredicate(left, operator, all ? Quantifier.ALL : Quantifier.ANY,
+                    parseRelationInParens("Expected ')' after the relation"), at);
         }
         List<Operand> elements = parseValueList();
         if (elements.isEmpty()) {
@@ -5530,39 +5611,162 @@ public final class RelAlgebraParser {
     }
 
     /**
-     * Refuses SQL's subquery in operand position: {@code (SELECT v FROM R WHERE …)} as a
-     * value, a comparison's side or an IN set, and {@code EXISTS (SELECT … FROM …)}.
-     *
-     * <p>{@code SELECT} is σ, so the subquery was being read as a condition and failed
-     * at its column list, with a message about a comparison. Relix has no subqueries as
-     * values: what one usually does is a join, a GROUP or a WINDOW offset, and the error
-     * names those. Only SQL's shape is refused, a {@code SELECT} followed by a
-     * {@code FROM} inside the same parenthesis, so a column called {@code select} still
-     * reads as one.
+     * Whether the parenthesis at {@code peek(open)} holds a relation rather than a value: it
+     * opens on a relational operator whose next token cannot go on with a value, as in
+     * {@code (π v (S))} or {@code (γ COUNT(*) → n (S))}, or on a name followed by a binary
+     * relational operator, as in {@code (Orders ⋈ Items)}. The operators' words are not
+     * reserved, so {@code (project) + 1} still reads a column, as two operands are never
+     * written side by side. SQL's {@code (SELECT v FROM …)} is refused before this is asked.
      */
-    private void rejectSqlSubquery() {
-        int open = current.type() == TokenType.LPAREN ? 0
-                : isWord(current, "EXISTS") && peek(1).type() == TokenType.LPAREN ? 1 : -1;
-        if (open < 0 || peek(open + 1).type() != TokenType.SELECT) {
-            return;
+    private boolean opensRelation(int open) {
+        if (peek(open).type() != TokenType.LPAREN) {
+            return false;
+        }
+        Token first = peek(open + 1);
+        Token next = peek(open + 2);
+        if (startsRelationPrefix(first.type())) {
+            return switch (next.type()) {
+                case IDENTIFIER, LPAREN, NUMBER -> true;
+                default -> isNameToken(next) && !continuesOperand(next);
+            };
+        }
+        return isNameToken(first) && isBinaryRelOperator(next.type());
+    }
+
+    /** The token types that open a relation as its operator, as {@link #parsePrefixAtStart} reads them. */
+    private static boolean startsRelationPrefix(TokenType type) {
+        return switch (type) {
+            case PROJECT, SELECT, RENAME, AGGREGATION, SORT, ORDER, LIMIT, DISTINCT, UNNEST,
+                 CLOSURE, RCLOSURE, CLUSTER, PATH, TRACE, FIX, ITERATE, FORALL, SAMPLE, SHUFFLE,
+                 ROLL, SOLVE, OPTIMIZE, TOP, COVER, DOWNSAMPLE, ROLLING, WINDOW, SESSIONIZE,
+                 UNPIVOT, PIVOT, TREE, WHY -> true;
+            default -> false;
+        };
+    }
+
+    /** Whether a word-shaped token goes on with an operand before it: {@code AND}, {@code IS}, {@code AS}, … */
+    private boolean continuesOperand(Token token) {
+        return switch (token.type()) {
+            case AND, OR, NOT, IS, LIKE, AS, OVER, ASC, DESC, ELEMENT_OF, NOT_ELEMENT_OF -> true;
+            default -> Stream.of("BETWEEN", "COLLATE", "AT", "MATCHES", "ESCAPE", "FILTER", "DIV", "MOD")
+                    .anyMatch(w -> isWord(token, w));
+        };
+    }
+
+    /** Reads {@code ( relation )}, the caller having seen it opens one. */
+    private RelNode parseRelationInParens(String closeMessage) {
+        expect(TokenType.LPAREN, "Expected '('");
+        RelNode relation = parseExpression(0);
+        expect(TokenType.RPAREN, closeMessage);
+        return relation;
+    }
+
+    /**
+     * Whether a relation in parentheses at {@code peek(open)}, after a quantifier, is one
+     * to compare with. At the top of a SELECT's condition it might instead be the
+     * selection's input, {@code σ x > all (R)} comparing with a column {@code all}; it is
+     * the comparison's only when more of the selection follows it.
+     */
+    private boolean quantifiesRelation(int open) {
+        if (!opensRelation(open)) {
+            return false;
+        }
+        if (selection == null || groupDepthSince(selectionAt) > 0) {
+            return true;
+        }
+        Token after = peek(afterGroup(open));
+        return after.type() == TokenType.LPAREN || after.type() == TokenType.AND
+                || after.type() == TokenType.OR;
+    }
+
+    /** How many groups opened in {@code consumed} from {@code start} are still open. */
+    private int groupDepthSince(int start) {
+        int depth = 0;
+        for (int i = start; i < consumed.size(); i++) {
+            switch (consumed.get(i).type()) {
+                case LPAREN, LBRACE, LBRACKET -> depth++;
+                case RPAREN, RBRACE, RBRACKET -> depth--;
+                default -> { }
+            }
+        }
+        return depth;
+    }
+
+    /** Whether {@code EXISTS (relation)} starts here; the word is not reserved. */
+    private boolean startsExists() {
+        return isWord(current, "EXISTS") && opensRelation(1);
+    }
+
+    /** Reads {@code EXISTS (relation)}. */
+    private Predicate parseExists() {
+        Token exists = current;
+        advance(); // EXISTS
+        return new ExistsPredicate(parseRelationInParens("Expected ')' after the EXISTS relation"),
+                loc(exists));
+    }
+
+    /** {@code x IN (relation)}, which is {@code x = ANY (relation)}, or its negation. */
+    private static Predicate membership(Operand left, RelNode relation, boolean negated, SourceLocation at) {
+        Predicate any = new QuantifiedPredicate(left, ComparisonOperator.EQUAL, Quantifier.ANY, relation, at);
+        return negated ? new NotPredicate(any, at) : any;
+    }
+
+    /**
+     * Whether SQL's subquery, {@code (SELECT … FROM …)}, opens at {@code peek(open)}: a
+     * {@code SELECT} with a {@code FROM} inside the same parenthesis.
+     */
+    private boolean isSqlSubquery(int open) {
+        if (peek(open).type() != TokenType.LPAREN || peek(open + 1).type() != TokenType.SELECT) {
+            return false;
         }
         int depth = 0;
         for (int offset = open; ; offset++) {
             Token token = peek(offset);
             if (token.type() == TokenType.EOF) {
-                return;
+                return false;
             }
             if (token.type() == TokenType.LPAREN) {
                 depth++;
             } else if (token.type() == TokenType.RPAREN && --depth == 0) {
-                return;
+                return false;
             } else if (depth == 1 && isWord(token, "FROM")) {
-                break;
+                return true;
             }
         }
-        throw refusal(peek(open + 1), "Relix has no subqueries as values: join the relation"
-                + " instead (a SEMI join, ⋉, keeps the rows that have a match), use GROUP for"
-                + " a count or a total, or WINDOW LAG / LEAD for the previous or next row");
+    }
+
+    /**
+     * Refuses SQL's subquery in operand position: {@code (SELECT v FROM R WHERE …)} as a
+     * value, a comparison's side or an IN set, and {@code EXISTS (SELECT … FROM …)}.
+     *
+     * <p>{@code SELECT} is σ, so the subquery was being read as a condition and failed
+     * at its column list, with a message about a comparison. The error writes the
+     * subquery with Relix's operators. Only SQL's shape is refused, a {@code SELECT}
+     * followed by a {@code FROM} inside the same parenthesis, so a column called
+     * {@code select} still reads as one, and {@code (σ … (R))} is a subquery.
+     */
+    private void rejectSqlSubquery() {
+        int open = current.type() == TokenType.LPAREN ? 0
+                : isWord(current, "EXISTS") && peek(1).type() == TokenType.LPAREN ? 1 : -1;
+        if (open < 0 || !isSqlSubquery(open)) {
+            return;
+        }
+        throw refusal(peek(open + 1), "SELECT is σ in Relix, which keeps rows: a subquery is"
+                + " written with Relix's operators, as in (π v (σ k = R.k (S))) for one value or"
+                + " (γ COUNT(*) → n (σ k = R.k (S))) for a count, naming the outer row's columns"
+                + " qualified");
+    }
+
+    /**
+     * Whether {@code (SELECT column (S))} opens here: a σ whose condition is only a column
+     * name, which is SQL's select list written the Relix way round rather than a condition.
+     */
+    private boolean selectsColumn() {
+        int offset = 2;
+        while (isNameToken(peek(offset)) && peek(offset + 1).type() == TokenType.DOT) {
+            offset += 2;
+        }
+        return isNameToken(peek(offset)) && peek(offset + 1).type() == TokenType.LPAREN;
     }
 
     /**
@@ -5579,10 +5783,14 @@ public final class RelAlgebraParser {
         if (!braced && current.type() != TokenType.LPAREN || peek(1).type() != TokenType.SELECT) {
             return;
         }
+        if (!braced && !isSqlSubquery(0) && !selectsColumn()) {
+            return;   // (σ … (S)), a relation of Relix's own: IN compares with its one column
+        }
         Token select = peek(1);
         String join = negated ? "ANTI" : "SEMI";
-        String problem = "IN takes a set such as {1, 2}; to keep rows with " + (negated ? "no" : "a")
-                + " match in another relation write ";
+        String problem = "SELECT is σ in Relix, which keeps rows: IN takes a set such as {1, 2},"
+                + " or a relation of one column such as (π y (S)); to keep rows with "
+                + (negated ? "no" : "a") + " match in another relation write ";
         String fix = null;
         try {
             Token enclosing = selection;
@@ -5877,6 +6085,10 @@ public final class RelAlgebraParser {
         if (startsCase()) {
             return parseCase();
         }
+        if (startsExists()) {
+            Token exists = current;
+            return new ConditionOperand(parseExists(), loc(exists));
+        }
 
         return switch (current.type()) {
             case IDENTIFIER -> {
@@ -5936,6 +6148,11 @@ public final class RelAlgebraParser {
                 // the one parseArgument uses, so the two positions agree about what
                 // a parenthesis opens.
                 rejectSqlSubquery();
+                if (opensRelation(0)) {
+                    Token open = current;
+                    yield new ScalarSubqueryOperand(
+                            parseRelationInParens("Expected ')' after the subquery"), loc(open));
+                }
                 if (isParenthesizedPredicate()) {
                     Token open = current;
                     advance();

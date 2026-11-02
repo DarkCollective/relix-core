@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.semantic.internal;
 
+import com.darkcollective.relix.ast.internal.Subqueries;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
 import com.darkcollective.relix.semantic.SemanticError;
 import com.darkcollective.relix.ast.AggregateFunction;
@@ -193,7 +194,7 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
         this.errors       = Objects.requireNonNull(errors,        "errors");
         this.filePath     = Objects.requireNonNull(filePath,      "filePath");
         this.functions    = Objects.requireNonNull(functions,     "functions");
-        this.typeInferrer = new OperandTypeInferrer(symbolTable, functions);
+        this.typeInferrer = new OperandTypeInferrer(symbolTable, functions, annotations);
     }
 
     // =========================================================================
@@ -270,16 +271,22 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
         Optional<Schema> leftOpt = node.left().accept(this);
         if (leftOpt.isEmpty()) return Optional.empty();
 
-        // Look up the TVF.
-        Optional<RelationFunctionSymbol> sym = lookupRelationFunction(node.functionName());
-        if (sym.isEmpty()) {
-            return Optional.empty();   // validation reports the unknown name
+        // The right side: a TVF's declared heading, or the expression's own, which reads
+        // the left row through names inference types as ANY.
+        Optional<Schema> rightSchema;
+        if (node.right() instanceof RelationFunctionCall call) {
+            Optional<RelationFunctionSymbol> sym = lookupRelationFunction(call.functionName());
+            if (sym.isEmpty()) {
+                return Optional.empty();   // validation reports the unknown name
+            }
+            rightSchema = sym.get().returnSchema();
+        } else {
+            rightSchema = node.right().accept(this);
         }
-        Optional<Schema> tvfSchema = sym.get().returnSchema();
-        if (tvfSchema.isEmpty()) return Optional.empty();
+        if (rightSchema.isEmpty()) return Optional.empty();
 
-        // Output = left columns ++ TVF body columns (right-side duplicates renamed).
-        Schema schema = leftOpt.get().concat(tvfSchema.get());
+        // Output = left columns ++ right columns (right-side duplicates renamed).
+        Schema schema = leftOpt.get().concat(rightSchema.get());
         return annotate(node, schema);
     }
 
@@ -365,7 +372,21 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
 
     @Override
     public Optional<Schema> visit(SelectionNode node) {
-        return passthrough(node, node.input());
+        Optional<Schema> schema = passthrough(node, node.input());
+        annotateSubqueries(node);
+        return schema;
+    }
+
+    /**
+     * Annotates the relation of each subquery {@code node} carries. A name it reads from
+     * the row around it resolves to no column of its own input, and is typed {@code ANY}
+     * where inference meets it, as an unknown name is; validation checks it against that
+     * row.
+     */
+    private void annotateSubqueries(RelNode node) {
+        for (Subqueries.Subquery subquery : Subqueries.subqueriesOf(node)) {
+            subquery.query().accept(this);
+        }
     }
 
     @Override
@@ -742,6 +763,7 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
         Optional<Schema> inputOpt = node.input().accept(this);
         if (inputOpt.isEmpty()) return Optional.empty();
         Schema input = inputOpt.get();
+        annotateSubqueries(node);
 
         List<ColumnDefinition> cols = new ArrayList<>();
         for (int i = 0; i < node.attributes().size(); i++) {

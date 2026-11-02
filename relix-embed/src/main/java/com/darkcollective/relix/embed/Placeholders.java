@@ -15,7 +15,7 @@
  */
 package com.darkcollective.relix.embed;
 
-import com.darkcollective.relix.ast.LateralJoinNode;
+import com.darkcollective.relix.ast.internal.Subqueries;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationFunctionCall;
 import com.darkcollective.relix.ast.RelationNode;
@@ -211,11 +211,12 @@ final class Placeholders {
                                 .ifPresent(view -> pending.push(view.body()));
                     }
                 }
+                // A lateral's function call is its right child, and reached as one.
                 case RelationFunctionCall call -> function(call.functionName(), symbols, expanded, pending);
-                case LateralJoinNode lateral -> function(lateral.functionName(), symbols, expanded, pending);
                 default -> { }
             }
             node.children().forEach(pending::push);
+            Subqueries.subqueriesOf(node).forEach(subquery -> pending.push(subquery.query()));
         }
         return names;
     }

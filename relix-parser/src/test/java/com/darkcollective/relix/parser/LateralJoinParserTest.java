@@ -156,8 +156,9 @@ final class LateralJoinParserTest extends ParserTestSupport {
         @Test
         @DisplayName("missing function name after LATERAL is an error")
         void missingFunctionName() {
-            assertParseError("Customers LATERAL (customer_id)")
-                    .hasMessageContaining("table-valued function name after");
+            assertParseError("Customers LATERAL 5")
+                    .hasMessageContaining("Expected a table-valued function call, or '(' and a relation,"
+                            + " after 'LATERAL'");
         }
     }
 }

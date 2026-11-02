@@ -116,6 +116,9 @@ public final class AstLocations {
                         ep.isNegated());
             case PatternPredicate pp ->
                 new PatternPredicate(stripLocations(pp.operand()), stripLocations(pp.pattern()), pp.negated());
+            case ExistsPredicate ep -> new ExistsPredicate(stripLocations(ep.query()));
+            case QuantifiedPredicate qp -> new QuantifiedPredicate(stripLocations(qp.left()), qp.operator(),
+                    qp.quantifier(), stripLocations(qp.query()));
         };
     }
 
@@ -162,6 +165,7 @@ public final class AstLocations {
             }
             case ConditionOperand c -> new ConditionOperand(stripLocations(c.predicate()));
             case CollateOperand c -> new CollateOperand(stripLocations(c.operand()), c.collation());
+            case ScalarSubqueryOperand s -> new ScalarSubqueryOperand(stripLocations(s.query()));
         };
     }
 
@@ -530,8 +534,8 @@ public final class AstLocations {
 
         @Override
         public RelNode visit(LateralJoinNode node) {
-            return new LateralJoinNode(node.left().accept(this), node.functionName(),
-                    node.arguments().stream().map(AstLocations::stripLocations).toList());
+            return new LateralJoinNode(node.left().accept(this), node.right().accept(this), node.kind(),
+                    SourceLocation.UNKNOWN);
         }
 
         @Override
