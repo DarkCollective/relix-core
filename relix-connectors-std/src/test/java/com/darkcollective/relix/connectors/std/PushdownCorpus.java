@@ -358,6 +358,7 @@ final class PushdownCorpus {
         groups.put("NOW() — evaluated once here, and pushed as the value", clockCalls());
         groups.put("string functions, over names chosen to break a careless spelling", strings());
         groups.put("hash functions, over names whose UTF-8 bytes are not ASCII", hashes());
+        groups.put("JSON read out of text, some of it not JSON", json());
         groups.put("math functions, over exact decimals", maths());
         groups.put("the transcendentals, which answer in floating point", transcendentals());
         groups.put("the transcendentals outside their domain", transcendentalDomains());
@@ -683,6 +684,28 @@ final class PushdownCorpus {
                 Case.of("π cid, SHA2(name, 512) → h (Customers)", EnumSet.of(Dialect.MYSQL)),
                 Case.of("σ MD5(tier) = 'e07e81c20cf5935f5225765f0af81755' (Customers)", md5),
                 Case.declined("π cid, HASHBYTES('MD5', name) → h (Customers)"));
+    }
+
+    /**
+     * The JSON readers, over documents chosen so that a backend reading them differently
+     * answers differently: a decimal's trailing zero and an exponent, an array at the
+     * root, text that is not JSON, and keys differing only in case. {@code JSON_VALUE}
+     * folds on PostgreSQL alone, and the two that answer a struct or array nowhere.
+     */
+    private static List<Case> json() {
+        Set<Dialect> postgres = EnumSet.of(Dialect.POSTGRES);
+        return List.of(
+                Case.of("π did, JSON_VALUE(doc, '$.customer.name') → v (Docs)", postgres),
+                Case.of("π did, JSON_VALUE(doc, '$.items[1].qty') → v (Docs)", postgres),
+                Case.of("π did, JSON_VALUE(doc, '$.total') → v (Docs)", postgres),
+                Case.of("π did, JSON_VALUE(doc, '$.customer.vip') → v (Docs)", postgres),
+                Case.of("π did, JSON_VALUE(doc, '$.items') → v (Docs)", postgres),
+                Case.of("π did, JSON_VALUE(doc, '$[0].sku') → v (Docs)", postgres),
+                Case.of("π did, JSON_VALUE(doc, '$.Customer.name') → v (Docs)", postgres),
+                Case.of("π did, JSON_VALUE(doc, '$.items.sku') → v (Docs)", postgres),
+                Case.of("σ JSON_VALUE(doc, '$.customer.name') = 'Ada' (Docs)", postgres),
+                Case.declined("π did, JSON_QUERY(doc, '$.items') → v (Docs)"),
+                Case.declined("π did, JSON_EXTRACT(doc, '$.total') → v (Docs)"));
     }
 
     /**

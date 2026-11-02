@@ -172,6 +172,25 @@ final class SqlPredicateSpellingsParserTest extends ParserTestSupport {
     }
 
     @Test
+    @DisplayName("SQL's JSON arrows are refused with the call each one is")
+    void jsonArrowsAreRefused() {
+        for (String input : new String[] {"π doc ->> '$.a' (R)", "π doc -> '$.a' (R)"}) {
+            assertParseError(input).hasMessageContaining(
+                    "-> names a column in Relix, so it is not a JSON operator: write JSON_VALUE(doc, '$.a')"
+                    + " for SQL's doc ->> '$.a', and JSON_EXTRACT(doc, '$.a') for doc -> '$.a'");
+        }
+        assertParseError("π doc -> > x (R)").hasMessageContaining("Expected alias after '→'");
+    }
+
+    @Test
+    @DisplayName("SQL's RETURNING in a call is refused with the CAST that converts the text")
+    void returningIsRefused() {
+        assertParseError("π JSON_VALUE(doc, '$.a' RETURNING NUMBER) → v (R)").hasMessageContaining(
+                "JSON_VALUE takes no RETURNING clause: its value is text, so convert it with CAST,"
+                + " as in CAST(JSON_VALUE(doc, '$.qty') AS NUMBER)");
+    }
+
+    @Test
     @DisplayName("an unclosed list names what closes it")
     void unclosedLists() {
         assertParseError("σ a > ALL {1, 2 (R)").hasMessageContaining("Expected '}' to close the list");

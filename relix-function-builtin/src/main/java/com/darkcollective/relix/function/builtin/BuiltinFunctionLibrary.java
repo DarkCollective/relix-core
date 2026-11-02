@@ -116,6 +116,7 @@ public final class BuiltinFunctionLibrary implements FunctionLibrary {
         List<ScalarFunction> all = new ArrayList<>();
         all.addAll(StringFunctions.all());
         all.addAll(HashFunctions.all());
+        all.addAll(JsonFunctions.all());
         all.addAll(RegexFunctions.all());
         all.addAll(SimilarityFunctions.all());
         all.addAll(MathFunctions.all());
