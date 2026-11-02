@@ -337,7 +337,7 @@ final class SchemaGraphBuilder {
                             + viewSide.boundsLabel() + " were ignored — the engine derived "
                             + derivedViewSide.boundsLabel()
                             + " from the base relationship over '" + base.declaredName()
-                            + "' (ADR-0024 §1.5)"));
+                            + "'"));
         }
 
         return sourceIsView
