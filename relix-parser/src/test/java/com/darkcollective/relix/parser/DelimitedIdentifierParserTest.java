@@ -159,4 +159,17 @@ final class DelimitedIdentifierParserTest extends ParserTestSupport {
             }
         }
     }
+
+    @Test
+    void lexerTellsADelimitedNameFromABareOne() {
+        // Positions are counted from where the lexer starts, which a script's expression
+        // body does part-way through a line; a second line counts from column 1.
+        Lexer lexer = new Lexer("a `b`\n  c `d`", 3, 9);
+        java.util.List<Token> tokens = new java.util.ArrayList<>();
+        for (Token t = lexer.next(); t.type() != TokenType.EOF; t = lexer.next()) {
+            tokens.add(t);
+        }
+        org.assertj.core.api.Assertions.assertThat(tokens).extracting(lexer::isDelimited)
+                .containsExactly(false, true, false, true);
+    }
 }

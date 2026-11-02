@@ -107,6 +107,8 @@ parse to the identical tree; the canonical form is what gets printed back.
 | `ORDER`, `ORDER BY` | `SORT` / `τ` | SortNode |
 | `GROUP BY` | `GROUP` / `γ` | AggregationNode |
 | `LJOIN` / `RJOIN` / `FJOIN` | `\|><` / `><\|` / `\|><\|` | outer joins |
+| `LIMIT 10 OFFSET 20`, `OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY` | `λ 20, 10` | LimitNode |
+| `CURRENT_TIMESTAMP`, `LOCALTIMESTAMP` | `NOW()` | function call |
 | `COUNT(*)` | `COUNT(1)` | AggregateFunction(COUNT, number `1`) |
 | `a \|\| b` | `a + b` | arithmetic `+` |
 | `x % y` | `Mod(x, y)` | function call |

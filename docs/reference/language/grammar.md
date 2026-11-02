@@ -359,7 +359,7 @@ relation_keyword  ::= "UNIT" | "DEE" | "EMPTY" | "DUM"
 
 ```ebnf
 /* Every unary operator takes its input LAST, in parentheses:  σ p (R). */
-unary_operation   ::= projection | selection | rename | aggregation | sort | limit
+unary_operation   ::= projection | selection | rename | aggregation | sort | limit | sql_paging
                     | distinct | why | unnest
                     | closure | cluster | path | trace | fixpoint | iterate
                     | universal | sample | shuffle | roll | solve | optimize | top_k | cover
@@ -430,8 +430,13 @@ sort_key          ::= operand ( "ASC" | "DESC" )? ( "NULLS" ( "FIRST" | "LAST" )
 
 /* λ 10 (R): the first 10 rows.  λ 20, 10 (R): skip 20, then take 10.
    λ 3 WITH TIES (τ score DESC (R)): the first 3, and every row tied with the third. */
-limit             ::= ( "λ" | "LIMIT" ) INTEGER ( "," INTEGER )?
+limit             ::= ( "λ" | "LIMIT" ) INTEGER ( "," INTEGER | "OFFSET" INTEGER rows_word? )?
                       ( input | "WITH" "TIES" "(" sort ")" )
+/* SQL's paging: OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY (R) is λ 20, 10 (R). */
+sql_paging        ::= ( "OFFSET" INTEGER rows_word? fetch? | fetch )
+                      ( input | "(" sort ")" )
+fetch             ::= "FETCH" ( "FIRST" | "NEXT" ) INTEGER? rows_word ( "ONLY" | "WITH" "TIES" )
+rows_word         ::= "ROW" | "ROWS"
 
 distinct          ::= ( "δ" | "DISTINCT" ) input
 /* ω (R): each row with its lineage as a nested provenance column. */
@@ -603,6 +608,7 @@ zone_operand      ::= "-" zone_operand
 primary_operand   ::= literal
                     | bound_parameter
                     | case_expr
+                    | datetime_keyword
                     | cast_call
                     | extract_call
                     | substring_call
@@ -636,6 +642,9 @@ substring_call    ::= "SUBSTRING" CALL_OPEN operand
 position_call     ::= "POSITION" CALL_OPEN operand ( "∈" | "IN" ) operand ")"
 extract_field     ::= "YEAR" | "MONTH" | "DAY" | "HOUR" | "MINUTE" | "SECOND"
                     | "DOW" | "ISODOW" | "DOY" | "WEEK" | "ISOYEAR" | "QUARTER" | "EPOCH"
+/* CURRENT_TIMESTAMP and LOCALTIMESTAMP are NOW(); the empty parentheses are optional. */
+datetime_keyword  ::= ( "CURRENT_TIMESTAMP" | "LOCALTIMESTAMP" | "CURRENT_DATE" | "CURRENT_TIME" )
+                      ( CALL_OPEN ")" )?
 /* CASE WHEN amount > 100 THEN 'big' ELSE 'small' END is Switch(amount > 100, 'big', 'small');
    CASE x WHEN 1 THEN a END compares x = 1. With no ELSE an unmatched row is NULL. */
 case_expr         ::= "CASE" ( ( "WHEN" predicate "THEN" operand )+

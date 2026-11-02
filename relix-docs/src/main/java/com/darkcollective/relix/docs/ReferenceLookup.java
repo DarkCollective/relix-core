@@ -65,7 +65,8 @@ import java.util.regex.Pattern;
  *
  * <p>SQL writes a two-way conditional value as {@code IF}, which Relix has no function
  * of that name for, so {@code if} finds {@code IIf}; SQL's {@code CASE} is a language
- * page of its own. So are two
+ * page of its own. {@code current_timestamp} and {@code localtimestamp} find
+ * {@code NOW}, which they are. So are two
  * whose SQL name Relix does not take as a function: {@code timestampdiff} finds
  * {@code DATEDIFF}, which counts differently, and {@code ifnull} and {@code nvl} find
  * {@code Coalesce}.
@@ -90,6 +91,7 @@ public final class ReferenceLookup {
      */
     private static final Map<String, List<String>> SQL_KEYWORDS = Map.of(
             "iif", List.of("if"),
+            "now", List.of("current_timestamp", "localtimestamp"),
             "datediff", List.of("timestampdiff"),
             "coalesce", List.of("ifnull", "nvl"));
 

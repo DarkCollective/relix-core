@@ -825,7 +825,11 @@ final class PushdownCorpus {
                 "τ placed DESC, oid ASC (Orders)",
                 "λ 3 (τ oid ASC (Orders))",
                 "λ 2, 2 (τ oid ASC (Orders))",
-                "λ 10 (τ oid ASC (Orders))"));
+                "λ 10 (τ oid ASC (Orders))",
+                // SQL's paging spellings are the same λ.
+                "LIMIT 2 OFFSET 2 (τ oid ASC (Orders))",
+                "OFFSET 2 ROWS FETCH NEXT 2 ROWS ONLY (τ oid ASC (Orders))",
+                "OFFSET 3 ROWS (τ oid ASC (Orders))"));
         // A limit with nothing ordering it, over more rows than it keeps would be two
         // correct answers; over fewer it is one, whatever order the rows arrive in. That
         // is what lets these ask SQL Server's side of the question — its limit needs an
