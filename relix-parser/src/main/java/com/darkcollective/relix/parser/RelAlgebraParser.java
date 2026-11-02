@@ -4296,6 +4296,7 @@ public final class RelAlgebraParser {
         if (current.type() == TokenType.ARROW) {
             Token arrow = current;
             advance();
+            rejectJsonArrow(arrow);
             Token aliasToken = expectName("Expected alias after '→'");
             rejectQualifiedAlias(arrow, start, aliasToken);
             return ProjectedAttribute.aliased(expression, aliasToken.lexeme());
@@ -5679,6 +5680,20 @@ public final class RelAlgebraParser {
         return parseArithmeticExpression(0);
     }
 
+    /**
+     * Refuses SQL's JSON operators, {@code doc -> '$.a'} and {@code doc ->> '$.a'}, where a
+     * column name belongs after Relix's {@code ->}: they are calls here.
+     */
+    private void rejectJsonArrow(Token arrow) {
+        boolean doubled = current.type() == TokenType.GREATER
+                && current.column() == arrow.column() + arrow.lexeme().length();
+        if (doubled || current.type() == TokenType.STRING) {
+            throw refusal(arrow, "-> names a column in Relix, so it is not a JSON operator: write"
+                    + " JSON_VALUE(doc, '$.a') for SQL's doc ->> '$.a', and JSON_EXTRACT(doc, '$.a')"
+                    + " for doc -> '$.a'");
+        }
+    }
+
     private Operand parseArithmeticExpression(int minPrecedence) {
         Operand left = parseAtTimeZone(parsePrimaryOperand());
 
@@ -6055,6 +6070,10 @@ public final class RelAlgebraParser {
                 do {
                     arguments.add(parseArgument());
                 } while (match(TokenType.COMMA));
+            }
+            if (isWord(current, "RETURNING")) {
+                throw refusal(current, sb + " takes no RETURNING clause: its value is text, so convert it"
+                        + " with CAST, as in CAST(" + sb + "(doc, '$.qty') AS NUMBER)");
             }
             expect(TokenType.RPAREN, "Expected ')' after function arguments");
             if (aggregate) {

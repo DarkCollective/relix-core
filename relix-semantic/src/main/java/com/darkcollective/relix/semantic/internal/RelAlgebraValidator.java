@@ -2734,7 +2734,22 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     + " module path, or supply a FunctionLibrary.");
             return;
         }
+        if (suggestion.isEmpty() && isSqlJsonName(name)) {
+            suggestion = " — read a value out of JSON text with JSON_VALUE(doc, '$.a.b') for its"
+                    + " text, JSON_QUERY(doc, '$.a') for an object or array, or JSON_EXTRACT(doc, '$.a')"
+                    + " for a value of any kind";
+        }
         error(loc, "Unknown function: '" + name + "'" + suggestion);
+    }
+
+    /**
+     * Whether {@code name} is one of the JSON functions another database spells its own
+     * way: MySQL's {@code JSON_UNQUOTE}, PostgreSQL's {@code jsonb_extract_path_text},
+     * Presto's {@code JSON_EXTRACT_SCALAR}, Hive's {@code get_json_object}.
+     */
+    static boolean isSqlJsonName(String name) {
+        String upper = name.toUpperCase(java.util.Locale.ROOT);
+        return upper.startsWith("JSON") || upper.startsWith("GET_JSON");
     }
 
     /**

@@ -240,6 +240,11 @@ argument).
 [HASHBYTES](functions/string/hashbytes.md),
 [STANDARD_HASH](functions/string/standard_hash.md)
 
+**JSON** —
+[JSON_VALUE](functions/json/json_value.md),
+[JSON_QUERY](functions/json/json_query.md),
+[JSON_EXTRACT](functions/json/json_extract.md)
+
 **Similarity** —
 [Levenshtein](functions/similarity/levenshtein.md),
 [EditSimilarity](functions/similarity/editsimilarity.md),

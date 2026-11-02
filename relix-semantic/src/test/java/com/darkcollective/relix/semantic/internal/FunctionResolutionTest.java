@@ -302,6 +302,21 @@ final class FunctionResolutionTest {
         }
 
         @Test
+        @DisplayName("another database's JSON function is unknown, naming the three that read JSON text")
+        void sqlJsonNames() {
+            for (String name : new String[] {"JSON_UNQUOTE", "jsonb_extract_path_text", "JSON_EXTRACT_SCALAR",
+                    "get_json_object"}) {
+                assertThat(analyze(USERS + "query { π " + name + "(name, 'a') → v (Users) };")).messages()
+                        .as(name)
+                        .contains("Unknown function: '" + name + "' — read a value out of JSON text with"
+                                + " JSON_VALUE(doc, '$.a.b') for its text, JSON_QUERY(doc, '$.a') for an object"
+                                + " or array, or JSON_EXTRACT(doc, '$.a') for a value of any kind");
+            }
+            assertThat(analyze(USERS + "query { π Bogus(name) → v (Users) };")).messages()
+                    .noneMatch(e -> e.contains("JSON text"));
+        }
+
+        @Test
         @DisplayName("a function no installed library offers is unknown")
         void absentFromTheCatalogue() {
             assertThat(analyzeWith(FunctionCatalog.of(new TinyLibrary()),

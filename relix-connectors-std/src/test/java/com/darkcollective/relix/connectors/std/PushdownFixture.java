@@ -230,6 +230,7 @@ final class PushdownFixture {
         String customers = "customers" + suffix;
         String probes = "probes" + suffix;
         String history = "history" + suffix;
+        String docs = "docs" + suffix;
         String q = connection.getMetaData().getIdentifierQuoteString();
         String lines = q + "order-lines" + suffix + q;
         try (Statement st = connection.createStatement()) {
@@ -238,6 +239,7 @@ final class PushdownFixture {
             st.execute(flavour.adapt("DROP TABLE IF EXISTS " + customers));
             st.execute(flavour.adapt("DROP TABLE IF EXISTS " + probes));
             st.execute(flavour.adapt("DROP TABLE IF EXISTS " + history));
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + docs));
             st.execute(flavour.adapt("CREATE TABLE " + orders + " ("
                     + "oid INT, cid INT, region VARCHAR(10)" + collate
                     + ", code VARCHAR(20)" + collate
@@ -334,6 +336,21 @@ final class PushdownFixture {
                     + q + "unit-price" + q + " INT)"));
             st.execute(flavour.adapt("INSERT INTO " + lines + " VALUES "
                     + "(1, 1, 10), (2, 1, 20), (3, 3, NULL), (4, 99, 5)"));
+
+            // JSON held as text. Each row is a hazard for a backend reading it: a decimal
+            // with a trailing zero and an exponent, whose text a database may rewrite; a
+            // document that is an array; text that is not JSON, which must read as NULL
+            // rather than fail the query; and two keys differing only in case, one of
+            // them JSON null.
+            st.execute(flavour.adapt("CREATE TABLE " + docs + " (did INT, doc VARCHAR(200)" + collate + ")"));
+            st.execute(flavour.adapt("INSERT INTO " + docs + " VALUES "
+                    + "(1, '{\"customer\": {\"name\": \"Ada\", \"vip\": true}, \"items\": [{\"sku\": \"A1\","
+                    + " \"qty\": 2}, {\"sku\": \"B2\", \"qty\": 1.50}], \"total\": 1E2}'), "
+                    + "(2, '{\"customer\": {\"name\": \"Bo\"}, \"items\": []}'), "
+                    + "(3, 'not json'), "
+                    + "(4, NULL), "
+                    + "(5, '[{\"sku\": \"Z9\"}]'), "
+                    + "(6, '{\"Customer\": {\"name\": \"Cy\"}, \"customer\": null}')"));
         }
     }
 
@@ -404,6 +421,10 @@ final class PushdownFixture {
                 + "source Lines from db {\n"
                 + "    table: \"order-lines" + suffix + "\",\n"
                 + "    schema: { lid: NUMBER, oid: NUMBER, `unit-price`: NUMBER }\n"
+                + "};\n"
+                + "source Docs from db {\n"
+                + "    table: \"docs" + suffix + "\",\n"
+                + "    schema: { did: NUMBER, doc: STRING }\n"
                 + "};\n\n";
     }
 }
