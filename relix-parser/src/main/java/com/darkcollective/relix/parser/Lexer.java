@@ -201,6 +201,9 @@ public final class Lexer {
     private static final int MAX_EXPONENT_DIGITS = 1000;
 
     private final String input;
+    /** Where the input starts, which a token's own position is counted from. */
+    private final int startLine;
+    private final int startColumn;
     private final List<Comment> comments = new ArrayList<>();
     private int index;
     private int line;
@@ -212,6 +215,8 @@ public final class Lexer {
 
     public Lexer(String input, int startLine, int startColumn) {
         this.input = input;
+        this.startLine = startLine;
+        this.startColumn = startColumn;
         this.line = startLine;
         this.column = startColumn;
     }
@@ -230,6 +235,24 @@ public final class Lexer {
 
     public String input() {
         return input;
+    }
+
+    /**
+     * Whether {@code token}, read from this input, was written between backticks: a
+     * delimited identifier is an {@link TokenType#IDENTIFIER} like any other, positioned
+     * at its first character, so the character before it says how it was written.
+     *
+     * @param token a token this lexer produced
+     * @return whether a backtick opens it
+     */
+    public boolean isDelimited(Token token) {
+        int offset = 0;
+        for (int at = startLine; at < token.line(); at++) {
+            offset = input.indexOf('\n', offset) + 1;
+        }
+        offset += token.column() - (token.line() == startLine ? startColumn : 1);
+        // A token lies inside the input, so only one at its very start has nothing before it.
+        return offset > 0 && input.charAt(offset - 1) == '`';
     }
 
     public Token next() {

@@ -54,7 +54,8 @@ public final class Identifiers {
 
     /**
      * Reserved words (lowercase) — every word the {@code relix-parser} lexer maps
-     * to a non-identifier token. Kept in sync with {@code Lexer.reservedWords()}
+     * to a non-identifier token, and the datetime keywords the parser reads as
+     * functions in operand position. Kept a superset of {@code Lexer.reservedWords()}
      * by a guard test in {@code relix-parser}.
      */
     private static final Set<String> RESERVED = Set.of(
@@ -73,7 +74,10 @@ public final class Identifiers {
             "join", "semi", "anti", "ljoin", "rjoin", "fjoin", "usemi", "asof",
             "ijoin", "within", "ties", "cross", "union", "uall", "ounion", "diff",
             "minus", "except", "inter", "intersect", "div", "symdiff", "compose",
-            "and", "or", "not", "null", "is", "in", "like");
+            "and", "or", "not", "null", "is", "in", "like",
+            // Not lexer keywords, but read as SQL's datetime keywords wherever a value
+            // goes, so a column of the name prints delimited to stay a column.
+            "current_date", "current_time", "current_timestamp", "localtimestamp");
 
     /** Whether {@code word} is a reserved operator/keyword (case-insensitive). */
     public static boolean isReserved(String word) {
