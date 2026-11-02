@@ -229,7 +229,13 @@ argument).
 [InStr](functions/string/instr.md),
 [Chr](functions/string/chr.md),
 [Asc](functions/string/asc.md),
-[Replace](functions/string/replace.md)
+[Replace](functions/string/replace.md),
+[MD5](functions/string/md5.md),
+[SHA1](functions/string/sha1.md),
+[SHA256](functions/string/sha256.md),
+[SHA2](functions/string/sha2.md),
+[HASHBYTES](functions/string/hashbytes.md),
+[STANDARD_HASH](functions/string/standard_hash.md)
 
 **Similarity** —
 [Levenshtein](functions/similarity/levenshtein.md),
