@@ -44,4 +44,8 @@ public interface PredicateVisitor<R> {
     R visit(ElementOfPredicate node);
     /** Visits a pattern-matching test (LIKE or NOT LIKE). */
     R visit(PatternPredicate node);
+    /** Visits a test for a relation's having a row ({@code EXISTS (…)}). */
+    R visit(ExistsPredicate node);
+    /** Visits a comparison with every value of a relation ({@code x > ALL (…)}). */
+    R visit(QuantifiedPredicate node);
 }

@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.processor.eval;
 
+import com.darkcollective.relix.ast.ScalarSubqueryOperand;
 import com.darkcollective.relix.processor.EvaluationException;
 
 import com.darkcollective.relix.ast.AttributeOperand;
@@ -290,6 +291,9 @@ public final class OperandEvaluator {
             };
             // The value is the string's own; the collation is read where it is compared.
             case CollateOperand c -> evaluate(c.operand(), row);
+            // The planner turns a subquery into a lateral join before a row is read.
+            case ScalarSubqueryOperand s -> throw new IllegalStateException(
+                    "a subquery reached the evaluator unplanned: " + s.prettyPrint());
         };
     }
 

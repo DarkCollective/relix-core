@@ -96,7 +96,10 @@ import java.util.function.UnaryOperator;
  * because they carry expressions that are <em>not</em> relational children and therefore
  * do not show up in any structural traversal at all:
  * {@link RelationFunctionCall#arguments()} (a leaf, so {@code children()} is empty) and
- * {@link LateralJoinNode#arguments()} ({@code children()} reports only the left input).
+ * the relation a {@link com.darkcollective.relix.ast.ScalarSubqueryOperand},
+ * {@link com.darkcollective.relix.ast.ExistsPredicate} or
+ * {@link com.darkcollective.relix.ast.QuantifiedPredicate} holds, which the operand walk reports through its outer
+ * references.
  *
  * <p>Like {@code children()}, the implementation is an exhaustive {@code switch} over the
  * sealed hierarchy with no {@code default} arm, so a new {@code RelNode} does not
@@ -180,6 +183,7 @@ public final class RelNodeOperands {
                 n.boundTarget().ifPresent(onOperand);
             }
             case LimitNode ignored -> { }
+            case LateralJoinNode ignored -> { }   // a function form's arguments are its call's
             case IntervalJoinNode ignored -> { }
             case CoverNode ignored -> { }
             case DownsampleNode ignored -> { }
@@ -189,7 +193,6 @@ public final class RelNodeOperands {
             // ── operators carrying expressions ────────────────────────────────────
             case RelationNode n -> n.produceBound().ifPresent(b -> onOperand.accept(b.limit()));
             case RelationFunctionCall n -> n.arguments().forEach(onOperand);
-            case LateralJoinNode n      -> n.arguments().forEach(onOperand);
             case SelectionNode n        -> onPredicate.accept(n.predicate());
             case UniversalNode n        -> onPredicate.accept(n.predicate());
             case ProjectionNode n ->
@@ -425,11 +428,7 @@ public final class RelNodeOperands {
                 yield args == n.arguments() ? n
                         : new RelationFunctionCall(n.functionName(), args, n.location());
             }
-            case LateralJoinNode n -> {
-                List<Operand> args = mapList(n.arguments(), onOperand);
-                yield args == n.arguments() ? n
-                        : new LateralJoinNode(n.left(), n.functionName(), args, n.location());
-            }
+            case LateralJoinNode n -> n;
             case SelectionNode n -> {
                 Predicate p = onPredicate.apply(n.predicate());
                 yield p == n.predicate() ? n : new SelectionNode(p, n.input(), n.location());

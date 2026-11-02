@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BooleanOperand;
@@ -91,6 +93,9 @@ final class MongoExpressions {
             case NullPredicate n -> nullCheck(n);
             case ElementOfPredicate e -> elementOf(e);
             case PatternPredicate p -> patternLike(p);
+            // A subquery reads another relation, which a $match over one collection cannot.
+            case ExistsPredicate e -> Optional.empty();
+            case QuantifiedPredicate q -> Optional.empty();
         };
     }
 

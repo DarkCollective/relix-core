@@ -37,7 +37,9 @@ public sealed interface Predicate permits
         NotPredicate,
         NullPredicate,
         ElementOfPredicate,
-        PatternPredicate {
+        PatternPredicate,
+        ExistsPredicate,
+        QuantifiedPredicate {
     <R> R accept(PredicateVisitor<R> visitor);
 
     /** Returns the source location of the first token of this predicate. */

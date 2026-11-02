@@ -1885,17 +1885,20 @@ public final class Planner {
      * per left row rather than once at plan time.
      */
     private PhysicalNode planLateralJoin(LateralJoinNode node) {
+        if (!(node.right() instanceof RelationFunctionCall call)) {
+            throw new IllegalStateException("LATERAL over an expression has no physical plan");
+        }
         PhysicalNode left = plan(node.left());
         Schema outSchema = schemaOf(node);
 
-        RelationFunctionSymbol fn = symbols.resolveFunction(node.functionName()).stream()
+        RelationFunctionSymbol fn = symbols.resolveFunction(call.functionName()).stream()
                 .filter(RelationFunctionSymbol.class::isInstance)
                 .map(RelationFunctionSymbol.class::cast)
-                .filter(f -> f.parameters().size() == node.arguments().size())
+                .filter(f -> f.parameters().size() == call.arguments().size())
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(
-                        "Unknown table-valued function '" + node.functionName()
-                        + "' for LATERAL join with " + node.arguments().size() + " argument(s)"));
+                        "Unknown table-valued function '" + call.functionName()
+                        + "' for LATERAL join with " + call.arguments().size() + " argument(s)"));
 
         // bodyBuilder: given per-row argument literals (one per outer row), inline the
         // function body and plan it.  Captures `this` (the Planner) for access to
@@ -1904,7 +1907,7 @@ public final class Planner {
             String key = fn.canonicalName();
             if (!activeInlines.add(key)) {
                 throw new IllegalStateException("Recursive table-valued function '"
-                        + node.functionName() + "' cannot be inlined in LATERAL join");
+                        + call.functionName() + "' cannot be inlined in LATERAL join");
             }
             lateralBodyDepth++;
             try {
@@ -1923,8 +1926,8 @@ public final class Planner {
         boolean deterministicBody =
                 RelationDeterminism.isDeterministic(fn.body(), symbols, functions);
 
-        return new PhysicalNode.LateralJoin(outSchema, node.functionName(),
-                node.arguments(), bodyBuilder, deterministicBody, left);
+        return new PhysicalNode.LateralJoin(outSchema, call.functionName(),
+                call.arguments(), bodyBuilder, deterministicBody, left);
     }
 
     // ── schema resolution ─────────────────────────────────────────────────────

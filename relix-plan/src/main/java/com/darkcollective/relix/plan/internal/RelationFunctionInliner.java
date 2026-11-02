@@ -15,6 +15,10 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.ast.internal.Subqueries;
+import com.darkcollective.relix.ast.ScalarSubqueryOperand;
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.SolveStart;
@@ -295,6 +299,10 @@ final class RelationFunctionInliner {
             case PatternPredicate pp -> new PatternPredicate(
                     substituteOperand(pp.operand(), b), substituteOperand(pp.pattern(), b),
                     pp.negated(), pp.escape(), pp.location());
+            // A parameter is bound in a subquery's relation too, wherever it is named there.
+            case ExistsPredicate e -> new ExistsPredicate(Subqueries.bind(e.query(), b), e.location());
+            case QuantifiedPredicate q -> new QuantifiedPredicate(substituteOperand(q.left(), b),
+                    q.operator(), q.quantifier(), Subqueries.bind(q.query(), b), q.location());
         };
     }
 
@@ -317,6 +325,7 @@ final class RelationFunctionInliner {
             case ArrayConstruction ac -> new ArrayConstruction(substitute(ac.elements(), b), ac.location());
             case ConditionOperand c -> new ConditionOperand(substitute(c.predicate(), b), c.location());
             case CollateOperand c -> new CollateOperand(substituteOperand(c.operand(), b), c.collation(), c.location());
+            case ScalarSubqueryOperand s -> new ScalarSubqueryOperand(Subqueries.bind(s.query(), b), s.location());
             case StringOperand s -> s;
             // `$name` is the query's parameter, never the function's, which is a bare name.
             case ParameterOperand p -> p;

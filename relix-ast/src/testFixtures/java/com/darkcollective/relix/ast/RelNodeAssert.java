@@ -158,8 +158,8 @@ public final class RelNodeAssert extends AbstractAssert<RelNodeAssert, RelNode> 
      * Descends to the child at {@code index}, returning an assert on it.
      *
      * <p>Note that {@link RelNode#children()} reports <em>relational</em> children
-     * only: a {@code RelationFunctionCall}'s arguments and a
-     * {@code LateralJoinNode}'s arguments are operands and do not appear, and an
+     * only: a {@code RelationFunctionCall}'s arguments and the relation a subquery
+     * operand holds do not appear, and an
      * {@code EmptyRelationNode}'s carried heading is inert by design.
      *
      * @param index the zero-based child position

@@ -15,6 +15,9 @@
  */
 package com.darkcollective.relix.semantic.internal;
 
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
+import com.darkcollective.relix.ast.internal.Subqueries;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
 import com.darkcollective.relix.semantic.SemanticError;
 import com.darkcollective.relix.ast.AggregateFunction;
@@ -194,6 +197,15 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      */
     private final Set<String>             parameters;
 
+    /**
+     * The rows around the subqueries being validated, innermost first: what a name a
+     * subquery's relation cannot resolve might have meant, for the hint that says to
+     * qualify it. The outer references themselves are added to {@link #parameters}
+     * while the relation is validated, so every check that accepts a parameter accepts
+     * them.
+     */
+    private final java.util.ArrayDeque<Schema> outerRows = new java.util.ArrayDeque<>();
+
     /** The collected statistics, by canonical relation name: the candidate keys a natural join is checked against. */
     private final Map<String, RelationStatistics> statistics;
 
@@ -227,7 +239,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         this.functions   = Objects.requireNonNull(functions,    "functions");
         this.errors      = Objects.requireNonNull(errors,        "errors");
         this.filePath    = Objects.requireNonNull(filePath,      "filePath");
-        this.parameters  = Objects.requireNonNull(parameters,    "parameters");
+        this.parameters  = new java.util.HashSet<>(Objects.requireNonNull(parameters, "parameters"));
     }
 
     // =========================================================================
@@ -380,7 +392,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     // table-valued function) is allowed: it is bound to the caller's
                     // constant argument by substitution.  Any other column reference needs
                     // correlated evaluation — the LATERAL join, not a bare call.
-                    if (!parameters.contains(a.unqualifiedName().toLowerCase(Locale.ROOT))) {
+                    if (!isBound(a)) {
                         error(loc, "Table-valued function '" + fnName + "' argument must be a constant "
                                 + "expression; column reference '" + a.name() + "' is not supported "
                                 + "(use a LATERAL join for a correlated argument)");
@@ -403,21 +415,26 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     public Void visit(LateralJoinNode node) {
         // Validate the outer/left relation first.
         node.left().accept(this);
+        if (!(node.right() instanceof RelationFunctionCall call)) {
+            // An expression reads the left row through its outer references.
+            annotations.get(node.left()).ifPresent(left -> validateCorrelated(node.right(), left, "LATERAL"));
+            return null;
+        }
 
-        List<RelationFunctionSymbol> overloads = symbolTable.resolveFunction(node.functionName()).stream()
+        List<RelationFunctionSymbol> overloads = symbolTable.resolveFunction(call.functionName()).stream()
                 .filter(RelationFunctionSymbol.class::isInstance)
                 .map(RelationFunctionSymbol.class::cast)
                 .toList();
         if (overloads.isEmpty()) {
-            error(node.location(), "Unknown table-valued function: '" + node.functionName() + "'"
-                    + Suggestions.didYouMean(node.functionName(), functionCandidates()));
+            error(node.location(), "Unknown table-valued function: '" + call.functionName() + "'"
+                    + Suggestions.didYouMean(call.functionName(), functionCandidates()));
             return null;
         }
-        int argCount = node.arguments().size();
+        int argCount = call.arguments().size();
         boolean arityMatch = overloads.stream().anyMatch(f -> f.parameters().size() == argCount);
         if (!arityMatch) {
             int expected = overloads.get(0).parameters().size();
-            error(node.location(), "Table-valued function '" + node.functionName()
+            error(node.location(), "Table-valued function '" + call.functionName()
                     + "' called with " + argCount + " argument(s) but expects " + expected);
         }
 
@@ -428,7 +445,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 .findFirst()
                 .flatMap(f -> f.parameters().stream().filter(ParameterDefinition::isRelation).findFirst())
                 .ifPresent(p -> error(node.location(), "Table-valued function '"
-                        + node.functionName() + "' takes a relation parameter '" + p.name()
+                        + call.functionName() + "' takes a relation parameter '" + p.name()
                         + "', which LATERAL cannot supply: its arguments are the left side's "
                         + "values, row by row"));
 
@@ -443,8 +460,8 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
 
         // Validate each argument: column refs from the left schema are allowed;
         // other column refs and function calls are validated as usual.
-        for (Operand arg : node.arguments()) {
-            validateLateralArgument(arg, node.functionName(), node.location(), leftColumns);
+        for (Operand arg : call.arguments()) {
+            validateLateralArgument(arg, call.functionName(), node.location(), leftColumns);
         }
         return null;
     }
@@ -460,8 +477,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 a -> {
                     String unqualified = a.unqualifiedName().toLowerCase(Locale.ROOT);
                     // Column refs from the outer (left) schema or an in-scope parameter are fine.
-                    if (!leftColumns.contains(unqualified)
-                            && !parameters.contains(unqualified)) {
+                    if (!leftColumns.contains(unqualified) && !isBound(a)) {
                         error(loc, "Lateral table-valued function '" + fnName
                                 + "' argument references column '" + a.name()
                                 + "' which is not in the outer (left) relation");
@@ -485,6 +501,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         Optional<Schema> inputOpt = annotations.get(node.input());
         if (inputOpt.isPresent()) {
             validatePredicate(node.predicate(), inputOpt.get(), "Selection σ");
+            validateSubqueries(node, inputOpt.get());
         }
         return null;
     }
@@ -2107,6 +2124,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         for (ProjectedAttribute pa : node.attributes()) {
             validateProjectedOperand(pa.expression(), input);
         }
+        validateSubqueries(node, input);
         return null;
     }
 
@@ -2377,6 +2395,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                                         String prefix, String label) {
         OperandWalker.walk(expr,
                 attr -> {
+                    if (attr.name().contains(".") && isBound(attr)) {
+                        return;   // a subquery's outer reference
+                    }
                     String qualifiedError = QualifiedReferences.resolutionError(attr, inputSchema);
                     if (qualifiedError != null) {
                         error(attr.location(), prefix + qualifiedError);
@@ -2541,6 +2562,9 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             }
             case NotPredicate n -> validateTemporalRules(n.predicate(), schema, inferrer);
             case NullPredicate n -> validateTemporalRules(n.operand(), schema, inferrer);
+            // A subquery's relation answers to the rules where it is validated.
+            case ExistsPredicate ignored -> { }
+            case QuantifiedPredicate q -> validateTemporalRules(q.left(), schema, inferrer);
             case ElementOfPredicate e -> {
                 validateTemporalRules(e.element(), schema, inferrer);
                 validateTemporalRules(e.setExpression(), schema, inferrer);
@@ -2601,7 +2625,122 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
      */
     private void validatePredicate(Predicate predicate, Schema schema, String context) {
         predicate.accept(new PredicateValidator(schema, symbolTable, functions, errors, filePath,
-                predicate.location(), context, parameters));
+                predicate.location(), context, parameters, this::outerRowHint));
+    }
+
+    /**
+     * Whether {@code attr} names a bound value rather than a column: a parameter of the
+     * function whose body this is, or an outer reference of the subquery being validated.
+     */
+    private boolean isBound(AttributeOperand attr) {
+        return parameters.contains(attr.unqualifiedName().toLowerCase(Locale.ROOT))
+                || parameters.contains(attr.name().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * The hint for an unqualified {@code column} a subquery's relation does not have but
+     * the row around it does: a subquery reads that row through qualified names only.
+     * Empty outside a subquery, or when no row around it has the column.
+     */
+    String outerRowHint(String column) {
+        for (Schema row : outerRows) {
+            Optional<ColumnDefinition> found = row.column(column);
+            if (found.isPresent()) {
+                String relation = found.get().provenance() != null ? found.get().provenance().relation() : "R";
+                return "; to read the row around the subquery write " + relation + "." + column;
+            }
+        }
+        return "";
+    }
+
+    // =========================================================================
+    // Subqueries — the relation a value, EXISTS, ANY/ALL or LATERAL reads
+    // =========================================================================
+
+    /**
+     * Validates the relation of each subquery {@code node} carries against the row of
+     * {@code input}, and holds a value's and a quantifier's relation to one column.
+     */
+    private void validateSubqueries(RelNode node, Schema input) {
+        for (Subqueries.Subquery subquery : Subqueries.subqueriesOf(node)) {
+            validateCorrelated(subquery.query(), input, describe(subquery.kind()));
+            if (subquery.kind() == Subqueries.Kind.EXISTS) {
+                continue;
+            }
+            annotations.get(subquery.query()).filter(h -> h.columns().size() != 1).ifPresent(heading ->
+                    error(subquery.location(), (subquery.kind() == Subqueries.Kind.VALUE
+                            ? "A subquery used as a value has one column"
+                            : "ANY, ALL and IN compare with a relation of one column")
+                            + "; this one has " + heading.columns().size() + ": "
+                            + String.join(", ", columnNames(heading))
+                            + ". Choose the column with PROJECT, as in (π v (S))"));
+        }
+    }
+
+    private static String describe(Subqueries.Kind kind) {
+        return switch (kind) {
+            case VALUE -> "Subquery";
+            case EXISTS -> "EXISTS";
+            case QUANTIFIED -> "ANY / ALL";
+        };
+    }
+
+    /**
+     * Validates {@code relation}, which reads the row of {@code outer} through its outer
+     * references: each must name a column of that row, or be bound already by a subquery
+     * around this one. While the relation is validated its outer references are bound,
+     * as a function body's parameters are.
+     */
+    private void validateCorrelated(RelNode relation, Schema outer, String label) {
+        List<String> added = new ArrayList<>();
+        for (AttributeOperand ref : Subqueries.outerReferences(relation)) {
+            String key = ref.name().toLowerCase(Locale.ROOT);
+            if (parameters.contains(key)) {
+                continue;
+            }
+            if (QualifiedReferences.resolutionError(ref, outer) != null
+                    || outer.qualifiedIndices(AttributeNames.qualifierOf(ref.name()), ref.unqualifiedName()).isEmpty()
+                            && outer.column(ref.unqualifiedName()).isEmpty()) {
+                error(ref.location(), label + ": '" + ref.name() + "' names no relation the subquery reads"
+                        + " and no column of the row around it"
+                        + Suggestions.columnHint(ref.unqualifiedName(), columnNames(outer), !outer.isOpen()));
+                continue;
+            }
+            if (parameters.add(key)) {
+                added.add(key);
+            }
+        }
+        outerRows.push(outer);
+        try {
+            relation.accept(this);
+        } finally {
+            outerRows.pop();
+            parameters.removeAll(added);
+        }
+    }
+
+    /**
+     * Reports each subquery written where it is not read: anywhere but a PROJECT's
+     * columns and a SELECT's condition, in {@code node} and everything beneath it,
+     * subqueries' own relations included.
+     */
+    void checkSubqueryPlacement(RelNode node) {
+        boolean allowed = node instanceof ProjectionNode || node instanceof SelectionNode;
+        for (Subqueries.Subquery subquery : Subqueries.subqueriesOf(node)) {
+            if (!allowed) {
+                error(subquery.location(), "A subquery is written in a PROJECT's columns or a SELECT's"
+                        + " condition; for one in " + operatorName(node) + ", compute it with PROJECT"
+                        + " first, as in π *, (…) → v (R), or join the relation");
+            }
+            checkSubqueryPlacement(subquery.query());
+        }
+        node.children().forEach(this::checkSubqueryPlacement);
+    }
+
+    private static String operatorName(RelNode node) {
+        String printed = node.prettyPrint();
+        int space = printed.indexOf(' ');
+        return space > 0 ? printed.substring(0, space) : printed;
     }
 
     /**
@@ -2685,7 +2824,8 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     private void columnNotFound(SourceLocation loc, String contextPrefix, String column, Schema schema) {
         error(loc, contextPrefix + " '" + column + "' not found in input schema"
                 + Suggestions.columnHint(AttributeNames.stripQualifier(column),
-                        columnNames(schema), !schema.isOpen()));
+                        columnNames(schema), !schema.isOpen())
+                + (column.contains(".") ? "" : outerRowHint(column)));
     }
 
     /** The column names of {@code schema}, in schema order, for suggestion candidates. */

@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.AggregateOperator;
@@ -712,6 +714,8 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             }
             case NotPredicate n -> collectAttributes(n.predicate(), into);
             case NullPredicate n -> collectAttributes(n.operand(), into);
+            case ExistsPredicate e -> { }
+            case QuantifiedPredicate q -> collectAttributes(q.left(), into);
         }
     }
 

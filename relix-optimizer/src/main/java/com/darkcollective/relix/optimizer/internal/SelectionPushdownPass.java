@@ -15,6 +15,9 @@
  */
 package com.darkcollective.relix.optimizer.internal;
 
+import com.darkcollective.relix.ast.internal.Subqueries;
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.optimizer.OptimizationCode;
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.AndPredicate;
@@ -168,7 +171,10 @@ public final class SelectionPushdownPass {
 
             // ── σ: try to push first (top-down), then recurse on result ──────
             case SelectionNode s -> {
-                RelNode pushed = tryPush(s, queryName, schemas, ctx);
+                // A subquery reads the row it is written against through its outer
+                // references, which these rules neither rename nor re-route: a σ
+                // carrying one stays where it is written.
+                RelNode pushed = Subqueries.carriesSubquery(s) ? null : tryPush(s, queryName, schemas, ctx);
                 if (pushed != null) {
                     // Successful push — the pushed structure was already recursed
                     // inside tryPush, so return it directly.
@@ -754,6 +760,9 @@ public final class SelectionPushdownPass {
                 yield (newElem != e.element() || newSet != e.setExpression())
                         ? new ElementOfPredicate(newElem, newSet, e.isNegated(), e.location()) : e;
             }
+            // Not reached: a σ carrying a subquery is never pushed.
+            case ExistsPredicate e -> e;
+            case QuantifiedPredicate q -> q;
             case PatternPredicate p -> {
                 Operand newOperand = rewriteAttrNames(p.operand(), mapping);
                 Operand newPattern = rewriteAttrNames(p.pattern(), mapping);

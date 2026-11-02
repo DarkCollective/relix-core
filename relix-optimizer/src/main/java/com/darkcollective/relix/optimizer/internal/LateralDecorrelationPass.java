@@ -18,6 +18,8 @@ package com.darkcollective.relix.optimizer.internal;
 import com.darkcollective.relix.optimizer.OptimizationCode;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.LateralJoinNode;
+import com.darkcollective.relix.ast.LateralKind;
+import com.darkcollective.relix.ast.internal.Subqueries;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.internal.OperandWalker;
 import com.darkcollective.relix.ast.ProductNode;
@@ -39,6 +41,7 @@ import java.util.Optional;
  * <h2>Rule</h2>
  * <pre>{@code
  *   L LATERAL f(c…)  →  L × f(c…)      when no argument reads a left column
+ *   L LATERAL (e)    →  L × e          when e has no outer reference
  * }</pre>
  *
  * <h2>Why it is sound</h2>
@@ -119,18 +122,28 @@ public final class LateralDecorrelationPass {
     static RelNode apply(RelNode node, SymbolTable symbols,
                          OptimizationContext ctx, String queryName) {
         RelNode rewritten = node.mapChildren(child -> apply(child, symbols, ctx, queryName));
-        if (!(rewritten instanceof LateralJoinNode lateral)
-                || correlatedArguments(lateral, ctx.functions())
-                || !bodyIsDeterministic(lateral, symbols, ctx.functions())) {
+        if (!(rewritten instanceof LateralJoinNode lateral) || lateral.kind() != LateralKind.INNER) {
+            return rewritten;
+        }
+        if (lateral.right() instanceof RelationFunctionCall call) {
+            if (correlatedArguments(call, ctx.functions())
+                    || !bodyIsDeterministic(call, symbols, ctx.functions())) {
+                return rewritten;
+            }
+            ctx.record(OptimizationCode.LATERAL_001, queryName,
+                    "LATERAL " + call.functionName()
+                    + " decorrelated to × over a single call (no argument reads the outer row)",
+                    lateral.location());
+            return new ProductNode(lateral.left(), call, lateral.location());
+        }
+        if (!Subqueries.outerReferences(lateral.right()).isEmpty()
+                || !RelationDeterminism.isDeterministic(lateral.right(), symbols, ctx.functions())) {
             return rewritten;
         }
         ctx.record(OptimizationCode.LATERAL_001, queryName,
-                "LATERAL " + lateral.functionName()
-                + " decorrelated to × over a single call (no argument reads the outer row)",
+                "LATERAL (…) decorrelated to × (the expression reads nothing of the outer row)",
                 lateral.location());
-        RelNode call = new RelationFunctionCall(lateral.functionName(), lateral.arguments(),
-                lateral.location());
-        return new ProductNode(lateral.left(), call, lateral.location());
+        return new ProductNode(lateral.left(), lateral.right(), lateral.location());
     }
 
     /**
@@ -139,7 +152,7 @@ public final class LateralDecorrelationPass {
      * {@link FunctionProperty#DETERMINISTIC} — which includes every user-defined scalar
      * function, the same conservative reading {@code DIST-002} uses.
      */
-    private static boolean correlatedArguments(LateralJoinNode lateral,
+    private static boolean correlatedArguments(RelationFunctionCall lateral,
                                                FunctionCatalog functions) {
         boolean[] perRow = {false};
         for (Operand argument : lateral.arguments()) {
@@ -162,7 +175,7 @@ public final class LateralDecorrelationPass {
      * the same relation every time.  An unresolvable function — or one whose arity does
      * not match, which the planner would reject anyway — answers {@code false}.
      */
-    private static boolean bodyIsDeterministic(LateralJoinNode lateral, SymbolTable symbols,
+    private static boolean bodyIsDeterministic(RelationFunctionCall lateral, SymbolTable symbols,
                                                FunctionCatalog functions) {
         Optional<RelationFunctionSymbol> fn = symbols.resolveFunction(lateral.functionName())
                 .stream()

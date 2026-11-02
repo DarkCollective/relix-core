@@ -225,4 +225,9 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
         String name = node.isLocale() ? "'" + node.collation().replace("'", "''") + "'" : node.collation();
         return inner + " COLLATE " + name;
     }
+
+    @Override
+    public String visit(ScalarSubqueryOperand node) {
+        return "(" + node.query().prettyPrint(spelling) + ")";
+    }
 }

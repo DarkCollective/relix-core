@@ -751,7 +751,7 @@ final class RelixSessionTest {
                             "'SELECT' filters rows; an aggregate belongs in GROUP: write GROUP AVG(total) -> avg (orders)",
                             "GROUP AVG(total) -> avg (orders)"},
                     {"SELECT customer_id IN (SELECT customer_id FROM orders) (customers)", "24",
-                            "IN takes a set such as {1, 2}; to keep rows with a match in another relation write"
+                            "IN takes a set such as {1, 2}, or a relation of one column such as (π y (S)); to keep rows with a match in another relation write"
                                     + " customers SEMI customers.customer_id = orders.customer_id orders",
                             "customers SEMI customers.customer_id = orders.customer_id orders"},
                     {"SELECT customer_id IN (SELECT customer_id (orders)) (customers)", "24",
@@ -761,7 +761,7 @@ final class RelixSessionTest {
                             "write customers SEMI customers.customer_id = orders.customer_id orders",
                             "customers SEMI customers.customer_id = orders.customer_id orders"},
                     {"SELECT customer_id NOT IN (SELECT customer_id FROM orders) (customers)", "28",
-                            "IN takes a set such as {1, 2}; to keep rows with no match in another relation write"
+                            "IN takes a set such as {1, 2}, or a relation of one column such as (π y (S)); to keep rows with no match in another relation write"
                                     + " customers ANTI customers.customer_id = orders.customer_id orders",
                             "customers ANTI customers.customer_id = orders.customer_id orders"},
             };

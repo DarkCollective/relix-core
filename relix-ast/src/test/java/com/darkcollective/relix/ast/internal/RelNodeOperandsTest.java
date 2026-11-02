@@ -95,12 +95,13 @@ final class RelNodeOperandsTest extends AstTestSupport {
         }
 
         @Test
-        @DisplayName("a LATERAL join's arguments — children() reports only the left input")
+        @DisplayName("a LATERAL join's arguments are its function call's, the call its right child")
         void lateralArguments() {
             var lateral = lateral(A, "ordersFor",attr("customer_id"));
 
-            assertThat(lateral.children()).containsExactly(A);
-            assertThat(operandsOf(lateral)).containsExactly(attr("customer_id"));
+            assertThat(lateral.children()).containsExactly(A, tvf("ordersFor", attr("customer_id")));
+            assertThat(operandsOf(lateral)).isEmpty();
+            assertThat(operandsOf(lateral.right())).containsExactly(attr("customer_id"));
         }
     }
 

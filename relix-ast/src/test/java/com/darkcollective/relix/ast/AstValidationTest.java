@@ -358,16 +358,24 @@ final class AstValidationTest extends AstTestSupport {
     final class Lateral {
 
         @Test
-        void rejectsBlankFunctionName() {
-            assertThatIllegalArgumentException()
-                    .isThrownBy(() -> new LateralJoinNode(INPUT, " ", List.of()))
-                    .withMessageContaining("functionName must not be blank");
+        void rejectsNullRight() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> new LateralJoinNode(INPUT, null))
+                    .withMessage("right");
         }
 
         @Test
-        void rejectsNullFunctionName() {
+        void rejectsNullKind() {
             assertThatNullPointerException()
-                    .isThrownBy(() -> new LateralJoinNode(INPUT, null, List.of()));
+                    .isThrownBy(() -> new LateralJoinNode(INPUT, INPUT, null, SourceLocation.UNKNOWN))
+                    .withMessage("kind");
+        }
+
+        @Test
+        void tellsTheFunctionFormFromAnExpression() {
+            assertThat(new LateralJoinNode(INPUT, new RelationFunctionCall("f", List.of())).isFunctionCall())
+                    .isTrue();
+            assertThat(new LateralJoinNode(INPUT, INPUT).isFunctionCall()).isFalse();
         }
     }
 

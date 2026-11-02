@@ -17,56 +17,59 @@ package com.darkcollective.relix.ast;
 
 import com.darkcollective.relix.ast.visitor.RelNodeVisitor;
 
-import java.util.List;
 import java.util.Objects;
 
 /**
- * A correlated / lateral table-valued function application that produces one
- * sub-relation per row of its left input.
+ * A lateral join: its right side is evaluated once per row of its left input, and may read
+ * that row's columns.
  *
- * <p>Syntax: {@code left LATERAL fn(arg, …)} — for each row produced by
- * {@code left}, the arguments are evaluated against that row, the function body
- * is instantiated with those values, and the resulting rows are concatenated with
- * the outer row to form the output.
+ * <p>Two forms are written. {@code left LATERAL fn(arg, …)} calls a table-valued function
+ * whose arguments may name left columns; the right side is then a
+ * {@link RelationFunctionCall}. {@code left LATERAL (expression)} evaluates a relation
+ * expression in which a qualified name whose relation the expression does not read,
+ * {@code Customers.customer_id}, is a column of the left row. Each left row is joined to the
+ * rows its right side yields; {@link LateralKind#OUTER OUTER} also keeps, once, a left row
+ * for which the right side yields none, its right columns NULL.
  *
- * <p>Unlike {@link RelationFunctionCall} (a leaf whose arguments must be
- * constants), this node carries a relational {@code left} child so
- * {@link #children()} includes it in the structural traversal.  The TVF
- * arguments may reference columns from the left schema — that is the defining
- * property of a lateral join.
+ * <p>Both inputs are {@linkplain #children() children}: a traversal sees the function call
+ * or the expression as it sees any other input. What sets the right side apart is only that
+ * it may read the left row, so it is analysed and run in the left row's scope.
  *
- * @param left         the outer (driving) relation; must not be null
- * @param functionName the name of the table-valued function; must not be blank
- * @param arguments    scalar argument expressions (may reference left columns)
- * @param location     source location of the {@code LATERAL} keyword
+ * @param left     the outer (driving) relation; must not be null
+ * @param right    the relation evaluated per left row: a {@link RelationFunctionCall} or any
+ *                 relation expression; must not be null
+ * @param kind     whether a left row with no right rows is dropped or kept; must not be null
+ * @param location source location of the {@code LATERAL} keyword
  */
 public record LateralJoinNode(RelNode left,
-                               String functionName,
-                               List<Operand> arguments,
-                               SourceLocation location) implements RelNode {
+                              RelNode right,
+                              LateralKind kind,
+                              SourceLocation location) implements RelNode {
 
     public LateralJoinNode {
         Objects.requireNonNull(left, "left");
-        requireNonBlank(functionName, "functionName");
-        Objects.requireNonNull(arguments, "arguments");
-        arguments = List.copyOf(arguments);
+        Objects.requireNonNull(right, "right");
+        Objects.requireNonNull(kind, "kind");
         Objects.requireNonNull(location, "location");
     }
 
-    /** Convenience constructor for tests; uses {@link SourceLocation#UNKNOWN}. */
-    public LateralJoinNode(RelNode left, String functionName, List<Operand> arguments) {
-        this(left, functionName, arguments, SourceLocation.UNKNOWN);
+    /** Convenience constructor for tests: an inner lateral; uses {@link SourceLocation#UNKNOWN}. */
+    public LateralJoinNode(RelNode left, RelNode right) {
+        this(left, right, LateralKind.INNER, SourceLocation.UNKNOWN);
+    }
+
+    /**
+     * Whether the right side is a table-valued function call, {@code L LATERAL fn(…)}, rather
+     * than a relation expression in parentheses.
+     *
+     * @return true for the function form
+     */
+    public boolean isFunctionCall() {
+        return right instanceof RelationFunctionCall;
     }
 
     @Override
     public <R> R accept(RelNodeVisitor<R> visitor) {
         return visitor.visit(this);
-    }
-
-    private static void requireNonBlank(String value, String name) {
-        Objects.requireNonNull(value, name);
-        if (value.isBlank()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
     }
 }

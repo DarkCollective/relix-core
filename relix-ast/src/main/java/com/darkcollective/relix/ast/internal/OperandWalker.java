@@ -18,6 +18,9 @@ package com.darkcollective.relix.ast.internal;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.AttributeOperand;
+import com.darkcollective.relix.ast.ExistsPredicate;
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ScalarSubqueryOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
 import com.darkcollective.relix.ast.BooleanOperand;
 import com.darkcollective.relix.ast.NullOperand;
@@ -65,7 +68,9 @@ import java.util.function.Consumer;
  *   <li>{@code onFunction} for each {@link FunctionCall} (the call's arguments
  *       are still walked).</li>
  * </ul>
- * Plain literals reference no columns and trigger no callback.
+ * Plain literals reference no columns and trigger no callback. A subquery reports its
+ * {@linkplain Subqueries#outerReferences outer references}, the columns of the row around it
+ * that it reads, and nothing of its own relation.
  *
  * <p>This module carries no dependencies beyond the JDK, so the walker is safe to
  * reuse from any module that depends on the AST.
@@ -114,6 +119,9 @@ public final class OperandWalker {
             case UnaryOperand unary -> walk(unary.operand(), onAttribute, onFunction, onParameter);
             case ConditionOperand cond -> walk(cond.predicate(), onAttribute, onFunction, onParameter);
             case CollateOperand collated -> walk(collated.operand(), onAttribute, onFunction, onParameter);
+            // A subquery reads the row around it through its outer references alone; its
+            // own columns and calls are its relation's, and analysed with it.
+            case ScalarSubqueryOperand subquery -> Subqueries.outerReferences(subquery.query()).forEach(onAttribute);
             case SetLiteralOperand set -> {
                 for (Operand elem : set.elements()) {
                     walk(elem, onAttribute, onFunction, onParameter);
@@ -183,6 +191,11 @@ public final class OperandWalker {
             case PatternPredicate p -> {
                 walk(p.operand(), onAttribute, onFunction, onParameter);
                 walk(p.pattern(), onAttribute, onFunction, onParameter);
+            }
+            case ExistsPredicate e -> Subqueries.outerReferences(e.query()).forEach(onAttribute);
+            case QuantifiedPredicate q -> {
+                walk(q.left(), onAttribute, onFunction, onParameter);
+                Subqueries.outerReferences(q.query()).forEach(onAttribute);
             }
         }
     }

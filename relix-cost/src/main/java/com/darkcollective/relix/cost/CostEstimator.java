@@ -18,6 +18,7 @@ package com.darkcollective.relix.cost;
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.ElementOfPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.ast.EmptyRelationNode;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.NotPredicate;
@@ -48,6 +49,7 @@ import com.darkcollective.relix.ast.UsingJoinNode;
 import com.darkcollective.relix.ast.Predicate;
 import com.darkcollective.relix.ast.ProductNode;
 import com.darkcollective.relix.ast.ProjectionNode;
+import com.darkcollective.relix.ast.QuantifiedPredicate;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationFunctionCall;
 import com.darkcollective.relix.ast.RelationNode;
@@ -464,17 +466,12 @@ public final class CostEstimator {
             case IterateNode ignored -> OptionalLong.empty();
             case RecursiveRefNode ignored -> OptionalLong.empty();
 
-            // Lateral TVF join: conservatively |left| × |TVF_body| rows.
-            // (Each left row drives one TVF invocation; the TVF body may return many rows.)
+            // Lateral join: conservatively |left| × |right| rows, the right side estimated
+            // as written (a function call by its body). Each left row drives one
+            // evaluation of the right side, which may return many rows.
             case LateralJoinNode n -> {
                 OptionalLong leftRows = rowsAt(n.left(), depth + 1);
-                OptionalLong tvfRows = symbolTable == null ? OptionalLong.empty()
-                        : symbolTable.lookupFunction(n.functionName()).stream()
-                                .filter(RelationFunctionSymbol.class::isInstance)
-                                .map(RelationFunctionSymbol.class::cast)
-                                .findFirst()
-                                .map(fn -> rowsAt(fn.body(), depth + 1))
-                                .orElse(OptionalLong.empty());
+                OptionalLong tvfRows = rowsAt(n.right(), depth + 1);
                 yield product(leftRows, tvfRows);
             }
         };
@@ -580,6 +577,10 @@ public final class CostEstimator {
             // LIKE has no statistic that speaks to it — a distinct count says nothing
             // about how many values match a pattern.
             case PatternPredicate ignored -> Optional.empty();
+            // A subquery's answer depends on another relation's rows, which no statistic
+            // of this one speaks to.
+            case ExistsPredicate ignored -> Optional.empty();
+            case QuantifiedPredicate ignored -> Optional.empty();
         };
     }
 

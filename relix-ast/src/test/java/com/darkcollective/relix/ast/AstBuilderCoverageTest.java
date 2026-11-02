@@ -120,15 +120,15 @@ final class AstBuilderCoverageTest {
         }
 
         @Test
-        @DisplayName("Predicate permits 7 kinds")
+        @DisplayName("Predicate permits 9 kinds")
         void predicateCount() {
-            assertThat(concreteKinds(Predicate.class)).hasSize(7);
+            assertThat(concreteKinds(Predicate.class)).hasSize(9);
         }
 
         @Test
-        @DisplayName("Operand permits 18 kinds")
+        @DisplayName("Operand permits 19 kinds")
         void operandCount() {
-            assertThat(concreteKinds(Operand.class)).hasSize(18);
+            assertThat(concreteKinds(Operand.class)).hasSize(19);
         }
     }
 
@@ -199,6 +199,7 @@ final class AstBuilderCoverageTest {
             .of(ComparisonOperator.class, i -> UPPER_BOUNDS[i % UPPER_BOUNDS.length])
             .of(ArithmeticOperator.class, i -> ArithmeticOperator.values()[i % ArithmeticOperator.values().length])
             .of(AllenRelation.class, i -> AllenRelation.values()[i % AllenRelation.values().length])
+            .of(Quantifier.class, i -> Quantifier.values()[i % Quantifier.values().length])
             .of(ObjectiveSense.class, i -> ObjectiveSense.values()[i % ObjectiveSense.values().length])
             .of(ConsolidationFunction.class, i -> ConsolidationFunction.values()[i % ConsolidationFunction.values().length])
             .of(SortDirection.class, i -> SortDirection.values()[i % SortDirection.values().length])

@@ -247,6 +247,22 @@ public abstract class AstBuilders {
         return new ElementOfPredicate(element, setExpression, true);
     }
 
+    /** {@code EXISTS (query)}. */
+    public static ExistsPredicate exists(RelNode query) {
+        return new ExistsPredicate(query);
+    }
+
+    /** {@code left op ANY (query)} or {@code left op ALL (query)}. */
+    public static QuantifiedPredicate quantified(Operand left, ComparisonOperator operator,
+                                                 Quantifier quantifier, RelNode query) {
+        return new QuantifiedPredicate(left, operator, quantifier, query);
+    }
+
+    /** {@code (query)} as a value. */
+    public static ScalarSubqueryOperand subquery(RelNode query) {
+        return new ScalarSubqueryOperand(query);
+    }
+
     /** SQL {@code LIKE}. */
     public static PatternPredicate like(Operand operand, Operand pattern) {
         return new PatternPredicate(operand, pattern, false);
@@ -616,7 +632,17 @@ public abstract class AstBuilders {
 
     /** {@code LATERAL} — a TVF call evaluated per left row. */
     public static LateralJoinNode lateral(RelNode left, String functionName, Operand... arguments) {
-        return new LateralJoinNode(left, functionName, List.of(arguments));
+        return new LateralJoinNode(left, new RelationFunctionCall(functionName, List.of(arguments)));
+    }
+
+    /** {@code L LATERAL (right)} — a relation expression evaluated per left row. */
+    public static LateralJoinNode lateral(RelNode left, RelNode right) {
+        return new LateralJoinNode(left, right);
+    }
+
+    /** {@code L OUTER LATERAL (right)} — as {@link #lateral(RelNode, RelNode)}, keeping a left row with no right rows. */
+    public static LateralJoinNode outerLateral(RelNode left, RelNode right) {
+        return new LateralJoinNode(left, right, LateralKind.OUTER, SourceLocation.UNKNOWN);
     }
 
     // -------------------------------------------------------------------------

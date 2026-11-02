@@ -91,4 +91,15 @@ public final class PredicatePrettyPrinter implements PredicateVisitor<String> {
                         .orElse("");
     }
 
+    @Override
+    public String visit(ExistsPredicate node) {
+        return "EXISTS (" + node.query().prettyPrint(spelling) + ")";
+    }
+
+    @Override
+    public String visit(QuantifiedPredicate node) {
+        return node.left().accept(operandPrinter) + " " + spelling.of(node.operator().symbol()) + " "
+                + node.quantifier().name() + " (" + node.query().prettyPrint(spelling) + ")";
+    }
+
 }
