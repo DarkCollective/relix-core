@@ -173,6 +173,10 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
                 "σ (a ≠ b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b ≠ ⊥) ∨ (a ≠ ⊥ ∧ b = ⊥) (R)");
         row("`a || b`", "π a || b → c (R)", "π a + b → c (R)");
         row("`x % y`", "π x % y → m (R)", "π Mod(x, y) → m (R)");
+        row("`CASE WHEN x > 1 THEN a ELSE b END`", "π CASE WHEN x > 1 THEN a ELSE b END → c (R)",
+                "π Switch(x > 1, a, b) → c (R)");
+        row("`CASE x WHEN 1 THEN a END`", "π CASE x WHEN 1 THEN a END → c (R)",
+                "π Switch(x = 1, a) → c (R)");
         row("`'it''s'`", "π 'it''s' → s (R)", "π \"it's\" → s (R)");
         row("`1e6`, `2.5E-3`", "π 1e6 → a, 2.5E-3 → b (R)", "π 1000000 → a, 0.0025 → b (R)");
         row("`a IS NOT DISTINCT FROM b`", "σ a IS NOT DISTINCT FROM b (R)",

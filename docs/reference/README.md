@@ -183,6 +183,7 @@ Writing constant values, including the first-class temporal types.
 | Page | What it does |
 |------|--------------|
 | [String, number and boolean literals](literals/scalar-literals.md) | `"text"` or `'text'`, `42`, `3.25`, `1e6`, `TRUE` / `FALSE` |
+| [CASE](language/case.md) | `CASE WHEN c THEN a … ELSE d END`, `CASE x WHEN v THEN a … END` — a value chosen by conditions |
 | [CAST](language/cast.md) | `CAST(x AS type)` — convert a value to NUMBER, STRING, BOOLEAN, DATE, TIME or TIMESTAMP |
 | [AT TIME ZONE](language/at-time-zone.md) | `ts AT TIME ZONE 'Europe/London'` — the wall-clock time in a zone |
 | [EXTRACT](language/extract.md) | `EXTRACT(field FROM d)` — a field of a date or time, day of week and ISO week among them |

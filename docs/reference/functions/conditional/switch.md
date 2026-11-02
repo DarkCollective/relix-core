@@ -61,15 +61,15 @@ bands — tiers, grades, price brackets — a lookup relation joined by range (a
 keeps the bands as editable data rather than in the text of one expression.
 
 # SQL names:
-SQL's searched `CASE WHEN c1 THEN v1 WHEN c2 THEN v2 ELSE d END` is
-`Switch(c1, v1, c2, v2, True, d)`, or `Switch(c1, v1, c2, v2, d)` with the default as
-the last, unpaired argument; with no `ELSE`, leave the default out. A simple
-`CASE x WHEN 1 THEN v1 WHEN 2 THEN v2 END` compares each time: `Switch(x = 1, v1, x = 2, v2)`.
-There is no CASE expression. A `CASE` with one `WHEN` and an `ELSE`, or MySQL's
-`IF(c, a, b)`, is [IIf](iif.md).
+SQL's `CASE` is written as SQL writes it, and parses to Switch
+([CASE](../../language/case.md)): the searched
+`CASE WHEN c1 THEN v1 WHEN c2 THEN v2 ELSE d END` is `Switch(c1, v1, c2, v2, d)`, also
+written `Switch(c1, v1, c2, v2, True, d)`, and the simple
+`CASE x WHEN 1 THEN v1 WHEN 2 THEN v2 END` is `Switch(x = 1, v1, x = 2, v2)`. MySQL's
+`IF(c, a, b)` is [IIf](iif.md).
 
 # See Also:
-[iif](iif.md), [choose](choose.md), [nz](nz.md), [coalesce](coalesce.md), [comparison](../../predicates/comparison.md)
+[CASE](../../language/case.md), [iif](iif.md), [choose](choose.md), [nz](nz.md), [coalesce](coalesce.md), [comparison](../../predicates/comparison.md)
 
 # Notes:
 Switch is VBA's `Switch`, and it reads best with the broadest-matching branch last and
