@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.optimizer.internal;
 
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.optimizer.OptimizationCode;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.ArrayConstruction;
@@ -404,6 +406,9 @@ final class SelectionIntoFixpointPass {
             case NullPredicate n       -> operandHasCall(n.operand());
             case ElementOfPredicate e  -> operandHasCall(e.element()) || operandHasCall(e.setExpression());
             case PatternPredicate pp   -> operandHasCall(pp.operand()) || operandHasCall(pp.pattern());
+            // A subquery is held back as a call is: it reads more than the row.
+            case ExistsPredicate ignored     -> true;
+            case QuantifiedPredicate ignored -> true;
         };
     }
 

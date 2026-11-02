@@ -172,6 +172,7 @@ public final class SemanticValidator {
         var validator = new RelAlgebraValidator(symbolTable, annotations, functions, errors, filePath,
                 Set.of(), statistics);
         root.accept(validator);
+        validator.checkSubqueryPlacement(root);
     }
 
     /**
@@ -211,5 +212,6 @@ public final class SemanticValidator {
         var validator = new RelAlgebraValidator(ParameterScope.of(symbolTable, rfs), annotations,
                 functions, errors, ctx, params, statistics);
         rfs.body().accept(validator);
+        validator.checkSubqueryPlacement(rfs.body());
     }
 }

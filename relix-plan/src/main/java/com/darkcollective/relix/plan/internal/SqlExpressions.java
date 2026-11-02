@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.ArithmeticOperator;
@@ -256,6 +258,8 @@ public final class SqlExpressions {
                     .map(o -> o + (n.isNull() ? " IS NULL" : " IS NOT NULL"));
             case ElementOfPredicate e -> elementOf(e, equal, dialect, functions);
             case PatternPredicate p -> patternLike(p, equal, dialect, functions);
+            case ExistsPredicate e -> Optional.empty();
+            case QuantifiedPredicate q -> Optional.empty();
         };
     }
 

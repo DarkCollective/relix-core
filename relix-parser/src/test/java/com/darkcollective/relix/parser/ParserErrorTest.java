@@ -220,9 +220,10 @@ final class ParserErrorTest extends ParserTestSupport {
     public void subqueryShapeOnly() {
         assertParseError("SELECT EXISTS (R)").hasMessageNotContaining("subqueries");
         assertParseError("SELECT EXISTS = (R)").hasMessageNotContaining("subqueries");
-        assertParseError("SELECT Exists(x) = (SELECT v > 1 (S)) (R)").hasMessageNotContaining("subqueries");
-        assertParseError("PROJECT (SELECT v > 1 (R)) -> w (R)").hasMessageNotContaining("subqueries");
-        assertParseError("PROJECT (SELECT v").hasMessageNotContaining("subqueries");
+        assertParseError("PROJECT (SELECT v").hasMessageNotContaining("subquery");
+        // A σ of Relix's own in parentheses is a subquery, which analysis holds to one column.
+        assertThat(parse("SELECT Exists(x) = (SELECT v > 1 (S)) (R)")).isNode(SelectionNode.class);
+        assertThat(parse("PROJECT (SELECT v > 1 (R)) -> w (R)")).isNode(ProjectionNode.class);
     }
 
     @Test
@@ -270,9 +271,10 @@ final class ParserErrorTest extends ParserTestSupport {
     @Test
     @DisplayName("SQL's subquery as a value is told what Relix writes instead")
     public void reportsSqlSubqueryAsValue() {
-        String message = "Relix has no subqueries as values: join the relation instead"
-                + " (a SEMI join, ⋉, keeps the rows that have a match), use GROUP for a count"
-                + " or a total, or WINDOW LAG / LEAD for the previous or next row";
+        String message = "SELECT is σ in Relix, which keeps rows: a subquery is written with"
+                + " Relix's operators, as in (π v (σ k = R.k (S))) for one value or"
+                + " (γ COUNT(*) → n (σ k = R.k (S))) for a count, naming the outer row's columns"
+                + " qualified";
         assertParseError("PROJECT id, (SELECT v FROM R WHERE grp = 1) -> w (R)")
                 .hasMessageContaining(message)
                 .at(1, 14);
@@ -885,8 +887,8 @@ final class ParserErrorTest extends ParserTestSupport {
                 .at(1, 24);
         assertParseError("SELECT b ∉ (SELECT b FROM S) (T)")
                 .hasMessageContaining("with no match in another relation write T ANTI T.b = S.b S");
-        assertParseError("SELECT T.b IN (σ c > 1 (S)) (T)")
-                .hasMessageContaining("write R SEMI R.x = S.y S");
+        // A relation of Relix's own after IN is compared with, its one column checked by analysis.
+        assertThat(parse("SELECT T.b IN (σ c > 1 (S)) (T)")).isNode(SelectionNode.class);
         // What still reads.
         assertThat(parse("SELECT b IN {1, 2} (T)")).isNode(SelectionNode.class);
         assertThat(parse("GROUP region, COUNT(*) -> n (T)")).isNode(AggregationNode.class);
@@ -921,8 +923,9 @@ final class ParserErrorTest extends ParserTestSupport {
     @DisplayName("IN { SELECT … } is reported as IN (SELECT …) is, at the inner SELECT (#197)")
     public void reportsBracedSubquery() {
         assertParseError("SELECT room_id IN { SELECT room_id (Rooms) } (devices)")
-                .hasMessageContaining("IN takes a set such as {1, 2}; to keep rows with a match in another"
-                        + " relation write devices SEMI devices.room_id = Rooms.room_id Rooms")
+                .hasMessageContaining("IN takes a set such as {1, 2}, or a relation of one column such as"
+                        + " (π y (S)); to keep rows with a match in another relation write"
+                        + " devices SEMI devices.room_id = Rooms.room_id Rooms")
                 .at(1, 21);
         assertParseError("SELECT room_id NOT IN { SELECT room_id FROM Rooms } (devices)")
                 .hasMessageContaining("with no match in another relation write"

@@ -15,6 +15,11 @@
  */
 package com.darkcollective.relix.semantic.internal;
 
+import java.util.function.Function;
+import com.darkcollective.relix.ast.internal.Subqueries;
+import com.darkcollective.relix.ast.ScalarSubqueryOperand;
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.semantic.SemanticError;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.NullOperand;
@@ -111,6 +116,11 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
     private final Set<String>             parameters;
     /** Types operands so temporal arithmetic/comparison rules can be checked. */
     private final OperandTypeInferrer     typeInferrer;
+    /**
+     * What to add to a missing unqualified column's error when it is a column of the row
+     * around the subquery being validated; empty otherwise.
+     */
+    private final Function<String, String> outerRowHint;
 
     /** Where a collation applies, said wherever one is written anywhere else. */
     static final String COLLATE_PLACEMENT = "COLLATE applies where strings are compared: to a whole"
@@ -125,6 +135,19 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
                        SourceLocation fallback,
                        String context,
                        Set<String> parameters) {
+        this(schema, symbolTable, functions, errors, filePath, fallback, context, parameters, column -> "");
+    }
+
+    PredicateValidator(Schema schema,
+                       SymbolTable symbolTable,
+                       FunctionCatalog functions,
+                       List<SemanticError> errors,
+                       String filePath,
+                       SourceLocation fallback,
+                       String context,
+                       Set<String> parameters,
+                       Function<String, String> outerRowHint) {
+        this.outerRowHint = Objects.requireNonNull(outerRowHint, "outerRowHint");
         this.schema      = Objects.requireNonNull(schema,      "schema");
         this.symbolTable = Objects.requireNonNull(symbolTable, "symbolTable");
         this.functions   = Objects.requireNonNull(functions,   "functions");
@@ -278,6 +301,24 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
         return null;
     }
 
+    /**
+     * {@code EXISTS (…)}: its relation is validated with the operator that holds it; here
+     * only the columns it reads from this row are checked.
+     */
+    @Override
+    public Void visit(ExistsPredicate node) {
+        Subqueries.outerReferences(node.query()).forEach(this::validateAttribute);
+        return null;
+    }
+
+    /** {@code x op ANY|ALL (…)}: the compared value, and the columns the relation reads from this row. */
+    @Override
+    public Void visit(QuantifiedPredicate node) {
+        validateOperand(node.left());
+        Subqueries.outerReferences(node.query()).forEach(this::validateAttribute);
+        return null;
+    }
+
     /** Warns of a LIKE pattern whose {@code _} is probably meant as an underscore. */
     private void warnOfUnderscoreWildcard(PatternPredicate node) {
         LikePatternChecks.underscoreWarning(node).ifPresent(message -> {
@@ -306,6 +347,10 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
      * qualifier-stripping semantics.
      */
     private void validateAttribute(AttributeOperand attr) {
+        // A subquery's outer reference, always qualified, bound while its relation is validated.
+        if (attr.name().contains(".") && parameters.contains(attr.name().toLowerCase(Locale.ROOT))) {
+            return;
+        }
         String qualifiedError = QualifiedReferences.resolutionError(attr, schema);
         if (qualifiedError != null) {
             error(attr.location(), qualifiedError);
@@ -318,7 +363,8 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
             error(attr.location(), "attribute '" + attr.name() + "' not found in input schema"
                     + Suggestions.columnHint(colName,
                             schema.columns().stream().map(ColumnDefinition::name).toList(),
-                            !schema.isOpen()));
+                            !schema.isOpen())
+                    + (attr.name().contains(".") ? "" : outerRowHint.apply(colName)));
         }
     }
 
@@ -399,6 +445,10 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
             // A bound parameter names no column: its type is read from where it is used
             // (QueryParameters) and its value arrives when the query runs.
             case ParameterOperand ignored -> { }
+            // A subquery's relation is validated with the operator that holds it; here only
+            // the columns it reads from this row are checked, by the walk.
+            case ScalarSubqueryOperand subquery -> Subqueries.outerReferences(subquery.query())
+                    .forEach(this::validateAttribute);
             case NumberOperand  ignored -> { /* literals need no validation */ }
             case StringOperand  ignored -> { /* literals need no validation */ }
             case BooleanOperand ignored -> { /* literals need no validation */ }

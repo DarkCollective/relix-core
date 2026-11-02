@@ -67,4 +67,6 @@ public interface OperandVisitor<R> {
     R visit(CollateOperand node);
     /** Visits a bound query parameter ({@code $name}). */
     R visit(ParameterOperand node);
+    /** Visits a relation used as a value ({@code (γ COUNT(*) → n (σ … (S)))}). */
+    R visit(ScalarSubqueryOperand node);
 }

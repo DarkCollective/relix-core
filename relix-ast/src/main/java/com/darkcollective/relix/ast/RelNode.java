@@ -214,7 +214,7 @@ public sealed interface RelNode permits
             case PivotNode n           -> List.of(n.input());
             case TreeNode n            -> List.of(n.input());
             case WhyNode n             -> List.of(n.input());
-            case LateralJoinNode n     -> List.of(n.left()); // TVF call is not a relational child
+            case LateralJoinNode n     -> List.of(n.left(), n.right());
             case NaturalJoinNode n     -> List.of(n.left(), n.right());
             case UsingJoinNode n       -> List.of(n.left(), n.right());
             case ConditionalJoinNode n -> List.of(n.left(), n.right());
@@ -406,9 +406,9 @@ public sealed interface RelNode permits
                 yield in == n.input() ? n : new WhyNode(in, n.location());
             }
             case LateralJoinNode n -> {
-                RelNode l = f.apply(n.left());
-                yield l == n.left() ? n
-                        : new LateralJoinNode(l, n.functionName(), n.arguments(), n.location());
+                RelNode l = f.apply(n.left()), r = f.apply(n.right());
+                yield (l == n.left() && r == n.right()) ? n
+                        : new LateralJoinNode(l, r, n.kind(), n.location());
             }
 
             case NaturalJoinNode n -> {

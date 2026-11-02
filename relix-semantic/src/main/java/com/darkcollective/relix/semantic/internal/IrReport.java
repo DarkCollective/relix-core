@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.semantic.internal;
 
+import com.darkcollective.relix.ast.LateralKind;
 import com.darkcollective.relix.semantic.SemanticModel;
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.AntiJoinNode;
@@ -666,10 +667,11 @@ public final class IrReport {
                     + d.maxRows().stream().mapToObj(n -> " FOR " + n + " ROWS").findFirst().orElse("");
 
             // ── Lateral (correlated) TVF join ────────────────────────────────
-            case LateralJoinNode n -> "LATERAL " + n.functionName() + "("
-                    + n.arguments().stream().map(a -> a.accept(OPND))
-                            .collect(Collectors.joining(", "))
-                    + ")";
+            case LateralJoinNode n -> (n.kind() == LateralKind.OUTER ? "OUTER LATERAL" : "LATERAL")
+                    + (n.right() instanceof RelationFunctionCall call ? " " + call.functionName() + "("
+                            + call.arguments().stream().map(a -> a.accept(OPND))
+                                    .collect(Collectors.joining(", "))
+                            + ")" : "");
 
             // ── Reshape operators ────────────────────────────────────────────
             case UnpivotNode uv -> "UNPIVOT (" + String.join(", ", uv.columns()) + ")"
@@ -773,8 +775,8 @@ public final class IrReport {
             // Covering reduction (COVER) — unary, one child.
             case CoverNode          cv -> List.of(cv.input());
             case DownsampleNode      d -> List.of(d.input());
-            // Lateral TVF join — left relation is the only relational child.
-            case LateralJoinNode     n -> List.of(n.left());
+            // Lateral join — the function call is the label; an expression is a child.
+            case LateralJoinNode     n -> n.isFunctionCall() ? List.of(n.left()) : List.of(n.left(), n.right());
             // Reshape operators — unary.
             case UnpivotNode         uv -> List.of(uv.input());
             case PivotNode           pv -> List.of(pv.input());

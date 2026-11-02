@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.semantic.internal;
 
+import com.darkcollective.relix.semantic.SchemaAnnotations;
+import com.darkcollective.relix.ast.ScalarSubqueryOperand;
 import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.NullOperand;
 import com.darkcollective.relix.ast.internal.AttributeNames;
@@ -68,9 +70,22 @@ final class OperandTypeInferrer {
     private final SymbolTable symbolTable;
     private final FunctionCatalog functions;
 
+    /** The relations of subqueries, typed by the heading inference gave them; or none. */
+    private final SchemaAnnotations subqueries;
+
     OperandTypeInferrer(SymbolTable symbolTable, FunctionCatalog functions) {
+        this(symbolTable, functions, null);
+    }
+
+    /**
+     * An inferrer that types a subquery as the one column of the heading {@code subqueries}
+     * holds for its relation; a subquery it holds none for, or {@code subqueries} null, is
+     * {@code ANY}.
+     */
+    OperandTypeInferrer(SymbolTable symbolTable, FunctionCatalog functions, SchemaAnnotations subqueries) {
         this.symbolTable = Objects.requireNonNull(symbolTable, "symbolTable");
         this.functions   = Objects.requireNonNull(functions,   "functions");
+        this.subqueries  = subqueries;
     }
 
     /**
@@ -111,6 +126,11 @@ final class OperandTypeInferrer {
     Type infer(Operand expr, Schema inputSchema) {
         return switch (expr) {
             case AttributeOperand attr -> attributeType(attr, inputSchema);
+            case ScalarSubqueryOperand s -> subqueries == null ? ScalarType.ANY
+                    : subqueries.get(s.query())
+                            .filter(heading -> heading.columns().size() == 1)
+                            .map(heading -> heading.columns().getFirst().type())
+                            .orElse(ScalarType.ANY);
             case NumberOperand            ignored -> ScalarType.NUMBER;
             case StringOperand            ignored -> ScalarType.STRING;
             case BooleanOperand           ignored -> ScalarType.BOOLEAN;

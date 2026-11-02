@@ -15,6 +15,9 @@
  */
 package com.darkcollective.relix.optimizer.internal;
 
+import com.darkcollective.relix.ast.ScalarSubqueryOperand;
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.optimizer.OptimizationCode;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.NullOperand;
@@ -166,6 +169,8 @@ final class OperandSimplifier {
                 Operand inner = simplify(c.operand());
                 yield inner == c.operand() ? c : new CollateOperand(inner, c.collation(), c.location());
             }
+            // A subquery's value depends on its relation's rows, which nothing here folds.
+            case ScalarSubqueryOperand s -> s;
         };
     }
 
@@ -204,6 +209,13 @@ final class OperandSimplifier {
                 yield (newElem != e.element() || newSet != e.setExpression())
                         ? new ElementOfPredicate(newElem, newSet, e.isNegated(), e.location())
                         : e;
+            }
+            case ExistsPredicate e -> e;
+            case QuantifiedPredicate q -> {
+                Operand newLeft = simplify(q.left());
+                yield newLeft != q.left()
+                        ? new QuantifiedPredicate(newLeft, q.operator(), q.quantifier(), q.query(), q.location())
+                        : q;
             }
             case PatternPredicate p -> {
                 Operand newOperand = simplify(p.operand());

@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.optimizer.internal;
 
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.optimizer.OptimizationCode;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.AttributeOperand;
@@ -266,6 +268,9 @@ public final class OuterJoinDemotionPass {
             case NotPredicate n ->
                     n.predicate() instanceof NullPredicate inner && inner.isNull()
                             && isSideColumn(inner.operand(), side, left, right);
+            // What a subquery answers for a NULL is its relation's affair: left alone.
+            case ExistsPredicate ignored -> false;
+            case QuantifiedPredicate ignored -> false;
         };
     }
 

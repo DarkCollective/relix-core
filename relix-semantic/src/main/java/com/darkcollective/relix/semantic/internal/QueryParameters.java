@@ -15,6 +15,9 @@
  */
 package com.darkcollective.relix.semantic.internal;
 
+import com.darkcollective.relix.ast.internal.Subqueries;
+import com.darkcollective.relix.ast.QuantifiedPredicate;
+import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.ast.AndPredicate;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.ElementOfPredicate;
@@ -207,6 +210,9 @@ public final class QueryParameters {
         RelNodeOperands.forEach(node,
                 operand -> OperandWalker.walk(operand, a -> { }, f -> { }, this::seen),
                 predicate -> typeWithin(predicate, node));
+        for (Subqueries.Subquery subquery : Subqueries.subqueriesOf(node)) {
+            walk(subquery.query());
+        }
         for (RelNode child : node.children()) {
             walk(child);
         }
@@ -237,6 +243,9 @@ public final class QueryParameters {
             case PatternPredicate p -> compared(p.pattern(), p.operand(), node);
             case NullPredicate ignored -> { }
             case ElementOfPredicate ignored -> { }
+            // A subquery's own comparisons are typed where its relation is walked.
+            case ExistsPredicate ignored -> { }
+            case QuantifiedPredicate ignored -> { }
         }
     }
 
