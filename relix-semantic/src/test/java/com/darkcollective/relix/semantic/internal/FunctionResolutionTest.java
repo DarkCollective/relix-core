@@ -290,6 +290,18 @@ final class FunctionResolutionTest {
         }
 
         @Test
+        @DisplayName("a named call to no function, beside GROUP's aggregates, is an unknown aggregate (#254)")
+        void unknownAggregateBeforeAKnownOne() {
+            assertThat(analyze(USERS + "query { GROUP MODE(id) -> m, COUNT(*) -> n (Users) };"))
+                    .messages()
+                    .singleElement(org.assertj.core.api.InstanceOfAssertFactories.STRING)
+                    .startsWith("Unknown aggregate: 'MODE'; GROUP's aggregates are SUM, AVG, COUNT,");
+            // A known scalar is a computed key, as before.
+            assertThat(analyze(USERS + "query { GROUP UPPER(name) -> u, COUNT(*) -> n (Users) };"))
+                    .hasNoErrors();
+        }
+
+        @Test
         @DisplayName("a function no installed library offers is unknown")
         void absentFromTheCatalogue() {
             assertThat(analyzeWith(FunctionCatalog.of(new TinyLibrary()),

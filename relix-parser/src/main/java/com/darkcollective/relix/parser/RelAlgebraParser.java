@@ -433,6 +433,9 @@ public final class RelAlgebraParser {
             if (isWord(operator, "CROSS") && isWord(current, "JOIN")) {
                 rejectSqlJoin(operator, "×", leftStart, operatorAt);
             }
+            if (isWord(current, "ALL") && !endsRelation(peek(1).type())) {
+                operator = setOperatorAll(operator);
+            }
 
             Predicate condition = null;
             boolean asofInner = false;
@@ -812,6 +815,40 @@ public final class RelAlgebraParser {
     private String relationText(int start, int end) {
         String text = writtenBetween(start, end);
         return text.length() > 80 ? "…" : text;
+    }
+
+    /**
+     * SQL's {@code ALL} after a set operator, the current token. {@code UNION ALL} is
+     * read as ⊎, the union that keeps repeats, and the operator returned is that one.
+     * {@code EXCEPT ALL} and {@code INTERSECT ALL} are SQL's multiset difference and
+     * intersection, which Relix does not have: they are refused at {@code ALL}. Before
+     * this, {@code ALL} was read as a call to a table-valued function of that name.
+     */
+    private Token setOperatorAll(Token operator) {
+        Token all = current;
+        switch (operator.type()) {
+            case UNION -> {
+                advance();
+                return new Token(TokenType.UNION_ALL, operator.lexeme() + " " + all.lexeme(),
+                        operator.literal(), operator.line(), operator.column());
+            }
+            case DIFFERENCE, INTERSECTION -> {
+                String written = operator.lexeme() + " " + all.lexeme();
+                String plain = operator.lexeme();
+                throw error(all, written + " is SQL's multiset form, and Relix's set operators work on"
+                        + " sets: " + plain + " returns each row once. Write " + plain + " without ALL;"
+                        + " the operator that keeps repeats is UNION ALL (⊎)");
+            }
+            default -> {
+                return operator;
+            }
+        }
+    }
+
+    /** Whether a token of {@code type} ends the relation before it, so a word before it is a name. */
+    private boolean endsRelation(TokenType type) {
+        return type == TokenType.RPAREN || type == TokenType.EOF
+                || isBinaryRelOperator(type);
     }
 
     /**
@@ -1547,6 +1584,7 @@ public final class RelAlgebraParser {
         if (current.type() == TokenType.LPAREN) {
             rejectParenthesizedAggregates(opAt);
             if (!grouping.keys().isEmpty() && grouping.sets().isEmpty()) {
+                rejectUnknownAggregateKey(keysStart);
                 rejectKeysOnlyGroup(opTok, keysStart);
             }
         }
@@ -1562,6 +1600,11 @@ public final class RelAlgebraParser {
             star = groupStar;
             groupAt = enclosingGroup;
             groupStar = enclosingStar;
+        }
+        // GROUP g, COUNT(*) -> n, MODE(x) -> m (R): a call after the aggregates is one.
+        if (consumed.get(consumed.size() - 1).type() == TokenType.COMMA
+                && opensCall(current, peek(1))) {
+            throw error(current, AggregateNames.unknown(current.lexeme()));
         }
         RelNode input = parseParenthesizedRelation("Expected '(' after aggregation expression");
         if (star != null) {
@@ -1609,6 +1652,37 @@ public final class RelAlgebraParser {
         boolean listed = keysEnd - opAt > 1 && consumed.get(keysEnd - 1).type() != TokenType.COMMA;
         throw ParseException.at(problem + ": write " + keys + (listed ? ", " : " ") + aggregates + " " + input,
                 lexer.input(), open);
+    }
+
+    /**
+     * Refuses {@code GROUP g, MODE(x) -> m (R)}, a GROUP with no aggregate whose keys
+     * hold a named call, as a call to an aggregate that does not exist. Such a key is
+     * legal beside an aggregate, {@code UPPER(name) -> u}, but with none the call was
+     * meant as one: SQL's {@code MODE}, {@code CORR} or {@code BOOL_AND}. Before this
+     * it was told to add an aggregate, and its rewrite was a DISTINCT of the same call.
+     */
+    private void rejectUnknownAggregateKey(int keysStart) {
+        int depth = 0;
+        boolean itemStart = true;
+        for (int i = keysStart; i < consumed.size() - 1; i++) {
+            Token token = consumed.get(i);
+            if (itemStart && opensCall(token, consumed.get(i + 1))) {
+                int close = i + 1;
+                for (int d = 0; close < consumed.size(); close++) {
+                    TokenType type = consumed.get(close).type();
+                    d += type == TokenType.LPAREN ? 1 : type == TokenType.RPAREN ? -1 : 0;
+                    if (d == 0) {
+                        break;
+                    }
+                }
+                if (close + 1 < consumed.size() && consumed.get(close + 1).type() == TokenType.ARROW) {
+                    throw error(token, AggregateNames.unknown(token.lexeme()));
+                }
+            }
+            TokenType type = token.type();
+            depth += type == TokenType.LPAREN ? 1 : type == TokenType.RPAREN ? -1 : 0;
+            itemStart = depth == 0 && type == TokenType.COMMA;
+        }
     }
 
     /**

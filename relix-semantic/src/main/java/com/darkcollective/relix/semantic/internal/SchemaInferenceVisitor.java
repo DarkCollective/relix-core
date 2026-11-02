@@ -252,14 +252,8 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
     public Optional<Schema> visit(RelationFunctionCall node) {
         Optional<RelationFunctionSymbol> sym = lookupRelationFunction(node.functionName());
         if (sym.isEmpty()) {
-            if (RelAlgebraValidator.bareColumnAsProject(node, symbolTable).isPresent()) {
-                return Optional.empty();   // a column missing its PROJECT, which validation names
-            }
-            errors.add(SemanticError.error(
-                    node.location().filePath(),
-                    node.location().line(),
-                    node.location().column(),
-                    "Undefined table-valued function: '" + node.functionName() + "'"));
+            // Validation reports the unknown name, with a did-you-mean, or the column
+            // missing its PROJECT; reporting it here too gave two errors at one place.
             return Optional.empty();
         }
         // The call's output schema is the function body's inferred output schema,
@@ -279,12 +273,7 @@ public final class SchemaInferenceVisitor implements RelNodeVisitor<Optional<Sch
         // Look up the TVF.
         Optional<RelationFunctionSymbol> sym = lookupRelationFunction(node.functionName());
         if (sym.isEmpty()) {
-            errors.add(SemanticError.error(
-                    node.location().filePath(),
-                    node.location().line(),
-                    node.location().column(),
-                    "Undefined table-valued function: '" + node.functionName() + "'"));
-            return Optional.empty();
+            return Optional.empty();   // validation reports the unknown name
         }
         Optional<Schema> tvfSchema = sym.get().returnSchema();
         if (tvfSchema.isEmpty()) return Optional.empty();

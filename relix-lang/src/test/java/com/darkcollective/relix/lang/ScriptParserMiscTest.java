@@ -345,4 +345,16 @@ class ScriptParserMiscTest {
             assertThat(s.statements().get(0)).isInstanceOf(QueryStatement.class);
         }
     }
+
+    @Nested
+    @DisplayName("ALL after a set operator")
+    class SetOperatorAllTests {
+
+        @Test
+        @DisplayName("before a closing brace, ALL is a relation's name (#255)")
+        void allBeforeABraceIsARelation() {
+            Script s = parse("ALL := [| x |\n| 1 |];\nquery { ALL EXCEPT ALL };");
+            assertThat(s.statements()).hasSize(2);
+        }
+    }
 }

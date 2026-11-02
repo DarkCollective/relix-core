@@ -26,6 +26,7 @@ import com.darkcollective.relix.ast.AntiJoinNode;
 import com.darkcollective.relix.ast.ArithmeticOperator;
 import com.darkcollective.relix.ast.ArrayConstruction;
 import com.darkcollective.relix.ast.AsOfJoinNode;
+import com.darkcollective.relix.ast.internal.AggregateNames;
 import com.darkcollective.relix.ast.internal.AttributeNames;
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.BinaryArithmeticExpression;
@@ -2126,6 +2127,11 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 if (input.column(col.get()).isEmpty()) {
                     columnNotFound(node.location(), "Aggregation γ: group-by attribute", col.get(), input);
                 }
+            } else if (unknownAggregateKey(key)) {
+                // GROUP g, MODE(x) -> m, COUNT(*) -> n (R): a named call to no function
+                // was meant as an aggregate.
+                FunctionCall call = (FunctionCall) key.expression();
+                error(call.location(), AggregateNames.unknown(call.functionName()));
             } else {
                 // A derived grouping key (e.g. YEAR(ts)) — validate its attribute
                 // references and function calls just like an aggregate argument.
@@ -2683,6 +2689,18 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
     private static String columnHint(String column, Schema schema) {
         return Suggestions.columnHint(AttributeNames.stripQualifier(column),
                 columnNames(schema), !schema.isOpen());
+    }
+
+    /**
+     * Whether {@code key} is a named call, {@code MODE(x) -> m}, to a function that does
+     * not exist: SQL's aggregate written in GROUP's list, read as a key because the
+     * parser knows no aggregate of that name. (A scalar near the name, MOD for MODE, is
+     * not offered: a named key beside the aggregates is far more often a missing one.)
+     */
+    private boolean unknownAggregateKey(GroupingKey key) {
+        return key.alias().isPresent()
+                && key.expression() instanceof FunctionCall call
+                && ResolvedFunction.of(functions, call.functionName(), symbolTable).isUnknown();
     }
 
     /**
