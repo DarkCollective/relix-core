@@ -213,4 +213,16 @@ public final class OperandPrettyPrinter implements OperandVisitor<String> {
         // the price of one rule instead of a context-sensitive one.
         return "(" + node.predicate().accept(new PredicatePrettyPrinter(spelling)) + ")";
     }
+
+    @Override
+    public String visit(CollateOperand node) {
+        // COLLATE binds tightest, so an operand built of operators is parenthesised for
+        // the collation to cover all of it: (a + b) COLLATE NOCASE.
+        String inner = node.operand().accept(this);
+        if (node.operand() instanceof BinaryArithmeticExpression || node.operand() instanceof UnaryOperand) {
+            inner = "(" + inner + ")";
+        }
+        String name = node.isLocale() ? "'" + node.collation().replace("'", "''") + "'" : node.collation();
+        return inner + " COLLATE " + name;
+    }
 }

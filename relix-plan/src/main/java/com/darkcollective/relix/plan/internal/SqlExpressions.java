@@ -36,6 +36,7 @@ import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.OrPredicate;
 import com.darkcollective.relix.ast.PatternPredicate;
 import com.darkcollective.relix.ast.Predicate;
+import com.darkcollective.relix.ast.CollateOperand;
 import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.StringOperand;
@@ -296,6 +297,7 @@ public final class SqlExpressions {
             // A function call pushes when the function itself supplies a spelling for
             // this dialect (ADR-0026): the planner knows no function names.
             case FunctionCall f -> functionCall(f, cols, dialect, functions);
+            case CollateOperand c -> collated(c, cols, dialect, functions);
             default -> Optional.empty();
         };
     }
@@ -463,6 +465,22 @@ public final class SqlExpressions {
             case NullOperand ignored -> Text.UNKNOWN;
             default -> Text.NOT_STRING;
         };
+    }
+
+    /**
+     * A value written under a collation. {@code BINARY} is the order every string
+     * comparison here is rendered in already, by the caller's renderer, so it is the value
+     * itself. {@code NOCASE} and a locale have no rendering: a database's case-insensitive
+     * collation folds {@code ß}, accents and dotted capitals by rules of its own, and
+     * {@code LOWER} is a collation's mapping rather than Java's (the reason {@code LCase}
+     * is offered no backend), so a comparison, sort or membership under either runs in
+     * the engine.
+     */
+    private static Optional<String> collated(CollateOperand c, ColumnRenderer cols, Dialect dialect,
+                                             PushdownFunctions functions) {
+        return c.collation().equals(CollateOperand.BINARY)
+                ? operand(c.operand(), cols, dialect, functions)
+                : Optional.empty();
     }
 
     private static Optional<String> elementOf(ElementOfPredicate e, ColumnRenderer cols, Dialect dialect,

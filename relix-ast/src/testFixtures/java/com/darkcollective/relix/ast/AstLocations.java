@@ -161,6 +161,7 @@ public final class AstLocations {
                 yield new ArrayConstruction(elems);
             }
             case ConditionOperand c -> new ConditionOperand(stripLocations(c.predicate()));
+            case CollateOperand c -> new CollateOperand(stripLocations(c.operand()), c.collation());
         };
     }
 

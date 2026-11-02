@@ -1238,7 +1238,20 @@ final class PushdownCorpus {
                         EnumSet.of(Dialect.SQLSERVER), SQLSERVER_ORDERS_BY_CODE_UNIT),
                 Case.diverging("γ MIN(name) → lo, MAX(name) → hi (Customers)",
                         EnumSet.of(Dialect.GENERIC), GENERIC_ORDERS_BY_CODE_UNIT,
-                        EnumSet.of(Dialect.SQLSERVER), SQLSERVER_ORDERS_BY_CODE_UNIT));
+                        EnumSet.of(Dialect.SQLSERVER), SQLSERVER_ORDERS_BY_CODE_UNIT),
+                // BINARY is the code-point comparison every one above already is, so it
+                // folds wherever they do. NOCASE and a locale fold nowhere: a database's
+                // case-insensitive collation folds 'ß', accents and dotted capitals its own
+                // way, and the names here hold an 'ß', a tab and an astral character.
+                Case.of("σ name COLLATE BINARY = 'Ada' (Customers)"),
+                Case.of("σ tier COLLATE BINARY ∈ {'gold', 'Gold'} (Customers)"),
+                Case.of("σ name COLLATE BINARY > 'B' (Customers)"),
+                Case.declined("σ name COLLATE NOCASE = 'ada' (Customers)"),
+                Case.declined("σ tier COLLATE NOCASE ∈ {'GOLD'} (Customers)"),
+                Case.declined("σ name COLLATE NOCASE LIKE 'a%' (Customers)"),
+                Case.declined("σ name COLLATE 'de' < 'T' (Customers)"),
+                Case.declined("τ name COLLATE NOCASE, cid (Customers)"),
+                Case.declined("γ tier COLLATE NOCASE, COUNT(*) → n (Customers)"));
     }
 
     /**
