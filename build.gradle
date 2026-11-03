@@ -1151,11 +1151,17 @@ if (exportScriptPresent) {
 // which keeps `./gradlew coverageAudit` answering against a report that already
 // exists — the property mustRunAfter was chosen for above. What `check` needs is
 // the stronger claim: the numbers it gates on were produced by this run.
+//
+// javadocPublished is the javadoc jar relix-dist publishes. It documents only the
+// exported packages, so a {@link} that each module's own javadoc resolves can still
+// fail it: a link to a package-private class in a package the jar does not export.
+// Running it here fails the pull request that adds such a link, not the publish
+// after it merges (#277).
 tasks.register('check') {
     group = 'verification'
     description = 'Repository-wide checks that no single subproject can run.'
     dependsOn tasks.named('jacocoAggregateReport'), tasks.named('coverageAudit'),
-            tasks.named('coverageAuditTest')
+            tasks.named('coverageAuditTest'), tasks.named('javadocPublished')
     if (tierRegisterPresent) {
         dependsOn tasks.named('tierRegisterTest')
     }
