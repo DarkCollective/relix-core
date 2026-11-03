@@ -543,14 +543,19 @@ frame_bound       ::= "UNBOUNDED" ( "PRECEDING" | "FOLLOWING" )
                     | "CURRENT" "ROW"
                     | ( NUMBER | "DURATION" STRING ) ( "PRECEDING" | "FOLLOWING" )
 
-/* WINDOW RANK() SORT amount DESC PER customer_id AS rnk (Orders) */
-window            ::= "WINDOW" window_function
+/* WINDOW RANK() SORT amount DESC PER customer_id AS rnk (Orders);
+   WINDOW LAST_VALUE(price) OVER PARTITION SORT ts PER session AS close (Trades).
+   Only FIRST_VALUE, LAST_VALUE and NTH_VALUE take a frame, written as ROLLING
+   writes one; without it they read SQL's default, RANGE BETWEEN UNBOUNDED
+   PRECEDING AND CURRENT ROW. */
+window            ::= "WINDOW" ( window_function | value_function window_frame? )
                       ( "τ" | "SORT" ) sort_key ( "," sort_key )* per_names? "AS" name input
 window_function   ::= ( "ROW_NUMBER" | "RANK" | "DENSE_RANK" | "PERCENT_RANK" | "CUME_DIST" ) "(" ")"
                     | "NTILE" "(" operand ")"
                     | ( "LAG" | "LEAD" ) "(" operand ( "," operand ( "," operand )? )? ")"
-                    | ( "FIRST_VALUE" | "LAST_VALUE" ) "(" operand ")"
+value_function    ::= ( "FIRST_VALUE" | "LAST_VALUE" ) "(" operand ")"
                     | "NTH_VALUE" "(" operand "," operand ")"
+window_frame      ::= "OVER" ( ( INTEGER | "ALL" ) "ROWS" | frame_clause | "PARTITION" )
 
 /* SESSIONIZE ts GAP DURATION 'PT30M' PER user_id AS session (Events) */
 sessionize        ::= "SESSIONIZE" name "GAP" operand per_names? "AS" name input

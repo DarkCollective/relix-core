@@ -176,14 +176,36 @@ final class WindowReference {
         return out;
     }
 
-    /** {@code FIRST_VALUE(value)}: the first row's value, for every row. */
+    /**
+     * {@code FIRST_VALUE(value)}: the first row's value, for every row. SQL's default
+     * frame and the whole partition start at the same row, so this is both.
+     */
     static Map<Integer, String> firstValue(List<Row> rows, boolean ascending) {
         return edgeValue(rows, ascending, true);
     }
 
-    /** {@code LAST_VALUE(value)}: the last row's value, for every row. */
-    static Map<Integer, String> lastValue(List<Row> rows, boolean ascending) {
+    /** {@code LAST_VALUE(value) OVER PARTITION}: the partition's last row's value, for every row. */
+    static Map<Integer, String> lastValueOfPartition(List<Row> rows, boolean ascending) {
         return edgeValue(rows, ascending, false);
+    }
+
+    /**
+     * {@code LAST_VALUE(value)} in SQL's default frame, which ends at the current row's
+     * last peer: the value of the last row whose sort key equals this row's.
+     */
+    static Map<Integer, String> lastValue(List<Row> rows, boolean ascending) {
+        Map<Integer, String> out = new LinkedHashMap<>();
+        partitions(rows, ascending).values().forEach(part -> {
+            for (int i = 0; i < part.size(); i++) {
+                int last = i;
+                while (last + 1 < part.size()
+                        && java.util.Objects.equals(part.get(last + 1).sortKey(), part.get(i).sortKey())) {
+                    last++;
+                }
+                out.put(part.get(i).id(), render(part.get(last).value()));
+            }
+        });
+        return out;
     }
 
     private static Map<Integer, String> edgeValue(List<Row> rows, boolean ascending, boolean first) {
