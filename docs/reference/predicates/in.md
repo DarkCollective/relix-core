@@ -21,7 +21,9 @@ IN (two tokens). The set literal holds constant operands.
 
 SQL's `x IN (1, 2)` is the same set as `x IN {1, 2}`. A parenthesis is read as a
 list when it holds a comma; one value in parentheses is a single expression, so a
-one-member list is written in braces, `x IN {1}`. A row of columns tests membership
+one-member list is written in braces, `x IN {1}`. `status IN ('OPEN')` is refused at
+analysis, naming that rewrite, `status IN {'OPEN'}`; a quantifier's list is not so read,
+and `status = ANY ('OPEN')` is a list of one. A row of columns tests membership
 of a list of rows, `(a, b) IN {(1, 2), (3, 4)}`: see [row values](row-value.md).
 
 **IN over a relation.** `x IN (π v (S))` tests membership of a one-column relation's

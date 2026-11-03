@@ -2568,6 +2568,11 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
             case ElementOfPredicate e -> {
                 validateTemporalRules(e.element(), schema, inferrer);
                 validateTemporalRules(e.setExpression(), schema, inferrer);
+                String notSet = ComparisonTypes.setExpressionError(e);
+                if (notSet != null) {
+                    SourceLocation at = e.setExpression().location();
+                    error(at.line() > 0 ? at : e.location(), "Projection π: " + notSet);
+                }
                 if (e.setExpression() instanceof SetLiteralOperand set) {
                     String setError = ComparisonTypes.membershipError(
                             e.element(), inferrer.infer(e.element(), schema), set.elements(),

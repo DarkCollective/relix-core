@@ -277,6 +277,10 @@ public final class PredicateValidator implements PredicateVisitor<Void> {
     public Void visit(ElementOfPredicate node) {
         validateCollatable(node.element());
         validateOperand(node.setExpression());
+        String notSet = ComparisonTypes.setExpressionError(node);
+        if (notSet != null) {
+            error(node.setExpression().location(), notSet);
+        }
         if (node.setExpression() instanceof SetLiteralOperand set) {
             String setError = ComparisonTypes.membershipError(
                     node.element(), typeInferrer.infer(node.element(), schema), set.elements(),

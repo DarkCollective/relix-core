@@ -819,7 +819,8 @@ are easy to miss in the rules above.
   `σ IsNull(x) = true (R)` rather than `σ IsNull(x) (R)`.
 - **Sets use braces, and SQL's list is read too.** `x IN {1, 2}` tests membership,
   and so does `x IN (1, 2)`: a parenthesis holding a comma is a list. One value in
-  parentheses is a single expression, so a one-member set is `x IN {1}`.
+  parentheses is a single expression, so a one-member set is `x IN {1}`, and
+  `x IN (1)` is refused at analysis, naming it.
 - **`ANY`, `SOME` and `ALL` quantify over a list or a relation.** `x > ALL {1, 2}` is
   `x > 1 ∧ x > 2`, and `ANY` the disjunction; an empty list makes `ALL` true and
   `ANY` false. The words are not reserved: one is a quantifier only before braces,
