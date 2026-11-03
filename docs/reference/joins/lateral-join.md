@@ -1,9 +1,13 @@
-# Name: Lateral Join (LATERAL)
+# Name: Lateral Join (LATERAL / OUTER LATERAL)
 
 # Syntax:
 left LATERAL fn(arg, …)
+left LATERAL ( relation )
+left OUTER LATERAL fn(arg, …)
+left OUTER LATERAL ( relation )
 
 Customers LATERAL ordersFor(customer_id)
+Customers OUTER LATERAL (λ 1 (τ amount DESC (σ customer_id = Customers.customer_id (Orders))))
 
 # Description:
 A LATERAL join invokes a table-valued function (TVF) once per row of the left
@@ -15,17 +19,35 @@ This is the correlated cousin of a plain TVF call: where `ordersFor(2)` always
 returns the same orders, `Customers LATERAL ordersFor(customer_id)` personalises
 the call for each customer.
 
+The right side can also be a relation written in place, in parentheses: a
+[subquery](../language/subquery.md) that names the left row's columns qualified,
+`Customers LATERAL (σ customer_id = Customers.customer_id (Orders))`. `OUTER LATERAL`
+keeps a left row whose right side has no rows, once, with the right columns NULL, as
+a left outer join does.
+
 # Technical Description:
 For each row r in left:
   1. Evaluate the argument expressions against r (they may reference any left column).
   2. Call fn(evaluated args) to obtain a relation TVF_r.
   3. Emit one output row for each row t in TVF_r: r || t (left columns then TVF columns).
 
-The output schema is the left schema concatenated with the TVF's return schema.
-If the TVF returns an empty relation for a given left row, that left row contributes
-no output rows: LATERAL has inner-join semantics, and there is no LATERAL LEFT JOIN form.
+The output schema is the left schema concatenated with the right side's heading.
+If the right side is empty for a given left row, that left row contributes no output
+rows under LATERAL, and one row with NULL right columns under OUTER LATERAL.
 
-Arguments must be scalar expressions; argument expressions referencing columns from
+**A relation on the right.** `left LATERAL (relation)` evaluates the relation once
+per left row. Inside it, a qualified name `R.c` whose relation it does not read is a
+column of the left row; an unqualified name is the relation's own. The left row's
+values are bound into the relation and it is planned once for each distinct set of
+them, its rows reused for a repeat. A NULL value is bound as NULL, so it matches
+nothing, as in SQL. A relation that reads nothing of the left row is joined as a
+product (`LATERAL-001`, below).
+
+**SQL's spellings.** `CROSS APPLY` is `LATERAL`;
+`OUTER APPLY`, `LEFT LATERAL` and `LEFT JOIN LATERAL … ON TRUE` are `OUTER LATERAL`.
+The parser refuses SQL's words and names the Relix one.
+
+A function's arguments must be scalar expressions; argument expressions referencing columns from
 the left relation are fully supported. Arguments may also be constants or arithmetic
 expressions combining constants and left-side columns.
 
@@ -212,14 +234,29 @@ One row per customer who has any order, each the largest. Written as an ordinary
 join with `λ 1` above it, the limit would apply to the joined result and return a
 single row overall.
 
+**The same, written in place, keeping Cara.** The relation can be written on the
+right without a function, naming the customer's column qualified, and `OUTER` keeps
+the customer who has no order:
+
+```relix
+query { Customers OUTER LATERAL (λ 1 (τ amount DESC (σ customer_id = Customers.customer_id (Orders)))) };
+```
+
+```
+ customer_id  name   order_id  customer_id_r  amount
+ ───────────  ─────  ────────  ─────────────  ──────
+           1  Alice       100              1     120
+           2  Bob         102              2      45
+           3  Cara   NULL      NULL           NULL
+(3 rows)
+```
+
 # Limitations:
-- **Inner-join semantics only**: left rows with no TVF matches are dropped. There is
-  no `LATERAL LEFT JOIN` form.
-- **Arguments must be scalar and non-NULL**: an argument evaluating to NULL, or to a
+- **A function's arguments must be scalar and non-NULL**: an argument evaluating to NULL, or to a
   nested struct/array value, produces a runtime error naming the value's kind. There is
   no literal that denotes NULL, and substituting one that did not mean NULL would run
   the function on a value the outer row never held.
-- **No pushdown**: LATERAL joins are always executed in-engine. The TVF body may
+- **No pushdown**: LATERAL joins are always executed in-engine. The right side may
   itself reference pushed-down sources; only the LATERAL operator stays in-engine.
 - **No recursion**: a TVF may not call itself (directly or transitively) via LATERAL.
 - **A base relation is assumed stable for the duration of a query.** The rewrites
@@ -227,10 +264,13 @@ single row overall.
   scans. That is the same assumption `×`, every hash join, `÷` and the set operations
   already make when they materialise one side and replay it.
 
+- **No alias**: the right side's columns join the row under their own names, a
+  clashing one suffixed `_r`; SQL's `LATERAL (…) AS x` is refused.
+
 # Alternatives:
 A plain TVF call (`Relation ⋈ myFn(constant)`) works when the argument does not
 depend on the outer row. Use LATERAL when the per-row column reference is the point.
 
 # See Also:
 [def … : RELATION](../language/def-relation.md), [natural-join](natural-join.md),
-[theta-join](theta-join.md), [semi-join](semi-join.md)
+[theta-join](theta-join.md), [semi-join](semi-join.md), [subquery](../language/subquery.md)

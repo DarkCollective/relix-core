@@ -82,7 +82,8 @@ the complement ("no match").
 # SQL names:
 SQL's `WHERE EXISTS (SELECT … FROM S WHERE S.k = R.k)` and
 `WHERE R.k IN (SELECT k FROM S)` are `R SEMI R.k = S.k S`, each row of R kept once
-however many rows of S match it. `NOT EXISTS` and `NOT IN (subquery)` are the
+however many rows of S match it, or [EXISTS](../predicates/exists.md) and
+[IN](../predicates/in.md) over a relation, written as SQL writes them. `NOT EXISTS` and `NOT IN (subquery)` are the
 [anti join](anti-join.md); `IN` over a list of values is [IN](../predicates/in.md).
 
 # See Also:

@@ -231,9 +231,9 @@ final class ReferenceLookupTest {
                     Map.entry("ORDER BY", "operators/sort.md"),
                     Map.entry("FETCH NEXT", "operators/limit.md"),
                     Map.entry("SELECT DISTINCT", "operators/distinct.md"),
-                    Map.entry("NOT EXISTS", "joins/anti-join.md"),
+                    Map.entry("NOT EXISTS", "predicates/exists.md"),
                     Map.entry("not in subquery", "joins/anti-join.md"),
-                    Map.entry("EXISTS", "joins/semi-join.md"),
+                    Map.entry("EXISTS", "predicates/exists.md"),
                     Map.entry("in subquery", "joins/semi-join.md"),
                     Map.entry("TABLESAMPLE", "advanced/sample-bernoulli.md"),
                     Map.entry("ORDER BY RANDOM()", "advanced/sample-reservoir.md"));
