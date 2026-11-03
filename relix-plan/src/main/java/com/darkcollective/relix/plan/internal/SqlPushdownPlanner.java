@@ -15,6 +15,11 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.ast.LateralKind;
+import com.darkcollective.relix.ast.LateralJoinNode;
+import com.darkcollective.relix.ast.LeftOuterJoinNode;
+import com.darkcollective.relix.ast.AntiJoinNode;
+import com.darkcollective.relix.ast.SemiJoinNode;
 import com.darkcollective.relix.ast.QuantifiedPredicate;
 import com.darkcollective.relix.ast.ExistsPredicate;
 import com.darkcollective.relix.plan.PhysicalNode;
@@ -216,6 +221,10 @@ final class SqlPushdownPlanner implements PushdownRenderer {
             case LimitNode l       -> limit(l);
             case TopKNode t        -> topK(t);
             case ThetaJoinNode j   -> join(j);
+            case SemiJoinNode j    -> existsJoin(j.left(), j.right(), j.condition(), false, j);
+            case AntiJoinNode j    -> existsJoin(j.left(), j.right(), j.condition(), true, j);
+            case LeftOuterJoinNode j -> leftJoin(j);
+            case LateralJoinNode l -> lateral(l);
             case NaturalJoinNode j -> naturalJoin(j);
             case UsingJoinNode j   -> usingJoin(j);
             case AsOfJoinNode j    -> asOfJoin(j);
@@ -1267,6 +1276,186 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         joined.ordersExactly = left.ordersExactly;
         joined.ordering = ordering;
         return Optional.of(joined);
+    }
+
+    /**
+     * The pieces every fold of two bare scans on one connection starts from: the two
+     * sides, the σ chains peeled off them, their aliases and the renderers a condition
+     * between them is written with. Empty when the two are not joinable so.
+     */
+    private record JoinParts(Pushed left, Pushed right, Peeled leftPeel, Peeled rightPeel,
+                             JoinAliases aliases, ColumnRenderer renderer, ColumnRenderer comparing,
+                             ColumnRenderer ordering) {
+        Dialect dialect() {
+            return left.dialect;
+        }
+    }
+
+    private Optional<JoinParts> joinParts(RelNode leftNode, RelNode rightNode) {
+        Peeled leftPeel = peelFilters(leftNode);
+        Peeled rightPeel = peelFilters(rightNode);
+        Optional<Pushed> leftOpt = build(leftPeel.scan());
+        Optional<Pushed> rightOpt = build(rightPeel.scan());
+        if (leftOpt.isEmpty() || rightOpt.isEmpty() || !bareJoinable(leftOpt.get(), rightOpt.get())) {
+            return Optional.empty();
+        }
+        Pushed left = leftOpt.get();
+        Pushed right = rightOpt.get();
+        Dialect dialect = left.dialect;
+        JoinAliases aliases = JoinAliases.of(left, right);
+        ColumnRenderer renderer = joinRenderer(left, right, aliases, dialect);
+        StringColumns joinStrings = stringColumnsOf(left.baseColumns, right.baseColumns);
+        ColumnRenderer comparing = comparingRenderer(renderer, joinStrings,
+                left.exactStrings, dialect, dialect::exactStringComparison);
+        ColumnRenderer ordering = comparingRenderer(renderer, joinStrings,
+                left.ordersExactly, dialect, dialect::exactStringOrder);
+        return Optional.of(new JoinParts(left, right, leftPeel, rightPeel, aliases, renderer, comparing,
+                ordering));
+    }
+
+    /** The joined statement's collation answers, which belong to the one connection both sides share. */
+    private static Pushed withCollation(Pushed joined, JoinParts parts) {
+        joined.exactStrings = parts.left().exactStrings;
+        joined.comparing = parts.comparing();
+        joined.ordersExactly = parts.left().ordersExactly;
+        joined.ordering = parts.ordering();
+        return joined;
+    }
+
+    /**
+     * Folds a semi or anti join over two bare connection-table scans into
+     * {@code SELECT l.… FROM l WHERE [NOT] EXISTS (SELECT 1 FROM r WHERE cond)}, the
+     * statement an {@code EXISTS} subquery written as a join stands for. Each left row is
+     * kept once, as the semi join keeps it, and {@code NOT EXISTS} keeps a row no right row
+     * makes the condition true for, NULLs and all, as the anti join does. A σ on the left
+     * goes in the outer {@code WHERE}, and one on the right inside the {@code EXISTS}.
+     */
+    private Optional<Pushed> existsJoin(RelNode leftNode, RelNode rightNode, Predicate condition,
+                                        boolean negated, RelNode node) {
+        Optional<JoinParts> partsOpt = joinParts(leftNode, rightNode);
+        if (partsOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        JoinParts parts = partsOpt.get();
+        Dialect dialect = parts.dialect();
+        Optional<String> on = SqlExpressions.predicate(condition, parts.comparing(), parts.ordering(),
+                dialect, functions);
+        Optional<List<String>> leftFilters = renderPeeled(parts.leftPeel().filters(), parts.comparing(),
+                parts.ordering(), dialect);
+        Optional<List<String>> rightFilters = renderPeeled(parts.rightPeel().filters(), parts.comparing(),
+                parts.ordering(), dialect);
+        if (on.isEmpty() || leftFilters.isEmpty() || rightFilters.isEmpty()) {
+            return Optional.empty();
+        }
+        List<String> inner = new ArrayList<>(List.of(on.get()));
+        inner.addAll(rightFilters.get());
+        String exists = (negated ? "NOT EXISTS (" : "EXISTS (") + "SELECT 1 FROM "
+                + dialect.table(parts.right().tableName) + " " + dialect.quote(parts.aliases().right())
+                + " WHERE " + String.join(" AND ", inner) + ")";
+        String from = dialect.table(parts.left().tableName) + " " + dialect.quote(parts.aliases().left());
+        // Above a semi or anti join the heading is the left's alone, which analysis holds every
+        // reference to, so a name is the left's column, read through its alias.
+        ColumnRenderer leftOnly = attribute ->
+                Optional.of(qualified(dialect, parts.aliases().left(), SqlExpressions.column(attribute)));
+        Pushed joined = new Pushed(parts.left().connectorType, parts.left().connection, from,
+                qualifiedColumns(dialect, parts.aliases().left(), parts.left().baseColumns),
+                schemaOf(node), leftOnly, dialect);
+        joined.where.addAll(leftFilters.get());
+        joined.where.add(exists);
+        withCollation(joined, parts);
+        // Above the join only the left's columns exist, and they compare as the left's did.
+        joined.comparing = comparingRenderer(leftOnly, stringColumnsOf(parts.left().baseColumns),
+                parts.left().exactStrings, dialect, dialect::exactStringComparison);
+        joined.ordering = comparingRenderer(leftOnly, stringColumnsOf(parts.left().baseColumns),
+                parts.left().ordersExactly, dialect, dialect::exactStringOrder);
+        return Optional.of(joined);
+    }
+
+    /**
+     * Folds a left outer join over two bare connection-table scans into
+     * {@code l LEFT JOIN r ON cond}. A σ on the right is part of what matches, so it goes
+     * in the {@code ON}; one on the left only removes left rows, so it goes in the
+     * {@code WHERE}, where it reads the left's columns, which the padding never touches.
+     */
+    private Optional<Pushed> leftJoin(LeftOuterJoinNode node) {
+        Optional<JoinParts> partsOpt = joinParts(node.left(), node.right());
+        if (partsOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        JoinParts parts = partsOpt.get();
+        Dialect dialect = parts.dialect();
+        Optional<String> on = SqlExpressions.predicate(node.condition(), parts.comparing(), parts.ordering(),
+                dialect, functions);
+        Optional<List<String>> leftFilters = renderPeeled(parts.leftPeel().filters(), parts.comparing(),
+                parts.ordering(), dialect);
+        Optional<List<String>> rightFilters = renderPeeled(parts.rightPeel().filters(), parts.comparing(),
+                parts.ordering(), dialect);
+        if (on.isEmpty() || leftFilters.isEmpty() || rightFilters.isEmpty()) {
+            return Optional.empty();
+        }
+        List<String> matches = new ArrayList<>(List.of(on.get()));
+        matches.addAll(rightFilters.get());
+        String from = dialect.table(parts.left().tableName) + " " + dialect.quote(parts.aliases().left())
+                + " LEFT JOIN " + dialect.table(parts.right().tableName) + " "
+                + dialect.quote(parts.aliases().right()) + " ON " + String.join(" AND ", matches);
+        List<String> selectList = new ArrayList<>(qualifiedColumns(dialect, parts.aliases().left(),
+                parts.left().baseColumns));
+        selectList.addAll(qualifiedColumns(dialect, parts.aliases().right(), parts.right().baseColumns));
+        Pushed joined = new Pushed(parts.left().connectorType, parts.left().connection, from, selectList,
+                schemaOf(node), parts.renderer(), dialect);
+        joined.where.addAll(leftFilters.get());
+        return Optional.of(withCollation(joined, parts));
+    }
+
+    /**
+     * Folds {@code L [OUTER] LATERAL (λ 1 (τ keys (σ θ (S))))}, the first row of a
+     * related relation per left row, into the dialect's nearest-row lateral, as the AS-OF
+     * fold does: {@code LEFT JOIN LATERAL (SELECT … ORDER BY … LIMIT 1) … ON TRUE}, or
+     * SQL Server's {@code OUTER APPLY (SELECT TOP 1 …)}. {@code θ} names the left row's
+     * columns qualified, which the join renderer resolves to the left alias. The order
+     * places NULLs as the engine does. Any other shape of right side runs in the engine.
+     */
+    private Optional<Pushed> lateral(LateralJoinNode node) {
+        if (!(node.right() instanceof LimitNode limit) || limit.count() != 1L || limit.offset().isPresent()
+                || !(limit.input() instanceof SortNode sort) || peelFilters(node.left()).filters().size() > 0) {
+            return Optional.empty();
+        }
+        Optional<JoinParts> partsOpt = joinParts(node.left(), sort.input());
+        if (partsOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        JoinParts parts = partsOpt.get();
+        Dialect dialect = parts.dialect();
+        Optional<List<String>> filters = renderPeeled(parts.rightPeel().filters(), parts.comparing(),
+                parts.ordering(), dialect);
+        if (filters.isEmpty()) {
+            return Optional.empty();
+        }
+        List<String> orderBy = new ArrayList<>();
+        for (SortSpecification spec : sort.sortSpecs()) {
+            Optional<String> col = spec.columnName().flatMap(parts.ordering()::render);
+            if (col.isEmpty()) {
+                return Optional.empty();
+            }
+            orderBy.addAll(dialect.orderByTerms(col.get(), spec.direction() == SortDirection.DESC,
+                    spec.nulls() == NullPlacement.NULLS_FIRST));
+        }
+        String source = "FROM " + dialect.table(parts.right().tableName) + " "
+                + dialect.quote(parts.aliases().right())
+                + (filters.get().isEmpty() ? "" : " WHERE " + String.join(" AND ", filters.get()));
+        Optional<String> from = dialect.nearestRowJoin(
+                dialect.table(parts.left().tableName) + " " + dialect.quote(parts.aliases().left()),
+                String.join(", ", qualifiedColumns(dialect, parts.aliases().right(), parts.right().baseColumns)),
+                source, String.join(", ", orderBy), dialect.quote(parts.aliases().right()),
+                node.kind() == LateralKind.INNER);
+        if (from.isEmpty()) {
+            return Optional.empty();
+        }
+        List<String> selectList = new ArrayList<>(qualifiedColumns(dialect, parts.aliases().left(),
+                parts.left().baseColumns));
+        selectList.addAll(qualifiedColumns(dialect, parts.aliases().right(), parts.right().baseColumns));
+        return Optional.of(withCollation(new Pushed(parts.left().connectorType, parts.left().connection,
+                from.get(), selectList, schemaOf(node), parts.renderer(), dialect), parts));
     }
 
     /**

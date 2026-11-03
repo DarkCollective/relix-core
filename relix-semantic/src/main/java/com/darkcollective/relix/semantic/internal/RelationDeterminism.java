@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.semantic.internal;
 
+import com.darkcollective.relix.ast.internal.Subqueries;
 import com.darkcollective.relix.ast.FunctionCall;
 import com.darkcollective.relix.ast.internal.OperandWalker;
 import com.darkcollective.relix.ast.AttributeOperand;
@@ -118,6 +119,11 @@ public final class RelationDeterminism {
         }
         if (!referencedBodiesDeterministic(node, symbols, functions, visited)) {
             return false;
+        }
+        for (Subqueries.Subquery subquery : Subqueries.subqueriesOf(node)) {
+            if (!isDeterministic(subquery.query(), symbols, functions, visited)) {
+                return false;
+            }
         }
         for (RelNode child : node.children()) {
             if (!isDeterministic(child, symbols, functions, visited)) {

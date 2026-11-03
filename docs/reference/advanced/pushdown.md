@@ -85,6 +85,9 @@ where it can fold. That is why the two features compound — see
 | `TOP` | `ORDER BY … LIMIT` | it is per-group (`PER …`) — only the whole-relation form folds |
 | ⨝ theta join | `JOIN … ON` | either side is not a bare table scan, the two sides are on different connections or are the same relation (a self-join), or the condition has an untranslatable part |
 | ⋈ natural join | `JOIN … ON` equating the shared columns | either side is not a bare table scan, the two sides are on different connections or are the same relation, or a shared column has a different type on each side |
+| ⋉ semi join, ▷ anti join | `WHERE EXISTS (SELECT 1 FROM … WHERE cond)`, `NOT EXISTS` for the anti join; a σ on the right goes inside it | as for ⨝ |
+| ⟕ left outer join | `LEFT JOIN … ON cond`; a σ on the right goes in the `ON`, one on the left in the `WHERE` | as for ⨝ |
+| `LATERAL` | the first related row, `L [OUTER] LATERAL (λ 1 (τ k (σ θ (S))))`, as `ASOF` folds below | the right side is any other shape, the left carries a σ, or the dialect has no lateral, as for `ASOF` |
 | `ASOF` join | `LEFT JOIN LATERAL (… ORDER BY … LIMIT 1) ON TRUE`, or `JOIN LATERAL` for the `INNER` form | the dialect is not PostgreSQL, DuckDB, Db2 or SQL Server (which spells it `OUTER APPLY (SELECT TOP 1 …)`), or the join carries a `WITHIN` tolerance |
 | `IJOIN` interval | `JOIN … ON` over the endpoints | either side is not a bare scan, or they are on different connections |
 | `WINDOW` / `ROLLING` | `OVER (PARTITION BY … ORDER BY …)` | the dialect is MySQL, or a projection, grouping or limit is already folded |
@@ -141,12 +144,19 @@ A π above a γ is the one that does not fold: it would have to rewrite the sele
 list the grouping fixed, and the projection happens in the engine instead.
 
 Every other operator is computed by the engine. That includes the outer joins
-⟕ ⟖ ⟗, the semi and anti joins ⋉ ▷, every set operation (∪ ⊎ ⊔ ∩ − ∆ × ÷ ∘),
+⟖ ⟗, every set operation (∪ ⊎ ⊔ ∩ − ∆ × ÷ ∘),
 μ unnest, the recursion and graph operators (`CLOSURE`, `CLUSTER`, `PATH`, `FIX`,
 `TRACE`), `PIVOT`/`UNPIVOT`, `TREE`,
 `SESSIONIZE`, `DOWNSAMPLE`, `SAMPLE`, `COVER`, `SOLVE`, `OPTIMIZE` and ω `WHY`.
-An outer join over two tables of one database is therefore an engine join over
-two pushed scans — each side's filters still fold, and the join itself does not.
+A right or full outer join over two tables of one database is therefore an engine
+join over two pushed scans — each side's filters still fold, and the join itself does
+not.
+
+A [subquery](../language/subquery.md) that the optimizer writes as a join
+(`SUBQ-001`..`SUBQ-006`) folds as that join does: `EXISTS`, `NOT EXISTS`, `IN`,
+`NOT IN`, `ANY` and `ALL` over a table become `EXISTS` and `NOT EXISTS` in the
+statement, and a correlated `LATERAL` over a filtered table a join. One that stays a
+lateral runs in the engine, reading each table it names through pushdown.
 
 ## SQL: which expressions fold
 

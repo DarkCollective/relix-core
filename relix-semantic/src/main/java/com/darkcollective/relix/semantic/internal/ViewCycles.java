@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.semantic.internal;
 
+import com.darkcollective.relix.ast.internal.Subqueries;
 import com.darkcollective.relix.ast.RelNode;
 import com.darkcollective.relix.ast.RelationNode;
 import com.darkcollective.relix.ast.SourceLocation;
@@ -100,6 +101,7 @@ final class ViewCycles {
             });
         }
         node.children().forEach(this::walk);
+        Subqueries.subqueriesOf(node).forEach(s -> walk(s.query()));
     }
 
     /** The view {@code reference} expands to, resolved as the optimizer resolves it. */
