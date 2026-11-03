@@ -243,7 +243,9 @@ boolean_literal   ::= "true" | "false"
        double-quoted, with "" for a quote inside it.
 
    Either way the header names each column once: no header cell is empty, and no
-   two name the same column, ignoring case. Every other row has exactly as many
+   two name the same column, ignoring case. A header cell is a name only: one
+   written "name: TYPE", with a type a cell can be read as, is refused, since the
+   type goes in a schema block. Every other row has exactly as many
    cells as the header; an empty cell is a missing value. A Markdown table therefore
    puts each row on a line of its own.
 

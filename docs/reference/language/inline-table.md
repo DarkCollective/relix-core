@@ -190,3 +190,21 @@ tables.
 # Notes:
 Inline tables join cleanly against live sources — a handy way to attach a small
 mapping (e.g. status codes → labels) to query results.
+
+A header cell names a column and nothing more. A cell written `name: TYPE`, with TYPE
+one a cell can be read as, is a syntax error at that cell, whose message writes the
+schema block to use instead:
+
+```relix-invalid
+T := [
+  | ts: TIMESTAMP |
+  | 2026-01-15T10:00:00Z |
+];
+```
+
+```
+Inline table T's header cell 'ts: TIMESTAMP' names a column; its type goes in a schema clause: write T := [ … ] schema { ts: TIMESTAMP };
+```
+
+The csv form is refused the same way. A header cell whose text after the colon is not
+a type, such as `"a: b"` in a CSV header, is still the column's name.
