@@ -84,6 +84,8 @@ Distinct compares whole rows — to dedupe on a subset of columns, project to
 those columns first. Over an unbounded generator δ needs a bound below it unless
 the input is already ordered.
 
+Strings compare by code point and δ takes no collation, so `'Ada'` and `'ada'` are different rows, as in PostgreSQL, Oracle and SQLite. MySQL's and SQL Server's default collations call them one. To treat them as one here, group under `COLLATE NOCASE` instead, as [COLLATE](../language/collate.md) shows.
+
 # Alternatives:
 γ (GROUP) on the columns you want unique achieves the same and lets you aggregate
 at the same time. UNION (∪) deduplicates as part of combining two relations.

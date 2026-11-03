@@ -70,6 +70,8 @@ side's columns in the left side's order.
 Both sides must be union-compatible. Like difference, it is non-monotone and
 cannot appear in a recursive FIX step. It materialises rather than streams.
 
+Strings compare by code point and ∆ takes no collation, so `'Ada'` and `'ada'` are different rows, as in PostgreSQL, Oracle and SQLite. MySQL's and SQL Server's default collations call them one. To treat them as one here, group under `COLLATE NOCASE` instead, as [COLLATE](../language/collate.md) shows.
+
 # Alternatives:
 A full outer join (⟗) with NULL tests gives a similar reconciliation when you
 also want to see which side each row came from. Difference (−) for one-directional

@@ -163,6 +163,13 @@ For "N highest per group" use TOP … PER instead of sorting the whole relation.
 For a single extreme value per group use γ with MIN/MAX or ARGMAX/ARGMIN.
 
 # SQL names:
+Strings sort by code point, so case matters: `'B'` sorts before `'a'`, as in
+PostgreSQL, Oracle and SQLite. MySQL's and SQL Server's default collations ignore
+case, so there `ORDER BY name` interleaves `'ada'` and `'Ada'`; to sort as they do,
+write the key under a collation, `τ name COLLATE NOCASE (R)`, or a locale such as
+`τ name COLLATE 'en-US' (R)` for dictionary order (see
+[COLLATE](../language/collate.md)).
+
 SQL's `ORDER BY a, b DESC` is `SORT a, b DESC (R)`, and `ORDER BY` is accepted as a
 synonym of `SORT`. It wraps the expression it orders rather than ending it:
 `SELECT a FROM R ORDER BY a` is `SORT a (PROJECT a (R))`. Sort last, after any join:

@@ -108,8 +108,8 @@ final class ParserErrorTest extends ParserTestSupport {
                         + " SORT at ASC PER grp AS rn (R))")
                 .at(1, 26);
         assertParseError("PROJECT id, v DIV 2 -> half (R)")
-                .hasMessageContaining("Relix has no DIV: for the whole part of a division,"
-                        + " write Int(v / 2)")
+                .hasMessageContaining("Relix has no DIV, and / never truncates: for the whole"
+                        + " part of a division, toward zero as DIV gives it, write Fix(v / 2)")
                 .at(1, 15);
         // A token none of these explains keeps the plain message.
         assertParseError("PROJECT id ] (R)")
@@ -210,7 +210,7 @@ final class ParserErrorTest extends ParserTestSupport {
         assertParseError("PROJECT a, b > 1 -> (R)")
                 .hasMessageContaining("write (b > 1) -> name");
         assertParseError("PROJECT a DIV , b (R)")
-                .hasMessageContaining("write Int(a / b)");
+                .hasMessageContaining("write Fix(a / b)");
         assertParseError("PROJECT a FROM")
                 .hasMessageContaining("as in PROJECT a (R)");
     }
@@ -1483,6 +1483,16 @@ final class ParserErrorTest extends ParserTestSupport {
                 """)
                 .hasMessageContaining("Expected ')' after relational expression")
                 .at(3, 1);
+    }
+
+    @Test
+    public void namesEscapeForABackslashBeforeALikeWildcard() {
+        assertParseError("σ code LIKE 'a\\%' (Items)")
+                .hasMessageContaining("Unsupported string escape '\\%': in a LIKE pattern, name"
+                        + " an escape character to match a literal %, as in LIKE 'a!%' ESCAPE '!'")
+                .at(1, 16);
+        assertParseError("σ code LIKE 'a\\_' (Items)")
+                .hasMessageContaining("LIKE 'a!_' ESCAPE '!'");
     }
 
     @Test

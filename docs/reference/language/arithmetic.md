@@ -22,7 +22,14 @@ level associates to the left, and parentheses group as usual. `||` binds more lo
 than `+` as it does in PostgreSQL, so `'n = ' || n + 1` adds before it joins.
 
 The arithmetic is exact decimal: `0.1 + 0.2` is `0.3`. Division keeps ten places and
-drops trailing zeros, and dividing by zero is an error. A NULL on either side makes
+drops trailing zeros, and dividing by zero is an error. Division therefore never
+truncates: `7 / 2` is `3.5`, as in MySQL and Oracle. PostgreSQL, SQL Server and
+SQLite give `3` for two integers, because there an integer divided by an integer is an
+integer; Relix has one exact NUMBER type, so there are no integer operands to divide.
+Their answer is `Fix(7 / 2)`, which drops the fraction toward zero as they do, so
+`Fix(-7 / 2)` is `-3`. `Int(x / y)` is the same for a non-negative quotient and
+rounds down below zero. MySQL's `a DIV b` between two numbers is refused, naming `Fix`
+as the rewrite (between two relations, `DIV` is [division](../set-operations/division.md)). A NULL on either side makes
 the result NULL, as in SQL. `+`, `-`, `*` and `/` also apply to dates, times and
 durations, a month added on the calendar, so `DATE '2026-01-31' + INTERVAL '1 month'`
 is 28 February; see the duration literal page.
