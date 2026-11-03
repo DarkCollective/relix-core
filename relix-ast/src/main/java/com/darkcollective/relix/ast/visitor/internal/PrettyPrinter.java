@@ -411,7 +411,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                 && node.sortSpecs().get(0).direction() == SortDirection.ASC) {
             SortSpecification leading = node.sortSpecs().get(0);
             keys.set(0, leading.expression().accept(operandPrinter) + " ASC"
-                    + (leading.nulls() == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : ""));
+                    + leading.nullsClause());
         }
         String specs = String.join(", ", keys);
         String per = node.groupingAttributes().isEmpty()
@@ -505,11 +505,11 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         return key.alias().map(a -> expr + " " + spelling.of("→") + " " + a).orElse(expr);
     }
 
-    /** Renders a sort key as {@code expression [DESC] [NULLS FIRST]}. */
+    /** Renders a sort key as {@code expression [DESC] [NULLS FIRST|LAST]}. */
     private String renderSortKey(SortSpecification spec) {
         return spec.expression().accept(operandPrinter)
                 + (spec.direction() == SortDirection.DESC ? " DESC" : "")
-                + (spec.nulls() == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : "");
+                + spec.nullsClause();
     }
 
     @Override

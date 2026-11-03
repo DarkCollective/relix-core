@@ -377,10 +377,15 @@ final class SortParserTest extends ParserTestSupport {
     }
 
     @Test
-    public void nullsLastIsTheDefaultWrittenOut() {
-        assertParsesTo("τ bonus DESC NULLS LAST (Sales)", parse("τ bonus DESC (Sales)"));
+    public void theDefaultWrittenOutBuildsTheSameKey() {
+        // NULL sorts as the largest value: last ascending, first descending.
+        assertParsesTo("τ bonus NULLS LAST (Sales)", parse("τ bonus (Sales)"));
+        assertParsesTo("τ bonus DESC NULLS FIRST (Sales)", parse("τ bonus DESC (Sales)"));
         assertParsesTo("τ bonus NULLS FIRST (Sales)",
                 sort(List.of(sortKey(attr("bonus"), SortDirection.ASC, NullPlacement.NULLS_FIRST)),
+                        rel("Sales")));
+        assertParsesTo("τ bonus DESC NULLS LAST (Sales)",
+                sort(List.of(sortKey(attr("bonus"), SortDirection.DESC, NullPlacement.NULLS_LAST)),
                         rel("Sales")));
     }
 
@@ -393,9 +398,12 @@ final class SortParserTest extends ParserTestSupport {
     }
 
     @Test
-    public void nullsFirstRoundTrips() {
-        RelNode node = parse("τ bonus DESC NULLS FIRST, name (Sales)");
-        assertThat(node.prettyPrint()).isEqualTo("τ bonus DESC NULLS FIRST, name (Sales)");
+    public void aPlacementOtherThanTheDefaultRoundTrips() {
+        RelNode node = parse("τ bonus DESC NULLS LAST, name NULLS FIRST (Sales)");
+        assertThat(node.prettyPrint()).isEqualTo("τ bonus DESC NULLS LAST, name NULLS FIRST (Sales)");
+        // The default is not written back out.
+        assertThat(parse("τ bonus DESC NULLS FIRST, name NULLS LAST (Sales)").prettyPrint())
+                .isEqualTo("τ bonus DESC, name (Sales)");
     }
 
     // ==================== WITH TIES (#133) ====================

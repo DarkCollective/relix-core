@@ -112,7 +112,7 @@ With `WITH TIES`, a cut that falls between two rows of equal value takes both. T
 two sales with no bonus tie with each other:
 
 ```relix
-query { λ 1 WITH TIES (τ bonus DESC NULLS FIRST (Sales)) };
+query { λ 1 WITH TIES (τ bonus DESC (Sales)) };
 ```
 
 ```

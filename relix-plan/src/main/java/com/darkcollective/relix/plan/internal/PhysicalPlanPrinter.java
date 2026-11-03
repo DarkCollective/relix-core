@@ -281,7 +281,7 @@ public final class PhysicalPlanPrinter {
                 String order = t.orderSpecs().isEmpty() ? "" : " ORDER " + t.orderSpecs().stream()
                         .map(s -> s.expression().accept(OPND)
                                 + (s.direction() == com.darkcollective.relix.ast.SortDirection.DESC ? " DESC" : "")
-                                + (s.nulls() == com.darkcollective.relix.ast.NullPlacement.NULLS_FIRST ? " NULLS FIRST" : ""))
+                                + s.nullsClause())
                         .collect(java.util.stream.Collectors.joining(", "));
                 yield "TREE " + t.keyColumn() + " BY " + t.parentColumn() + order
                         + " AS " + t.childrenColumn();

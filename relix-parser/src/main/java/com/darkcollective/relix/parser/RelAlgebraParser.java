@@ -1923,13 +1923,16 @@ public final class RelAlgebraParser {
         }
 
         // SQL's NULLS FIRST / NULLS LAST, matched by text so that none of the three
-        // words becomes reserved. Without it a key puts its NULLs last.
-        NullPlacement nulls = NullPlacement.NULLS_LAST;
+        // words becomes reserved. Without it NULL sorts as the largest value: last
+        // ascending, first descending.
+        NullPlacement nulls = SortSpecification.defaultNulls(direction);
         if (isWord(current, "NULLS") && (isWord(peek(1), "FIRST") || isWord(peek(1), "LAST"))) {
             advance();
-            nulls = matchWord("FIRST") ? NullPlacement.NULLS_FIRST : NullPlacement.NULLS_LAST;
-            if (nulls == NullPlacement.NULLS_LAST) {
+            if (matchWord("FIRST")) {
+                nulls = NullPlacement.NULLS_FIRST;
+            } else {
                 advance();
+                nulls = NullPlacement.NULLS_LAST;
             }
         }
 

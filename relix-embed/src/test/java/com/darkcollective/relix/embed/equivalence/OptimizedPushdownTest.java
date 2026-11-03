@@ -128,7 +128,7 @@ final class OptimizedPushdownTest {
         @DisplayName("optimized: WHERE and ORDER BY are pushed together")
         void withRewrite() {
             assertThat(optimizedSql(QUERY)).contains(
-                    "SELECT id, cust, amount FROM orders WHERE (amount > 100) ORDER BY (amount IS NULL) ASC, amount DESC");
+                    "SELECT id, cust, amount FROM orders WHERE (amount > 100) ORDER BY (amount IS NULL) DESC, amount DESC");
         }
     }
 
@@ -143,7 +143,7 @@ final class OptimizedPushdownTest {
         @DisplayName("the fused TOP pushes down as the same SQL the λ/τ pair did")
         void topNStillPushes() {
             String expected =
-                    "SELECT id, cust, amount FROM orders ORDER BY (amount IS NULL) ASC, amount DESC LIMIT 3";
+                    "SELECT id, cust, amount FROM orders ORDER BY (amount IS NULL) DESC, amount DESC LIMIT 3";
             // The regression this guards: TopKNode had no arm in SqlPushdownPlanner, so
             // fusing λ∘τ would have *cost* the pushdown — a full table scan plus an
             // in-engine heap where the database could have done the whole thing.

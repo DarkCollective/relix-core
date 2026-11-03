@@ -19,7 +19,6 @@ import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
 import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveStart;
-import com.darkcollective.relix.ast.NullPlacement;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.ast.WindowFrame;
@@ -390,7 +389,7 @@ public final class PhysicalPlanJson {
                 for (var spec : win.sortSpecs()) {
                     w.value(spec.expression().accept(OPND)
                             + (spec.direction() == SortDirection.DESC ? " DESC" : " ASC")
-                            + (spec.nulls() == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : ""));
+                            + spec.nullsClause());
                 }
                 w.endArray();
                 w.name("outputColumn").value(win.outputColumn());
@@ -483,7 +482,7 @@ public final class PhysicalPlanJson {
                     for (SortSpecification spec : t.orderSpecs()) {
                         w.value(spec.expression().accept(OPND)
                                 + (spec.direction() == SortDirection.DESC ? " DESC" : " ASC")
-                            + (spec.nulls() == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : ""));
+                            + spec.nullsClause());
                     }
                     w.endArray();
                 }

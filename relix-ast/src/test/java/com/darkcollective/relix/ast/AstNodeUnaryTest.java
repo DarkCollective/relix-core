@@ -470,26 +470,39 @@ final class AstNodeUnaryTest extends AstTestSupport {
     class SortSpecificationNullPlacement {
 
         @Test
-        @DisplayName("ASC direction maps to NULLS_LAST (SQL standard default)")
-        void ascMapsToNullsLast() {
+        @DisplayName("an ASC key puts NULLs last, NULL being the largest value")
+        void ascPutsNullsLast() {
             SortSpecification spec = asc("col");
+            assertThat(spec.nulls()).isEqualTo(NullPlacement.NULLS_LAST);
             assertThat(spec.nullPlacement()).isEqualTo(NullPlacement.NULLS_LAST);
         }
 
         @Test
-        @DisplayName("DESC direction maps to NULLS_FIRST (SQL standard default)")
-        void descMapsToNullsFirst() {
+        @DisplayName("a DESC key puts NULLs first, so its ascending comparator puts them last")
+        void descPutsNullsFirst() {
             SortSpecification spec = desc("col");
-            assertThat(spec.nullPlacement()).isEqualTo(NullPlacement.NULLS_FIRST);
+            assertThat(spec.nulls()).isEqualTo(NullPlacement.NULLS_FIRST);
+            assertThat(spec.nullPlacement()).isEqualTo(NullPlacement.NULLS_LAST);
         }
 
         @Test
-        @DisplayName("nullPlacement is consistent for any attribute name")
-        void consistentForAnyAttribute() {
-            assertThat(asc("x").nullPlacement())
-                    .isEqualTo(NullPlacement.NULLS_LAST);
-            assertThat(desc("y").nullPlacement())
-                    .isEqualTo(NullPlacement.NULLS_FIRST);
+        @DisplayName("an explicit placement keeps its side whichever way the key runs")
+        void explicitPlacement() {
+            SortSpecification descLast = sortKey(attr("y"), SortDirection.DESC, NullPlacement.NULLS_LAST);
+            assertThat(descLast.nullPlacement()).isEqualTo(NullPlacement.NULLS_FIRST);
+            assertThat(SortSpecification.defaultNulls(SortDirection.ASC)).isEqualTo(NullPlacement.NULLS_LAST);
+            assertThat(SortSpecification.defaultNulls(SortDirection.DESC)).isEqualTo(NullPlacement.NULLS_FIRST);
+        }
+
+        @Test
+        @DisplayName("the NULLS clause is written only where the placement is not the default")
+        void nullsClause() {
+            assertThat(asc("x").nullsClause()).isEmpty();
+            assertThat(desc("x").nullsClause()).isEmpty();
+            assertThat(sortKey(attr("x"), SortDirection.ASC, NullPlacement.NULLS_FIRST).nullsClause())
+                    .isEqualTo(" NULLS FIRST");
+            assertThat(sortKey(attr("x"), SortDirection.DESC, NullPlacement.NULLS_LAST).render())
+                    .isEqualTo("x DESC NULLS LAST");
         }
     }
 }

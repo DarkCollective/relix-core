@@ -20,9 +20,10 @@ package com.darkcollective.relix.ast;
  *
  * <p>{@link #NULLS_FIRST} places every {@code NULL} before any non-{@code NULL} value;
  * {@link #NULLS_LAST} places them after. A sort key holds the placement in the output,
- * whichever way the key runs ({@link SortSpecification#nulls()}); Relix's default is
- * {@link #NULLS_LAST} in both directions, and SQL's {@code NULLS FIRST} and
- * {@code NULLS LAST} choose. {@link SortSpecification#nullPlacement()} gives the same
+ * whichever way the key runs ({@link SortSpecification#nulls()}). Relix's default treats
+ * NULL as the largest value, as PostgreSQL and Oracle do: {@link #NULLS_LAST} ascending
+ * and {@link #NULLS_FIRST} descending ({@link SortSpecification#defaultNulls}). SQL's
+ * {@code NULLS FIRST} and {@code NULLS LAST} choose. {@link SortSpecification#nullPlacement()} gives the same
  * placement as it reads before a descending key is reversed.
  */
 public enum NullPlacement {

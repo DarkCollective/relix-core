@@ -22,7 +22,8 @@ with nothing. `DISTINCT` keeps each value once.
 
 Without an `ORDER BY` the values come in the order the group's rows arrive, which
 a relation does not promise, so a result to be relied on names its order. The
-`ORDER BY` takes sort keys as `τ` does, NULLs last unless a key says `NULLS FIRST`;
+`ORDER BY` takes sort keys as `τ` does: NULL is the largest value, last ascending and
+first descending, unless a key says `NULLS FIRST` or `NULLS LAST`;
 rows tied on every key keep their input order.
 
 `GROUP_CONCAT` joins with a comma unless it says `SEPARATOR`, and `LISTAGG` with
