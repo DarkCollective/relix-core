@@ -32,9 +32,12 @@ package com.darkcollective.relix.ast;
  *       {@code OVER RANGE BETWEEN … AND …}: SQL's frame clause, each end a bound
  *       counted in rows or measured along the sort key.</li>
  *   <li>{@link PartitionFrame} — the whole partition: {@code OVER PARTITION} for an
- *       aggregate, which then needs no sort, and set implicitly for ranking and
- *       offset functions.</li>
+ *       aggregate, which then needs no sort, or a value function; set implicitly
+ *       for ranking functions and {@code LAG}/{@code LEAD}, which take no frame.</li>
  * </ul>
+ *
+ * <p>A value function, {@code FIRST_VALUE}, {@code LAST_VALUE} or {@code NTH_VALUE},
+ * written without a frame has SQL's default, {@link #toCurrentPeers()}.
  */
 public sealed interface WindowFrame
         permits WindowFrame.BoundedFrame, WindowFrame.CumulativeFrame, WindowFrame.Between,
@@ -190,4 +193,18 @@ public sealed interface WindowFrame
      * ranking and offset functions.
      */
     record PartitionFrame() implements WindowFrame {}
+
+    /**
+     * SQL's default frame for a window with an {@code ORDER BY}: {@code RANGE BETWEEN
+     * UNBOUNDED PRECEDING AND CURRENT ROW}, from the partition's first row to the current
+     * row's last peer, the rows equal to it on every sort key. A value function written
+     * without a frame has it, as in every SQL engine, so {@code LAST_VALUE(x)} is the
+     * current row's value, or its last peer's.
+     *
+     * @return the frame; never null
+     * @since 1.0
+     */
+    static Between toCurrentPeers() {
+        return new Between(Unit.RANGE, Bound.unboundedPreceding(), Bound.currentRow());
+    }
 }

@@ -29,10 +29,23 @@ public enum OffsetFunction {
     LAG,
     /** The expression's value {@code n} rows after the current row. */
     LEAD,
-    /** The expression's value in the first row of the partition's sort order. */
+    /** The expression's value in the first row of its frame. */
     FIRST_VALUE,
-    /** The expression's value in the last row of the partition's sort order. */
+    /** The expression's value in the last row of its frame. */
     LAST_VALUE,
-    /** The expression's value in the {@code n}th row of the partition's sort order, from 1. */
-    NTH_VALUE
+    /** The expression's value in the {@code n}th row of its frame, from 1. */
+    NTH_VALUE;
+
+    /**
+     * Whether the function reads its row from a frame: {@code FIRST_VALUE},
+     * {@code LAST_VALUE} and {@code NTH_VALUE} read the first, last or {@code n}th row
+     * of theirs, {@link WindowFrame#toCurrentPeers()} unless they name another. As in
+     * SQL, {@code LAG} and {@code LEAD} count from the current row and take none.
+     *
+     * @return true for the three value functions
+     * @since 1.0
+     */
+    public boolean takesFrame() {
+        return this == FIRST_VALUE || this == LAST_VALUE || this == NTH_VALUE;
+    }
 }

@@ -207,7 +207,7 @@ final class WindowReferenceTest extends ProcessorTestSupport {
         }
 
         @Test
-        @DisplayName("FIRST_VALUE and LAST_VALUE read the partition's edges")
+        @DisplayName("FIRST_VALUE reads the partition's first row, LAST_VALUE the current row's last peer")
         void edgesMatchTheDefinition() {
             assertAgrees("FIRST_VALUE",
                     "WINDOW FIRST_VALUE(v) SORT k ASC PER grp AS w (Events)",
@@ -215,6 +215,9 @@ final class WindowReferenceTest extends ProcessorTestSupport {
             assertAgrees("LAST_VALUE",
                     "WINDOW LAST_VALUE(v) SORT k ASC PER grp AS w (Events)",
                     WindowReference.lastValue(ROWS, true));
+            assertAgrees("LAST_VALUE OVER PARTITION",
+                    "WINDOW LAST_VALUE(v) OVER PARTITION SORT k ASC PER grp AS w (Events)",
+                    WindowReference.lastValueOfPartition(ROWS, true));
         }
     }
 

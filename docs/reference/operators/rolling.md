@@ -42,6 +42,10 @@ keys, and for every row aggregates over the rows in its **frame**:
   total beside it: `SUM(x) OVER (PARTITION BY k)` in SQL, and a `γ` joined back
   without the join. It needs no `SORT`.
 
+The same frames, written the same way, are what `WINDOW FIRST_VALUE`, `LAST_VALUE`
+and `NTH_VALUE` take: see [window offset](window-offset.md), where a value function
+without a frame reads SQL's default.
+
 The output schema is the input schema with the `AS` column appended. Every input
 row is preserved and carries its computed value.
 
@@ -226,7 +230,7 @@ that collapses rows use [DOWNSAMPLE](../advanced/downsample.md).
 # See Also:
 [log source](../language/log-source.md) — ROLLING over a web server's access log, among other windowing examples on one real dataset
 
-[group](group.md), [sort](sort.md), [top](../advanced/top.md)
+[group](group.md), [sort](sort.md), [top](../advanced/top.md), [window offset](window-offset.md)
 
 # Notes:
 `ROLLING` and `WINDOW` are reserved keywords; relations or columns previously

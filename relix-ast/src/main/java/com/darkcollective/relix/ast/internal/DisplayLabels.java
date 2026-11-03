@@ -154,6 +154,33 @@ public final class DisplayLabels {
     }
 
     /**
+     * Renders the frame of a window computing {@code fn} as it is written after the
+     * function, with a leading space, or empty where the window writes none. An
+     * aggregate writes its whole-partition frame as {@code " OVER PARTITION"}. A value
+     * function ({@code FIRST_VALUE}, {@code LAST_VALUE}, {@code NTH_VALUE}) writes
+     * nothing for SQL's default frame, {@link WindowFrame#toCurrentPeers()}, and
+     * {@code " OVER PARTITION"} for the whole partition. A ranking function, {@code LAG}
+     * and {@code LEAD} take no frame and write none.
+     *
+     * @param fn    the window function; must not be null
+     * @param frame its frame; must not be null
+     * @return the rendered frame, or an empty string
+     */
+    public static String windowFrame(WindowFunction fn, WindowFrame frame) {
+        Objects.requireNonNull(fn, "fn");
+        Objects.requireNonNull(frame, "frame");
+        return switch (fn) {
+            case WindowFunction.AggregateWindow a ->
+                    frame instanceof WindowFrame.PartitionFrame ? " OVER PARTITION" : windowFrame(frame);
+            case WindowFunction.OffsetWindow o when o.function().takesFrame() ->
+                    frame.equals(WindowFrame.toCurrentPeers()) ? ""
+                            : frame instanceof WindowFrame.PartitionFrame ? " OVER PARTITION"
+                            : windowFrame(frame);
+            default -> "";
+        };
+    }
+
+    /**
      * Renders a complete window operator label, e.g.
      * {@code ROLLING SUM(amount) OVER 3 ROWS SORT ts↑ PER region AS running}.
      *
@@ -178,8 +205,7 @@ public final class DisplayLabels {
                 fn instanceof WindowFunction.AggregateWindow ? "ROLLING" : "WINDOW")
                 .append(' ')
                 .append(windowFunction(fn))
-                .append(fn instanceof WindowFunction.AggregateWindow && frame instanceof WindowFrame.PartitionFrame
-                        ? " OVER PARTITION" : windowFrame(frame));
+                .append(windowFrame(fn, frame));
         if (!sortSpecs.isEmpty()) {
             sb.append(" SORT ").append(sortKeys(sortSpecs));
         }

@@ -365,9 +365,16 @@ final class WindowExecutionTest extends ProcessorTestSupport {
     }
 
     @Test
-    @DisplayName("LAST_VALUE repeats the partition's last row for every row")
+    @DisplayName("LAST_VALUE reads SQL's default frame, which ends at the current row")
     void lastValue() {
         String q = TICKS + "query { WINDOW LAST_VALUE(price) SORT t ASC PER ticker AS close (Ticks) };";
+        assertThat(column(q, "close")).containsExactly("10", "20", "30", "40");
+    }
+
+    @Test
+    @DisplayName("LAST_VALUE OVER PARTITION repeats the partition's last row for every row")
+    void lastValueOverPartition() {
+        String q = TICKS + "query { WINDOW LAST_VALUE(price) OVER PARTITION SORT t ASC PER ticker AS close (Ticks) };";
         assertThat(column(q, "close")).containsExactly("40", "40", "40", "40");
     }
 

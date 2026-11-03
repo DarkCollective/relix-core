@@ -3,13 +3,17 @@
 # Syntax:
 WINDOW LAG(<expr> [, <offset> [, <default>]])  SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
 WINDOW LEAD(<expr> [, <offset> [, <default>]]) SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
-WINDOW FIRST_VALUE(<expr>)                     SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
-WINDOW LAST_VALUE(<expr>)                      SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
-WINDOW NTH_VALUE(<expr>, <n>)                  SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
+WINDOW FIRST_VALUE(<expr>)    [OVER <frame>]   SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
+WINDOW LAST_VALUE(<expr>)     [OVER <frame>]   SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
+WINDOW NTH_VALUE(<expr>, <n>) [OVER <frame>]   SORT <col> [ASC|DESC] [, ...] [PER <key> [, ...]] AS <col> (Relation)
+
+where <frame> is PARTITION, <n> ROWS, ALL ROWS, or ROWS|RANGE BETWEEN <bound> AND <bound>,
+as ROLLING writes it.
 
 WINDOW LAG(revenue, 1)   SORT month ASC PER region     AS prev_revenue (MonthlyRevenue)
 WINDOW LEAD(event_time)  SORT event_time ASC PER user_id AS next_time   (ClickEvents)
 WINDOW FIRST_VALUE(price) SORT trade_time ASC PER session_id AS open_price (Trades)
+WINDOW LAST_VALUE(price) OVER PARTITION SORT trade_time ASC PER session_id AS close_price (Trades)
 
 # Description:
 An offset window reads a value from **another row** within the same ordered
@@ -21,16 +25,31 @@ rows**. The five functions differ only in which row they read:
   `default`, or `NULL` when `default` is omitted.
 - `LEAD(expr, n, default)` — the value of `expr` `n` rows **after** the current
   row. Past the partition's end it emits `default`, or `NULL` when omitted.
-- `FIRST_VALUE(expr)` — the value of `expr` in the **first** row of the partition,
-  repeated for every row.
-- `LAST_VALUE(expr)` — the value of `expr` in the **last** row of the partition,
-  repeated for every row.
-- `NTH_VALUE(expr, n)` — the value of `expr` in the partition's `n`th row,
-  counting from 1, repeated for every row; `NULL` when the partition is shorter.
+- `FIRST_VALUE(expr)` — the value of `expr` in the **first** row of the row's
+  frame.
+- `LAST_VALUE(expr)` — the value of `expr` in the **last** row of the row's frame.
+- `NTH_VALUE(expr, n)` — the value of `expr` in the frame's `n`th row, counting
+  from 1; `NULL` when the frame is shorter.
+
+The three value functions read a **frame**, as SQL's do. Without one written, the
+frame is SQL's default: from the partition's first row to the current row and its
+**peers**, the rows equal to it on every sort key (`RANGE BETWEEN UNBOUNDED
+PRECEDING AND CURRENT ROW`). So `FIRST_VALUE` is the partition's first value, but
+`LAST_VALUE` is the current row's own value, or its last peer's, and
+`NTH_VALUE(x, 2)` is `NULL` on the first row. This is what PostgreSQL, MySQL, SQL
+Server, Oracle and SQLite all answer. For the partition's last row on every row,
+write the whole partition as the frame: `LAST_VALUE(price) OVER PARTITION`. Any
+other frame is written after the function as [ROLLING](rolling.md) writes one:
+`OVER 3 ROWS`, `OVER ALL ROWS`, or `OVER ROWS|RANGE BETWEEN … AND …`.
 
 For `LAG`/`LEAD` the offset `n` defaults to `1` (the immediately adjacent row) and
 must be a positive integer literal. `FIRST_VALUE`/`LAST_VALUE` take only the value
-expression.
+expression. `LAG` and `LEAD` count from the current row and take no frame, as in
+SQL; neither do the ranking functions:
+
+```relix-invalid
+query { WINDOW LAG(v) OVER PARTITION SORT t AS prev (R) };
+```
 
 It is the operator for a value just before or just after in order: the prior
 status, the price a row replaced, the reading that came next, the one after.
@@ -58,10 +77,12 @@ offset window is folded into the SQL scan:
 A `σ` immediately above an offset window over a pushed source is evaluated
 in-engine. MongoDB sources evaluate windows in-engine.
 
-`FIRST_VALUE`, `LAST_VALUE` and `NTH_VALUE` read the whole partition, which SQL's
-default frame does not — with an `ORDER BY` it stops at the current row's last
-peer — so they are pushed with `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED
-FOLLOWING`. SQL Server has no `NTH_VALUE`, so there it runs in the engine.
+`FIRST_VALUE`, `LAST_VALUE` and `NTH_VALUE` are pushed with the frame in force.
+Without a frame written they have SQL's default, so they are sent with no frame
+clause, which means the same on every dialect. `OVER PARTITION` is sent as `ROWS
+BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`, and any other frame as
+`ROLLING`'s is: as written, with a `RANGE` offset pushed to PostgreSQL and DuckDB
+only. SQL Server has no `NTH_VALUE`, so there it runs in the engine.
 
 `LAG`/`LEAD`/`NTH_VALUE` require a constant, positive-integer offset (no column references).
 The default value, when given, is evaluated against the partition's first row
@@ -103,8 +124,11 @@ WithBounds := {
 };
 ```
 
-Every row of a session carries that session's first (opening) price; swap in
-`LAST_VALUE` for the closing price.
+Every row of a session carries that session's first (opening) price. The closing
+price is the session's last row, so it reads the whole partition:
+`WINDOW LAST_VALUE(price) OVER PARTITION SORT trade_time ASC PER session_id AS
+close_price (Trades)`. Without `OVER PARTITION`, `LAST_VALUE` is the latest price so
+far, which on each row is its own.
 
 
 # Worked Example:
@@ -168,6 +192,44 @@ The rows with no predecessor come out NULL rather than as a change of zero, whic
 is the honest answer: there is no previous month to have changed from. Give LAG a
 third argument (`LAG(revenue, 1, 0)`) if a zero suits the report better.
 
+**The frame a value function reads.** A session's closing price is its last trade,
+the last row of the whole partition. `LAST_VALUE` without a frame reads SQL's
+default, which ends at the current row, so it gives each row's own price; `OVER
+PARTITION` gives the session's close on every row:
+
+```relix
+Trades := [
+| session | t | price |
+|---------|---|-------|
+| s1      | 1 | 10    |
+| s1      | 2 | 12    |
+| s1      | 3 | 11    |
+| s2      | 1 | 20    |
+| s2      | 2 | 21    |
+];
+
+query {
+    τ session, t (
+        WINDOW LAST_VALUE(price) OVER PARTITION SORT t PER session AS close (
+            WINDOW LAST_VALUE(price) SORT t PER session AS so_far (Trades)))
+};
+```
+
+```
+ session  t  price  so_far  close
+ ───────  ─  ─────  ──────  ─────
+ s1       1     10      10     11
+ s1       2     12      12     11
+ s1       3     11      11     11
+ s2       1     20      20     21
+ s2       2     21      21     21
+(5 rows)
+```
+
+A query translated from SQL's `LAST_VALUE(price) OVER (PARTITION BY session ORDER BY
+t)` means `so_far`; one that adds `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED
+FOLLOWING` means `close`.
+
 # Limitations:
 The added column needs a name the input does not already use. Over a
 schema-on-read source (JSON, HTTP, MongoDB) there is no declared heading to
@@ -175,8 +237,8 @@ clash with, so the operator always runs; if a document turns out to carry a
 field of that name, the added column replaces it.
 
 `LAG`/`LEAD` take an optional positive-integer-literal offset (default `1`) and an
-optional default value (default `NULL`); `FIRST_VALUE`/`LAST_VALUE` take only the
-value expression. The `AS` column must not clash with an existing input column.
+optional default value (default `NULL`), and no frame; `FIRST_VALUE`/`LAST_VALUE`
+take only the value expression, and an optional frame. The `AS` column must not clash with an existing input column.
 SQL pushdown is supported on PostgreSQL, DuckDB, SQLite, SQL Server, Db2 and GENERIC (H2) backends; MySQL and
 MongoDB always evaluate offset windows in-engine.
 
@@ -192,7 +254,7 @@ use [γ](group.md).
 
 # Notes:
 `WINDOW` is a reserved keyword; the function names (`LAG`, `LEAD`, `FIRST_VALUE`,
-`LAST_VALUE`) are **contextual** — parsed only inside a `WINDOW` clause — so they
+`LAST_VALUE`, `NTH_VALUE`) are **contextual** — parsed only inside a `WINDOW` clause — so they
 remain usable as column names elsewhere.
 
 **Partition pruning (WINDOW-001).** A selection that fixes a `PER` (partition)
@@ -200,6 +262,6 @@ key to a constant above a window — e.g.
 `σ region = "WEST" (WINDOW LAG(amount) … PER region (Sales))` — is pushed *below*
 the operator by the optimizer, so the offset is computed only for the matching
 partition: `WINDOW LAG(amount) … PER region (σ region = "WEST" (Sales))`. This is
-safe because an offset never reaches across a partition boundary. Only equalities
+safe because an offset, and a frame, never reach across a partition boundary. Only equalities
 on a partition key are pushed; predicates on other columns stay as a residual σ
 above the operator. Look for a `WINDOW-001` record in `--optimize` output.

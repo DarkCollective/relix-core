@@ -134,13 +134,16 @@ final class WindowFramesTest {
     }
 
     @Test
-    @DisplayName("CUME_DIST counts each row's peers, and NTH_VALUE reads the nth row of the partition")
+    @DisplayName("CUME_DIST counts each row's peers, and NTH_VALUE reads the nth row of its frame")
     void functions() {
         try (Relix relix = Relix.open()) {
             relix.define(T);
             assertThat(column(relix, "WINDOW CUME_DIST() SORT amount PER grp AS c (T)", "c"))
                     .containsExactly("0.4", "0.4", "0.6", "0.8", "1", "1");
+            // SQL's default frame ends at the current row, so the first two rows have no third.
             assertThat(column(relix, "WINDOW NTH_VALUE(amount, 3) SORT id PER grp AS third (T)", "third"))
+                    .containsExactly("NULL", "NULL", "20", "20", "20", "NULL");
+            assertThat(column(relix, "WINDOW NTH_VALUE(amount, 3) OVER PARTITION SORT id PER grp AS third (T)", "third"))
                     .containsExactly("20", "20", "20", "20", "20", "NULL");
         }
     }

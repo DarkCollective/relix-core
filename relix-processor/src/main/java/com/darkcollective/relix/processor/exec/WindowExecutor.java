@@ -18,6 +18,7 @@ package com.darkcollective.relix.processor.exec;
 import com.darkcollective.relix.ast.AggregateFunction;
 import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.NumberOperand;
+import com.darkcollective.relix.ast.OffsetFunction;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.SortDirection;
 import com.darkcollective.relix.ast.SortSpecification;
@@ -57,14 +58,17 @@ import static com.darkcollective.relix.processor.exec.ExecSupport.rowComparator;
  *       {@code n − 1} rows (a trailing sliding window).</li>
  *   <li>{@link WindowFrame.CumulativeFrame} — the partition prefix up to and
  *       including the current row (running aggregate).</li>
+ *   <li>{@link WindowFrame.Between} — SQL's frame clause, in rows or along the sort
+ *       key; {@link WindowFrame#toCurrentPeers()} is the frame a value function has
+ *       when it names none.</li>
  *   <li>{@link WindowFrame.PartitionFrame} — the whole partition (used by ranking
- *       and offset functions, slices 3–4).</li>
+ *       functions, {@code LAG} and {@code LEAD}, and written {@code OVER PARTITION}).</li>
  * </ul>
  *
  * <p>Slices 2–4 implement {@link WindowFunction.AggregateWindow} (sliding /
  * cumulative aggregates), {@link WindowFunction.RankingWindow} (ROW_NUMBER, RANK,
  * DENSE_RANK, PERCENT_RANK, NTILE), and {@link WindowFunction.OffsetWindow}
- * (LAG, LEAD, FIRST_VALUE, LAST_VALUE).
+ * (LAG, LEAD, and FIRST_VALUE, LAST_VALUE and NTH_VALUE over their frame).
  */
 final class WindowExecutor {
 
@@ -123,17 +127,19 @@ final class WindowExecutor {
                 yield values;
             }
             case WindowFunction.RankingWindow r -> rankPartition(r, partition, comparator, eval);
+            case WindowFunction.OffsetWindow o when o.function().takesFrame() ->
+                    valuePartition(o, new Frames(partition, node.frame(), node.sortSpecs(), comparator, eval),
+                            partition, eval);
             case WindowFunction.OffsetWindow o -> offsetPartition(o, partition, eval);
         };
     }
 
     /**
-     * Computes the offset value for every row of a sorted partition (ADR-0015 §D7,
-     * slice 4).  {@code LAG(expr, n, default)} reads {@code expr} from the row
-     * {@code n} positions before the current one ({@code default} — {@code NULL} when
-     * absent — at the partition's leading edge); {@code LEAD} reads {@code n}
-     * positions after; {@code FIRST_VALUE}/{@code LAST_VALUE} read the first/last row
-     * of the partition for every row.  The offset {@code n} defaults to 1.
+     * Computes {@code LAG} or {@code LEAD} for every row of a sorted partition
+     * (ADR-0015 §D7, slice 4).  {@code LAG(expr, n, default)} reads {@code expr} from
+     * the row {@code n} positions before the current one ({@code default} — {@code NULL}
+     * when absent — at the partition's leading edge); {@code LEAD} reads {@code n}
+     * positions after.  The offset {@code n} defaults to 1.
      */
     private static List<Value> offsetPartition(WindowFunction.OffsetWindow offset,
                                                List<Row> partition, OperandEvaluator eval) {
@@ -144,9 +150,8 @@ final class WindowExecutor {
             int target = switch (offset.function()) {
                 case LAG -> i - n;
                 case LEAD -> i + n;
-                case FIRST_VALUE -> 0;
-                case LAST_VALUE -> size - 1;
-                case NTH_VALUE -> n - 1;
+                case FIRST_VALUE, LAST_VALUE, NTH_VALUE ->
+                        throw new IllegalStateException("a value function reads its frame");
             };
             if (target >= 0 && target < size) {
                 values.add(eval.evaluate(offset.expression(), partition.get(target)));
@@ -155,6 +160,33 @@ final class WindowExecutor {
                         .map(d -> eval.evaluate(d, partition.get(0)))
                         .orElse(NullValue.INSTANCE));
             }
+        }
+        return values;
+    }
+
+    /**
+     * Computes {@code FIRST_VALUE}, {@code LAST_VALUE} or {@code NTH_VALUE} for every row
+     * of a sorted partition: {@code expr} in the first, last or {@code n}th row of the
+     * row's frame, or {@code NULL} where the frame is empty or shorter than {@code n}.
+     * Without a frame written the frame is SQL's default, which ends at the current
+     * row's last peer, so {@code LAST_VALUE} is that peer's value and
+     * {@code NTH_VALUE(x, 2)} is NULL on the first row.
+     */
+    private static List<Value> valuePartition(WindowFunction.OffsetWindow value, Frames frames,
+                                              List<Row> partition, OperandEvaluator eval) {
+        int n = value.function() == OffsetFunction.NTH_VALUE
+                ? offsetRows(value.offset(), partition.get(0), eval) : 1;
+        List<Value> values = new ArrayList<>(partition.size());
+        for (int i = 0; i < partition.size(); i++) {
+            List<Row> frame = frames.rows(i);
+            int target = switch (value.function()) {
+                case FIRST_VALUE -> 0;
+                case LAST_VALUE -> frame.size() - 1;
+                case NTH_VALUE -> n - 1;
+                case LAG, LEAD -> throw new IllegalStateException("LAG and LEAD take no frame");
+            };
+            values.add(target >= 0 && target < frame.size()
+                    ? eval.evaluate(value.expression(), frame.get(target)) : NullValue.INSTANCE);
         }
         return values;
     }
