@@ -29,10 +29,12 @@ import java.util.Optional;
  * {@code τ name (Users)} is simply an ordering by a bare {@link AttributeOperand}.
  *
  * <p>{@code nulls} is where a missing value lands in the output, whichever way the key
- * runs: {@link NullPlacement#NULLS_LAST}, the default, puts NULLs after every value
- * ascending and descending alike, and {@link NullPlacement#NULLS_FIRST} before them.
- * SQL's {@code NULLS FIRST} and {@code NULLS LAST} set it; a key written without either
- * holds {@code NULLS_LAST}, so writing the default out builds an equal key.
+ * runs: {@link NullPlacement#NULLS_LAST} puts NULLs after every value, and
+ * {@link NullPlacement#NULLS_FIRST} before them. SQL's {@code NULLS FIRST} and
+ * {@code NULLS LAST} set it. A key written without either sorts NULL as the largest
+ * value, as PostgreSQL and Oracle do: last ascending and first descending
+ * ({@link #defaultNulls(SortDirection)}), so writing the default out builds an equal
+ * key.
  *
  * @param expression the value to order by; never null
  * @param direction  ascending or descending; never null
@@ -46,13 +48,44 @@ public record SortSpecification(Operand expression, SortDirection direction, Nul
     }
 
     /**
-     * A sort key with NULLs last, the default placement.
+     * A sort key with the default placement, NULL as the largest value: last ascending
+     * and first descending.
      *
      * @param expression the value to order by; never null
      * @param direction  ascending or descending; never null
      */
     public SortSpecification(Operand expression, SortDirection direction) {
-        this(expression, direction, NullPlacement.NULLS_LAST);
+        this(expression, direction, defaultNulls(direction));
+    }
+
+    /**
+     * Where a key running {@code direction} puts its NULLs when it does not say: NULL is
+     * the largest value, as in PostgreSQL and Oracle, so {@link NullPlacement#NULLS_LAST}
+     * ascending and {@link NullPlacement#NULLS_FIRST} descending. MySQL, SQL Server and
+     * SQLite take NULL as the smallest, the other way in both directions.
+     *
+     * @param direction ascending or descending; never null
+     * @return the placement a key without {@code NULLS FIRST} or {@code NULLS LAST} has
+     * @since 1.0
+     */
+    public static NullPlacement defaultNulls(SortDirection direction) {
+        return direction == SortDirection.DESC ? NullPlacement.NULLS_FIRST : NullPlacement.NULLS_LAST;
+    }
+
+    /**
+     * The {@code NULLS} clause that writes this key's placement, when it is not the
+     * default for its direction: {@code " NULLS FIRST"} on an ascending key that says
+     * so, {@code " NULLS LAST"} on such a descending one, and {@code ""} otherwise. Each
+     * printer of a key appends it, so the text parses back to an equal key.
+     *
+     * @return the clause with its leading space, or {@code ""}; never null
+     * @since 1.0
+     */
+    public String nullsClause() {
+        if (nulls == defaultNulls(direction)) {
+            return "";
+        }
+        return nulls == NullPlacement.NULLS_FIRST ? " NULLS FIRST" : " NULLS LAST";
     }
 
     /**
@@ -80,8 +113,8 @@ public record SortSpecification(Operand expression, SortDirection direction, Nul
 
     /**
      * This sort key as Relix text, as a {@code τ} writes it: the expression, then
-     * {@code DESC} for a descending key and {@code NULLS FIRST} for one that puts its
-     * NULLs first. The same as
+     * {@code DESC} for a descending key and the {@link #nullsClause() NULLS clause} for
+     * one whose placement is not its direction's default. The same as
      * {@link #render(Spelling) render(Spelling.GLYPHS)}.
      *
      * @return the key as {@code .relix} text, such as {@code price * qty DESC}; never null
@@ -94,7 +127,8 @@ public record SortSpecification(Operand expression, SortDirection direction, Nul
     /**
      * This sort key as Relix text, as a {@code τ} writes it: the expression as
      * {@link Operand#prettyPrint(Spelling)} renders it, then {@code DESC} for a
-     * descending key and {@code NULLS FIRST} for one that puts its NULLs first. An ascending key is written without a direction, which is
+     * descending key and the {@link #nullsClause() NULLS clause} for one whose placement
+     * is not its direction's default. An ascending key is written without a direction, which is
      * what a {@code τ} reads as ascending, so {@code SORT <key> (T)} parses back to
      * an equal key.
      *
@@ -106,7 +140,7 @@ public record SortSpecification(Operand expression, SortDirection direction, Nul
     public String render(Spelling spelling) {
         String expr = expression.prettyPrint(spelling);
         String key = direction == SortDirection.DESC ? expr + " DESC" : expr;
-        return nulls == NullPlacement.NULLS_FIRST ? key + " NULLS FIRST" : key;
+        return key + nullsClause();
     }
 
     /**

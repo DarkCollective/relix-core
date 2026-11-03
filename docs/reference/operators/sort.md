@@ -41,9 +41,11 @@ the order UTF-8 bytes sort in, and the order a SQL binary collation gives — ra
 than by the UTF-16 code unit a Java `char` is, so a character outside the basic
 multilingual plane sorts after every character in it rather than in the middle.
 For text inside that plane, which is all of ASCII and every 8-bit character set,
-the two rules are the same rule. NULLs sort last in both directions, unless a key
-says `NULLS FIRST`; `NULLS LAST` writes the default out. The placement belongs to the
-key, so `τ a NULLS FIRST, b (R)` puts NULLs of `a` first and NULLs of `b` last.
+the two rules are the same rule. NULL sorts as the largest value: last ascending and
+first descending, unless a key says `NULLS FIRST` or `NULLS LAST`. Writing the default
+out builds the same key. The placement belongs to the key, so
+`τ a NULLS FIRST, b DESC (R)` puts NULLs of `a` first, and NULLs of `b` first too,
+since `b` runs descending.
 
 τ is not the only source of a delivered order: a merge join emits its output in
 join-key order, so a chain of merge joins on the same key sorts once rather than
@@ -117,33 +119,34 @@ query { τ bonus DESC (Sales) };
 ```
  region  rep  amount  bonus
  ──────  ───  ──────  ─────
- west    Cy      200     25
- east    Ada     120     10
  east    Bo       80  NULL
  west    Dee      50  NULL
+ west    Cy      200     25
+ east    Ada     120     10
 (4 rows)
 ```
 
-NULLs sort **last**, and last in *both* directions — ascending or descending, a
-missing value goes to the end rather than swapping ends with the sort. This holds
+NULL sorts as the **largest** value, so it goes last ascending and, as here, first
+descending. That is PostgreSQL's and Oracle's rule, in both directions. This holds
 whether the `τ` runs in-engine or is pushed into a database: the SQL that comes out
 states the placement explicitly rather than inheriting the backend's default, which
 would otherwise put a query's NULLs first on one connection and last on another.
 
-PostgreSQL and Oracle put NULLs *first* in a descending sort, so a query ported from
-them asks for that with `NULLS FIRST`:
+MySQL, SQL Server and SQLite take NULL as the *smallest* value: first ascending, last
+descending. A query ported from them says so with `NULLS FIRST` on an ascending key,
+or, as here, `NULLS LAST` on a descending one:
 
 ```relix
-query { τ bonus DESC NULLS FIRST (Sales) };
+query { τ bonus DESC NULLS LAST (Sales) };
 ```
 
 ```
  region  rep  amount  bonus
  ──────  ───  ──────  ─────
- east    Bo       80  NULL
- west    Dee      50  NULL
  west    Cy      200     25
  east    Ada     120     10
+ east    Bo       80  NULL
+ west    Dee      50  NULL
 (4 rows)
 ```
 

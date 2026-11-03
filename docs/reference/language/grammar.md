@@ -427,7 +427,8 @@ agg_order         ::= "ORDER" "BY" sort_key ( "," sort_key )*
 agg_filter        ::= "FILTER" "(" "WHERE" predicate ")"
 
 /* τ amount DESC, name (Orders);  ORDER BY amount DESC (Orders);
-   τ bonus DESC NULLS FIRST (Sales): NULLs go last unless a key says first. */
+   τ bonus DESC NULLS LAST (Sales): NULL sorts as the largest value, last
+   ascending and first descending, unless a key says otherwise. */
 sort              ::= ( "τ" | "SORT" | "ORDER" ) "BY"? sort_key ( "," sort_key )* input
 sort_key          ::= operand ( "ASC" | "DESC" )? ( "NULLS" ( "FIRST" | "LAST" ) )?
 
@@ -880,9 +881,10 @@ are easy to miss in the rules above.
 - **`AT TIME ZONE` binds before arithmetic.** `ts AT TIME ZONE z` is
   `TIMEZONE(z, ts)`; its three words are not reserved. `DATEDIFF(month, a, b)` reads
   a bare first word as the unit's name.
-- **Where NULLs sort.** Without `NULLS FIRST` or `NULLS LAST`, a sort key puts its
-  NULLs last whether it runs ascending or descending. PostgreSQL and Oracle put them
-  first in a descending sort, so a query ported from them says `NULLS FIRST`. `NULLS`,
+- **Where NULLs sort.** Without `NULLS FIRST` or `NULLS LAST`, NULL sorts as the
+  largest value: last ascending and first descending, as in PostgreSQL and Oracle.
+  MySQL, SQL Server and SQLite take it as the smallest, so a query ported from them
+  says `NULLS FIRST` on an ascending key and `NULLS LAST` on a descending one. `NULLS`,
   `FIRST` and `LAST` are matched by their text rather than reserved.
 - **`WITH TIES` needs an order.** `λ n WITH TIES` takes a `τ` as its input, since the
   sort keys decide what ties; `TOP n WITH TIES` has its own.
