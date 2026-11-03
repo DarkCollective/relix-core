@@ -17,8 +17,12 @@ package com.darkcollective.relix.semantic.internal;
 
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.ast.ComparisonOperator;
+import com.darkcollective.relix.ast.ElementOfPredicate;
 import com.darkcollective.relix.ast.Operand;
+import com.darkcollective.relix.ast.ParameterOperand;
+import com.darkcollective.relix.ast.SetLiteralOperand;
 import com.darkcollective.relix.ast.StringOperand;
+import com.darkcollective.relix.ast.visitor.internal.OperandPrettyPrinter;
 import com.darkcollective.relix.symbol.ScalarType;
 import com.darkcollective.relix.symbol.Type;
 
@@ -85,6 +89,26 @@ final class ComparisonTypes {
             }
         }
         return null;
+    }
+
+    /**
+     * The error for {@code x IN v} whose {@code v} is no set, or {@code null} when it may
+     * be one. SQL's {@code x IN ('OPEN')} reads as {@code x IN 'OPEN'}, since one value in
+     * parentheses is that value; it parsed and validated, and failed only when run (#290).
+     * A name may yet be bound to a set, as a relation function's parameter is, so only a
+     * set literal, a column and a bound parameter are let through.
+     */
+    static String setExpressionError(ElementOfPredicate e) {
+        Operand set = e.setExpression();
+        if (set instanceof SetLiteralOperand || set instanceof AttributeOperand
+                || set instanceof ParameterOperand) {
+            return null;
+        }
+        OperandPrettyPrinter printer = new OperandPrettyPrinter();
+        String in = e.isNegated() ? " NOT IN " : " IN ";
+        return in.strip() + " takes a list or a relation, and one value in parentheses is"
+                + " that value, not a list: a list of one value is written in braces: "
+                + e.element().accept(printer) + in + "{" + set.accept(printer) + "}";
     }
 
     private static boolean isNumberWithString(Type left, Type right) {

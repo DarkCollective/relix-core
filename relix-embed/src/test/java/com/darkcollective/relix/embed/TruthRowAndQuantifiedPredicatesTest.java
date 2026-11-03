@@ -32,6 +32,7 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * SQL's truth tests, row-value comparisons and quantified comparisons over a list
@@ -113,6 +114,8 @@ final class TruthRowAndQuantifiedPredicatesTest {
             a > ALL (0, b)                   | a > 0 AND a > b
             b < ANY {2, 3}                   | b < 2 OR b < 3
             b = SOME (5, 7)                  | b = 5 OR b = 7
+            a = ANY (1)                      | a = 1
+            a <> ALL (1)                     | a <> 1
             a = ANY {1, b}                   | a = 1 OR a = b
             a <> ALL {1, 2}                  | a <> 1 AND a <> 2
             a > ALL {}                       | 1 = 1
@@ -131,6 +134,26 @@ final class TruthRowAndQuantifiedPredicatesTest {
             // H2 folds unquoted names to upper case
             assertThat(keys(pushed, "τ K (π K (σ " + relix.toUpperCase() + " (db.t)))"))
                     .as("pushed down").containsExactlyElementsOf(expected);
+        }
+    }
+
+    /**
+     * {@code IN} over one value in parentheses is no list, as a quantifier's is: it is
+     * refused before it runs, naming the braces, where it once failed in the executor
+     * naming a {@code StringOperand} (#290).
+     */
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', textBlock = """
+            a IN (1)        | a IN {1}
+            a NOT IN (1)    | a NOT IN {1}
+            """)
+    void inOverOneValueIsRefused(String relix, String rewrite) {
+        try (Relix engine = Relix.open()) {
+            engine.define(T);
+            assertThatThrownBy(() -> engine.relation("σ " + relix + " (T)").toList())
+                    .isNotInstanceOf(QueryExecutionException.class)
+                    .hasMessageContaining("a list of one value is written in braces: " + rewrite)
+                    .hasMessageNotContaining("Operand");
         }
     }
 
