@@ -897,7 +897,12 @@ final class EbnfGrammar {
         return fields;
     }
 
-    /** A header naming each column once, and rows as wide as it. */
+    /** A header cell written {@code name: TYPE}, which the real parser refuses. */
+    private static final java.util.regex.Pattern TYPED_HEADER = java.util.regex.Pattern.compile(
+            "[A-Za-z_][A-Za-z0-9_]*\\s*:\\s*(NUMBER|STRING|BOOLEAN|DATE|TIME|TIMESTAMP"
+                    + "|TIMESTAMPTZ|DURATION)", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** A header naming each column once, with no type, and rows as wide as it. */
     private static boolean wellFormed(List<List<String>> rows) {
         if (rows.isEmpty()) {
             return false;
@@ -905,7 +910,8 @@ final class EbnfGrammar {
         List<String> header = rows.getFirst();
         Set<String> names = new HashSet<>();
         for (String name : header) {
-            if (name.isEmpty() || !names.add(name.toLowerCase(Locale.ROOT))) {
+            if (name.isEmpty() || !names.add(name.toLowerCase(Locale.ROOT))
+                    || TYPED_HEADER.matcher(name).matches()) {
                 return false;
             }
         }

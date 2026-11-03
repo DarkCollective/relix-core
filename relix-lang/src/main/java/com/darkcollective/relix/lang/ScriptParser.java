@@ -744,14 +744,14 @@ public final class ScriptParser {
             LangToken bracket = requireBracketToken();
             LangLexer.RawBlock raw = lexer.consumeRawBracketBlock();
             current = lexer.next();
-            body = inlineTableBody(name, parseCsvInlineTable(raw, bracket));
+            body = inlineTableBody(name, parseCsvInlineTable(name, raw, bracket));
         } else if (current.type() == LangTokenType.LBRACKET) {
             // [ ... ] — Markdown inline table
             // current = LBRACKET; lexer.pos is past '['.  Do NOT advance first.
             LangToken bracket = current;
             LangLexer.RawBlock raw = lexer.consumeRawBracketBlock();
             current = lexer.next();
-            body = inlineTableBody(name, parseMarkdownInlineTable(raw, bracket));
+            body = inlineTableBody(name, parseMarkdownInlineTable(name, raw, bracket));
         } else {
             // { ... } — relational algebra expression
             // current = LBRACE; lexer.pos is past '{'.  Do NOT advance first.
@@ -965,7 +965,7 @@ public final class ScriptParser {
      * (cells containing only {@code -} characters) are discarded.  The first
      * non-separator data line becomes the header row.
      */
-    private MarkdownInlineTable parseMarkdownInlineTable(LangLexer.RawBlock raw,
+    private MarkdownInlineTable parseMarkdownInlineTable(String name, LangLexer.RawBlock raw,
                                                           LangToken openToken) {
         List<String> headers = null;
         List<List<String>> rows = new ArrayList<>();
@@ -994,6 +994,7 @@ public final class ScriptParser {
             if (headers == null) {
                 headers = Collections.unmodifiableList(new ArrayList<>(cells));
                 requireColumnNames(headers, "Markdown", raw, lines, i);
+                refuseTypedHeaders(name, headers, "[", raw, lines, i);
             } else {
                 requireWidth(cells, headers, "Markdown", raw, lines, i);
                 rows.add(Collections.unmodifiableList(new ArrayList<>(cells)));
@@ -1034,6 +1035,45 @@ public final class ScriptParser {
                         raw, lines, line);
             }
         }
+    }
+
+    /** A header cell written {@code name: TYPE}, with a type a cell can be read as. */
+    private static final Pattern TYPED_HEADER = Pattern.compile(
+            "([A-Za-z_][A-Za-z0-9_]*)\\s*:\\s*(NUMBER|STRING|BOOLEAN|DATE|TIME|TIMESTAMP"
+                    + "|TIMESTAMPTZ|DURATION)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Refuses a header cell written {@code name: TYPE}. It would otherwise be read as a
+     * column named {@code "ts: TIMESTAMP"}, and the query naming {@code ts} then fails
+     * with a message listing that name as if it were the column and its type. A header
+     * cell names a column only; its type goes in the table's {@code schema} clause, which
+     * the message writes out for every typed cell. A cell whose text after the colon is
+     * not a type keeps its meaning, as a column's name may hold a colon.
+     *
+     * @param open how the table opens, {@code "["} or {@code "csv["}, for the rewrite
+     */
+    private static void refuseTypedHeaders(String table, List<String> headers, String open,
+                                           LangLexer.RawBlock raw, String[] lines, int line) {
+        List<String> typed = new ArrayList<>();
+        String first = null;
+        for (String header : headers) {
+            Matcher m = TYPED_HEADER.matcher(header);
+            if (m.matches()) {
+                typed.add(m.group(1) + ": " + m.group(2).toUpperCase(Locale.ROOT));
+                if (first == null) {
+                    first = header;
+                }
+            }
+        }
+        if (first == null) {
+            return;
+        }
+        String text = lines[line];
+        int column = (line == 0 ? raw.startCol() : 1) + Math.max(0, text.indexOf(first));
+        throw new LangParseException("Inline table " + table + "'s header cell '" + first
+                + "' names a column; its type goes in a schema clause: write " + table
+                + " := " + open + " … ] schema { " + String.join(", ", typed) + " };",
+                raw.startLine() + line, column);
     }
 
     /**
@@ -1091,7 +1131,8 @@ public final class ScriptParser {
      * <p>The first non-blank line is the header row.  Standard CSV quoting
      * applies: double-quoted fields, {@code ""} for a literal quote.
      */
-    private CsvInlineTable parseCsvInlineTable(LangLexer.RawBlock raw, LangToken openToken) {
+    private CsvInlineTable parseCsvInlineTable(String name, LangLexer.RawBlock raw,
+                                               LangToken openToken) {
         List<String> headers = null;
         List<List<String>> rows = new ArrayList<>();
         List<SourceLocation> rowLocations = new ArrayList<>();
@@ -1106,6 +1147,7 @@ public final class ScriptParser {
             if (headers == null) {
                 headers = Collections.unmodifiableList(new ArrayList<>(cells));
                 requireColumnNames(headers, "CSV", raw, lines, i);
+                refuseTypedHeaders(name, headers, "csv[", raw, lines, i);
             } else {
                 requireWidth(cells, headers, "CSV", raw, lines, i);
                 rows.add(Collections.unmodifiableList(new ArrayList<>(cells)));

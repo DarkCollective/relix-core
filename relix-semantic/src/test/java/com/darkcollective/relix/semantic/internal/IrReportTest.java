@@ -462,10 +462,10 @@ final class IrReportTest {
         @DisplayName("Outer-union renders the ⊔ glyph with a [set] tag and both children")
         void outerUnionRendering() {
             String rpt = report("""
-                    People := [| id: NUMBER | name: STRING |
-                                | 1 | "Alice" |];
-                    Places := [| id: NUMBER | city: STRING |
-                                | 2 | "Berlin" |];
+                    People := [| id | name |
+                                | 1 | Alice |];
+                    Places := [| id | city |
+                                | 2 | Berlin |];
                     Merged := { People ⊔ Places };
                     query Merged;
                     """);

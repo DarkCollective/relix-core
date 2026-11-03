@@ -179,6 +179,31 @@ class ScriptParserInlineTableTest {
         }
 
         @Test
+        @DisplayName("a header cell written 'name: TYPE' is refused, naming the schema clause")
+        void typedHeader() {
+            assertThatThrownBy(() -> parse("T := [\n  | ts: TIMESTAMP |\n"
+                    + "  | 2026-01-15T10:00:00Z |\n];"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("Inline table T's header cell 'ts: TIMESTAMP' names a"
+                            + " column; its type goes in a schema clause: write"
+                            + " T := [ … ] schema { ts: TIMESTAMP };")
+                    .hasMessageContaining("line 2, col 5");
+            assertThatThrownBy(() -> parse("T := csv[\n  id, at:date, n : Number\n  1, 2, 3\n];"))
+                    .isInstanceOf(LangParseException.class)
+                    .hasMessageContaining("header cell 'at:date'")
+                    .hasMessageContaining("write T := csv[ … ] schema { at: DATE, n: NUMBER };")
+                    .hasMessageContaining("line 2, col 7");
+        }
+
+        @Test
+        @DisplayName("a header cell whose text after the colon is not a type is still its name")
+        void colonInHeader() {
+            Script s = parse("T := csv[\n  \"a: b\", \"x: TIMESTAMPS\"\n  1, 2\n];");
+            InlineTableBody body = (InlineTableBody) ((AssignmentStatement) firstStatement(s)).body();
+            assertThat(body.table().headers()).containsExactly("a: b", "x: TIMESTAMPS");
+        }
+
+        @Test
         @DisplayName("a row with a cell too many or too few is refused, rather than cut or padded")
         void rowWidth() {
             assertThatThrownBy(() -> parse("X := [\n| a | b |\n|---|---|\n| 1 | 2 | 3 |\n];"))
