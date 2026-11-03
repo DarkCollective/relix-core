@@ -254,7 +254,7 @@ source Access from logs { table: "access.log",
     schema: { host: STRING, at: TIMESTAMP, method: STRING, path: STRING,
               status: NUMBER, bytes: NUMBER, referer: STRING, agent: STRING } };
 
-query { τ host ASC (π host, path, bytes (TOP 1 bytes DESC PER host (Access))) };
+query { τ host ASC (π host, path, bytes (TOP 1 bytes DESC NULLS LAST PER host (Access))) };
 ```
 
 ```
@@ -265,6 +265,11 @@ query { τ host ASC (π host, path, bytes (TOP 1 bytes DESC PER host (Access))) 
  203.0.113.7    /api/export    65536
 (3 rows)
 ```
+
+`NULLS LAST` is what makes this the heaviest response. A `-` in the size field is a
+NULL `bytes`, as `203.0.113.7`'s failed `/api/search` is, and NULL sorts as the largest
+value, so a descending key puts it first: without the clause `TOP 1` would pick that
+request.
 
 ```relix
 Running := { ROLLING SUM(bytes) OVER ALL ROWS SORT at ASC PER host AS used (Access) };
