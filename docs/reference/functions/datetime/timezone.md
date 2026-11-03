@@ -34,11 +34,11 @@ Runs in the engine: PostgreSQL's `AT TIME ZONE` converts in one direction for a
 cannot be told from here.
 
 # Limitations:
-A TIMESTAMP is an instant, so for one only the instant-to-local direction is offered:
-there is no conversion from a local reading back to an instant. To keep a local reading
-with its offset, use a TIMESTAMPTZ. A numeric
+A TIMESTAMP is an instant, so TIMEZONE converts an instant to a local reading. The
+other direction, a local reading back to the instant it names in a zone, is
+[FROM_TZ](from_tz.md). A numeric
 offset such as `'UTC+2'` is refused, since POSIX and ISO count its sign oppositely;
 use a region name.
 
 # See Also:
-[AT TIME ZONE](../../language/at-time-zone.md), [to_char](../conversion/to_char.md), [hour](hour.md)
+[AT TIME ZONE](../../language/at-time-zone.md), [from_tz](from_tz.md), [to_char](../conversion/to_char.md), [hour](hour.md)

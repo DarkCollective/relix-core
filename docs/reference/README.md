@@ -307,6 +307,7 @@ argument).
 [QUARTER](functions/datetime/quarter.md),
 [EPOCH](functions/datetime/epoch.md),
 [TIMEZONE](functions/datetime/timezone.md),
+[FROM_TZ](functions/datetime/from_tz.md),
 [MAKE_DATE](functions/datetime/make_date.md),
 [LAST_DAY](functions/datetime/last_day.md),
 [DATEDIFF](functions/datetime/datediff.md),

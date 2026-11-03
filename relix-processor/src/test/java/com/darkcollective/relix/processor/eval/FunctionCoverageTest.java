@@ -202,6 +202,7 @@ final class FunctionCoverageTest {
             exact("to_char",       "TO_CHAR(" + TS + ", \"FMDay DD Mon\")",         "Wednesday 08 Jul"),
             exact("format",        "FORMAT(1234567.891, 2)",                        "1,234,567.89"),
             exact("timezone",      TS + " AT TIME ZONE \"America/New_York\"",      "2026-07-08T09:40:30Z"),
+            exact("from_tz",       "FROM_TZ(" + TS + ", \"America/New_York\")",  "2026-07-08T13:40:30-04:00"),
             exact("make_date",     "MAKE_DATE(2026, 7, 8)",                         "2026-07-08"),
             exact("datefromparts", "DATEFROMPARTS(2026, 7, 8)",                     "2026-07-08"),
             exact("last_day",      "LAST_DAY(DATE '2024-02-10')",                   "2024-02-29"),

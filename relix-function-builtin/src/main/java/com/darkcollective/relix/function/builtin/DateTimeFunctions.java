@@ -218,6 +218,16 @@ final class DateTimeFunctions {
                         types -> types.get(1) == TIMESTAMPTZ ? TIMESTAMPTZ : TIMESTAMP, PushdownSpelling.NONE,
                         (context, args) -> timezone(args)),
 
+                // FROM_TZ(ts, zone): the other direction, Oracle's. A TIMESTAMP's reading at
+                // UTC is taken as the wall clock in the zone, and the instant it names there
+                // comes back with the zone's offset then. A reading the clocks pass twice
+                // takes the offset after the change, standard time, and one they skip moves
+                // forward by the gap, as PostgreSQL's timestamp AT TIME ZONE and Oracle's
+                // FROM_TZ do. In the engine only:
+                // which of PostgreSQL's two directions a column takes cannot be told here.
+                DATETIME.fn("FROM_TZ", TIMESTAMPTZ, PURE_DETERMINISTIC,
+                        List.of(p("ts", TIMESTAMP), p("zone", STRING)), DateTimeFunctions::fromTz),
+
                 DATETIME.fn("MAKE_DATE", DATE, PURE_DETERMINISTIC,
                         List.of(p("year", NUMBER), p("month", NUMBER), p("day", NUMBER)),
                         DateTimeFunctions::makeDateSpelling, DateTimeFunctions::makeDate),
@@ -509,6 +519,29 @@ final class DateTimeFunctions {
             case ZonedTimestampValue z -> new ZonedTimestampValue(z.value().atZoneSameInstant(zone).toOffsetDateTime());
             default -> throw reject("TIMEZONE: expected TIMESTAMP or TIMESTAMPTZ, got " + args.get(1).type());
         };
+    }
+
+    /**
+     * {@code FROM_TZ(ts, zone)}: the instant at which a clock in {@code zone} reads
+     * {@code ts}'s wall-clock time, a TIMESTAMP read at UTC, with the zone's offset then.
+     */
+    private static Value fromTz(List<Value> args) {
+        if (args.get(0).isNull() || args.get(1).isNull()) {
+            return NullValue.INSTANCE;
+        }
+        if (!(args.get(0) instanceof TimestampValue ts)) {
+            throw reject("FROM_TZ: expected TIMESTAMP, got " + args.get(0).type());
+        }
+        String name = string(args.get(1), "FROM_TZ");
+        java.time.ZoneId zone = ZONES.get(name.strip().toLowerCase(Locale.ROOT));
+        if (zone == null) {
+            throw reject("FROM_TZ: unknown time zone '" + name + "'; use a region name such as 'Europe/London', or 'UTC'");
+        }
+        LocalDateTime local = LocalDateTime.ofInstant(ts.value(), ZoneOffset.UTC);
+        // ofLocal moves a skipped reading forward by the length of the gap; of a reading's
+        // two offsets, the later is the one in force after the clocks go back.
+        return new ZonedTimestampValue(java.time.ZonedDateTime.ofLocal(local, zone, null)
+                .withLaterOffsetAtOverlap().toOffsetDateTime());
     }
 
     /** {@code MAKE_DATE(year, month, day)}: the date, refusing one the calendar does not have. */
