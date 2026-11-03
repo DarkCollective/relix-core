@@ -189,7 +189,7 @@ relix.relation("γ category, COUNT(*) → n (relix.functions)")
 ```
 (category=conditional, n=6)
 (category=conversion, n=6)
-(category=datetime, n=36)
+(category=datetime, n=37)
 (category=json, n=3)
 (category=math, n=31)
 (category=nested, n=2)

@@ -227,4 +227,41 @@ final class PostgresPushdownAgreementTest {
         return PushdownFixture.preamble(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
     }
+
+    /**
+     * FROM_TZ gives the instant PostgreSQL's {@code timestamp AT TIME ZONE} gives (#281),
+     * for the readings either side of both of a year's daylight-saving changes, the hour
+     * the clocks skip and the hour they pass twice included. FROM_TZ runs in the engine,
+     * so this holds the engine to PostgreSQL.
+     */
+    @org.junit.jupiter.params.ParameterizedTest(name = "FROM_TZ({0}, {1})")
+    @org.junit.jupiter.params.provider.CsvSource({
+            "2026-03-29T00:30:00, Europe/London",
+            "2026-03-29T01:30:00, Europe/London",
+            "2026-03-29T02:30:00, Europe/London",
+            "2026-10-25T00:30:00, Europe/London",
+            "2026-10-25T01:30:00, Europe/London",
+            "2026-10-25T02:30:00, Europe/London",
+            "2026-03-08T01:30:00, America/New_York",
+            "2026-03-08T02:30:00, America/New_York",
+            "2026-03-08T03:30:00, America/New_York",
+            "2026-11-01T00:30:00, America/New_York",
+            "2026-11-01T01:30:00, America/New_York",
+            "2026-11-01T02:30:00, America/New_York"})
+    void fromTzAgreesWithTimestampAtTimeZone(String reading, String zone) throws SQLException {
+        java.time.Instant postgres;
+        try (Connection c = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             ResultSet r = c.createStatement().executeQuery("SELECT EXTRACT(EPOCH FROM (TIMESTAMP '"
+                     + reading.replace('T', ' ') + "' AT TIME ZONE '" + zone + "'))")) {
+            r.next();
+            postgres = java.time.Instant.ofEpochSecond(r.getBigDecimal(1).longValueExact());
+        }
+        try (com.darkcollective.relix.embed.Relix relix = com.darkcollective.relix.embed.Relix.open()) {
+            relix.define("One := [| x |\n| 1 |];");
+            var v = relix.relation("π FROM_TZ(TIMESTAMP '" + reading + "Z', '" + zone + "') → v (One)")
+                    .toList().getFirst().get("v");
+            assertThat(((com.darkcollective.relix.value.ZonedTimestampValue) v).instant()).isEqualTo(postgres);
+        }
+    }
 }

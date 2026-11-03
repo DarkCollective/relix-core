@@ -284,4 +284,61 @@ final class MySqlPushdownAgreementTest {
             }
         }
     }
+
+    /**
+     * REGEXP_REPLACE's positional form answers as MySQL's own (#280): the engine runs it,
+     * since no backend is offered it, so this holds the engine to MySQL rather than a
+     * pushed query to the engine. The default, with no flag, is PostgreSQL's first match,
+     * and the last case is there to say that MySQL's default differs.
+     */
+    @org.junit.jupiter.params.ParameterizedTest(name = "REGEXP_REPLACE({0})")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "'a-b-c', '-', '+', 1, 0",
+            "'a-b-c', '-', '+', 1, 2",
+            "'a-b-c', '-', '+', 1, 3",
+            "'a-b-c', '-', '+', 3",
+            "'a-b-c', '-', '+', 3, 1",
+            "'a-b-c-d', '-', '+', 2, 2",
+            "'Ab-aB', 'ab', 'x', 1, 0, 'i'",
+            "'Ab-aB', 'ab', 'x', 1, 0, 'c'"})
+    void regexpReplacePositional(String arguments) throws SQLException {
+        assertThat(engine("REGEXP_REPLACE(" + arguments + ")")).isEqualTo(mysql("REGEXP_REPLACE(" + arguments + ")"));
+    }
+
+    @Test
+    @DisplayName("REGEXP_SUBSTR's positional form answers as MySQL's own")
+    void regexpSubstrPositional() throws SQLException {
+        for (String arguments : List.of("'a1 b22 c333', '[0-9]+', 1, 2", "'a1 b22 c333', '[0-9]+', 4",
+                "'a1 b22', '[0-9]+', 1, 3")) {
+            assertThat(engine("REGEXP_SUBSTR(" + arguments + ")")).as(arguments)
+                    .isEqualTo(mysql("REGEXP_SUBSTR(" + arguments + ")"));
+        }
+    }
+
+    @Test
+    @DisplayName("REGEXP_REPLACE's default differs from MySQL's: the first match, not every one")
+    void regexpReplaceDefaultDiffers() throws SQLException {
+        assertThat(mysql("REGEXP_REPLACE('a-b-c', '-', '+')")).isEqualTo("a+b+c");
+        assertThat(engine("REGEXP_REPLACE('a-b-c', '-', '+')")).isEqualTo("a+b-c");
+        assertThat(engine("REGEXP_REPLACE('a-b-c', '-', '+', 'g')")).isEqualTo("a+b+c");
+    }
+
+    /** {@code call} evaluated by MySQL, its result as text, or "NULL". */
+    private static String mysql(String call) throws SQLException {
+        try (Connection c = DriverManager.getConnection(url(UTC_SESSION), MYSQL.getUsername(), MYSQL.getPassword());
+             ResultSet r = c.createStatement().executeQuery("SELECT " + call)) {
+            r.next();
+            String v = r.getString(1);
+            return v == null ? "NULL" : v;
+        }
+    }
+
+    /** {@code call} evaluated by the engine, as text, or "NULL". */
+    private static String engine(String call) {
+        try (com.darkcollective.relix.embed.Relix relix = com.darkcollective.relix.embed.Relix.open()) {
+            relix.define("One := [| x |\n| 1 |];");
+            var v = relix.relation("π " + call + " → v (One)").toList().getFirst().get("v");
+            return v.isNull() ? "NULL" : v.asDisplayString();
+        }
+    }
 }

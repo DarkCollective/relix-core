@@ -198,6 +198,7 @@ final class FunctionCoverageTest {
             exact("TO_CHAR", "2026-07-08 13:40", TS, s("YYYY-MM-DD HH24:MI")),
             exact("FORMAT", "1,234.50", n("1234.5"), n("2")),
             exact("TIMEZONE", "2026-07-08T14:40:30Z", s("Europe/London"), TS),
+            exact("FROM_TZ", "2026-07-08T13:40:30+01:00", TS, s("Europe/London")),
             exact("MAKE_DATE", "2024-02-29", n("2024"), n("2"), n("29")),
             exact("DATEFROMPARTS", "2024-02-29", n("2024"), n("2"), n("29")),
             exact("LAST_DAY", "2026-07-31", TS),

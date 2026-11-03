@@ -121,6 +121,38 @@ final class FormatAndCalendarTest {
     }
 
     @Test
+    @DisplayName("FROM_TZ reads a wall clock as an instant in a zone, either side of both DST changes")
+    void fromTz() {
+        // London's clocks go forward at 01:00 on 29 March 2026 and back at 02:00 on 25 October.
+        assertThat(call("FROM_TZ", ts("2026-03-29T00:30:00Z"), s("Europe/London"))).isEqualTo(tz("2026-03-29T00:30:00Z"));
+        assertThat(call("FROM_TZ", ts("2026-03-29T02:30:00Z"), s("Europe/London")))
+                .isEqualTo(tz("2026-03-29T02:30:00+01:00"));
+        // A reading the clocks skip moves forward by the gap.
+        assertThat(call("FROM_TZ", ts("2026-03-29T01:30:00Z"), s("Europe/London")))
+                .isEqualTo(tz("2026-03-29T02:30:00+01:00"));
+        assertThat(call("FROM_TZ", ts("2026-10-25T00:30:00Z"), s("europe/london")))
+                .isEqualTo(tz("2026-10-25T00:30:00+01:00"));
+        // A reading the clocks pass twice takes the offset after the change, as PostgreSQL does.
+        assertThat(call("FROM_TZ", ts("2026-10-25T01:30:00Z"), s("Europe/London")))
+                .isEqualTo(tz("2026-10-25T01:30:00Z"));
+        assertThat(call("FROM_TZ", ts("2026-11-01T01:30:00Z"), s("America/New_York")))
+                .isEqualTo(tz("2026-11-01T01:30:00-05:00"));
+        assertThat(call("FROM_TZ", ts("2026-10-25T02:30:00Z"), s("Europe/London"))).isEqualTo(tz("2026-10-25T02:30:00Z"));
+        assertThat(call("FROM_TZ", ts("2026-07-08T13:40:00Z"), s("America/New_York")))
+                .isEqualTo(tz("2026-07-08T13:40:00-04:00"));
+        assertThat(call("FROM_TZ", NULL, s("UTC")).isNull()).isTrue();
+        assertThat(call("FROM_TZ", ts("2026-01-01T00:00:00Z"), NULL).isNull()).isTrue();
+        assertThatThrownBy(() -> call("FROM_TZ", ts("2026-01-01T00:00:00Z"), s("Mars/Olympus")))
+                .hasMessageStartingWith("FROM_TZ: unknown time zone 'Mars/Olympus'");
+        assertThatThrownBy(() -> call("FROM_TZ", date("2026-01-01"), s("UTC")))
+                .hasMessage("FROM_TZ: expected TIMESTAMP, got DATE");
+    }
+
+    private static Value tz(String iso) {
+        return new com.darkcollective.relix.value.ZonedTimestampValue(java.time.OffsetDateTime.parse(iso));
+    }
+
+    @Test
     @DisplayName("AT TIME ZONE follows the zone's clock across both of a year's DST changes")
     void timeZones() {
         assertThat(call("TIMEZONE", s("Europe/London"), ts("2026-03-29T00:30:00Z"))).isEqualTo(ts("2026-03-29T00:30:00Z"));

@@ -37,6 +37,7 @@ import static com.darkcollective.relix.function.builtin.Arguments.reject;
 import static com.darkcollective.relix.function.builtin.Arguments.string;
 import static com.darkcollective.relix.function.builtin.Category.PURE_DETERMINISTIC;
 import static com.darkcollective.relix.function.builtin.Category.p;
+import static com.darkcollective.relix.symbol.ScalarType.ANY;
 import static com.darkcollective.relix.symbol.ScalarType.BOOLEAN;
 import static com.darkcollective.relix.symbol.ScalarType.NUMBER;
 import static com.darkcollective.relix.symbol.ScalarType.STRING;
@@ -50,6 +51,16 @@ import static com.darkcollective.relix.symbol.ScalarType.STRING;
  * replaces every match rather than the first, as PostgreSQL's does. A replacement
  * writes {@code \1} to {@code \9} for a group, {@code \&} for the whole match and
  * {@code \\} for a backslash, as PostgreSQL's does.
+ *
+ * <h2>The positional form</h2>
+ * {@code REGEXP_REPLACE(s, pattern, replacement, position [, occurrence [, flags]])} and
+ * {@code REGEXP_SUBSTR(s, pattern, position [, occurrence [, flags]])} are MySQL's and
+ * Oracle's, and SQL Server's for {@code REGEXP_REPLACE}: the search starts at the
+ * 1-based {@code position}, and {@code occurrence} names the match, from 1, or for
+ * {@code REGEXP_REPLACE} 0 for every one, which is its default in this form. A NUMBER where the flags would go is a
+ * position, so the two forms are told apart by the fourth argument's type, the third's
+ * for {@code REGEXP_SUBSTR}. In this form {@code g} is refused, since the occurrence
+ * says the same thing.
  *
  * <h2>Which of these a backend is offered</h2>
  * Regular-expression dialects differ in their corners — what {@code \w} and {@code $}
@@ -72,14 +83,16 @@ final class RegexFunctions {
                         List.of(p("s", STRING), p("pattern", STRING), p("flags", STRING)),
                         Arity.between(2, 3), RegexFunctions::likeSpelling, RegexFunctions::like),
 
+                // The fourth argument is the flags, or in the positional form a position.
                 STRINGS.fn("REGEXP_REPLACE", STRING, PURE_DETERMINISTIC,
                         List.of(p("s", STRING), p("pattern", STRING), p("replacement", STRING),
-                                p("flags", STRING)),
-                        Arity.between(3, 4), RegexFunctions::replaceSpelling, RegexFunctions::replace),
+                                p("flags_or_position", ANY), p("occurrence", NUMBER), p("flags", STRING)),
+                        Arity.between(3, 6), RegexFunctions::replaceSpelling, RegexFunctions::replace),
 
                 STRINGS.fn("REGEXP_SUBSTR", STRING, PURE_DETERMINISTIC,
-                        List.of(p("s", STRING), p("pattern", STRING), p("flags", STRING)),
-                        Arity.between(2, 3), RegexFunctions::substr),
+                        List.of(p("s", STRING), p("pattern", STRING), p("flags_or_position", ANY),
+                                p("occurrence", NUMBER), p("flags", STRING)),
+                        Arity.between(2, 5), RegexFunctions::substr),
 
                 STRINGS.fn("REGEXP_COUNT", NUMBER, PURE_DETERMINISTIC,
                         List.of(p("s", STRING), p("pattern", STRING), p("flags", STRING)),
@@ -100,8 +113,15 @@ final class RegexFunctions {
         if (args.stream().anyMatch(Value::isNull)) {
             return NullValue.INSTANCE;
         }
-        Matcher m = matcher(args, "REGEXP_SUBSTR", 2, false);
-        return m.find() ? new StringValue(m.group()) : NullValue.INSTANCE;
+        Positional at = Positional.of(args, 2, "REGEXP_SUBSTR", false);
+        Matcher m = at.matcher(args);
+        int seen = 0;
+        while (m.find()) {
+            if (++seen == at.occurrence()) {
+                return new StringValue(m.group());
+            }
+        }
+        return NullValue.INSTANCE;
     }
 
     private static Value count(List<Value> args) {
@@ -120,21 +140,90 @@ final class RegexFunctions {
         if (args.stream().anyMatch(Value::isNull)) {
             return NullValue.INSTANCE;
         }
-        String flags = args.size() == 4 ? string(args.get(3), "REGEXP_REPLACE") : "";
-        Matcher m = matcher(args, "REGEXP_REPLACE", 3, true);
+        Positional at = Positional.of(args, 3, "REGEXP_REPLACE", true);
+        Matcher m = at.matcher(args);
         String s = string(args.get(0), "REGEXP_REPLACE");
         String replacement = string(args.get(2), "REGEXP_REPLACE");
-        boolean global = flags.indexOf('g') >= 0;
         StringBuilder out = new StringBuilder();
         int last = 0;
+        int seen = 0;
         while (m.find()) {
+            seen++;
+            if (at.occurrence() != 0 && seen != at.occurrence()) {
+                continue;
+            }
             out.append(s, last, m.start()).append(expand(replacement, m));
             last = m.end();
-            if (!global) {
+            if (at.occurrence() != 0) {
                 break;
             }
         }
         return new StringValue(out.append(s, last, s.length()).toString());
+    }
+
+    /**
+     * Where a call searches and which match it means. In the flags form the search
+     * starts at the string's start, and {@code REGEXP_REPLACE} means the first match, or
+     * every one under {@code g}; {@code REGEXP_SUBSTR} means the first. In the positional
+     * form, the argument at {@code at} is a 1-based position, the next an occurrence, and
+     * the one after the flags. An omitted occurrence is MySQL's and Oracle's: 0, every
+     * match, for {@code REGEXP_REPLACE}, and 1 for {@code REGEXP_SUBSTR}.
+     *
+     * @param start      the index the search starts at, from 0
+     * @param occurrence which match, from 1, or 0 for every one
+     * @param flags      the flags, {@code g} taken out
+     */
+    private record Positional(int start, int occurrence, String flags, String function, boolean replacing) {
+
+        static Positional of(List<Value> args, int at, String function, boolean replacing) {
+            if (args.size() <= at || args.get(at) instanceof StringValue && args.size() == at + 1) {
+                String flags = args.size() > at ? string(args.get(at), function) : "";
+                boolean global = replacing && flags.indexOf('g') >= 0;
+                return new Positional(0, global ? 0 : 1, flags, function, replacing);
+            }
+            if (!(args.get(at) instanceof NumberValue)) {
+                throw reject(function + ": a call of " + args.size() + " arguments takes a position"
+                        + " as its " + ordinal(at + 1) + ", a NUMBER, not " + args.get(at).type()
+                        + "; its flags go last");
+            }
+            int position = Arguments.integer(args.get(at), function);
+            if (position < 1) {
+                throw reject(function + ": the position counts from 1, got " + position);
+            }
+            // Omitted, REGEXP_REPLACE's occurrence is MySQL's and Oracle's 0, every match.
+            int occurrence = args.size() > at + 1 ? Arguments.integer(args.get(at + 1), function)
+                    : replacing ? 0 : 1;
+            if (occurrence < (replacing ? 0 : 1)) {
+                throw reject(function + ": the occurrence is " + (replacing ? "0 for every match, or " : "")
+                        + "a match counted from 1, got " + occurrence);
+            }
+            String flags = args.size() > at + 2 ? string(args.get(at + 2), function) : "";
+            if (flags.indexOf('g') >= 0) {
+                throw reject(function + ": a call with a position takes no flag 'g'; an occurrence of 0"
+                        + " replaces every match");
+            }
+            String s = string(args.get(0), function);
+            return new Positional(Math.min(position - 1, s.length()), occurrence, flags, function, replacing);
+        }
+
+        /**
+         * The call's matcher, searching from {@link #start}. The text before it is still
+         * seen by a look-behind or {@code \b}, and {@code ^} still means the string's
+         * start rather than the position's.
+         */
+        Matcher matcher(List<Value> args) {
+            String s = string(args.get(0), function);
+            Matcher m = compile(string(args.get(1), function), flags, function, replacing).matcher(s);
+            return m.region(start, s.length()).useTransparentBounds(true).useAnchoringBounds(false);
+        }
+
+        private static String ordinal(int n) {
+            return switch (n) {
+                case 3 -> "third";
+                case 4 -> "fourth";
+                default -> n + "th";
+            };
+        }
     }
 
     /** A PostgreSQL replacement: {@code \1}–{@code \9} a group, {@code \&} the match, {@code \\} a backslash. */
