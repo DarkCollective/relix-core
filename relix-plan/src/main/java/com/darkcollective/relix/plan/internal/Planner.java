@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.plan.internal;
 
+import com.darkcollective.relix.ast.internal.Subqueries;
 import com.darkcollective.relix.plan.HttpScanPushdown;
 import com.darkcollective.relix.plan.PhysicalNode;
 import com.darkcollective.relix.plan.PlanEstimates;
@@ -228,6 +229,15 @@ public final class Planner {
     // would allocate a fresh id per row and the executor's buffer would grow with the
     // outer relation. LateralMemo already memoizes at that level.
     private int lateralBodyDepth;
+    // The laterals lowering a subquery made: a value's, to where it was written, holds at
+    // most one row per outer row; a quantifier's binds placeholders to the outer row's
+    // values. Identity-keyed, as the lowered nodes are this planner's own.
+    private final Map<LateralJoinNode, com.darkcollective.relix.ast.SourceLocation> singleRowLaterals =
+            new IdentityHashMap<>();
+    private final Map<LateralJoinNode, Map<String, com.darkcollective.relix.ast.Operand>> lateralPlaceholders =
+            new IdentityHashMap<>();
+    // Numbers the columns lowering names, so no two subqueries' answers collide.
+    private int nextSubqueryColumn = 1;
     // Whether a mathematical-programming solver is installed. Only OPTIMIZE and
     // COVER EXACT need one, and both are worth failing before the inputs are read.
     private SolverCatalog solvers = SolverCatalog.installed();
@@ -498,6 +508,9 @@ public final class Planner {
             // execution time, a LATERAL body, where sharing is declined anyway).
             binderNames = binderNames(node);
             sharedSites = SharedSubexpressions.detect(node, this::shareable);
+        }
+        if ((node instanceof SelectionNode || node instanceof ProjectionNode) && Subqueries.carriesSubquery(node)) {
+            return plan(lowerSubqueries(node));
         }
         String digest = sharedSites.isEmpty() ? null : AstEquivalence.digest(node);
         if (digest != null) {
@@ -1884,9 +1897,63 @@ public final class Planner {
      * execution time (one {@link List} per outer row), so the lambda is invoked once
      * per left row rather than once at plan time.
      */
+    /**
+     * Rewrites a SELECT or PROJECT carrying subqueries into lateral joins over its input
+     * ({@link SubqueryLowering}), records what the planner must know of each lateral, and
+     * annotates the rewritten tree for planning.
+     */
+    private RelNode lowerSubqueries(RelNode node) {
+        if (Subqueries.subqueriesOf(node).stream().anyMatch(s -> schemas.get(s.query()).isEmpty())) {
+            schemas = SchemaInference.annotate(symbols, node, schemas, functions);
+        }
+        SubqueryLowering.Lowered lowered = SubqueryLowering.lower(node, this::schemaOf,
+                role -> "$subquery" + nextSubqueryColumn++);
+        singleRowLaterals.putAll(lowered.singleRow());
+        lateralPlaceholders.putAll(lowered.placeholders());
+        schemas = SchemaInference.annotate(symbols, lowered.tree(), schemas, functions);
+        return lowered.tree();
+    }
+
+    /**
+     * Plans {@code L [OUTER] LATERAL (expression)}: the expression's outer references, and
+     * any placeholders lowering bound, are the arguments, evaluated per left row; the body
+     * builder binds their values into the expression and plans it.
+     */
+    private PhysicalNode planLateralExpression(LateralJoinNode node) {
+        PhysicalNode left = plan(node.left());
+        List<String> names = new ArrayList<>();
+        List<com.darkcollective.relix.ast.Operand> arguments = new ArrayList<>();
+        for (AttributeOperand ref : Subqueries.outerReferences(node.right())) {
+            names.add(ref.name().toLowerCase(Locale.ROOT));
+            arguments.add(ref);
+        }
+        lateralPlaceholders.getOrDefault(node, Map.of()).forEach((name, value) -> {
+            names.add(name.toLowerCase(Locale.ROOT));
+            arguments.add(value);
+        });
+        RelNode expression = node.right();
+        Function<List<com.darkcollective.relix.ast.Operand>, PhysicalNode> bodyBuilder = values -> {
+            Map<String, com.darkcollective.relix.ast.Operand> bound = new HashMap<>();
+            for (int i = 0; i < names.size(); i++) {
+                bound.put(names.get(i), values.get(i));
+            }
+            lateralBodyDepth++;
+            try {
+                RelNode body = Subqueries.bind(expression, bound);
+                this.schemas = SchemaInference.annotate(symbols, body, this.schemas, functions);
+                return plan(body);
+            } finally {
+                lateralBodyDepth--;
+            }
+        };
+        boolean deterministicBody = RelationDeterminism.isDeterministic(expression, symbols, functions);
+        return new PhysicalNode.LateralJoin(schemaOf(node), "(expression)", arguments, bodyBuilder,
+                deterministicBody, node.kind(), Optional.ofNullable(singleRowLaterals.get(node)), true, left);
+    }
+
     private PhysicalNode planLateralJoin(LateralJoinNode node) {
         if (!(node.right() instanceof RelationFunctionCall call)) {
-            throw new IllegalStateException("LATERAL over an expression has no physical plan");
+            return planLateralExpression(node);
         }
         PhysicalNode left = plan(node.left());
         Schema outSchema = schemaOf(node);
@@ -1927,7 +1994,7 @@ public final class Planner {
                 RelationDeterminism.isDeterministic(fn.body(), symbols, functions);
 
         return new PhysicalNode.LateralJoin(outSchema, call.functionName(),
-                call.arguments(), bodyBuilder, deterministicBody, left);
+                call.arguments(), bodyBuilder, deterministicBody, node.kind(), Optional.empty(), false, left);
     }
 
     // ── schema resolution ─────────────────────────────────────────────────────

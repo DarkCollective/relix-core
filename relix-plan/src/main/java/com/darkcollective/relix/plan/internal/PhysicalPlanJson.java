@@ -453,6 +453,8 @@ public final class PhysicalPlanJson {
                     w.value(arg.accept(OPND));
                 }
                 w.endArray();
+                if (l.kind() == com.darkcollective.relix.ast.LateralKind.OUTER) w.name("outer").value(true);
+                if (l.singleRow().isPresent()) w.name("singleRow").value(true);
             }
 
             case PhysicalNode.Unpivot uv -> {
