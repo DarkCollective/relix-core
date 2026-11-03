@@ -320,8 +320,11 @@ allen_relation    ::= "INTERSECTS" | "OVERLAPS" | "OVERLAPPED_BY" | "DURING" | "
                     | "STARTS" | "STARTED_BY" | "FINISHES" | "FINISHED_BY" | "EQUALS"
                     | "MEETS" | "MET_BY" | "PRECEDES" | "PRECEDED_BY"
 
-/* L LATERAL fn(L.col, 3) — the right side is always a function call. */
-lateral_join      ::= "LATERAL" name "(" ( operand ( "," operand )* )? ")"
+/* L LATERAL fn(L.col, 3), or L LATERAL (σ k = L.k (R)): a function call, or a
+   relation that reads the left row through qualified names.  OUTER keeps a left
+   row the right side has no rows for. */
+lateral_join      ::= "OUTER"? "LATERAL" ( name "(" ( operand ( "," operand )* )? ")"
+                                         | "(" rel_expr ")" )
 
 /* R⁺ OVER (src, dst)  transitive closure;  R* OVER (src, dst)  reflexive. */
 postfix_expr      ::= primary_rel ( ( "⁺" | "*" ) "OVER" "(" name edge_separator name ")" )?
@@ -570,12 +573,16 @@ not_predicate     ::= ( "¬" | "NOT" ) not_predicate
 /* A truth test after a predicate tests it whole: a > 1 IS NOT TRUE. */
 primary_predicate ::= simple_predicate truth_test*
 simple_predicate  ::= "(" predicate ")"
+                    | "EXISTS" subquery                      /* the relation has a row */
                     | operand condition_tail
                     | row_value comparison_op row_value
                     | row_value ( ( "∈" | "IN" ) | ( "∉" | ( "¬" | "NOT" ) "IN" ) ) row_list
 
 condition_tail    ::= comparison_op operand
                     | comparison_op quantifier value_list   /* x > ALL {1, 2} */
+                    | comparison_op quantifier subquery     /* x > ALL (π v (S)) */
+                    | ( "∈" | "IN" ) subquery               /* x IN (π v (S)), = ANY */
+                    | ( "∉" | ( "¬" | "NOT" ) "IN" ) subquery
                     | ( "∈" | "IN" ) set_expr
                     | ( "∉" | ( "¬" | "NOT" ) "IN" ) set_expr
                     | ( ( "¬" | "NOT" ) )? "LIKE" operand ( "ESCAPE" STRING )?
@@ -589,6 +596,9 @@ condition_tail    ::= comparison_op operand
 
 truth_test        ::= "IS" ( ( "¬" | "NOT" ) )? ( "TRUE" | "FALSE" | "UNKNOWN" )
 quantifier        ::= "ANY" | "SOME" | "ALL"
+/* A relation in parentheses, opening on a relational operator or on a name and a
+   binary relational operator: (π v (S)), (γ COUNT(*) → n (S)), (A ⋈ B). */
+subquery          ::= "(" rel_expr ")"
 value_list        ::= "{" ( operand ( "," operand )* )? "}"
                     | "(" ( operand ( "," operand )* )? ")"
 /* (year, month) >= (2026, 3): two or more values, compared pair by pair. */
@@ -634,6 +644,8 @@ primary_operand   ::= literal
                     | datediff_call
                     | function_call
                     | column_ref
+                    | subquery                   /* its one column's value in its one row */
+                    | "EXISTS" subquery          /* as a BOOLEAN */
                     | "(" operand ")"
                     | "(" predicate ")"          /* a condition's truth value, as a BOOLEAN */
                     | struct_construction
@@ -800,10 +812,17 @@ are easy to miss in the rules above.
 - **Sets use braces, and SQL's list is read too.** `x IN {1, 2}` tests membership,
   and so does `x IN (1, 2)`: a parenthesis holding a comma is a list. One value in
   parentheses is a single expression, so a one-member set is `x IN {1}`.
-- **`ANY`, `SOME` and `ALL` quantify over a list.** `x > ALL {1, 2}` is
+- **`ANY`, `SOME` and `ALL` quantify over a list or a relation.** `x > ALL {1, 2}` is
   `x > 1 ∧ x > 2`, and `ANY` the disjunction; an empty list makes `ALL` true and
   `ANY` false. The words are not reserved: one is a quantifier only before braces,
-  or a parenthesis holding a comma or opening on a literal.
+  a parenthesis holding a comma or opening on a literal, or a subquery.
+- **A subquery is a relation in parentheses.** It opens on a relational operator,
+  `(π v (S))`, or on a name before a binary operator, `(A ⋈ B)`; `(project)` is
+  still a column. As a value it has one column and at most one row; it is also
+  what `EXISTS`, `IN`, `ANY`/`ALL` and `LATERAL (…)` take. Inside one, a qualified
+  name whose relation it does not read is a column of the row around it. At the top
+  of a SELECT's condition, `ANY`/`ALL` quantify a relation only when more of the
+  selection follows it, so `σ x > all (R)` compares with a column `all`.
 - **A row value compares column by column.** `(a, b) = (1, 2)` is `a = 1 ∧ b = 2`,
   and `(a, b) < (c, d)` orders lexicographically; both sides have the same width.
 - **Strings compare and sort by code point, unless a collation says otherwise.**

@@ -431,7 +431,7 @@ A column that either input could own is never attributed to the padded side.
 
 | Code | Rewrite |
 |------|---------|
-| `LATERAL-001` | Turn an uncorrelated `LATERAL` TVF join into a `×` over a single TVF call |
+| `LATERAL-001` | Turn an uncorrelated inner `LATERAL` into a `×`: a TVF call none of whose arguments reads the left row, or a relation with no outer reference |
 
 ```
 L LATERAL f(c…)   ≡   L × f(c…)     when no argument reads a column of L

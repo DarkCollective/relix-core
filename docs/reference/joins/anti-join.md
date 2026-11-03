@@ -78,7 +78,9 @@ the two relations are union-compatible.
 
 # SQL names:
 SQL's `WHERE NOT EXISTS (SELECT … FROM S WHERE S.k = R.k)` and
-`WHERE R.k NOT IN (SELECT k FROM S)` are `R ANTI R.k = S.k S`. The anti join answers as
+`WHERE R.k NOT IN (SELECT k FROM S)` are `R ANTI R.k = S.k S`, or
+[NOT EXISTS](../predicates/exists.md) and [NOT IN](../predicates/in.md) over a relation
+written as SQL writes them. The anti join answers as
 `NOT EXISTS` does: SQL's `NOT IN` returns no rows at all when the subquery yields a NULL,
 where the anti join keeps every row that has no match. `EXISTS` and `IN (subquery)` are
 the [semi join](semi-join.md); `NOT IN` over a list of values is [IN](../predicates/in.md).

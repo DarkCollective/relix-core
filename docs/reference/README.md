@@ -88,12 +88,13 @@ The conditions that go inside a `σ` (selection) or join.
 | [Null-safe comparison](predicates/is-distinct-from.md) | `IS [NOT] DISTINCT FROM` | Compare two values, NULL equal to NULL |
 | [Truth test](predicates/truth-test.md) | `IS [NOT] TRUE / FALSE / UNKNOWN` | Which of its three values a boolean has, never UNKNOWN |
 | [Row value comparison](predicates/row-value.md) | `(a, b) = (c, d)`, `(a, b) IN {…}` | Compare several columns as one, ordering lexicographically |
-| [Quantified comparison](predicates/quantified.md) | `ANY` / `SOME` / `ALL` | Compare a value with each value of a list |
+| [Quantified comparison](predicates/quantified.md) | `ANY` / `SOME` / `ALL` | Compare a value with each value of a list or a one-column relation |
+| [EXISTS](predicates/exists.md) | `EXISTS (…)`, `NOT EXISTS (…)` | Whether a relation, often about the row tested, has a row |
 | [And](predicates/and.md) | `∧` / `AND` | Both conditions hold |
 | [Or](predicates/or.md) | `∨` / `OR` | Either condition holds |
 | [Not](predicates/not.md) | `¬` / `NOT` | Negate a condition |
 | [Null test](predicates/is-null.md) | `⊥` / `NULL` / `IS [NOT] NULL` | Test for a missing value |
-| [Set membership](predicates/in.md) | `∈` / `IN`, `∉` / `NOT IN` | Test membership in a set |
+| [Set membership](predicates/in.md) | `∈` / `IN`, `∉` / `NOT IN` | Test membership in a set or a one-column relation |
 | [Pattern match](predicates/like.md) | `LIKE`, `NOT LIKE`, `ESCAPE` | Wildcard string match (`%` = any run, `_` = any one char) |
 | [Regex match](predicates/regex-match.md) | `~` / `MATCHES` | Does a regular expression match (`~*` ignores case) |
 
@@ -114,7 +115,7 @@ semi/anti joins filter the left relation by the existence of a match.
 | [Anti join](joins/anti-join.md) | `▷` / `ANTI` | Left rows that have *no* match |
 | [AS-OF join](joins/asof-join.md) | `ASOF` | Match each row to the nearest-in-time row |
 | [Interval join](joins/interval-join.md) | `IJOIN` | Match intervals by an Allen relation (OVERLAPS, DURING, …) |
-| [Lateral join](joins/lateral-join.md) | `LATERAL` | Invoke a TVF per left row with correlated column arguments |
+| [Lateral join](joins/lateral-join.md) | `LATERAL`, `OUTER LATERAL` | Evaluate a TVF call or a relation per left row, reading that row's columns |
 
 ## 6. Set operations
 
@@ -187,6 +188,7 @@ Writing constant values, including the first-class temporal types.
 |------|--------------|
 | [String, number and boolean literals](literals/scalar-literals.md) | `"text"` or `'text'`, `42`, `3.25`, `1e6`, `TRUE` / `FALSE` |
 | [CASE](language/case.md) | `CASE WHEN c THEN a … ELSE d END`, `CASE x WHEN v THEN a … END` — a value chosen by conditions |
+| [Subquery](language/subquery.md) | `(γ COUNT(*) → n (σ k = R.k (S)))` — a relation's one value, per row when it reads the row |
 | [COLLATE](language/collate.md) | `s COLLATE NOCASE`, `s COLLATE 'en-US'` — compare, sort and group strings ignoring case or by a language's order |
 | [CAST](language/cast.md) | `CAST(x AS type)` — convert a value to NUMBER, STRING, BOOLEAN, DATE, TIME or TIMESTAMP |
 | [AT TIME ZONE](language/at-time-zone.md) | `ts AT TIME ZONE 'Europe/London'` — the wall-clock time in a zone |
