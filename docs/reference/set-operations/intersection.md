@@ -75,6 +75,8 @@ columns first if you want to intersect on a subset.
 There is no multiset intersection. SQL's `INTERSECT ALL` is refused with a message:
 the intersection works on sets, and each row of its result appears once.
 
+Strings compare by code point and ∩ takes no collation, so `'Ada'` and `'ada'` are different rows, as in PostgreSQL, Oracle and SQLite. MySQL's and SQL Server's default collations call them one. To treat them as one here, group under `COLLATE NOCASE` instead, as [COLLATE](../language/collate.md) shows.
+
 # Alternatives:
 A semi join (⋉) gives "left rows that have a match" while keeping the left's
 extra columns. Union (∪) and difference (−) are the other set combinators.

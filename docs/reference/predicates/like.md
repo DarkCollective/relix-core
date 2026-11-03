@@ -168,12 +168,18 @@ taken as meant.
 
 # Limitations:
 A pattern that is not a string literal is not pushed down to MongoDB, so that
-predicate runs in the engine. SQL sources receive it as written. Matching is case-sensitive; use UCase() or LCase() on both sides for
-case-insensitive matching:
-  σ UCase(name) LIKE "ALICE%" (Users)
+predicate runs in the engine. SQL sources receive it as written. Matching is
+case-sensitive, as in PostgreSQL, Oracle and SQLite; MySQL's and SQL Server's default
+collations ignore case. Write the pattern's subject under `COLLATE NOCASE` to match
+ignoring case:
+  σ name COLLATE NOCASE LIKE 'alice%' (Users)
 
 The only special characters are `%` (any run) and `_` (any one character), and
-without `ESCAPE` no character escapes, so a backslash matches a backslash. The
+without `ESCAPE` no character escapes, so a backslash matches a backslash. That is
+Oracle's, SQL Server's and SQLite's rule. PostgreSQL and MySQL take `\` as `LIKE`'s
+escape by default, so their `'a\%'` matches a literal `a%`; here it is written
+`LIKE 'a!%' ESCAPE '!'`. A string literal holding `\%` or `\_` is refused, with a
+message naming `ESCAPE`, since `\%` is not a string escape. The
 escape character is a string literal one character long; `ESCAPE "!!"` is refused
 as the script is read, and a column cannot supply it.
 

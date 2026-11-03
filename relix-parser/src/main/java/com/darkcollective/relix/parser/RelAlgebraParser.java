@@ -4221,17 +4221,21 @@ public final class RelAlgebraParser {
         }
         if (isWord(current, "DIV")) {
             Token div = current;
-            String rewrite = "Int(a / b)";
+            String rewrite = "Fix(a / b)";
             try {
                 advance();
                 int rightStart = consumed.size();
                 parseOperand();
-                rewrite = "Int(" + lastText + " / "
+                rewrite = "Fix(" + lastText + " / "
                         + joined(consumed.subList(rightStart, consumed.size())) + ")";
             } catch (ParseException ignored) {
                 // The example stays generic.
             }
-            throw refusal(div, "Relix has no DIV: for the whole part of a division, write " + rewrite);
+            // `/` is exact, so it never truncates as DIV does, or as `/` does in
+            // PostgreSQL, SQL Server and SQLite over two integers; Fix drops the
+            // fraction toward zero, as all of them do.
+            throw refusal(div, "Relix has no DIV, and / never truncates: for the whole part"
+                    + " of a division, toward zero as DIV gives it, write " + rewrite);
         }
         if (startsConditionTail() || current.type() == TokenType.OR
                 || current.type() == TokenType.AND) {

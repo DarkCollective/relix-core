@@ -88,6 +88,8 @@ Both sides must be union-compatible: the same number of columns, and compatible
 types position by position. Column *names* need not match, and do not affect which
 rows are duplicates. Duplicates are removed; to keep them use UNION ALL (⊎).
 
+Strings compare by code point and ∪ takes no collation, so `'Ada'` and `'ada'` are different rows, as in PostgreSQL, Oracle and SQLite. MySQL's and SQL Server's default collations call them one. To treat them as one here, group under `COLLATE NOCASE` instead, as [COLLATE](../language/collate.md) shows.
+
 # Alternatives:
 Union all (⊎) keeps duplicates and is cheaper. Intersection (∩) keeps only rows
 in both; difference (−) keeps rows in the first but not the second.

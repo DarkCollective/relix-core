@@ -85,6 +85,8 @@ Set semantics only — duplicate rows are removed (there is no "outer-union all"
 variant). Never pushed down to a source; the merge runs in-engine. A type
 conflict on a shared column resolves to `ANY` rather than raising an error.
 
+Strings compare by code point and ⊔ takes no collation, so `'Ada'` and `'ada'` are different rows, as in PostgreSQL, Oracle and SQLite. MySQL's and SQL Server's default collations call them one. To treat them as one here, group under `COLLATE NOCASE` instead, as [COLLATE](../language/collate.md) shows.
+
 # SQL names:
 DuckDB's `UNION BY NAME` and Spark's `unionByName` are `⊔` here. There is no
 `UNION ALL BY NAME`: `⊔` removes duplicate rows, so to keep them, project one side's
