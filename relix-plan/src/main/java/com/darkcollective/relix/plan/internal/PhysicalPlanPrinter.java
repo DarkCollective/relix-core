@@ -256,10 +256,13 @@ public final class PhysicalPlanPrinter {
                     + (j.merge() ? "/merge" : "")
                     + " [" + j.leftStartIdx() + "," + j.leftEndIdx()
                     + ";" + j.rightStartIdx() + "," + j.rightEndIdx() + "]";
-            case PhysicalNode.LateralJoin l -> "LateralJoin " + l.functionName()
+            case PhysicalNode.LateralJoin l -> "LateralJoin "
+                    + (l.kind() == com.darkcollective.relix.ast.LateralKind.OUTER ? "OUTER " : "")
+                    + l.functionName()
                     + "(" + l.arguments().stream()
                             .map(a -> a.accept(OPND)).collect(java.util.stream.Collectors.joining(", "))
-                    + ")";
+                    + ")"
+                    + (l.singleRow().isPresent() ? " single row" : "");
             case PhysicalNode.SetOp s    -> "SetOp " + s.kind();
             case PhysicalNode.Division d -> "Division";
             case PhysicalNode.Downsample d -> {

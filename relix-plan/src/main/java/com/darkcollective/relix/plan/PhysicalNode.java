@@ -15,6 +15,8 @@
  */
 package com.darkcollective.relix.plan;
 
+import com.darkcollective.relix.ast.SourceLocation;
+import com.darkcollective.relix.ast.LateralKind;
 import com.darkcollective.relix.plan.internal.Planner;
 import com.darkcollective.relix.ast.SolveEquation;
 import com.darkcollective.relix.ast.SolveStart;
@@ -263,10 +265,11 @@ public sealed interface PhysicalNode {
                 yield (lv == n.left() && rv == n.right()) ? n
                         : new Division(n.schema(), lv, rv);
             }
-            // Its right input is a TVF body planned per outer row, not a child here.
+            // Its right input is a body planned per outer row, not a child here.
             case LateralJoin n -> {
                 PhysicalNode l = f.apply(n.left());
-                yield l == n.left() ? n : new LateralJoin(n.schema(), n.functionName(), n.arguments(), n.bodyBuilder(), n.deterministicBody(), l);
+                yield l == n.left() ? n : new LateralJoin(n.schema(), n.functionName(), n.arguments(),
+                        n.bodyBuilder(), n.deterministicBody(), n.kind(), n.singleRow(), n.expression(), l);
             }
             case ConstructiveCover n -> {
                 List<PhysicalNode> mapped = n.factors().stream().map(f).toList();
@@ -1305,9 +1308,15 @@ public sealed interface PhysicalNode {
      * {@link PhysicalNode}.  This keeps all inlining and re-planning logic in the
      * planner rather than the executor.
      *
-     * <p>Output schema = left schema ++ TVF return schema.  Never pushed to a source.
+     * <p>The right side is a table-valued function call, or a relation expression that
+     * reads the left row through its outer references: then the {@link #arguments()} are
+     * those references, and the {@link #bodyBuilder()} binds their values into the
+     * expression. A subquery the planner lowers is the second kind.
      *
-     * @param functionName  the TVF name, for display and debugging
+     * <p>Output schema = left schema ++ right schema.  Never pushed to a source.
+     *
+     * @param functionName  the TVF name, or {@code (expression)} for an expression, for
+     *                      display and debugging
      * @param arguments     the argument {@link Operand} expressions (may reference left
      *                      columns); evaluated per left row at execution time
      * @param bodyBuilder   given the per-row argument literals, returns the planned
@@ -1319,18 +1328,40 @@ public sealed interface PhysicalNode {
      *                      across outer rows carrying the same arguments only when this
      *                      is {@code true}; the planned body itself is reusable either
      *                      way, since planning does not evaluate anything
+     * @param kind          whether a left row whose right side yields no rows is dropped,
+     *                      or kept once with its right columns NULL
+     * @param singleRow     where the subquery used as a value was written, when the right
+     *                      side must yield at most one row per left row: a second is an
+     *                      error naming that place; empty when any number may come back
+     * @param expression    whether the right side is an expression, whose arguments are
+     *                      the left row's values and may be NULL; a function's argument
+     *                      may not be, since a typed parameter has no NULL literal
      */
     record LateralJoin(Schema schema,
                        String functionName,
                        List<Operand> arguments,
                        Function<List<Operand>, PhysicalNode> bodyBuilder,
                        boolean deterministicBody,
+                       LateralKind kind,
+                       Optional<SourceLocation> singleRow,
+                       boolean expression,
                        PhysicalNode left) implements PhysicalNode {
         public LateralJoin {
             Objects.requireNonNull(functionName, "functionName");
             arguments = List.copyOf(arguments);
             Objects.requireNonNull(bodyBuilder, "bodyBuilder");
+            Objects.requireNonNull(kind, "kind");
+            Objects.requireNonNull(singleRow, "singleRow");
         }
+
+        /** An inner lateral join over a table-valued function call. */
+        public LateralJoin(Schema schema, String functionName, List<Operand> arguments,
+                           Function<List<Operand>, PhysicalNode> bodyBuilder, boolean deterministicBody,
+                           PhysicalNode left) {
+            this(schema, functionName, arguments, bodyBuilder, deterministicBody, LateralKind.INNER,
+                    Optional.empty(), false, left);
+        }
+
         @Override public List<PhysicalNode> children() { return List.of(left); }
     }
 
