@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.embed;
 
+import com.darkcollective.relix.ast.internal.Subqueries;
 import com.darkcollective.relix.ast.visitor.internal.PrettyPrinter;
 import com.darkcollective.relix.ast.AllenRelation;
 import com.darkcollective.relix.ast.AstBuilders;
@@ -2187,6 +2188,7 @@ public final class Relation {
             names.add(reference.name());
         }
         current.children().forEach(child -> collectUnresolved(child, names));
+        Subqueries.subqueriesOf(current).forEach(s -> collectUnresolved(s.query(), names));
     }
 
     /** Why a relation could not be resolved, naming what could not be, when that is known. */
