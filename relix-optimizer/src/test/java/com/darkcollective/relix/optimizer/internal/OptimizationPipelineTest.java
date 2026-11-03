@@ -84,7 +84,7 @@ final class OptimizationPipelineTest {
         }
 
         @Test
-        @DisplayName("every optimization code except the pre-pipeline six is registered")
+        @DisplayName("every optimization code except the preamble's twelve is registered")
         void everyCodeIsRegistered() {
             var registered = new ArrayList<OptimizationCode>();
             pipeline.rules().forEach(r -> registered.addAll(r.codes()));
@@ -95,6 +95,8 @@ final class OptimizationPipelineTest {
             // (it expands a view body); RENAME-001..004 clean up after it, before the
             // schema re-inference, since removing a node drops the annotations above it;
             // LATERAL-001 resolves a TVF and classifies its body as deterministic.
+            // SUBQ-001..006 rewrite subqueries into joins just before it, so the phases see
+            // the joins.
             //
             // Asserting the *exact* set (not `contains`) is also what catches a
             // conditionally-registered rule. JOIN-003 used to be registered only when a
@@ -107,7 +109,13 @@ final class OptimizationPipelineTest {
                                     OptimizationCode.RENAME_002,
                                     OptimizationCode.RENAME_003,
                                     OptimizationCode.RENAME_004,
-                                    OptimizationCode.LATERAL_001)),
+                                    OptimizationCode.LATERAL_001,
+                                    OptimizationCode.SUBQ_001,
+                                    OptimizationCode.SUBQ_002,
+                                    OptimizationCode.SUBQ_003,
+                                    OptimizationCode.SUBQ_004,
+                                    OptimizationCode.SUBQ_005,
+                                    OptimizationCode.SUBQ_006)),
                             SHARED_WITH_EXPRESSION_PASS));
         }
 

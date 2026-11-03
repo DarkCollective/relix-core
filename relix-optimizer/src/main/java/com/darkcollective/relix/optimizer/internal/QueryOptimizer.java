@@ -363,7 +363,8 @@ public final class QueryOptimizer {
         WhyBarrier.Shielded shielded = WhyBarrier.shield(original);
         RelNode inlined = ViewInliner.inline(shielded.tree(), symTable, ctx, name);
         RelNode cleaned = RenameEliminationPass.apply(inlined, name, ctx);
-        RelNode flattened = LateralDecorrelationPass.apply(cleaned, symTable, ctx, name);
+        RelNode joined = SubqueryDecorrelationPass.apply(cleaned, ctx, name);
+        RelNode flattened = LateralDecorrelationPass.apply(joined, symTable, ctx, name);
         RelNode restored = WhyBarrier.restore(flattened, shielded.frozen());
         // Re-infer schemas for the expanded tree, seeded from the model's existing
         // annotations so any node carried over unchanged keeps its known schema.

@@ -490,7 +490,53 @@ input once and replays it for every left row, and every hash join, `÷` and set
 operation does the same. Reusing one evaluation of a scan is a liberty the executor
 takes already.
 
-## Equality propagation (`EQ-nnn`)
+## Subquery decorrelation (`SUBQ-nnn`)
+
+A [subquery](../language/subquery.md) runs, unless a rule says otherwise, as a lateral
+join: worked out per outer row, with its plan reused for repeated values. These rules
+write the common shapes as the joins they stand for, so the join algorithms, pushdown
+and every rule about joins apply to them.
+
+| Code | Rewrite |
+|------|---------|
+| `SUBQ-001` | `σ EXISTS (σ θ (S)) (L)` → `L ⋉ θ S` |
+| `SUBQ-002` | `σ NOT EXISTS (σ θ (S)) (L)` → `L ▷ θ S` |
+| `SUBQ-003` | `σ x op ANY (π v (σ θ (S))) (L)` → `L ⋉ (θ ∧ x op v) S`; `IN` is `= ANY` |
+| `SUBQ-004` | `σ x op ALL (π v (σ θ (S))) (L)` → `L ▷ (θ ∧ (¬(x op v) ∨ x = ⊥ ∨ v = ⊥)) S`; `NOT IN` is `≠ ALL` |
+| `SUBQ-005` | `π (γ agg (σ S.k = L.k ∧ ρ (S))) → c (L)` → a left join of `L` onto `γ k, agg (σ ρ (S))` |
+| `SUBQ-006` | `L [OUTER] LATERAL (σ θ ∧ ρ (S))` → `L ⨝θ σ ρ (S)`, or `⟕θ` for `OUTER` |
+
+Each fires only where it is exact, and leaves everything else to the lateral:
+
+- **Position.** The first four take a conjunct at the top of a SELECT's condition,
+  where UNKNOWN and FALSE both drop the row. `NOT EXISTS`, `NOT (x op ANY …)` and
+  `NOT (x op ALL …)` there are their duals. A subquery under `∨`, or in a PROJECT's
+  columns as a BOOLEAN, is not rewritten.
+- **Shape.** The relation `S` reads nothing of the outer row: the correlation is in
+  `θ`, and each outer name in it is a relation the left input has in scope. `S`
+  answers to one relation name, which the left input does not, so the join condition
+  can name its columns qualified. To correlate a relation with itself, rename the
+  inner copy with `ρ`.
+- **`ALL`'s NULLs.** `x op ALL` keeps a row only when no row makes the comparison
+  FALSE or UNKNOWN. For two values that is the anti join's condition above, so
+  `NOT IN` over a relation holding a NULL keeps nothing here too.
+- **The count bug.** `SUBQ-005` groups `S` by the correlated equalities, one row per
+  key, and joins each outer row to its group. A row with no group gets NULL where the
+  subquery's ungrouped `γ` gave its value over no rows: `COUNT`'s 0 is put back with
+  `Coalesce`, and `SUM`, `MIN`, `MAX` and `AVG` are NULL either way. Any other
+  aggregate, a grouped subquery, a correlation that is not a conjunction of
+  equalities, or an unnamed column (named after its expression, which the rewrite
+  changes) stays a lateral.
+
+```relix
+query { π name, (γ COUNT(*) → n (σ customer_id = Customers.customer_id (Orders))) → orders (Customers) };
+```
+
+runs as `Customers ⟕ Customers.customer_id = g.k (ρ g (k, v) (γ customer_id, COUNT(*) (Orders)))`
+with `Coalesce(g.v, 0)` projected, the names `g`, `k` and `v` being ones no query can
+write.
+
+
 
 | Code | Rewrite |
 |------|---------|
@@ -994,11 +1040,12 @@ work rather than hanging the optimizer.
 Phase order is also why `:opt` lists rules in the order it does: a `SEL-001` split
 always precedes the `SEL-002` merge that undoes it, and `PROJ-004` is always last.
 
-Six rules run *before* the phases, in a per-query preamble, and all six for the
-same reason — each needs the symbol table, which the phases deliberately do without:
+Twelve rules run *before* the phases, in a per-query preamble.
 `INLINE-001` expands the views, `RENAME-001`..`RENAME-004` clear up after it, and
-`LATERAL-001` resolves a TVF and classifies its body. They sit outside the loop
-because they run before schemas are re-inferred for the expanded tree.
+`LATERAL-001` resolves a TVF and classifies its body; each needs the symbol table,
+which the phases deliberately do without. `SUBQ-001`..`SUBQ-006` run just before
+`LATERAL-001`, so the joins they make are what every phase then sees. They sit outside
+the loop because they run before schemas are re-inferred for the expanded tree.
 
 The `WHY` barrier covers them too. A view referenced under a `WHY` is left as a
 reference rather than inlined, so `:opt` reports no `INLINE-001` for it: `WHY`

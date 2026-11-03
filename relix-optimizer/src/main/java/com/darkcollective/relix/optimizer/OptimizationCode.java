@@ -40,6 +40,7 @@ import com.darkcollective.relix.optimizer.internal.ViewInliner;
  *   <li>{@code PROJ-nnn}     — projection (π) rules</li>
  *   <li>{@code JOIN-nnn}     — join / cross-product rules</li>
  *   <li>{@code LATERAL-nnn}  — lateral (correlated TVF) join decorrelation</li>
+ *   <li>{@code SUBQ-nnn}     — subqueries written as the joins they stand for</li>
  *   <li>{@code EQ-nnn}       — equality propagation across join conditions</li>
  *   <li>{@code LIM-nnn}      — limit (λ) rules</li>
  *   <li>{@code AGG-nnn}      — aggregation (γ) rules</li>
@@ -270,6 +271,23 @@ public enum OptimizationCode {
      *  ({@code JOIN-001}), take a pushed selection, and be reordered
      *  ({@link LateralDecorrelationPass}). */
     LATERAL_001("LATERAL-001", "Uncorrelated LATERAL decorrelated to a product with a plain TVF call"),
+
+    // ── Subquery decorrelation ────────────────────────────────────────────────
+
+    /** {@code σ EXISTS (σ θ (S)) (L) → L ⋉ θ S}, the conjunct at the top of the condition
+     *  ({@link com.darkcollective.relix.optimizer.internal.SubqueryDecorrelationPass}). */
+    SUBQ_001("SUBQ-001", "EXISTS written as a semi join"),
+    /** {@code σ NOT EXISTS (σ θ (S)) (L) → L ▷ θ S}. */
+    SUBQ_002("SUBQ-002", "NOT EXISTS written as an anti join"),
+    /** {@code σ x op ANY (π v (σ θ (S))) (L) → L ⋉ (θ ∧ x op v) S}; IN is {@code = ANY}. */
+    SUBQ_003("SUBQ-003", "ANY or IN over a relation written as a semi join"),
+    /** {@code σ x op ALL (…) (L) → L ▷ (θ ∧ (¬(x op v) ∨ x = ⊥ ∨ v = ⊥)) S}; NOT IN is {@code ≠ ALL}. */
+    SUBQ_004("SUBQ-004", "ALL or NOT IN over a relation written as an anti join"),
+    /** {@code π (γ agg (σ S.k = L.k ∧ ρ (S))) → v (L)} as a left join onto
+     *  {@code γ k, agg (σ ρ (S))}, a COUNT put back to 0 for a row with no group. */
+    SUBQ_005("SUBQ-005", "Correlated aggregate subquery written as a left join onto its groups"),
+    /** {@code L [OUTER] LATERAL (σ θ ∧ ρ (S)) → L ⨝θ σ ρ (S)}, or {@code ⟕θ} for OUTER. */
+    SUBQ_006("SUBQ-006", "Correlated LATERAL over a filtered relation written as a join"),
 
     // ── Equality propagation ──────────────────────────────────────────────────
 

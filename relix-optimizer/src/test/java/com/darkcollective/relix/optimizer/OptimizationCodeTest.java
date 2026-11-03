@@ -105,6 +105,7 @@ final class OptimizationCodeTest {
                 "PROJ-001", "PROJ-002", "PROJ-003", "PROJ-004",
                 "JOIN-001", "JOIN-002", "JOIN-004",
                 "LATERAL-001",
+                "SUBQ-001", "SUBQ-002", "SUBQ-003", "SUBQ-004", "SUBQ-005", "SUBQ-006",
                 "EQ-001",
                 "LIM-001",  "LIM-002",  "LIM-003",  "LIM-004",
                 "AGG-001",
@@ -128,9 +129,9 @@ final class OptimizationCodeTest {
     }
 
     @Test
-    @DisplayName("total count is 68 rules")
+    @DisplayName("total count is 74 rules")
     void totalCount() {
-        assertThat(OptimizationCode.values()).hasSize(68);
+        assertThat(OptimizationCode.values()).hasSize(74);
     }
 
     /**
@@ -146,7 +147,7 @@ final class OptimizationCodeTest {
                 .map(OptimizationCode::category)
                 .collect(Collectors.toSet());
         assertThat(declared).containsExactlyInAnyOrder(
-                "EXPR", "PRED", "SEL", "PROJ", "JOIN", "LATERAL", "EQ", "LIM", "AGG", "DIST", "SORT",
+                "EXPR", "PRED", "SEL", "PROJ", "JOIN", "LATERAL", "SUBQ", "EQ", "LIM", "AGG", "DIST", "SORT",
                 "PROD", "SET", "EMPTY", "NEST", "CLOSURE", "TRACE", "PATH", "FIX", "GEN", "WINDOW", "TOPK", "OPTIMIZE",
                 "SESSION", "DOWNSAMPLE", "INLINE", "RENAME");
     }
