@@ -86,6 +86,8 @@ extra columns from the left, an ANTI join (▷) is usually the better tool.
 There is no multiset difference. SQL's `EXCEPT ALL` is refused with a message: the
 difference works on sets, and each row of its result appears once.
 
+Strings compare by code point and − takes no collation, so `'Ada'` and `'ada'` are different rows, as in PostgreSQL, Oracle and SQLite. MySQL's and SQL Server's default collations call them one. To treat them as one here, group under `COLLATE NOCASE` instead, as [COLLATE](../language/collate.md) shows.
+
 # Alternatives:
 Anti join (▷) when matching is by key and you want to keep the left's full
 columns. Symmetric difference (∆) for "in one or the other but not both".

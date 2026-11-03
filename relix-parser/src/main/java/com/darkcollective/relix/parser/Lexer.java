@@ -621,6 +621,15 @@ public final class Lexer {
                     case '\\' -> '\\';
                     case 'n' -> '\n';
                     case 't' -> '\t';
+                    // PostgreSQL and MySQL read \% and \_ in a LIKE pattern as a
+                    // literal % or _; here a pattern names its escape character.
+                    case '%', '_' -> throw new ParseException(
+                            "Unsupported string escape '\\" + escaped + "': in a LIKE pattern,"
+                                    + " name an escape character to match a literal " + escaped
+                                    + ", as in LIKE 'a!" + escaped + "' ESCAPE '!'",
+                            input,
+                            new Token(TokenType.STRING, "\\" + escaped, null, line, column - 1)
+                    );
                     default -> throw new ParseException(
                             "Unsupported string escape",
                             input,

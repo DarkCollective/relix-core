@@ -74,6 +74,12 @@ IS NOT DISTINCT FROM.
 [select](../operators/select.md), [and](and.md), [or](or.md), [not](not.md), [is-null](is-null.md), [in](in.md), [between](between.md), [is-distinct-from](is-distinct-from.md)
 
 # Notes:
+Strings compare by code point, so case matters: `'Ada' = 'ada'` is false, and `'B'` <
+`'a'` is true. PostgreSQL, Oracle and SQLite compare the same way by default. MySQL's
+and SQL Server's default collations ignore case, so there `'Ada' = 'ada'` is true; to
+compare as they do, write either side under `COLLATE NOCASE`, as in
+`name COLLATE NOCASE = 'ada'` (see [COLLATE](../language/collate.md)).
+
 String comparison is lexicographic; temporal comparison is chronological. Which
 of the two a text cell gets is decided by what the text spells: a cell holding
 `2024-01-15T11:00:00+01:00` is the instant it denotes and is ordered
