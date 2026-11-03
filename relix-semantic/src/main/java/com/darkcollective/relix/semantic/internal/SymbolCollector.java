@@ -15,6 +15,7 @@
  */
 package com.darkcollective.relix.semantic.internal;
 
+import com.darkcollective.relix.ast.internal.Subqueries;
 import com.darkcollective.relix.semantic.CatalogProvider;
 import com.darkcollective.relix.semantic.CatalogSnapshot;
 import com.darkcollective.relix.semantic.SemanticError;
@@ -224,6 +225,7 @@ public final class SymbolCollector {
             out.putIfAbsent(r.name(), r.location());
         }
         node.children().forEach(child -> collectRelationRefs(child, out));
+        Subqueries.subqueriesOf(node).forEach(s -> collectRelationRefs(s.query(), out));
     }
 
     private void resolveConnectionTable(String name, SourceLocation loc) {

@@ -89,7 +89,9 @@ exception: that row has no left row to collide with, so the same field would be
 named one way when it matched and another when it did not.
 
 NULL padding means downstream conditions on right columns must account for NULLs.
-Pushing filters across an outer join is restricted to preserve its semantics.
+Pushing filters across an outer join is restricted to preserve its semantics. Over
+two tables of one database the join itself is pushed as `LEFT JOIN … ON`, a filter on
+the right side moved into its `ON`.
 
 # Alternatives:
 Right outer join (⟖) keeps the right side instead; full outer (⟗) keeps both.

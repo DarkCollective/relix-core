@@ -175,6 +175,14 @@ final class SubquerySemanticTest {
         }
 
         @Test
+        @DisplayName("a view that reads itself through a subquery is a cycle")
+        void cycleThroughASubquery() {
+            assertThat(analyze(DATA + "Loop := { σ EXISTS (σ order_id = 1 (Loop)) (Orders) }; query { Loop };"))
+                    .messages().anyMatch(m -> m.toLowerCase(java.util.Locale.ROOT).contains("cycle")
+                            || m.toLowerCase(java.util.Locale.ROOT).contains("itself"));
+        }
+
+        @Test
         @DisplayName("a lateral expression reads the left row qualified, as a subquery does")
         void lateralOuterName() {
             assertThat(analyze(DATA + "query { Customers LATERAL (σ customer_id = Nobody.customer_id (Orders)) };"))

@@ -144,8 +144,10 @@ Asking for Alice's only order, `(π order_id (σ customer_id = Customers.custome
   the subquery reads is read from the outer row. To read a nested field inside one,
   flatten it first in a view, `Flat := { π addr.city → city (People) };`, and let the
   subquery read `Flat`.
-- A subquery runs in the engine, though the relations it reads are planned as any
-  other and may be pushed to a database.
+- A subquery the optimizer writes as a join, as it does `(γ COUNT(*) → n (σ k = R.k
+  (S)))`, is planned as that join and may be pushed to a database with it. Any other
+  runs in the engine, though the relations it reads are planned as any other and may
+  be pushed.
 
 # Alternatives:
 A join followed by `γ` gives the same counts, as `Customers ⟕ … Orders` grouped by

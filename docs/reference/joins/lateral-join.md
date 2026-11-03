@@ -256,8 +256,11 @@ query { Customers OUTER LATERAL (λ 1 (τ amount DESC (σ customer_id = Customer
   nested struct/array value, produces a runtime error naming the value's kind. There is
   no literal that denotes NULL, and substituting one that did not mean NULL would run
   the function on a value the outer row never held.
-- **No pushdown**: LATERAL joins are always executed in-engine. The right side may
-  itself reference pushed-down sources; only the LATERAL operator stays in-engine.
+- **Pushdown**: over two tables of one database, a lateral whose right side filters
+  a table by the left row is pushed as a join (`SUBQ-006`), and the first row of an
+  ordered one, `λ 1 (τ k (σ θ (S)))`, as the dialect's `LEFT JOIN LATERAL … LIMIT 1`
+  or `OUTER APPLY`. Any other lateral, and every function-call lateral, runs in the
+  engine, its right side's tables still read through pushdown.
 - **No recursion**: a TVF may not call itself (directly or transitively) via LATERAL.
 - **A base relation is assumed stable for the duration of a query.** The rewrites
   above reuse one evaluation of the function body, which re-reads whatever tables it
