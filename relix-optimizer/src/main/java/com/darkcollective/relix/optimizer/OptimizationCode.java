@@ -275,7 +275,7 @@ public enum OptimizationCode {
     // ── Subquery decorrelation ────────────────────────────────────────────────
 
     /** {@code σ EXISTS (σ θ (S)) (L) → L ⋉ θ S}, the conjunct at the top of the condition
-     *  ({@link com.darkcollective.relix.optimizer.internal.SubqueryDecorrelationPass}). */
+     *  ({@code SubqueryDecorrelationPass}, in {@code optimizer.internal}). */
     SUBQ_001("SUBQ-001", "EXISTS written as a semi join"),
     /** {@code σ NOT EXISTS (σ θ (S)) (L) → L ▷ θ S}. */
     SUBQ_002("SUBQ-002", "NOT EXISTS written as an anti join"),
