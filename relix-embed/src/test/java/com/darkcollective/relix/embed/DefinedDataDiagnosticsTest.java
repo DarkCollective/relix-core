@@ -40,7 +40,7 @@ final class DefinedDataDiagnosticsTest {
             Numbers := [| n |
                         | 1 |
                         | 2 |];
-            Words := [| w: STRING |
+            Words := [| w |
                       | 'a' |];
             """;
 
