@@ -15,6 +15,13 @@
  */
 package com.darkcollective.relix.processor.exec;
 
+import java.util.Collections;
+import com.darkcollective.relix.symbol.Schema;
+import java.util.Objects;
+import com.darkcollective.relix.processor.internal.ArrayRow;
+import com.darkcollective.relix.value.NullValue;
+import com.darkcollective.relix.ast.NullOperand;
+import com.darkcollective.relix.ast.LateralKind;
 import com.darkcollective.relix.ast.BooleanOperand;
 import com.darkcollective.relix.ast.DateOperand;
 import com.darkcollective.relix.ast.DurationOperand;
@@ -79,8 +86,16 @@ import static com.darkcollective.relix.processor.exec.ExecSupport.concatRows;
  * the executor a {@code bodyBuilder} lambda, not a body it could inspect.
  * {@code LATERAL-001} decorrelation makes the same trade at plan time.
  *
- * <p>A {@code NULL} or nested (struct/array) argument value has no AST literal
- * equivalent and throws an {@link EvaluationException} at runtime.
+ * <p>A nested (struct/array) argument value has no AST literal equivalent and throws an
+ * {@link EvaluationException} at runtime, and so does a {@code NULL} passed to a function.
+ * An expression's argument is the left row's value of an outer reference, and a
+ * {@code NULL} is bound into it as {@code NULL}, which compares as SQL's does.
+ *
+ * <h2>Outer and one-row laterals</h2>
+ * <p>An {@code OUTER} lateral emits a left row whose right side yields nothing once, its
+ * right columns {@code NULL}. A lateral standing for a subquery used as a value reads at
+ * most two of the right side's rows, and a second is an error naming where the subquery
+ * was written and the outer values it read.
  */
 final class LateralExecutor {
 
@@ -92,18 +107,60 @@ final class LateralExecutor {
 
     Stream<Row> executeLateral(PhysicalNode.LateralJoin node, EvalCtx ctx) {
         LateralMemo memo = new LateralMemo(node, dispatch, ctx);
+        int leftWidth = node.left().schema().width();
+        Schema rightSchema = node.kind() == LateralKind.OUTER
+                ? new Schema(node.schema().columns().subList(leftWidth, node.schema().width())) : null;
         return dispatch.execute(node.left(), ctx).flatMap(leftRow -> {
             // Evaluate each argument expression against the current left row.
             List<Operand> argLiterals = new ArrayList<>(node.arguments().size());
+            List<Value> values = new ArrayList<>(node.arguments().size());
             for (Operand arg : node.arguments()) {
                 Value val = ctx.operandEval().evaluate(arg, leftRow);
-                argLiterals.add(valueToLiteral(val));
+                values.add(val);
+                // An expression's NULL is a NULL in it, which compares as SQL's does.
+                argLiterals.add(node.expression() && val.isNull() ? new NullOperand() : valueToLiteral(val));
             }
             // Plan and execute the body for this argument tuple — reusing either from the
             // memo when an earlier left row already asked for the same tuple.
-            return memo.rowsFor(List.copyOf(argLiterals))
-                    .map(tvfRow -> concatRows(leftRow, tvfRow, node.schema()));
+            Stream<Row> right = memo.rowsFor(List.copyOf(argLiterals));
+            if (node.singleRow().isPresent()) {
+                right = atMostOne(right, node, values);
+            }
+            if (node.kind() == LateralKind.OUTER) {
+                right = orNulls(right, rightSchema);
+            }
+            return right.map(tvfRow -> concatRows(leftRow, tvfRow, node.schema()));
         });
+    }
+
+    /**
+     * The one row a subquery used as a value yields for this outer row, or none; a second
+     * is an error naming where the subquery was written and the outer values it read.
+     */
+    private static Stream<Row> atMostOne(Stream<Row> rows, PhysicalNode.LateralJoin node, List<Value> values) {
+        List<Row> first = rows.limit(2).toList();
+        if (first.size() > 1) {
+            SourceLocation at = node.singleRow().orElseThrow();
+            StringBuilder read = new StringBuilder();
+            for (int i = 0; i < values.size(); i++) {
+                read.append(i == 0 ? " for " : ", ").append(node.arguments().get(i).prettyPrint())
+                        .append(" = ").append(values.get(i).asDisplayString());
+            }
+            throw new EvaluationException("A subquery used as a value"
+                    + (at.line() > 0 ? " at line " + at.line() + ", column " + at.column() : "")
+                    + " returned more than one row" + read
+                    + "; a value is one row's: aggregate with GROUP, or keep one row with LIMIT 1");
+        }
+        return first.stream();
+    }
+
+    /** {@code rows}, or one row of NULLs under {@code heading} when there are none. */
+    private static Stream<Row> orNulls(Stream<Row> rows, Schema heading) {
+        List<Row> all = rows.toList();
+        if (!all.isEmpty()) {
+            return all.stream();
+        }
+        return Stream.of(ArrayRow.of(heading, Collections.nCopies(heading.width(), (Value) NullValue.INSTANCE)));
     }
 
     /**
@@ -111,6 +168,7 @@ final class LateralExecutor {
      * scalar non-null values are representable; struct/array/null values throw.
      */
     static Operand valueToLiteral(Value value) {
+        Objects.requireNonNull(value, "value");
         return switch (value) {
             case NumberValue    n -> new NumberOperand(n.asDisplayString());
             case StringValue    s -> new StringOperand(s.value());
