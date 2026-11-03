@@ -265,7 +265,7 @@ final class WindowParserTest extends ParserTestSupport {
                 new WindowFunction.OffsetWindow(fn, expr, off, dflt),
                 partitionKeys,
                 specs,
-                new WindowFrame.PartitionFrame(),
+                fn.takesFrame() ? WindowFrame.toCurrentPeers() : new WindowFrame.PartitionFrame(),
                 outputColumn,
                 input);
     }
@@ -450,5 +450,51 @@ final class WindowParserTest extends ParserTestSupport {
                 });
         org.assertj.core.api.Assertions.assertThat(nth.prettyPrint()).isEqualTo("WINDOW NTH_VALUE(v, 2) SORT t AS second (R)");
         assertParseError("WINDOW NTH_VALUE(v) SORT t AS s (R)").hasMessageContaining("NTH_VALUE(x, n)");
+    }
+
+    // ==================== a value function's frame (#279) ====================
+
+    @Test
+    void aValueFunctionWithoutAFrameHasSqlsDefault() {
+        for (String fn : List.of("FIRST_VALUE(v)", "LAST_VALUE(v)", "NTH_VALUE(v, 2)")) {
+            WindowNode node = (WindowNode) parse("WINDOW " + fn + " SORT t PER k AS w (R)");
+            org.assertj.core.api.Assertions.assertThat(node.frame()).isEqualTo(WindowFrame.toCurrentPeers());
+            org.assertj.core.api.Assertions.assertThat(node.prettyPrint())
+                    .isEqualTo("WINDOW " + fn + " SORT t PER k AS w (R)");
+        }
+        // Writing the default out builds the same window.
+        assertParsesTo("WINDOW LAST_VALUE(v) OVER RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW SORT t AS w (R)",
+                parse("WINDOW LAST_VALUE(v) SORT t AS w (R)"));
+        // LAG, LEAD and the ranking functions keep the whole partition they count in.
+        org.assertj.core.api.Assertions.assertThat(frameOf("WINDOW LAG(v) SORT t AS w (R)"))
+                .isInstanceOf(WindowFrame.PartitionFrame.class);
+        org.assertj.core.api.Assertions.assertThat(frameOf("WINDOW RANK() SORT t AS w (R)"))
+                .isInstanceOf(WindowFrame.PartitionFrame.class);
+    }
+
+    @Test
+    void aValueFunctionTakesAFrameAsRollingWritesOne() {
+        org.assertj.core.api.Assertions.assertThat(frameOf("WINDOW LAST_VALUE(v) OVER PARTITION SORT t AS w (R)"))
+                .isInstanceOf(WindowFrame.PartitionFrame.class);
+        org.assertj.core.api.Assertions.assertThat(frameOf("WINDOW NTH_VALUE(v, 2) OVER 3 ROWS SORT t AS w (R)"))
+                .isEqualTo(new WindowFrame.BoundedFrame(3));
+        for (String query : List.of(
+                "WINDOW LAST_VALUE(v) OVER PARTITION SORT t PER k AS w (R)",
+                "WINDOW FIRST_VALUE(v) OVER ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING SORT t AS w (R)",
+                "WINDOW NTH_VALUE(v, 2) OVER RANGE BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING SORT t DESC AS w (R)",
+                "WINDOW LAST_VALUE(v) OVER ALL ROWS SORT t AS w (R)")) {
+            org.assertj.core.api.Assertions.assertThat(parse(query).prettyPrint()).isEqualTo(query);
+        }
+    }
+
+    @Test
+    void onlyTheValueFunctionsTakeAFrame() {
+        assertParseError("WINDOW LAG(v) OVER PARTITION SORT t AS w (R)")
+                .hasMessageContaining("LAG takes no frame: only FIRST_VALUE, LAST_VALUE and NTH_VALUE read one");
+        assertParseError("WINDOW lead(v) OVER 2 ROWS SORT t AS w (R)").hasMessageContaining("LEAD takes no frame");
+        assertParseError("WINDOW RANK() OVER PARTITION SORT t AS w (R)").hasMessageContaining("RANK takes no frame");
+        assertParseError("WINDOW LAST_VALUE(v) OVER RANGE 1 PRECEDING SORT t, u AS w (R)")
+                .hasMessageContaining("one sort key");
+        assertParseError("WINDOW LAST_VALUE(v) OVER LAST ROWS SORT t AS w (R)").hasMessageContaining("PARTITION");
     }
 }

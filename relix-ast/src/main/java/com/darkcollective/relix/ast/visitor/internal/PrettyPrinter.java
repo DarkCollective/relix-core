@@ -651,9 +651,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         String keyword = node.function() instanceof WindowFunction.AggregateWindow ? "ROLLING" : "WINDOW";
         StringBuilder sb = new StringBuilder(keyword).append(' ')
                 .append(windowFunction(node.function()))
-                .append(node.function() instanceof WindowFunction.AggregateWindow
-                        && node.frame() instanceof WindowFrame.PartitionFrame
-                        ? " OVER PARTITION" : windowFrame(node.frame()));
+                .append(DisplayLabels.windowFrame(node.function(), node.frame()));
         if (!node.sortSpecs().isEmpty()) {
             sb.append(" SORT ").append(node.sortSpecs().stream()
                     .map(this::renderSortKey)
@@ -726,15 +724,6 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
                             + o.offset().map(off -> ", " + off.accept(operandPrinter)).orElse("")
                             + o.defaultValue().map(d -> ", " + d.accept(operandPrinter)).orElse("")
                             + ")";
-        };
-    }
-
-    private static String windowFrame(WindowFrame frame) {
-        return switch (frame) {
-            case WindowFrame.BoundedFrame b -> " OVER " + b.n() + " ROWS";
-            case WindowFrame.CumulativeFrame ignored -> " OVER ALL ROWS";
-            case WindowFrame.Between between -> " OVER " + between;
-            case WindowFrame.PartitionFrame ignored -> "";
         };
     }
 

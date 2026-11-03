@@ -1042,7 +1042,7 @@ final class SqlPushdownPlannerTest {
         }
 
         @Test
-        @DisplayName("is SQL's frame clause, and the whole partition where the engine reads it")
+        @DisplayName("is SQL's frame clause, the whole partition where the engine reads it, and none for SQL's default")
         void frames() {
             assertThat(pushed("jdbc:h2:mem:x", "ROLLING SUM(x) OVER ROWS BETWEEN 2 PRECEDING AND 1 FOLLOWING SORT t AS s (S)"))
                     .hasValueSatisfying(q -> assertThat(q).contains("ROWS BETWEEN 2 PRECEDING AND 1 FOLLOWING)"));
@@ -1057,8 +1057,17 @@ final class SqlPushdownPlannerTest {
                     .hasValueSatisfying(q -> assertThat(q).contains("SUM(x) OVER (PARTITION BY k) AS s"));
             assertThat(pushed("jdbc:h2:mem:x", "ROLLING SUM(x) OVER PARTITION SORT t AS s (S)"))
                     .hasValueSatisfying(q -> assertThat(q).contains("ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"));
+            // A value function without a frame has SQL's default, so it is sent with none.
             assertThat(pushed("jdbc:h2:mem:x", "WINDOW LAST_VALUE(x) SORT t AS v (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("LAST_VALUE(x) OVER (ORDER BY (t IS NULL) ASC, t ASC) AS v"));
+            assertThat(pushed("jdbc:h2:mem:x", "WINDOW LAST_VALUE(x) OVER PARTITION SORT t AS v (S)"))
                     .hasValueSatisfying(q -> assertThat(q).contains("ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"));
+            assertThat(pushed("jdbc:postgresql://h/db",
+                    "WINDOW FIRST_VALUE(x) OVER ROWS BETWEEN 1 PRECEDING AND CURRENT ROW SORT t AS v (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)"));
+            assertThat(pushed("jdbc:postgresql://h/db",
+                    "WINDOW LAST_VALUE(x) OVER RANGE BETWEEN CURRENT ROW AND 5 FOLLOWING SORT t AS v (S)"))
+                    .hasValueSatisfying(q -> assertThat(q).contains("RANGE BETWEEN CURRENT ROW AND 5 FOLLOWING)"));
             assertThat(pushed("jdbc:h2:mem:x", "WINDOW NTH_VALUE(x, 2) SORT t AS v (S)"))
                     .hasValueSatisfying(q -> assertThat(q).contains("NTH_VALUE(x, 2) OVER"));
             assertThat(pushed("jdbc:sqlserver://h:1433", "WINDOW LAG(x) SORT t AS c (S)"))
@@ -1079,6 +1088,7 @@ final class SqlPushdownPlannerTest {
             assertThat(pushed("jdbc:duckdb:", "ROLLING COUNT(x) OVER RANGE DURATION 'P1D' PRECEDING SORT ts AS s (S)"))
                     .isEmpty();
             assertThat(pushed("jdbc:sqlserver://h:1433", "WINDOW NTH_VALUE(x, 2) SORT t AS v (S)")).isEmpty();
+            assertThat(pushed("jdbc:h2:mem:x", "WINDOW LAST_VALUE(x) OVER RANGE 5 PRECEDING SORT t AS v (S)")).isEmpty();
         }
     }
 

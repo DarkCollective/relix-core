@@ -958,12 +958,13 @@ final class SqlPushdownPlanner implements PushdownRenderer {
      * The frame clause a window is pushed with, empty for none; or nothing, where the
      * backend cannot be told the frame the engine computes.
      *
-     * <p>SQL's default frame is not the engine's. With an {@code ORDER BY} it runs from
-     * the partition's start to the current row's last <em>peer</em>, so a whole-partition
-     * aggregate over a sort, and {@code FIRST_VALUE}, {@code LAST_VALUE} and
-     * {@code NTH_VALUE}, which the engine reads across the whole partition, say so. The
-     * ranking functions and {@code LAG}/{@code LEAD} take no frame, and SQL Server
-     * refuses one on them.
+     * <p>With an {@code ORDER BY}, SQL's default frame runs from the partition's start to
+     * the current row's last <em>peer</em>. A value function, {@code FIRST_VALUE},
+     * {@code LAST_VALUE} or {@code NTH_VALUE}, written without a frame has that frame in
+     * the engine too, so it is sent with none; with one, it is sent the frame in force,
+     * as an aggregate is. A whole-partition aggregate over a sort says so. The ranking
+     * functions and {@code LAG}/{@code LEAD} take no frame, and SQL Server refuses one on
+     * them.
      *
      * <p>A RANGE offset needs the single {@code ORDER BY} term that PostgreSQL's and
      * DuckDB's {@code NULLS LAST} keeps it to — every other dialect spells the NULL
@@ -975,30 +976,37 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         String whole = "ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING";
         return switch (node.function()) {
             case WindowFunction.RankingWindow r -> Optional.of("");
-            case WindowFunction.OffsetWindow o -> Optional.of(
-                    o.function() == OffsetFunction.LAG || o.function() == OffsetFunction.LEAD ? "" : whole);
-            case WindowFunction.AggregateWindow a -> switch (node.frame()) {
-                case WindowFrame.PartitionFrame f -> Optional.of(orderTerms == 0 ? "" : whole);
-                case WindowFrame.Between b when b.measuresKey() -> {
-                    boolean measurable = orderTerms == 1
-                            && (dialect == Dialect.POSTGRES || dialect == Dialect.DUCKDB);
-                    List<Optional<String>> offsets = new ArrayList<>();
-                    String clause = Dialect.frameClause(b, offset -> {
-                        Optional<String> sql = switch (offset) {
-                            case NumberOperand n when n.value().chars().allMatch(Character::isDigit) ->
-                                    Optional.of(n.value());
-                            case DurationOperand d when dialect == Dialect.POSTGRES ->
-                                    dialect.durationLiteral(d.value());
-                            default -> Optional.empty();
-                        };
-                        offsets.add(sql);
-                        return sql.orElse("");
-                    });
-                    yield measurable && offsets.stream().allMatch(Optional::isPresent)
-                            ? Optional.of(clause) : Optional.empty();
-                }
-                default -> Optional.of(Dialect.frameClause(node.frame(), WindowFrame.Bound::literal));
-            };
+            case WindowFunction.OffsetWindow o when !o.function().takesFrame() -> Optional.of("");
+            case WindowFunction.OffsetWindow o when node.frame().equals(WindowFrame.toCurrentPeers()) ->
+                    Optional.of("");
+            case WindowFunction.OffsetWindow o -> framed(node, orderTerms, dialect, whole);
+            case WindowFunction.AggregateWindow a -> framed(node, orderTerms, dialect, whole);
+        };
+    }
+
+    /** The frame clause of a window that reads its frame, or nothing where it cannot be sent. */
+    private static Optional<String> framed(WindowNode node, int orderTerms, Dialect dialect, String whole) {
+        return switch (node.frame()) {
+            case WindowFrame.PartitionFrame f -> Optional.of(orderTerms == 0 ? "" : whole);
+            case WindowFrame.Between b when b.measuresKey() -> {
+                boolean measurable = orderTerms == 1
+                        && (dialect == Dialect.POSTGRES || dialect == Dialect.DUCKDB);
+                List<Optional<String>> offsets = new ArrayList<>();
+                String clause = Dialect.frameClause(b, offset -> {
+                    Optional<String> sql = switch (offset) {
+                        case NumberOperand n when n.value().chars().allMatch(Character::isDigit) ->
+                                Optional.of(n.value());
+                        case DurationOperand d when dialect == Dialect.POSTGRES ->
+                                dialect.durationLiteral(d.value());
+                        default -> Optional.empty();
+                    };
+                    offsets.add(sql);
+                    return sql.orElse("");
+                });
+                yield measurable && offsets.stream().allMatch(Optional::isPresent)
+                        ? Optional.of(clause) : Optional.empty();
+            }
+            default -> Optional.of(Dialect.frameClause(node.frame(), WindowFrame.Bound::literal));
         };
     }
 

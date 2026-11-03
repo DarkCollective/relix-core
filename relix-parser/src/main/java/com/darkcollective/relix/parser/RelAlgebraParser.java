@@ -2852,11 +2852,11 @@ public final class RelAlgebraParser {
 
     /**
      * Parses the ranking / offset window form (ADR-0015, slices 3–4):
-     * {@code WINDOW <name>(…) SORT <specs> [PER <keys>] AS <col> (R)}, e.g.
-     * {@code WINDOW RANK() SORT amount DESC PER customer_id AS rnk (Orders)}.  The
-     * function name is a contextual identifier (not a reserved keyword).  Ranking
-     * functions (slice 3) are implemented; offset functions (slice 4) report a clear,
-     * positioned error reserving the syntax.
+     * {@code WINDOW <name>(…) [OVER <frame>] SORT <specs> [PER <keys>] AS <col> (R)},
+     * e.g. {@code WINDOW RANK() SORT amount DESC PER customer_id AS rnk (Orders)}.  The
+     * function name is a contextual identifier (not a reserved keyword). Only
+     * {@code FIRST_VALUE}, {@code LAST_VALUE} and {@code NTH_VALUE} take a frame, written
+     * as {@code ROLLING} writes one; without it they read SQL's default.
      */
     private WindowNode parseWindow() {
         Token opTok = current;
@@ -2868,8 +2868,27 @@ public final class RelAlgebraParser {
             rejectEarlyWindowName(opAt);
         }
 
+        // FIRST_VALUE, LAST_VALUE and NTH_VALUE read a frame, SQL's default unless
+        // they name one as ROLLING does; the ranking functions, LAG and LEAD take none.
+        boolean takesFrame = function instanceof WindowFunction.OffsetWindow o && o.function().takesFrame();
+        WindowFrame frame = takesFrame ? WindowFrame.toCurrentPeers() : new WindowFrame.PartitionFrame();
+        Token frameTok = current;
+        if (current.type() == TokenType.OVER) {
+            if (!takesFrame) {
+                throw error(current, fnTok.lexeme().toUpperCase(Locale.ROOT) + " takes no frame:"
+                        + " only FIRST_VALUE, LAST_VALUE and NTH_VALUE read one");
+            }
+            advance();
+            frameTok = current;
+            frame = parseWindowFrame();
+        }
+
         expect(TokenType.SORT, "Expected 'SORT' before the WINDOW ordering");
         List<SortSpecification> sortSpecs = parseSortSpecificationList();
+        if (frame instanceof WindowFrame.Between between && between.measuresKey() && sortSpecs.size() != 1) {
+            throw error(frameTok, "A RANGE frame with an offset measures one sort key; got "
+                    + sortSpecs.size());
+        }
 
         List<String> partitionKeys = parseOptionalPartition();
 
@@ -2879,7 +2898,7 @@ public final class RelAlgebraParser {
         RelNode input = parseParenthesizedRelation(
                 "Expected '(' after the WINDOW output column");
         return new WindowNode(function, partitionKeys, sortSpecs,
-                new WindowFrame.PartitionFrame(), outputCol.lexeme(), input, loc(opTok));
+                frame, outputCol.lexeme(), input, loc(opTok));
     }
 
     /**
