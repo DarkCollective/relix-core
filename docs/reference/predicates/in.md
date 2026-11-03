@@ -4,6 +4,7 @@
 attr ∈ { value1, value2, ... }      attr IN { value1, value2, ... }
 attr ∉ { value1, value2, ... }      attr NOT IN { value1, value2, ... }
 attr IN (value1, value2, ...)       SQL's parentheses, with at least two values
+attr IN (relation)                  attr NOT IN (relation)    a relation of one column
 
 σ dept ∈ {"hr", "eng"} (Employees)
 σ dept NOT IN {"mgmt"} (Employees)
@@ -22,6 +23,14 @@ SQL's `x IN (1, 2)` is the same set as `x IN {1, 2}`. A parenthesis is read as a
 list when it holds a comma; one value in parentheses is a single expression, so a
 one-member list is written in braces, `x IN {1}`. A row of columns tests membership
 of a list of rows, `(a, b) IN {(1, 2), (3, 4)}`: see [row values](row-value.md).
+
+**IN over a relation.** `x IN (π v (S))` tests membership of a one-column relation's
+values: it is `x = ANY (π v (S))`, and `x NOT IN (…)` is `x ≠ ALL (…)`, with the
+same three-valued answer as SQL's. The relation is a [subquery](../language/subquery.md)
+and may read the row being tested through qualified names. Over a relation holding a
+NULL, `NOT IN` keeps no row: a value not matching the others might have matched the
+unknown one. Filter the NULLs out of the relation, `(π v (σ v IS NOT NULL (S)))`, or
+use [NOT EXISTS](exists.md) or an ANTI join, which have no such trap.
 
 # Examples:
 One of several departments:
@@ -78,8 +87,7 @@ query { σ status ∉ {"cancelled", "refunded"} (Tickets) };
 ```
 
 # Limitations:
-The set is a literal list of constant values, not a subquery — to test membership
-in another relation's values, use a SEMI join (⋉) instead. A NULL value on either
+A NULL value on either
 side makes the test UNKNOWN and the row is dropped: a NULL column is neither in
 the set nor out of it, and if the *set* holds a NULL then failing to match the
 other elements settles nothing — the unknown one might have been the value — so
@@ -91,11 +99,12 @@ number to write instead. A member of `''` is refused the same way, since an
 empty cell is NULL: test for it with `seconds IS NULL`.
 
 # Alternatives:
-A SEMI join (⋉) for "value appears in another relation". A chain of `= … ∨ = …`
-is the long-hand form IN replaces.
+A SEMI join (⋉) also keeps the rows whose value appears in another relation, and an
+ANTI join (▷) the rows whose value does not. A chain of `= … ∨ = …` is the long-hand
+form IN replaces.
 
 # See Also:
-[or](or.md), [comparison](comparison.md), [row-value](row-value.md), [quantified](quantified.md), [semi-join](../joins/semi-join.md), [select](../operators/select.md)
+[or](or.md), [comparison](comparison.md), [row-value](row-value.md), [quantified](quantified.md), [exists](exists.md), [subquery](../language/subquery.md), [semi-join](../joins/semi-join.md), [select](../operators/select.md)
 
 # Notes:
 Prefer IN over a long OR chain for readability; for dynamic sets drawn from data,

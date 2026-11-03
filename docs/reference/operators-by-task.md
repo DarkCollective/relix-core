@@ -32,6 +32,10 @@ reference reads it by.
 
 ## Groups
 
+- A value from a related relation beside each row: each customer's order count,
+  total or latest order → [Subquery](language/subquery.md), or the rows themselves,
+  keeping a row with none → [LATERAL](joins/lateral-join.md)
+- Keep the rows that have, or have no, related row → [EXISTS](predicates/exists.md)
 - Subtotals and a grand total in one result, and which level each row is →
   [GROUPING](aggregates/grouping.md)
 - The value from the row with the highest or lowest of something, per group: the name
