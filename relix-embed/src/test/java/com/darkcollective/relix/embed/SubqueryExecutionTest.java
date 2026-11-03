@@ -167,6 +167,18 @@ final class SubqueryExecutionTest {
     }
 
     @Test
+    @DisplayName("the issue's query plans as a left join onto the groups, with no lateral left")
+    void issueQueryPlansAsAJoin() {
+        try (Relix relix = Relix.open()) {
+            relix.define(DATA);
+            EmbedAssertions.assertThat(relix.relation(
+                    "π name, (γ COUNT(*) → n (σ cid = Customers.id (Orders))) → order_count (Customers)").optimized())
+                    .rewrote(com.darkcollective.relix.optimizer.OptimizationCode.SUBQ_005)
+                    .explains().doesNotContain("LateralJoin");
+        }
+    }
+
+    @Test
     @DisplayName("a value whose subquery returns two rows is an error naming it and the row it read")
     void moreThanOneRow() {
         assertThatThrownBy(() -> engine("π name, (π oid (σ cid = Customers.id (Orders))) → oid (Customers)"))
