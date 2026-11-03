@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static com.darkcollective.relix.function.builtin.BuiltinCalls.call;
+import static com.darkcollective.relix.function.builtin.BuiltinCalls.n;
 import static com.darkcollective.relix.function.builtin.BuiltinCalls.number;
 import static com.darkcollective.relix.function.builtin.BuiltinCalls.s;
 import static com.darkcollective.relix.function.builtin.BuiltinCalls.text;
@@ -76,6 +77,54 @@ final class RegexFunctionsTest {
         assertThat(number(call("REGEXP_COUNT", s("banana"), s("an")))).isEqualByComparingTo("2");
         assertThat(number(call("REGEXP_COUNT", s("Banana"), s("b"), s("i")))).isEqualByComparingTo("1");
         assertThat(call("REGEXP_COUNT", NULL, s("x")).isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("REGEXP_REPLACE's positional form: a position from 1 and an occurrence, 0 for every match")
+    void replacePositional() {
+        assertThat(text(call("REGEXP_REPLACE", s("a-b-c"), s("-"), s("+")))).isEqualTo("a+b-c");
+        assertThat(text(call("REGEXP_REPLACE", s("a-b-c"), s("-"), s("+"), n("1"), n("0")))).isEqualTo("a+b+c");
+        assertThat(text(call("REGEXP_REPLACE", s("a-b-c"), s("-"), s("+"), n("1"), n("2")))).isEqualTo("a-b+c");
+        assertThat(text(call("REGEXP_REPLACE", s("a-b-c"), s("-"), s("+"), n("1"), n("3")))).isEqualTo("a-b-c");
+        // Omitted, the occurrence is MySQL's and Oracle's 0.
+        assertThat(text(call("REGEXP_REPLACE", s("a-b-c"), s("-"), s("+"), n("1")))).isEqualTo("a+b+c");
+        // The search starts at the position; the text before it is kept.
+        assertThat(text(call("REGEXP_REPLACE", s("a-b-c"), s("-"), s("+"), n("3"), n("0")))).isEqualTo("a-b+c");
+        assertThat(text(call("REGEXP_REPLACE", s("a-b-c"), s("-"), s("+"), n("3"), n("1")))).isEqualTo("a-b+c");
+        assertThat(text(call("REGEXP_REPLACE", s("a-b-c"), s("-"), s("+"), n("9"), n("0")))).isEqualTo("a-b-c");
+        // ^ is still the string's start, and a group still reads.
+        assertThat(text(call("REGEXP_REPLACE", s("aaa"), s("^a"), s("X"), n("2"), n("0")))).isEqualTo("aaa");
+        assertThat(text(call("REGEXP_REPLACE", s("ab ab"), s("(a)b"), s("<\\1>"), n("1"), n("2")))).isEqualTo("ab <a>");
+        assertThat(text(call("REGEXP_REPLACE", s("A-a"), s("a"), s("x"), n("1"), n("0"), s("i")))).isEqualTo("x-x");
+        assertThat(call("REGEXP_REPLACE", s("a"), s("a"), s("b"), NULL, n("0")).isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("REGEXP_SUBSTR's positional form: the nth match at or after a position")
+    void substrPositional() {
+        assertThat(text(call("REGEXP_SUBSTR", s("a1 b22 c333"), s("[0-9]+"), n("1"), n("2")))).isEqualTo("22");
+        assertThat(text(call("REGEXP_SUBSTR", s("a1 b22 c333"), s("[0-9]+"), n("4")))).isEqualTo("22");
+        assertThat(text(call("REGEXP_SUBSTR", s("a1 B22"), s("b[0-9]+"), n("1"), n("1"), s("i")))).isEqualTo("B22");
+        assertThat(call("REGEXP_SUBSTR", s("a1 b22"), s("[0-9]+"), n("1"), n("3")).isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("the positional form refuses a position below 1, a negative occurrence, g, and flags in its place")
+    void positionalRefusals() {
+        assertThatThrownBy(() -> call("REGEXP_REPLACE", s("a"), s("a"), s("b"), n("0"), n("0")))
+                .hasMessage("REGEXP_REPLACE: the position counts from 1, got 0");
+        assertThatThrownBy(() -> call("REGEXP_REPLACE", s("a"), s("a"), s("b"), n("1"), n("-1")))
+                .hasMessage("REGEXP_REPLACE: the occurrence is 0 for every match, or a match counted from 1, got -1");
+        assertThatThrownBy(() -> call("REGEXP_SUBSTR", s("a"), s("a"), n("1"), n("0")))
+                .hasMessage("REGEXP_SUBSTR: the occurrence is a match counted from 1, got 0");
+        assertThatThrownBy(() -> call("REGEXP_REPLACE", s("a"), s("a"), s("b"), n("1"), n("0"), s("g")))
+                .hasMessage("REGEXP_REPLACE: a call with a position takes no flag 'g'; an occurrence of 0"
+                        + " replaces every match");
+        assertThatThrownBy(() -> call("REGEXP_REPLACE", s("a"), s("a"), s("b"), s("i"), n("0")))
+                .hasMessage("REGEXP_REPLACE: a call of 5 arguments takes a position as its fourth, a NUMBER,"
+                        + " not STRING; its flags go last");
+        assertThatThrownBy(() -> call("REGEXP_SUBSTR", s("a"), s("a"), s("i"), n("1")))
+                .hasMessageContaining("takes a position as its third");
     }
 
     @Test
@@ -132,6 +181,9 @@ final class RegexFunctionsTest {
         assertThat(spell("REGEXP_REPLACE", POSTGRES, "s", "'b'", "'x'", "'g'"))
                 .contains("regexp_replace(s, 'b', 'x', 'g')");
         assertThat(spell("REGEXP_REPLACE", POSTGRES, "s", "'b'", "r")).isEmpty();
+        // The positional form runs in the engine: PostgreSQL has it only from 15.
+        assertThat(spell("REGEXP_REPLACE", POSTGRES, "s", "'b'", "'x'", "1", "0")).isEmpty();
+        assertThat(spell("REGEXP_REPLACE", POSTGRES, "s", "'b'", "'x'", "1")).isEmpty();
         assertThat(spell("REGEXP_REPLACE", POSTGRES, "s", "'b'", "'x'", "'q'")).isEmpty();
         assertThat(spell("REGEXP_REPLACE", POSTGRES, "s", "'\\d'", "'x'")).isEmpty();
         assertThat(spell("REGEXP_REPLACE", MYSQL, "s", "'b'", "'x'")).isEmpty();
