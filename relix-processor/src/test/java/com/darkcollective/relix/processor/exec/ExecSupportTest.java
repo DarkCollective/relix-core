@@ -558,14 +558,15 @@ final class ExecSupportTest extends ProcessorTestSupport {
         }
 
         @Test
-        @DisplayName("DESC sort places NULL rows after non-null rows (effective NULLS_LAST after reversal)")
-        void descNullsLast() {
+        @DisplayName("DESC sort places NULL rows first, NULL being the largest value")
+        void descNullsFirst() {
             List<Row> rows = new ArrayList<>(List.of(
                     ab(num(1), str("a")),
                     ab(nullVal(), str("b")),
                     ab(num(2), str("c"))));
             rows.sort(rowComparator(List.of(desc("a")), new OperandEvaluator()));
-            assertThat(rows.get(rows.size() - 1).get("a")).isEqualTo(NullValue.INSTANCE);
+            assertThat(rows).extracting(r -> r.get("a"))
+                    .containsExactly(NullValue.INSTANCE, num(2), num(1));
         }
     }
 

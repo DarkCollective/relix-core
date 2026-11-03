@@ -1816,7 +1816,7 @@ final class PlannerTest {
                     .isEqualTo("SELECT id, amount FROM orders ORDER BY (amount IS NULL) ASC, amount ASC");
             assertThat(assertThat(planPushed(
                     ORDERS_SETUP + "query { τ amount DESC, id ASC (Orders) };")).asNode(PhysicalNode.PushedScan.class).nativeQuery())
-                    .isEqualTo("SELECT id, amount FROM orders ORDER BY (amount IS NULL) ASC, amount DESC, (id IS NULL) ASC, id ASC");
+                    .isEqualTo("SELECT id, amount FROM orders ORDER BY (amount IS NULL) DESC, amount DESC, (id IS NULL) ASC, id ASC");
         }
 
         @Test
@@ -1844,7 +1844,7 @@ final class PlannerTest {
             PhysicalNode.PushedScan s = assertThat(planPushed(
                     ORDERS_SETUP + "query { λ 3 (τ amount DESC (σ amount > 0 (Orders))) };")).asNode(PhysicalNode.PushedScan.class);
             assertThat(s.nativeQuery()).isEqualTo(
-                    "SELECT id, amount FROM orders WHERE (amount > 0) ORDER BY (amount IS NULL) ASC, amount DESC LIMIT 3");
+                    "SELECT id, amount FROM orders WHERE (amount > 0) ORDER BY (amount IS NULL) DESC, amount DESC LIMIT 3");
         }
 
         @Test

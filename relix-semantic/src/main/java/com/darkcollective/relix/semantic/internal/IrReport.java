@@ -686,8 +686,7 @@ public final class IrReport {
                             : " ORDER " + tn.orderSpecs().stream()
                                     .map(s -> s.expression().accept(OPND)
                                             + (s.direction() == SortDirection.DESC ? " DESC" : "")
-                                            + (s.nulls() == com.darkcollective.relix.ast.NullPlacement.NULLS_FIRST
-                                                    ? " NULLS FIRST" : ""))
+                                            + s.nullsClause())
                                     .collect(java.util.stream.Collectors.joining(", ")))
                     + " AS " + tn.childrenColumn();
 

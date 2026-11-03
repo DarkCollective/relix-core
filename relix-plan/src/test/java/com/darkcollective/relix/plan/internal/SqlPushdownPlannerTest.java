@@ -178,7 +178,7 @@ final class SqlPushdownPlannerTest {
         void sortToOrderBy() {
             PhysicalNode.PushedScan s = scanOf(push(
                     ORDERS + "query { τ amount DESC, id ASC (Orders) };"));
-            assertThat(s.nativeQuery()).isEqualTo("SELECT id, amount FROM orders ORDER BY (amount IS NULL) ASC, amount DESC, (id IS NULL) ASC, id ASC");
+            assertThat(s.nativeQuery()).isEqualTo("SELECT id, amount FROM orders ORDER BY (amount IS NULL) DESC, amount DESC, (id IS NULL) ASC, id ASC");
             assertThat(s.deliveredOrdering()).isEqualTo(Ordering.of(List.of(
                     desc("amount"),
                     asc("id"))));
@@ -211,7 +211,7 @@ final class SqlPushdownPlannerTest {
         void filterSortLimit() {
             assertThat(scanOf(push(
                     ORDERS + "query { λ 3 (τ amount DESC (σ amount > 0 (Orders))) };")).nativeQuery())
-                    .isEqualTo("SELECT id, amount FROM orders WHERE (amount > 0) ORDER BY (amount IS NULL) ASC, amount DESC LIMIT 3");
+                    .isEqualTo("SELECT id, amount FROM orders WHERE (amount > 0) ORDER BY (amount IS NULL) DESC, amount DESC LIMIT 3");
         }
     }
 
@@ -248,7 +248,7 @@ final class SqlPushdownPlannerTest {
         void sortFoldsAbovePruning() {
             assertThat(scanOf(push(
                     ORDERS + "query { τ amount DESC (π amount (Orders)) };")).nativeQuery())
-                    .isEqualTo("SELECT amount FROM orders ORDER BY (amount IS NULL) ASC, amount DESC");
+                    .isEqualTo("SELECT amount FROM orders ORDER BY (amount IS NULL) DESC, amount DESC");
         }
 
         @Test
@@ -299,7 +299,7 @@ final class SqlPushdownPlannerTest {
         void sortAndLimitAboveDistinct() {
             assertThat(scanOf(push(
                     ORDERS + "query { λ 5 (τ amount DESC (δ (Orders))) };")).nativeQuery())
-                    .isEqualTo("SELECT DISTINCT id, amount FROM orders ORDER BY (amount IS NULL) ASC, amount DESC LIMIT 5");
+                    .isEqualTo("SELECT DISTINCT id, amount FROM orders ORDER BY (amount IS NULL) DESC, amount DESC LIMIT 5");
         }
 
         @Test
@@ -417,7 +417,7 @@ final class SqlPushdownPlannerTest {
                     + "query { τ total DESC, id ASC (γ id, SUM(amount) → total (Orders)) };"));
             assertThat(s.nativeQuery()).isEqualTo(
                     "SELECT id, SUM(amount) FROM orders GROUP BY id "
-                    + "ORDER BY (SUM(amount) IS NULL) ASC, SUM(amount) DESC, (id IS NULL) ASC, id ASC");
+                    + "ORDER BY (SUM(amount) IS NULL) DESC, SUM(amount) DESC, (id IS NULL) ASC, id ASC");
         }
 
         @Test
@@ -427,7 +427,7 @@ final class SqlPushdownPlannerTest {
                     + "query { λ 3 (τ total DESC, id ASC (γ id, SUM(amount) → total (Orders))) };"))
                     .nativeQuery())
                     .isEqualTo("SELECT id, SUM(amount) FROM orders GROUP BY id "
-                            + "ORDER BY (SUM(amount) IS NULL) ASC, SUM(amount) DESC, "
+                            + "ORDER BY (SUM(amount) IS NULL) DESC, SUM(amount) DESC, "
                             + "(id IS NULL) ASC, id ASC LIMIT 3");
         }
 
@@ -440,7 +440,7 @@ final class SqlPushdownPlannerTest {
                     .nativeQuery())
                     .isEqualTo("SELECT id, SUM(amount) FROM orders WHERE amount IS NOT NULL "
                             + "GROUP BY id HAVING (SUM(amount) > 10) "
-                            + "ORDER BY (SUM(amount) IS NULL) ASC, SUM(amount) DESC LIMIT 3");
+                            + "ORDER BY (SUM(amount) IS NULL) DESC, SUM(amount) DESC LIMIT 3");
         }
 
         @Test
@@ -488,7 +488,7 @@ final class SqlPushdownPlannerTest {
             assertThat(scanOf(push(DB2_ORDERS + "query { λ 3 (Orders) };")).nativeQuery())
                     .isEqualTo("SELECT id, amount FROM orders FETCH FIRST 3 ROWS ONLY");
             assertThat(scanOf(push(DB2_ORDERS + "query { λ 3, 2 (τ amount DESC (Orders)) };")).nativeQuery())
-                    .isEqualTo("SELECT id, amount FROM orders ORDER BY amount DESC NULLS LAST "
+                    .isEqualTo("SELECT id, amount FROM orders ORDER BY amount DESC NULLS FIRST "
                             + "OFFSET 3 ROWS FETCH FIRST 2 ROWS ONLY");
         }
     }
@@ -507,7 +507,7 @@ final class SqlPushdownPlannerTest {
         void limitOverSort() {
             assertThat(scanOf(push(SQLSERVER_ORDERS + "query { λ 3 (τ amount DESC (Orders)) };")).nativeQuery())
                     .isEqualTo("SELECT [id], [name], [amount] FROM [orders] ORDER BY "
-                            + "CASE WHEN [amount] IS NULL THEN 1 ELSE 0 END ASC, [amount] DESC "
+                            + "CASE WHEN [amount] IS NULL THEN 0 ELSE 1 END ASC, [amount] DESC "
                             + "OFFSET 0 ROWS FETCH NEXT 3 ROWS ONLY");
             assertThat(scanOf(push(SQLSERVER_ORDERS + "query { λ 3, 2 (τ id (Orders)) };")).nativeQuery())
                     .endsWith("OFFSET 3 ROWS FETCH NEXT 2 ROWS ONLY");
@@ -953,7 +953,7 @@ final class SqlPushdownPlannerTest {
                     EMPLOYEES + "query { WINDOW ROW_NUMBER() SORT salary DESC PER dept AS rn (Employees) };"));
             assertThat(s.nativeQuery()).isEqualTo(
                     "SELECT dept, emp_id, salary, "
-                    + "ROW_NUMBER() OVER (PARTITION BY dept ORDER BY (salary IS NULL) ASC, salary DESC) AS rn "
+                    + "ROW_NUMBER() OVER (PARTITION BY dept ORDER BY (salary IS NULL) DESC, salary DESC) AS rn "
                     + "FROM employees");
         }
 
@@ -988,7 +988,7 @@ final class SqlPushdownPlannerTest {
                     + "        ROLLING SUM(salary) OVER ALL ROWS SORT salary ASC PER dept AS run_s (Employees)) };"));
             assertThat(s.nativeQuery())
                     .contains("SUM(salary) OVER (PARTITION BY dept ORDER BY (salary IS NULL) ASC, salary ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS run_s")
-                    .contains("ROW_NUMBER() OVER (PARTITION BY dept ORDER BY (salary IS NULL) ASC, salary DESC) AS rn");
+                    .contains("ROW_NUMBER() OVER (PARTITION BY dept ORDER BY (salary IS NULL) DESC, salary DESC) AS rn");
         }
 
         @Test
@@ -1311,7 +1311,7 @@ final class SqlPushdownPlannerTest {
         @DisplayName("WITH TIES is PostgreSQL's FETCH … WITH TIES, and runs in the engine elsewhere")
         void ties() {
             assertThat(sql("jdbc:postgresql://h/db", "λ 1, 3 WITH TIES (τ score DESC (S))"))
-                    .contains("SELECT \"id\", \"score\" FROM \"s\" ORDER BY \"score\" DESC NULLS LAST "
+                    .contains("SELECT \"id\", \"score\" FROM \"s\" ORDER BY \"score\" DESC NULLS FIRST "
                             + "OFFSET 1 ROWS FETCH FIRST 3 ROWS WITH TIES");
             assertThat(sql("jdbc:mysql://h/db", "λ 3 WITH TIES (τ score DESC (S))")).isEmpty();
             // Without ties the same λ still folds as a LIMIT.
