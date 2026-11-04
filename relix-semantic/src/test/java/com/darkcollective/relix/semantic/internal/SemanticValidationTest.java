@@ -1135,8 +1135,10 @@ final class SemanticValidationTest {
             // or a value from a *different* row than the one being ranked — and each has
             // to be named or it slips through as a silently wrong window.
             // GROUPING too: it reports on a γ's grouping sets, and a window has none.
+            // And MODE, an ordered-set aggregate, as SQL does not frame one either.
             for (AggregateOperator op : List.of(AggregateOperator.COLLECT,
-                    AggregateOperator.ARGMAX, AggregateOperator.ARGMIN, AggregateOperator.GROUPING)) {
+                    AggregateOperator.ARGMAX, AggregateOperator.ARGMIN, AggregateOperator.GROUPING,
+                    AggregateOperator.MODE)) {
                 RelNode tree = rolling(op, attr("amount"),
                         List.of("user_id"), "amount", "run");
                 assertThat(inferAndValidate(tree))

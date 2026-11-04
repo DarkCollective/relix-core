@@ -7,7 +7,7 @@ ROLLING <agg>(<expr>) OVER ROWS|RANGE BETWEEN <bound> AND <bound>  SORT … [PER
 ROLLING <agg>(<expr>) OVER PARTITION  [SORT …] [PER <key> [, ...]] AS <col> (Relation)
 
 where <agg> ∈ { SUM, AVG, COUNT, MIN, MAX, STDDEV, STDDEV_SAMP, STDDEV_POP,
-VARIANCE, VAR_SAMP, VAR_POP }, and <bound> is UNBOUNDED PRECEDING, <n> PRECEDING,
+VARIANCE, VAR_SAMP, VAR_POP, BOOL_AND, EVERY, BOOL_OR }, and <bound> is UNBOUNDED PRECEDING, <n> PRECEDING,
 CURRENT ROW, <n> FOLLOWING or UNBOUNDED FOLLOWING.
 
 ROLLING AVG(price)  OVER 3 ROWS   SORT trade_time ASC PER ticker  AS avg3    (StockTicks)

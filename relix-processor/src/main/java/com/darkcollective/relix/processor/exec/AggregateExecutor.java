@@ -22,6 +22,8 @@ import com.darkcollective.relix.ast.AggregateOperator;
 import com.darkcollective.relix.ast.AggregationNode;
 import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.Operand;
+import com.darkcollective.relix.ast.SortDirection;
+import com.darkcollective.relix.ast.SortSpecification;
 import com.darkcollective.relix.function.Accumulator;
 import com.darkcollective.relix.function.AggregateSignature;
 import com.darkcollective.relix.plan.PhysicalNode;
@@ -385,10 +387,15 @@ final class AggregateExecutor {
         // DISTINCT: each value once, under the engine's equality (1 and 1.0 are one value).
         Set<List<Value>> seen = agg.distinct() ? new HashSet<>() : null;
         // An ordered aggregate — STRING_AGG(x, ', ' ORDER BY y) — reads its group in that order.
+        // MODE breaks a tie by that order, and with none given reads its values ascending,
+        // so the smallest of the most frequent wins (#296).
+        List<SortSpecification> order = agg.orderBy().isEmpty() && agg.operator() == AggregateOperator.MODE
+                ? List.of(new SortSpecification(agg.argument(), SortDirection.ASC))
+                : agg.orderBy();
         List<Row> ordered = rows;
-        if (!agg.orderBy().isEmpty()) {
+        if (!order.isEmpty()) {
             ordered = new ArrayList<>(rows);
-            ordered.sort(rowComparator(agg.orderBy(), eval));
+            ordered.sort(rowComparator(order, eval));
         }
         for (Row row : ordered) {
             List<Value> values = new ArrayList<>(arguments.size());

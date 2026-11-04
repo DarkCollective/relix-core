@@ -158,6 +158,9 @@ Collapse many rows into summary rows with `γ` (GROUP) and aggregate functions.
 | [PERCENTILE_CONT](aggregates/percentile_cont.md) | The value a fraction of the group lies below, interpolated |
 | [PERCENTILE_DISC](aggregates/percentile_disc.md) | The first value a fraction of the group reaches |
 | [STRING_AGG](aggregates/string_agg.md) | Join a group's values into one string (GROUP_CONCAT, LISTAGG) |
+| [BOOL_AND](aggregates/bool_and.md) | Whether every value in a group is true (EVERY) |
+| [BOOL_OR](aggregates/bool_or.md) | Whether any value in a group is true |
+| [MODE](aggregates/mode.md) | The most frequent value, a tie going to the smallest (STATS_MODE) |
 | [FILTER](aggregates/filter.md) | `AGG(x) FILTER (WHERE c)` — aggregate only the rows where a condition holds |
 | [GROUPING](aggregates/grouping.md) | Which keys a ROLLUP, CUBE or GROUPING SETS row rolled up (GROUPING_ID) |
 | [Window / Rolling](operators/rolling.md) | `ROLLING … OVER … ROWS`, `ROWS`/`RANGE BETWEEN`, `PARTITION` — sliding, cumulative, framed or whole-partition aggregate added as a column (no row collapse) |

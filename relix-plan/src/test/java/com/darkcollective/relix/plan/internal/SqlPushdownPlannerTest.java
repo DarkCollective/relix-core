@@ -2264,4 +2264,53 @@ final class SqlPushdownPlannerTest {
             }
         }
     }
+
+    /**
+     * BOOL_AND and BOOL_OR (#295) fold on PostgreSQL as its own bool_and and bool_or, and
+     * stay in the engine on every other dialect; MODE (#296) stays in the engine
+     * everywhere, no backend promising its tie rule.
+     */
+    @Nested
+    @DisplayName("BOOL_AND, BOOL_OR and MODE")
+    class BooleanAndModeAggregates {
+
+        private String orders(String dialect) {
+            return "connection db from database { url: \"jdbc:h2:mem:x\", dialect: " + dialect + " };\n"
+                    + "source Orders from db { table: \"orders\", "
+                    + "schema: { id: NUMBER, status: STRING, amount: NUMBER } };\n";
+        }
+
+        @Test
+        @DisplayName("PostgreSQL folds them as bool_and and bool_or, a condition argument and EVERY included")
+        void postgresFolds() {
+            String q = scanOf(push(orders("postgres") + "query { γ id, BOOL_AND(amount > 0) → a, "
+                    + "EVERY(status = 'x') → e, BOOL_OR(amount > 10) → o (Orders) };")).nativeQuery();
+            assertThat(q).isEqualTo("SELECT \"id\", BOOL_AND((\"amount\" > 0)), BOOL_AND((\"status\" = 'x')), "
+                    + "BOOL_OR((\"amount\" > 10)) FROM \"orders\" GROUP BY \"id\"");
+        }
+
+        @Test
+        @DisplayName("a BOOLEAN column is folded as the value it is")
+        void booleanColumn() {
+            String pg = "connection db from database { url: \"jdbc:h2:mem:x\", dialect: postgres };\n"
+                    + "source Flags from db { table: \"flags\", schema: { id: NUMBER, ok: BOOLEAN } };\n";
+            assertThat(scanOf(push(pg + "query { γ id, BOOL_OR(ok) → o (Flags) };")).nativeQuery())
+                    .isEqualTo("SELECT \"id\", BOOL_OR(\"ok\") FROM \"flags\" GROUP BY \"id\"");
+        }
+
+        @Test
+        @DisplayName("every other dialect runs them in the engine")
+        void othersDecline() {
+            for (String dialect : List.of("mysql", "sqlite", "duckdb", "sqlserver", "oracle", "db2", "h2")) {
+                assertThat(push(orders(dialect) + "query { γ id, BOOL_AND(amount > 0) → a (Orders) };"))
+                        .as(dialect).isEmpty();
+            }
+        }
+
+        @Test
+        @DisplayName("MODE stays in the engine, even on PostgreSQL")
+        void modeDeclines() {
+            assertThat(push(orders("postgres") + "query { γ id, MODE(status) → m (Orders) };")).isEmpty();
+        }
+    }
 }

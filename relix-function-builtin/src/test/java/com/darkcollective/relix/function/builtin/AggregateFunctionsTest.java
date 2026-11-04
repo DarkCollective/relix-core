@@ -98,7 +98,7 @@ final class AggregateFunctionsTest {
         }
 
         @Test
-        @DisplayName("only MIN and MAX are duplicate-insensitive — what DIST-002 reads")
+        @DisplayName("only MIN, MAX and the boolean pair are duplicate-insensitive — what DIST-002 reads")
         void duplicateInsensitivity() {
             List<String> insensitive = BY_NAME.values().stream()
                     .filter(fn -> fn.signature().has(AggregateProperty.DUPLICATE_INSENSITIVE))
@@ -106,7 +106,8 @@ final class AggregateFunctionsTest {
                     .sorted()
                     .toList();
 
-            assertThat(insensitive).containsExactly("MAX", "MIN");
+            // AND and OR do not care how many times they saw a value, as MIN and MAX do not.
+            assertThat(insensitive).containsExactly("BOOL_AND", "BOOL_OR", "MAX", "MIN");
         }
 
         @Test
@@ -119,8 +120,9 @@ final class AggregateFunctionsTest {
                     .toList();
 
             // COLLECT gathers in row order and the ARG pair resolves a tie to the first
-            // row, so all three would notice a reordering of the input.
-            assertThat(insensitive).containsExactly("AVG", "COUNT", "MAX", "MEDIAN", "MIN",
+            // row, so all three would notice a reordering of the input. MODE breaks its
+            // ties by an order the engine sorts the group into, not the arrival order.
+            assertThat(insensitive).containsExactly("AVG", "BOOL_AND", "BOOL_OR", "COUNT", "MAX", "MEDIAN", "MIN", "MODE",
                     "PERCENTILE_CONT", "PERCENTILE_DISC", "STDDEV", "STDDEV_POP", "STDDEV_SAMP", "SUM",
                     "VARIANCE", "VAR_POP", "VAR_SAMP");
         }

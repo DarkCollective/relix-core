@@ -634,8 +634,8 @@ public final class SqlExpressions {
      * <p>The predicate compares through the renderers {@code cols} knows (see
      * {@link ColumnRenderer#comparing()}), and declines when it knows none.
      */
-    private static Optional<String> condition(Operand argument, ColumnRenderer cols, Dialect dialect,
-                                              PushdownFunctions functions) {
+    static Optional<String> condition(Operand argument, ColumnRenderer cols, Dialect dialect,
+                                      PushdownFunctions functions) {
         if (!(argument instanceof ConditionOperand c)) {
             return Optional.empty();
         }
