@@ -102,6 +102,7 @@ parse to the identical tree; the canonical form is what gets printed back.
 | `x IS NULL` / `x IS NOT NULL` | `x = NULL` / `x ≠ NULL` (`⊥`) | Null predicate |
 | `x BETWEEN a AND b` | `x >= a ∧ x <= b` | two comparisons |
 | `x NOT BETWEEN a AND b` | `x < a ∨ x > b` | two comparisons |
+| `x ILIKE p` / `x NOT ILIKE p` | `LOWER(x) LIKE LOWER(p)` / `LOWER(x) NOT LIKE LOWER(p)` | Pattern predicate |
 | `a IS DISTINCT FROM b` | `(a ≠ b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b ≠ ⊥) ∨ (a ≠ ⊥ ∧ b = ⊥)` | null tests and a comparison |
 | `a IS NOT DISTINCT FROM b` | `(a = b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b = ⊥)` | null tests and a comparison |
 | `b IS TRUE` / `b IS NOT TRUE` | `b = TRUE ∧ b ≠ ⊥` / `b = FALSE ∨ b = ⊥` | a comparison and a null test |

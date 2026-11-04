@@ -346,6 +346,27 @@ final class PredicateParserTest extends ParserTestSupport {
     }
 
     @Test
+    public void parsesIlikeAsLowerLikeLower() {
+        // #294: a spelling, desugared to the library's LOWER on both sides.
+        assertParsesTo("σ s ILIKE 'Ab%' (R)",
+                RelAlgebraParser.parse("σ LOWER(s) LIKE LOWER('Ab%') (R)"));
+        assertParsesTo("σ s ilike 'Ab%' (R)",
+                select(like(func("LOWER", attr("s")), func("LOWER", str("Ab%"))), rel("R")));
+        assertParsesTo("σ s NOT ILIKE 'Ab%' (R)",
+                select(notLike(func("LOWER", attr("s")), func("LOWER", str("Ab%"))), rel("R")));
+        assertParsesTo("σ label ILIKE '%0!%%' ESCAPE '!' (D)",
+                select(like(func("LOWER", attr("label")), func("LOWER", str("%0!%%")), false, '!'), rel("D")));
+        assertParsesTo("π IIf(a NOT ILIKE 'b%', 1, 0) → x (R)",
+                RelAlgebraParser.parse("π IIf(LOWER(a) NOT LIKE LOWER('b%'), 1, 0) → x (R)"));
+        // A letter as the escape would change under LOWER, so ILIKE refuses one.
+        assertParseError("σ s ILIKE 'aX%' ESCAPE 'X' (R)")
+                .hasMessageContaining("ILIKE's ESCAPE character cannot be a letter");
+        // ILIKE is reserved, as LIKE is: a column of the name is delimited.
+        assertParsesTo("σ `ilike` = 1 (R)",
+                select(cmp(attr("ilike"), ComparisonOperator.EQUAL, num("1")), rel("R")));
+    }
+
+    @Test
     public void rejectsMalformedSqlSpellings() {
         assertParseError("σ a BETWEEN 1 (R)")
                 .hasMessageContaining("Expected 'AND' between the two bounds of BETWEEN");

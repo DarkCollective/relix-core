@@ -593,7 +593,7 @@ condition_tail    ::= comparison_op operand
                     | ( "∉" | ( "¬" | "NOT" ) "IN" ) subquery
                     | ( "∈" | "IN" ) set_expr
                     | ( "∉" | ( "¬" | "NOT" ) "IN" ) set_expr
-                    | ( ( "¬" | "NOT" ) )? "LIKE" operand ( "ESCAPE" STRING )?
+                    | ( ( "¬" | "NOT" ) )? ( "LIKE" | "ILIKE" ) operand ( "ESCAPE" STRING )?
                     | ( "~" | "~*" | "!~" | "!~*" ) operand     /* a regular-expression match */
                     | ( ( "¬" | "NOT" ) )? "MATCHES" operand
                     | ( ( "¬" | "NOT" ) )? "BETWEEN" operand ( "∧" | "AND" ) operand
@@ -746,6 +746,7 @@ reserved_word     ::= "TRUE" | "FALSE" | "NULL" | "UNIT" | "DEE" | "EMPTY" | "DU
                     | "ASOF" | "IJOIN" | "WITHIN" | "TIES" | "CROSS" | "UNION" | "UALL"
                     | "OUNION" | "DIFF" | "MINUS" | "EXCEPT" | "INTER" | "INTERSECT"
                     | "DIV" | "SYMDIFF" | "COMPOSE" | "AND" | "OR" | "NOT" | "IS" | "IN" | "LIKE"
+                    | "ILIKE"
 
 /* ---- Tokens ----------------------------------------------------------
    Whitespace separates tokens and is otherwise ignored, except that a
@@ -862,6 +863,10 @@ are easy to miss in the rules above.
 - **A LIKE escape is one character.** `ESCAPE '!'` makes the character after each
   `!` literal, so `'50!%'` matches `50%`. `BETWEEN`, `DISTINCT FROM` and `ESCAPE`
   are matched by their text rather than reserved, so they remain usable as names.
+- **`ILIKE` is a case-insensitive `LIKE`.** `x ILIKE p` is `LOWER(x) LIKE LOWER(p)`,
+  with any escape unchanged, and `NOT ILIKE` its negation. It is read as that form,
+  so a printed script shows `LOWER … LIKE LOWER …`. Lowercasing a pattern would
+  change an escape character that is a letter, so ILIKE refuses one.
 - **SQL's literal and operator spellings.** `'it''s'` is `'it\'s'`, `1e6` is
   `1000000` and `2.5E-3` is `0.0025`. `a || b` is `a + b`, so it concatenates two
   strings and adds two numbers; it binds more loosely than `+`, as in PostgreSQL.

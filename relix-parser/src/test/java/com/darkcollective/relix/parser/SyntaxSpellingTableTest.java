@@ -173,6 +173,8 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
         row("`COUNT(*)`", "γ d, COUNT(*) -> n (R)", "γ d, COUNT(1) -> n (R)");
         row("`x BETWEEN a AND b`", "σ x BETWEEN a AND b (R)", "σ x >= a ∧ x <= b (R)");
         row("`x NOT BETWEEN a AND b`", "σ x NOT BETWEEN a AND b (R)", "σ x < a ∨ x > b (R)");
+        row("`x ILIKE p` / `x NOT ILIKE p`", "σ x ILIKE p ∧ x NOT ILIKE p (R)",
+                "σ LOWER(x) LIKE LOWER(p) ∧ LOWER(x) NOT LIKE LOWER(p) (R)");
         row("`a IS DISTINCT FROM b`", "σ a IS DISTINCT FROM b (R)",
                 "σ (a ≠ b ∧ a ≠ ⊥ ∧ b ≠ ⊥) ∨ (a = ⊥ ∧ b ≠ ⊥) ∨ (a ≠ ⊥ ∧ b = ⊥) (R)");
         row("`a || b`", "π a || b → c (R)", "π a + b → c (R)");
