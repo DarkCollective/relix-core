@@ -45,9 +45,11 @@ not just column names; each grouping key takes an optional `→ alias` (else the
 column name for a bare column, or an expression-derived name). Supported
 aggregates: SUM, AVG, COUNT, MIN, MAX, COLLECT (NEST → array), ARGMAX, ARGMIN, and
 the statistical STDDEV, STDDEV_SAMP, STDDEV_POP, VARIANCE, VAR_SAMP, VAR_POP, MEDIAN,
-PERCENTILE_CONT and PERCENTILE_DISC, and STRING_AGG (with its GROUP_CONCAT and
-LISTAGG spellings), which with COLLECT takes an `ORDER BY` inside its parentheses.
-All but ARGMAX and ARGMIN take SQL's `DISTINCT` after the parenthesis —
+PERCENTILE_CONT and PERCENTILE_DISC, STRING_AGG (with its GROUP_CONCAT and
+LISTAGG spellings), which with COLLECT takes an `ORDER BY` inside its parentheses,
+the boolean BOOL_AND (or EVERY) and BOOL_OR, and MODE (or STATS_MODE), the most
+frequent value, whose `ORDER BY` decides a tie.
+All but ARGMAX, ARGMIN and MODE take SQL's `DISTINCT` after the parenthesis —
 `COUNT(DISTINCT session)` — and then read each distinct non-NULL value of the
 argument once per group (COLLECT keeps one NULL, as it keeps NULLs at all).
 Output schema = grouping-key columns + one column per aggregate (named by its
@@ -211,7 +213,7 @@ with no keys: `GROUP COUNT(*) -> n (R)`. `HAVING` is a [σ](select.md) over the 
 aggregate's alias: `... HAVING COUNT(*) > 2` is `SELECT n > 2 (GROUP k, COUNT(*) -> n (R))`.
 
 # See Also:
-[sum](../aggregates/sum.md), [avg](../aggregates/avg.md), [count](../aggregates/count.md), [min](../aggregates/min.md), [max](../aggregates/max.md), [collect](../aggregates/collect.md), [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [filter](../aggregates/filter.md), [grouping](../aggregates/grouping.md), [stddev](../aggregates/stddev.md), [percentile](../aggregates/percentile_cont.md), [top](../advanced/top.md), [forall](forall.md), [sort](sort.md)
+[sum](../aggregates/sum.md), [avg](../aggregates/avg.md), [count](../aggregates/count.md), [min](../aggregates/min.md), [max](../aggregates/max.md), [collect](../aggregates/collect.md), [argmax](../aggregates/argmax.md), [argmin](../aggregates/argmin.md), [filter](../aggregates/filter.md), [grouping](../aggregates/grouping.md), [stddev](../aggregates/stddev.md), [percentile](../aggregates/percentile_cont.md), [bool_and](../aggregates/bool_and.md), [bool_or](../aggregates/bool_or.md), [mode](../aggregates/mode.md), [top](../advanced/top.md), [forall](forall.md), [sort](sort.md)
 
 # Notes:
 When the planner can prove the input is already sorted on the grouping keys it

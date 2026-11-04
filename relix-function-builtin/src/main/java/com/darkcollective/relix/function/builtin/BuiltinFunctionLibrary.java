@@ -109,6 +109,7 @@ public final class BuiltinFunctionLibrary implements FunctionLibrary {
     private static List<AggregateFunction> aggregates() {
         List<AggregateFunction> all = new ArrayList<>(AggregateFunctions.all());
         all.addAll(StatisticalAggregates.all());
+        all.addAll(BooleanAggregates.all());
         return List.copyOf(all);
     }
 

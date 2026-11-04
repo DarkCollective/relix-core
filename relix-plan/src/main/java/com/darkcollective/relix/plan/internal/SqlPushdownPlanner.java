@@ -815,7 +815,13 @@ final class SqlPushdownPlanner implements PushdownRenderer {
      */
     private Optional<String> aggregateSql(AggregateOperator operator, Operand argument,
                                           ColumnRenderer cols, Dialect dialect) {
-        Optional<String> rendered = SqlExpressions.operand(argument, cols, dialect, functions);
+        // A boolean fold's argument may be a condition, BOOL_AND(amount > 0), which is
+        // rendered as the predicate it is. Only here: elsewhere a condition in value
+        // position would come back from MySQL as 0 or 1.
+        boolean fold = operator == AggregateOperator.BOOL_AND || operator == AggregateOperator.BOOL_OR;
+        Optional<String> rendered = fold && argument instanceof ConditionOperand
+                ? SqlExpressions.condition(argument, cols, dialect, functions)
+                : SqlExpressions.operand(argument, cols, dialect, functions);
         if (rendered.isEmpty()) {
             return Optional.empty();
         }

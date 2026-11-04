@@ -1068,6 +1068,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                 if (a.operator() == AggregateOperator.COLLECT
                         || a.operator() == AggregateOperator.ARGMAX
                         || a.operator() == AggregateOperator.ARGMIN
+                        || a.operator() == AggregateOperator.MODE
                         || a.operator() == AggregateOperator.GROUPING) {
                     error(node.location(), "Window: aggregate " + a.operator().name()
                             + " is not supported in a ROLLING window "
@@ -1077,6 +1078,7 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                         node.location(), "Window " + a.operator().name(), parameters)
                         .validateExpression(a.argument());
                 validateSummed(a.operator(), a.argument(), input, node.location(), false);
+                validateBooleanFold(a.operator(), a.argument(), input, node.location());
             }
             case WindowFunction.RankingWindow r -> {
                 r.ntileCount().ifPresent(c -> new PredicateValidator(
@@ -2179,10 +2181,34 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     "Aggregation γ " + agg.operator().name(), parameters);
             operandValidator.validateExpression(agg.argument());
             validateSummed(agg.operator(), agg.argument(), input, node.location(), true);
+            validateBooleanFold(agg.operator(), agg.argument(), input, node.location());
             agg.yieldExpr().ifPresent(operandValidator::validateExpression);
             agg.orderBy().forEach(s -> operandValidator.validateExpression(s.expression()));
         }
         return null;
+    }
+
+    /**
+     * Refuses {@code BOOL_AND} or {@code BOOL_OR} over a value that is not a BOOLEAN, as
+     * the query is analysed rather than when a row arrives (#295). A number is the
+     * likeliest mistake, from a database that stores a flag as 0 or 1, and the message
+     * names the comparison that makes it a condition.
+     */
+    private void validateBooleanFold(AggregateOperator operator, Operand argument, Schema input, SourceLocation loc) {
+        if (operator != AggregateOperator.BOOL_AND && operator != AggregateOperator.BOOL_OR) {
+            return;
+        }
+        Type type = new OperandTypeInferrer(symbolTable, functions).infer(argument, input);
+        if (type == ScalarType.BOOLEAN || type == ScalarType.ANY) {
+            return;
+        }
+        String written = argument.prettyPrint();
+        String message = operator.name() + " takes a condition, and " + written + " is "
+                + (type instanceof ScalarType ? "a " + type : type.display());
+        if (type == ScalarType.NUMBER) {
+            message += ": to fold a 0/1 flag, write " + operator.name() + "(" + written + " = 1)";
+        }
+        error(loc, message);
     }
 
     /**

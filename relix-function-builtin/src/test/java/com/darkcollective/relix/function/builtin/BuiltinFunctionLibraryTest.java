@@ -52,7 +52,7 @@ final class BuiltinFunctionLibraryTest {
     private static final int BUILTIN_COUNT = 138;
 
     /** The eight aggregates: five SQL reducers, one that gathers, two that pick a row. */
-    private static final int AGGREGATE_COUNT = 18;
+    private static final int AGGREGATE_COUNT = 21;
 
     private static final List<ScalarFunction> FUNCTIONS =
             new BuiltinFunctionLibrary().scalarFunctions();
@@ -88,7 +88,7 @@ final class BuiltinFunctionLibraryTest {
                     .containsExactlyInAnyOrder("count", "sum", "avg", "min", "max",
                             "collect", "argmax", "argmin", "stddev", "stddev_samp", "stddev_pop",
                             "variance", "var_samp", "var_pop", "percentile_cont", "percentile_disc",
-                            "median", "string_agg");
+                            "median", "string_agg", "mode", "bool_and", "bool_or");
         }
 
         @Test

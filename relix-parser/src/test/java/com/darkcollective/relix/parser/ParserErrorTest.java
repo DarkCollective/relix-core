@@ -791,15 +791,15 @@ final class ParserErrorTest extends ParserTestSupport {
     @DisplayName("an aggregate GROUP does not have is reported as unknown, listing those it has (#254)")
     public void reportsUnknownAggregate() {
         String list = "; GROUP's aggregates are SUM, AVG, COUNT, MIN, MAX, COLLECT, ARGMAX, ARGMIN,";
-        assertParseError("GROUP g, MODE(x) -> m (T)")
-                .hasMessageContaining("Unknown aggregate: 'MODE'" + list)
-                .hasMessageContaining(", MEDIAN, STRING_AGG and GROUPING")
+        assertParseError("GROUP g, KURTOSIS(x) -> m (T)")
+                .hasMessageContaining("Unknown aggregate: 'KURTOSIS'" + list)
+                .hasMessageContaining(", MEDIAN, STRING_AGG, BOOL_AND, BOOL_OR, MODE and GROUPING")
                 .at(1, 10);
         assertParseError("GROUP g, CORR(x, k) -> c (T)").hasMessageContaining("Unknown aggregate: 'CORR';");
-        assertParseError("γ BOOL_AND(b) -> all_b (T)").hasMessageContaining("Unknown aggregate: 'BOOL_AND';");
+        assertParseError("γ BIT_AND(b) -> all_b (T)").hasMessageContaining("Unknown aggregate: 'BIT_AND';");
         // After a known aggregate, too.
-        assertParseError("GROUP g, COUNT(*) -> n, MODE(x) -> m (T)")
-                .hasMessageContaining("Unknown aggregate: 'MODE'" + list)
+        assertParseError("GROUP g, COUNT(*) -> n, KURTOSIS(x) -> m (T)")
+                .hasMessageContaining("Unknown aggregate: 'KURTOSIS'" + list)
                 .at(1, 25);
         // A typo of one is named.
         assertParseError("GROUP g, COUNT(*) -> n, MEDAIN(x) -> m (T)")
@@ -808,8 +808,8 @@ final class ParserErrorTest extends ParserTestSupport {
         assertParseError("GROUP g, MAN(x) -> m (T)")
                 .hasMessageContaining("Unknown aggregate: 'MAN' — did you mean 'MIN'?;");
         // A call without an alias, or within one, is passed over for the one that has it.
-        assertParseError("GROUP COALESCE(a, b), MODE(x) -> m (T)")
-                .hasMessageContaining("Unknown aggregate: 'MODE';");
+        assertParseError("GROUP COALESCE(a, b), KURTOSIS(x) -> m (T)")
+                .hasMessageContaining("Unknown aggregate: 'KURTOSIS';");
         // Keys with no call keep the DISTINCT rewrite; a key beside an aggregate is a key.
         assertParseError("GROUP g, k (T)").hasMessageContaining("GROUP needs an aggregate after its keys");
         assertThat(parse("GROUP UPPER(g) -> u, COUNT(*) -> n (T)")).isNode(AggregationNode.class);

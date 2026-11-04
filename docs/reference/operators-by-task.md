@@ -43,6 +43,10 @@ reference reads it by.
   [ARGMIN](aggregates/argmin.md)
 - Count or sum only the rows that meet a condition, beside the total →
   [FILTER](aggregates/filter.md)
+- The most common value of each group: each customer's usual status →
+  [MODE](aggregates/mode.md)
+- Whether every row of each group meets a condition, or any does, as a column →
+  [BOOL_AND](aggregates/bool_and.md), [BOOL_OR](aggregates/bool_or.md)
 - Gather a group's values into a list → [COLLECT](aggregates/collect.md), or into one
   string → [STRING_AGG](aggregates/string_agg.md)
 - Turn the values of a column into columns of their own →

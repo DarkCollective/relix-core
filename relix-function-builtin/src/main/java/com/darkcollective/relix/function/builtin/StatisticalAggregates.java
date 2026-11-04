@@ -41,8 +41,8 @@ import java.util.function.Function;
 import static com.darkcollective.relix.function.builtin.Arguments.reject;
 
 /**
- * The statistical aggregates: the variance and standard-deviation family, and the
- * percentiles with {@code MEDIAN}.
+ * The statistical aggregates: the variance and standard-deviation family, the
+ * percentiles with {@code MEDIAN}, and {@code MODE}.
  *
  * <h2>Exact, then rounded once</h2>
  * The variance family keeps the count, the sum and the sum of squares as exact decimals,
@@ -85,7 +85,16 @@ final class StatisticalAggregates {
                 new Definition(new AggregateSignature("MEDIAN", List.of(param("value")), Arity.exactly(1),
                         ScalarType.NUMBER, Set.of(AggregateProperty.ORDER_INSENSITIVE), true,
                         AggregateSignature.AGGREGATE, Optional.empty()),
-                        context -> new Continuous("MEDIAN"), types -> ScalarType.NUMBER));
+                        context -> new Continuous("MEDIAN"), types -> ScalarType.NUMBER),
+                // MODE reads its group in an order, the value's own unless it is given
+                // one, and the first of the most frequent values in it wins. It is
+                // order-insensitive in its input rows because the engine sorts them
+                // first, and it does not merge, so it is never computed in parts.
+                new Definition(new AggregateSignature("MODE", List.of(param("value")), Arity.exactly(1),
+                        ScalarType.ANY, Set.of(AggregateProperty.ORDER_INSENSITIVE), true,
+                        AggregateSignature.AGGREGATE, Optional.empty()),
+                        context -> new Mode(context.valueOrder()),
+                        types -> types.isEmpty() ? ScalarType.ANY : types.get(0)));
     }
 
     private static AggregateFunction variance(String name, boolean sample, boolean root) {
@@ -282,6 +291,44 @@ final class StatisticalAggregates {
             int index = fraction().multiply(BigDecimal.valueOf(values.size()))
                     .setScale(0, RoundingMode.CEILING).intValueExact() - 1;
             return values.get(Math.max(index, 0));
+        }
+    }
+
+    /**
+     * {@code MODE}: the most frequent value, under the engine's equality, so {@code 1} and
+     * {@code 1.0} are one value. Of the values that tie, the first to arrive wins; the
+     * engine hands the group over sorted, by the value ascending unless the aggregate
+     * names an order, so the tie rule is fixed rather than an accident of the input.
+     * NULL for no values.
+     */
+    private static final class Mode implements Accumulator {
+
+        private final java.util.TreeMap<Value, long[]> counts;
+        private long arrived;
+
+        Mode(Comparator<Value> order) {
+            this.counts = new java.util.TreeMap<>(order);
+        }
+
+        @Override
+        public void accumulate(List<Value> arguments) {
+            // [count, the position the value first arrived at]
+            counts.computeIfAbsent(arguments.get(0), v -> new long[] {0, arrived})[0]++;
+            arrived++;
+        }
+
+        @Override
+        public Value finish() {
+            Value best = NullValue.INSTANCE;
+            long[] bestSeen = null;
+            for (java.util.Map.Entry<Value, long[]> entry : counts.entrySet()) {
+                long[] seen = entry.getValue();
+                if (bestSeen == null || seen[0] > bestSeen[0] || seen[0] == bestSeen[0] && seen[1] < bestSeen[1]) {
+                    best = entry.getKey();
+                    bestSeen = seen;
+                }
+            }
+            return best;
         }
     }
 }

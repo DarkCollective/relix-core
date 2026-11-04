@@ -718,6 +718,62 @@ final class AggregationParserTest extends ParserTestSupport {
         assertParseError("ROLLING MEDIAN(x) OVER 3 ROWS SORT t AS s (R)").hasMessageContaining("Expected a window aggregate");
     }
 
+    // ==================== boolean aggregates (#295) and MODE (#296) ====================
+
+    @Test
+    public void booleanAggregatesInEachSpelling() {
+        AggregationNode node = (AggregationNode) parse("γ k, BOOL_AND(b) → a, every(b) → e, Bool_Or(b) → o (R)");
+        org.assertj.core.api.Assertions.assertThat(node.aggregates()).extracting(AggregateFunction::operator)
+                .containsExactly(AggregateOperator.BOOL_AND, AggregateOperator.BOOL_AND, AggregateOperator.BOOL_OR);
+        // EVERY is BOOL_AND, and prints back as it.
+        assertParsesTo("γ EVERY(b) → e (R)", parse("γ BOOL_AND(b) → e (R)"));
+        org.assertj.core.api.Assertions.assertThat(parse("γ EVERY(b) → e (R)").prettyPrint())
+                .isEqualTo("γ BOOL_AND(b) → e (R)");
+        // The argument may be a condition, as SQL's bool_and(status = 'shipped') is.
+        AggregateFunction condition = ((AggregationNode) parse("γ BOOL_OR(status = 'x') → o (R)")).aggregates().get(0);
+        org.assertj.core.api.Assertions.assertThat(condition.argument()).isInstanceOf(ConditionOperand.class);
+        RelNode printed = parse("γ BOOL_OR(status = 'x' ∧ n > 1) → o (R)");
+        assertParsesTo(printed.prettyPrint(), printed);
+        // FILTER, and a rolling window.
+        assertParsesTo("γ BOOL_AND(b) FILTER (WHERE n > 1) → a (R)",
+                parse("γ BOOL_AND(IIf(n > 1, b, NULL)) → a (R)"));
+        assertParsesTo("ROLLING EVERY(n > 0) OVER 3 ROWS SORT t AS s (R)",
+                AstBuilders.window(new WindowFunction.AggregateWindow(AggregateOperator.BOOL_AND,
+                                AstBuilders.condition(AstBuilders.cmp(AstBuilders.attr("n"), ComparisonOperator.GREATER,
+                                        AstBuilders.num("0")))),
+                        java.util.List.of(), java.util.List.of(AstBuilders.asc("t")),
+                        new WindowFrame.BoundedFrame(3), "s", AstBuilders.rel("R")));
+        // Not reserved.
+        org.assertj.core.api.Assertions.assertThat(((AggregationNode) parse("γ every, COUNT(*) (R)"))
+                .groupingKeys()).hasSize(1);
+    }
+
+    @Test
+    public void modeInEachSpelling() {
+        AggregationNode node = (AggregationNode) parse("γ k, MODE(x) → m (R)");
+        AggregateFunction mode = node.aggregates().get(0);
+        org.assertj.core.api.Assertions.assertThat(mode.operator()).isEqualTo(AggregateOperator.MODE);
+        org.assertj.core.api.Assertions.assertThat(mode.orderBy()).isEmpty();
+        // Oracle's name, and PostgreSQL's ordered-set form ascending, are MODE(x).
+        assertParsesTo("γ STATS_MODE(x) → m (R)", parse("γ MODE(x) → m (R)"));
+        assertParsesTo("γ MODE() WITHIN GROUP (ORDER BY x) → m (R)", parse("γ MODE(x) → m (R)"));
+        assertParsesTo("γ mode() within group (order by x asc) (R)", parse("γ MODE(x) (R)"));
+        // Descending keeps its order, which gives a tie to the largest, and prints back.
+        RelNode descending = parse("γ MODE() WITHIN GROUP (ORDER BY x DESC) → m (R)");
+        assertParsesTo("γ MODE(x ORDER BY x DESC) → m (R)", descending);
+        org.assertj.core.api.Assertions.assertThat(descending.prettyPrint())
+                .isEqualTo("γ MODE(x ORDER BY x DESC) → m (R)");
+        org.assertj.core.api.Assertions.assertThat(((AggregationNode) parse("γ MODE(x ORDER BY y) (R)"))
+                .aggregates().get(0).orderBy()).extracting(s -> s.columnName().orElseThrow()).containsExactly("y");
+        // Not reserved: a column may still be called mode.
+        org.assertj.core.api.Assertions.assertThat(((AggregationNode) parse("γ mode, COUNT(*) (R)"))
+                .groupingKeys()).hasSize(1);
+        assertParseError("γ MODE(DISTINCT x) (R)").hasMessageContaining("MODE counts how often each value occurs");
+        assertParseError("γ MODE() (R)").hasMessageContaining("WITHIN GROUP (ORDER BY");
+        assertParseError("ROLLING MODE(x) OVER 3 ROWS SORT t AS s (R)")
+                .hasMessageContaining("Expected a window aggregate");
+    }
+
     // ==================== string aggregates (#128) ====================
 
     @org.junit.jupiter.api.Test

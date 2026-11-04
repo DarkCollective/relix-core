@@ -1720,10 +1720,10 @@ public final class RelAlgebraParser {
     }
 
     /**
-     * Refuses {@code GROUP g, MODE(x) -> m (R)}, a GROUP with no aggregate whose keys
+     * Refuses {@code GROUP g, KURTOSIS(x) -> m (R)}, a GROUP with no aggregate whose keys
      * hold a named call, as a call to an aggregate that does not exist. Such a key is
      * legal beside an aggregate, {@code UPPER(name) -> u}, but with none the call was
-     * meant as one: SQL's {@code MODE}, {@code CORR} or {@code BOOL_AND}. Before this
+     * meant as one: SQL's {@code KURTOSIS}, {@code CORR} or {@code BIT_AND}. Before this
      * it was told to add an aggregate, and its rewrite was a DISTINCT of the same call.
      */
     private void rejectUnknownAggregateKey(int keysStart) {
@@ -2678,8 +2678,9 @@ public final class RelAlgebraParser {
         Token opTok = current;
         expect(TokenType.ROLLING, "Expected 'ROLLING'");
 
-        // The variance family rolls as the five reducers do; a percentile is an
-        // ordered-set aggregate, which SQL does not run over a window frame either.
+        // The variance family and BOOL_AND/BOOL_OR roll as the five reducers do; a
+        // percentile or MODE is an ordered-set aggregate, which SQL does not run over a
+        // window frame either.
         Optional<AggregateOperator> named = namedAggregate().filter(ROLLING_STATISTICS::contains);
         AggregateOperator operator = named.orElseGet(() -> switch (current.type()) {
             case SUM -> AggregateOperator.SUM;
@@ -2688,11 +2689,13 @@ public final class RelAlgebraParser {
             case MIN -> AggregateOperator.MIN;
             case MAX -> AggregateOperator.MAX;
             default -> throw error(current, "Expected a window aggregate (SUM, AVG, COUNT, MIN, MAX,"
-                    + " STDDEV, STDDEV_SAMP, STDDEV_POP, VARIANCE, VAR_SAMP or VAR_POP) after 'ROLLING'");
+                    + " STDDEV, STDDEV_SAMP, STDDEV_POP, VARIANCE, VAR_SAMP, VAR_POP, BOOL_AND, EVERY"
+                    + " or BOOL_OR) after 'ROLLING'");
         });
         advance();
         expect(TokenType.LPAREN, "Expected '(' after the ROLLING aggregate name");
-        Operand argument = parseOperand();
+        Operand argument = operator == AggregateOperator.BOOL_AND || operator == AggregateOperator.BOOL_OR
+                ? parseArgument() : parseOperand();
         expect(TokenType.RPAREN, "Expected ')' after the ROLLING aggregate argument");
 
         expect(TokenType.OVER, "Expected 'OVER' before the ROLLING frame specification");
@@ -3631,13 +3634,19 @@ public final class RelAlgebraParser {
             java.util.Map.entry("GROUP_CONCAT", AggregateOperator.STRING_AGG),
             java.util.Map.entry("LISTAGG", AggregateOperator.STRING_AGG),
             java.util.Map.entry("ARRAY_AGG", AggregateOperator.COLLECT),
+            java.util.Map.entry("BOOL_AND", AggregateOperator.BOOL_AND),
+            java.util.Map.entry("EVERY", AggregateOperator.BOOL_AND),
+            java.util.Map.entry("BOOL_OR", AggregateOperator.BOOL_OR),
+            java.util.Map.entry("MODE", AggregateOperator.MODE),
+            java.util.Map.entry("STATS_MODE", AggregateOperator.MODE),
             java.util.Map.entry("GROUPING", AggregateOperator.GROUPING),
             java.util.Map.entry("GROUPING_ID", AggregateOperator.GROUPING));
 
-    /** The named aggregates that roll over a window frame: the variance family. */
+    /** The named aggregates that roll over a window frame: the variance family and the boolean pair. */
     private static final java.util.Set<AggregateOperator> ROLLING_STATISTICS = java.util.EnumSet.of(
             AggregateOperator.STDDEV, AggregateOperator.STDDEV_SAMP, AggregateOperator.STDDEV_POP,
-            AggregateOperator.VARIANCE, AggregateOperator.VAR_SAMP, AggregateOperator.VAR_POP);
+            AggregateOperator.VARIANCE, AggregateOperator.VAR_SAMP, AggregateOperator.VAR_POP,
+            AggregateOperator.BOOL_AND, AggregateOperator.BOOL_OR);
 
     /** The aggregate the current word names where it is called, as in {@code MEDIAN(x)}; empty otherwise. */
     private Optional<AggregateOperator> namedAggregate() {
@@ -3747,6 +3756,9 @@ public final class RelAlgebraParser {
         if (operator == AggregateOperator.GROUPING) {
             return parseGroupingIndicator(nameTok);
         }
+        if (operator == AggregateOperator.MODE && peek(1).type() == TokenType.RPAREN) {
+            return parseModeWithinGroup(nameTok);
+        }
 
         expect(TokenType.LPAREN, "Expected '(' after aggregate function name");
 
@@ -3766,6 +3778,10 @@ public final class RelAlgebraParser {
             if (operator == AggregateOperator.ARGMAX || operator == AggregateOperator.ARGMIN) {
                 throw ParseException.at(operator + " ranks rows and takes no DISTINCT",
                         lexer.input(), distinctTok);
+            }
+            if (operator == AggregateOperator.MODE) {
+                throw ParseException.at("MODE counts how often each value occurs, so it takes no"
+                        + " DISTINCT, which would make every value occur once", lexer.input(), distinctTok);
             }
             advance();
             if (current.type() == TokenType.MULTIPLY && peek(1).type() == TokenType.RPAREN) {
@@ -3794,6 +3810,9 @@ public final class RelAlgebraParser {
             }
             advance();
             argument = new NumberOperand("1", loc(star));
+        } else if (operator == AggregateOperator.BOOL_AND || operator == AggregateOperator.BOOL_OR) {
+            // A boolean fold takes a condition, as SQL's bool_and(status = 'shipped') does.
+            argument = parseArgument();
         } else {
             argument = parseOperand();
         }
@@ -3809,8 +3828,10 @@ public final class RelAlgebraParser {
             expect(TokenType.COMMA, "Expected ',' — ARGMAX/ARGMIN take two arguments: (rank, yield)");
             yieldExpr = Optional.of(parseOperand());
         }
-        // COLLECT(x ORDER BY y), SQL's array_agg ordering.
-        List<SortSpecification> orderBy = operator == AggregateOperator.COLLECT ? parseAggregateOrder() : List.of();
+        // COLLECT(x ORDER BY y), SQL's array_agg ordering; MODE(x ORDER BY y), the order
+        // a tie is broken in.
+        List<SortSpecification> orderBy = operator == AggregateOperator.COLLECT
+                || operator == AggregateOperator.MODE ? parseAggregateOrder() : List.of();
 
         expect(TokenType.RPAREN, "Expected ')' after aggregate function argument");
         return finishAggregate(operator, argument, yieldExpr, distinct, orderBy);
@@ -3922,6 +3943,28 @@ public final class RelAlgebraParser {
         }
         return finishAggregate(AggregateOperator.GROUPING, new ArrayConstruction(keys, loc(nameTok)),
                 Optional.empty(), false, List.of());
+    }
+
+    /**
+     * Parses PostgreSQL's {@code MODE() WITHIN GROUP (ORDER BY x [ASC|DESC])}: the value
+     * is the ordering key. Ascending is {@code MODE(x)}, whose tie goes to the smallest;
+     * descending is {@code MODE(x ORDER BY x DESC)}, whose tie goes to the largest, as
+     * the ordering clause suggests and PostgreSQL does in practice.
+     */
+    private AggregateFunction parseModeWithinGroup(Token nameTok) {
+        String name = nameTok.lexeme();
+        expect(TokenType.LPAREN, "Expected '(' after " + name);
+        expect(TokenType.RPAREN, "Expected ')' after " + name + "(");
+        expect(TokenType.WITHIN, "Expected 'WITHIN GROUP (ORDER BY …)' after " + name + "(),"
+                + " or write the value in the parentheses: " + name + "(x)");
+        expect(TokenType.AGGREGATION, "Expected 'GROUP' after 'WITHIN'");
+        expect(TokenType.LPAREN, "Expected '(' after 'WITHIN GROUP'");
+        expect(TokenType.ORDER, "Expected 'ORDER BY' in WITHIN GROUP (…)");
+        expect(TokenType.BY, "Expected 'BY' after 'ORDER'");
+        SortSpecification key = parseSortSpecification();
+        expect(TokenType.RPAREN, "Expected ')' after the WITHIN GROUP ordering");
+        List<SortSpecification> orderBy = key.direction() == SortDirection.DESC ? List.of(key) : List.of();
+        return finishAggregate(AggregateOperator.MODE, key.expression(), Optional.empty(), false, orderBy);
     }
 
     /**
@@ -4084,7 +4127,8 @@ public final class RelAlgebraParser {
 
     /** The aggregates ROLLING runs over a frame, by name. */
     private static final Set<String> ROLLING_NAMES = Set.of("SUM", "AVG", "COUNT", "MIN", "MAX",
-            "STDDEV", "STDDEV_SAMP", "STDDEV_POP", "VARIANCE", "VAR_SAMP", "VAR_POP");
+            "STDDEV", "STDDEV_SAMP", "STDDEV_POP", "VARIANCE", "VAR_SAMP", "VAR_POP", "BOOL_AND", "EVERY",
+            "BOOL_OR");
 
     /** The ranking and offset functions WINDOW computes, by name. */
     private static final Set<String> WINDOW_NAMES = Set.of("ROW_NUMBER", "RANK", "DENSE_RANK",
