@@ -17,6 +17,7 @@ package com.darkcollective.relix.function.builtin;
 
 import com.darkcollective.relix.function.Arity;
 import com.darkcollective.relix.function.ScalarFunction;
+import com.darkcollective.relix.value.ArrayValue;
 import com.darkcollective.relix.value.internal.CodePoints;
 import com.darkcollective.relix.value.NullValue;
 import com.darkcollective.relix.value.NumberValue;
@@ -106,7 +107,7 @@ final class StringFunctions {
                                 Spellings.on(Spellings.DB2, 1, a -> "CHARACTER_LENGTH(" + a.get(0)
                                         + ", " + Spellings.DB2_CHARACTERS + ")")),
                         args -> args.get(0).isNull() ? NullValue.INSTANCE
-                                : number(CodePoints.length(string(args.get(0), "Len")))),
+                                : number(CodePoints.length(string(notAnArray(args.get(0)), "Len")))),
 
                 STRINGS.fn("UCase", STRING, PURE_DETERMINISTIC_IDEMPOTENT, List.of(p("s", STRING)),
                         args -> args.get(0).isNull() ? NullValue.INSTANCE
@@ -444,5 +445,17 @@ final class StringFunctions {
 
     private static NumberValue number(long n) {
         return new NumberValue(BigDecimal.valueOf(n));
+    }
+
+    /**
+     * The value itself, or a rejection naming {@code CARDINALITY} where it is an array:
+     * an array's length is a count of its elements, which is another function, and
+     * "expected STRING" alone would not say so.
+     */
+    private static Value notAnArray(Value value) {
+        if (value instanceof ArrayValue) {
+            throw reject("Len: expected STRING argument, got an array; use CARDINALITY for an array's length");
+        }
+        return value;
     }
 }

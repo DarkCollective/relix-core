@@ -343,7 +343,8 @@ argument).
 
 **Nested data** —
 [Entries](functions/nested/entries.md),
-[ARRAY_TO_STRING](functions/nested/array_to_string.md)
+[ARRAY_TO_STRING](functions/nested/array_to_string.md),
+[CARDINALITY](functions/nested/cardinality.md)
 
 ## 11. Advanced operators
 
