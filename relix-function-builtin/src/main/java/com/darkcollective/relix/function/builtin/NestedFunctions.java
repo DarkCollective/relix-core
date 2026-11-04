@@ -19,10 +19,12 @@ import com.darkcollective.relix.function.Arity;
 import com.darkcollective.relix.function.ScalarFunction;
 import com.darkcollective.relix.value.ArrayValue;
 import com.darkcollective.relix.value.NullValue;
+import com.darkcollective.relix.value.NumberValue;
 import com.darkcollective.relix.value.StringValue;
 import com.darkcollective.relix.value.StructValue;
 import com.darkcollective.relix.value.Value;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,6 +33,7 @@ import java.util.Map;
 import static com.darkcollective.relix.function.builtin.Category.PURE_DETERMINISTIC;
 import static com.darkcollective.relix.function.builtin.Category.p;
 import static com.darkcollective.relix.symbol.ScalarType.ANY;
+import static com.darkcollective.relix.symbol.ScalarType.NUMBER;
 import static com.darkcollective.relix.symbol.ScalarType.STRING;
 
 /**
@@ -71,7 +74,44 @@ final class NestedFunctions {
                 // backend matches for numbers and dates, so this runs here only.
                 NESTED.fn("ARRAY_TO_STRING", STRING, PURE_DETERMINISTIC,
                         List.of(p("array", ANY), p("separator", STRING), p("null_text", STRING)),
-                        Arity.between(2, 3), NestedFunctions::arrayToString));
+                        Arity.between(2, 3), NestedFunctions::arrayToString),
+
+                // The list is built in the engine (COLLECT, a document's array), so
+                // there is nothing for a backend to count. ARRAY_LENGTH is the same
+                // function with PostgreSQL's dimension argument; see SqlNames.
+                NESTED.fn("CARDINALITY", NUMBER, PURE_DETERMINISTIC,
+                        List.of(p("array", ANY), p("dimension", NUMBER)),
+                        Arity.exactly(1), NestedFunctions::cardinality));
+    }
+
+    /**
+     * {@code CARDINALITY(array)}, and {@code ARRAY_LENGTH(array [, dimension])}: the
+     * number of elements, NULL elements counted, as PostgreSQL counts them. An empty
+     * array is 0 by either name, where PostgreSQL's {@code array_length} gives NULL;
+     * a NULL array is NULL. Relix arrays have one dimension, so the only dimension is 1.
+     */
+    private static Value cardinality(List<Value> args) {
+        Value array = args.get(0);
+        if (args.size() > 1) {
+            Value dimension = args.get(1);
+            if (dimension.isNull()) {
+                return NullValue.INSTANCE;
+            }
+            if (!(dimension instanceof NumberValue d)) {
+                throw Arguments.reject("CARDINALITY: expected NUMBER dimension, got " + dimension.type());
+            }
+            if (d.value().compareTo(BigDecimal.ONE) != 0) {
+                throw Arguments.reject("CARDINALITY: an array has one dimension, so the dimension must be 1, got "
+                        + d.asDisplayString());
+            }
+        }
+        if (array.isNull()) {
+            return NullValue.INSTANCE;
+        }
+        if (!(array instanceof ArrayValue elements)) {
+            throw Arguments.reject("CARDINALITY: expected an array, got " + array.type());
+        }
+        return new NumberValue(BigDecimal.valueOf(elements.elements().size()));
     }
 
     /**

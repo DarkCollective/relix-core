@@ -220,6 +220,8 @@ final class FunctionCoverageTest {
             exact("entries", "Entries({ us: 3, gb: 7 })",
                     "[{key: us, value: 3}, {key: gb, value: 7}]"),
             exact("array_to_string", "ARRAY_TO_STRING([\"a\", 1, NULL], \"-\")", "a-1"),
+            num  ("cardinality", "CARDINALITY([\"a\", 1, NULL])",               "3"),
+            num  ("array_length", "ARRAY_LENGTH([\"a\", 1, NULL], 1)",           "3"),
             // ── Ordering ────────────────────────────────────────────────────────
             num  ("least",    "LEAST(5, 2, 8)",                    "2"),
             num  ("greatest", "GREATEST(5, 2, 8)",                 "8")

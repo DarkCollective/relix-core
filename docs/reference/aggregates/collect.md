@@ -76,7 +76,7 @@ UNNEST (μ) is the opposite direction. For a single representative value per gro
 use MIN/MAX/ARGMAX instead of collecting all of them.
 
 # See Also:
-[unnest](../operators/unnest.md), [group](../operators/group.md), [struct-construction](../literals/struct-construction.md), [array-construction](../literals/array-construction.md)
+[unnest](../operators/unnest.md), [group](../operators/group.md), [struct-construction](../literals/struct-construction.md), [array-construction](../literals/array-construction.md), [cardinality](../functions/nested/cardinality.md)
 
 # Notes:
 COLLECT followed by μ round-trips back to the original rows; the optimizer can
