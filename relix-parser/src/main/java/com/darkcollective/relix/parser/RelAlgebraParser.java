@@ -4634,20 +4634,21 @@ public final class RelAlgebraParser {
             return parseRegexMatch(left);
         }
 
-        // Check for LIKE / NOT LIKE
+        // Check for LIKE / NOT LIKE, and ILIKE / NOT ILIKE
         if (current.type() == TokenType.LIKE) {
             Token opTok = current;
             advance();
             Operand pattern = parseOperand();
-            return new PatternPredicate(left, pattern, false, parseLikeEscape(), loc(opTok));
+            return like(left, pattern, false, opTok, loc(opTok));
         }
 
         if (current.type() == TokenType.NOT && peek(1).type() == TokenType.LIKE) {
             Token notTok = current;
             advance(); // consume NOT
+            Token opTok = current;
             advance(); // consume LIKE
             Operand pattern = parseOperand();
-            return new PatternPredicate(left, pattern, true, parseLikeEscape(), loc(notTok));
+            return like(left, pattern, true, opTok, loc(notTok));
         }
 
         // Check for null predicate (attribute = ⊥ or attribute ≠ ⊥)
@@ -5561,6 +5562,28 @@ public final class RelAlgebraParser {
         return new AndPredicate(
                 new ComparisonPredicate(subject, ComparisonOperator.GREATER_EQUAL, low, at),
                 new ComparisonPredicate(subject, ComparisonOperator.LESS_EQUAL, high, at), at);
+    }
+
+    /**
+     * A LIKE, or an ILIKE read as the LIKE it is a spelling of: {@code x ILIKE p} is
+     * {@code LOWER(x) LIKE LOWER(p)}, with the escape character unchanged (#294). It is
+     * the library's own {@code LOWER}, so the pushdown is the one LOWER and LIKE already
+     * have, and the printers print the desugared form. Lowercasing a pattern leaves
+     * {@code %} and {@code _} as they are; it would not leave an escape character that
+     * is a letter, so ILIKE refuses one.
+     */
+    private Predicate like(Operand subject, Operand pattern, boolean negated, Token operator, SourceLocation at) {
+        Token escapeAt = isWord(current, "ESCAPE") ? peek(1) : current;
+        Optional<String> escape = parseLikeEscape();
+        if (!operator.lexeme().equalsIgnoreCase("ILIKE")) {
+            return new PatternPredicate(subject, pattern, negated, escape, at);
+        }
+        if (escape.isPresent() && !escape.get().toLowerCase(Locale.ROOT).equals(escape.get().toUpperCase(Locale.ROOT))) {
+            throw ParseException.at("ILIKE's ESCAPE character cannot be a letter, which lowercasing"
+                    + " the pattern would change: name ILIKE '50!%' ESCAPE '!'", lexer.input(), escapeAt);
+        }
+        return new PatternPredicate(new FunctionCall("LOWER", List.of(subject), at),
+                new FunctionCall("LOWER", List.of(pattern), at), negated, escape, at);
     }
 
     /**

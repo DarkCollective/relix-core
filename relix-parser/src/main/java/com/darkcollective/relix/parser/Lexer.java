@@ -181,7 +181,11 @@ public final class Lexer {
             // `x IS NULL` / `x IS NOT NULL` — SQL-prior null predicate.
             Map.entry("is",   TokenType.IS),
             Map.entry("in",   TokenType.ELEMENT_OF),
-            Map.entry("like", TokenType.LIKE)
+            Map.entry("like", TokenType.LIKE),
+            // PostgreSQL's case-insensitive LIKE. The same token, so every place that
+            // reads a LIKE as a condition reads this one too; the parser tells them
+            // apart by the lexeme and desugars ILIKE to LOWER(x) LIKE LOWER(p).
+            Map.entry("ilike", TokenType.LIKE)
     );
 
     /**

@@ -5,6 +5,8 @@ attr LIKE "pattern"
 attr NOT LIKE "pattern"
 attr LIKE <string expression>     -- the pattern can also be a column or expression
 attr LIKE "pattern" ESCAPE "c"    -- c makes the character after it literal
+attr ILIKE "pattern"              -- LIKE ignoring case: LOWER(attr) LIKE LOWER("pattern")
+attr NOT ILIKE "pattern"
 
 σ name LIKE "A%" (Customers)
 σ email NOT LIKE "%@example.com" (Users)
@@ -14,6 +16,7 @@ LIKE keeps rows where a string column matches a wildcard pattern. The pattern ca
 use `%` to stand for any sequence of characters (including none) and `_` to stand
 for exactly one character. NOT LIKE keeps rows that do NOT match. This is the
 standard way to filter by a partial string without needing a full regular expression.
+ILIKE is the same match ignoring case, so `"ab%"` keeps `abc`, `ABC` and `Abc`.
 
 # Technical Description:
 LIKE forms a PatternPredicate over two operands: the value and the pattern, which
@@ -29,6 +32,12 @@ escape is one character, written as a string literal. NULL on either side makes
 the predicate UNKNOWN, and a selection keeps only rows that are true — so a NULL
 value is dropped by `LIKE` and by `NOT LIKE` alike, rather than falling through to
 the negative side.
+
+ILIKE is a spelling, PostgreSQL's: `x ILIKE p` is read as `LOWER(x) LIKE LOWER(p)`,
+with the same `ESCAPE`, and `x NOT ILIKE p` as its negation. Lowercasing leaves `%`
+and `_` as they are; it would change an escape character that is a letter, so ILIKE
+refuses one. Because it is read as that form, a printed script shows the `LOWER`
+calls rather than the keyword.
 
 # Examples:
 Names starting with a capital A:
@@ -51,6 +60,9 @@ Combine with other predicates:
 
 A literal percent sign, escaped:
   σ label LIKE "%!%%" ESCAPE "!" (Discounts)
+
+Names starting with "mc", whatever their case:
+  σ name ILIKE "mc%" (Customers)
 
 
 # Worked Example:
@@ -152,6 +164,21 @@ query { σ label LIKE "%0!%%" ESCAPE "!" (Discounts) };
 
 `_` is escaped the same way: `"save!_%"` matches `save_20` and not `save 20`.
 
+`LIKE` compares case as written, so `"ab-%"` matches none of the product codes.
+`ILIKE` lowercases both sides first:
+
+```relix
+query { σ sku ILIKE "ab-1%" (Products) };
+```
+
+```
+ sku      name
+ ───────  ────────────
+ AB-1001  Widget
+ AB-1002  Widget Large
+(2 rows)
+```
+
 Left unescaped, `_` is easy to misread. `"%_%"`, written for "the labels that
 contain an underscore", matches every label of one character or more. Analysis
 warns, without refusing, when a pattern has no `ESCAPE` and every `_` in it stands
@@ -170,9 +197,13 @@ taken as meant.
 A pattern that is not a string literal is not pushed down to MongoDB, so that
 predicate runs in the engine. SQL sources receive it as written. Matching is
 case-sensitive, as in PostgreSQL, Oracle and SQLite; MySQL's and SQL Server's default
-collations ignore case. Write the pattern's subject under `COLLATE NOCASE` to match
-ignoring case:
+collations ignore case. `ILIKE` is the spelling that matches as MySQL's and SQLite's
+default `LIKE` does, ignoring case; writing the subject under `COLLATE NOCASE` does too:
+  σ name ILIKE 'alice%' (Users)
   σ name COLLATE NOCASE LIKE 'alice%' (Users)
+
+ILIKE runs where `LOWER(x) LIKE LOWER(p)` runs, which is in the engine: `LOWER` is not
+sent to a backend, whose collation decides how it maps case.
 
 The only special characters are `%` (any run) and `_` (any one character), and
 without `ESCAPE` no character escapes, so a backslash matches a backslash. That is

@@ -119,4 +119,26 @@ final class SqlPredicateSpellingsTest {
                             com.darkcollective.relix.ast.AstBuilders.rel("D")));
         }
     }
+
+    @Test
+    @DisplayName("ILIKE matches across case where LIKE does not, NOT ILIKE is its complement, and ESCAPE holds (#294)")
+    void ilike() {
+        try (Relix relix = Relix.open()) {
+            relix.define("""
+                    D := [| label |
+                    | Save_20 |
+                    | SAVE 20 |
+                    | save_5 |
+                    | other |];
+                    """);
+            EmbedAssertions.assertThat(relix.relation("σ label LIKE 'save%' (D)")).tuples()
+                    .extracting(t -> t.string("label")).containsExactly("save_5");
+            EmbedAssertions.assertThat(relix.relation("σ label ILIKE 'save%' (D)")).tuples()
+                    .extracting(t -> t.string("label")).containsExactly("Save_20", "SAVE 20", "save_5");
+            EmbedAssertions.assertThat(relix.relation("σ label ILIKE 'SAVE!_%' ESCAPE '!' (D)")).tuples()
+                    .extracting(t -> t.string("label")).containsExactly("Save_20", "save_5");
+            EmbedAssertions.assertThat(relix.relation("σ label NOT ILIKE 'SAVE%' (D)")).tuples()
+                    .extracting(t -> t.string("label")).containsExactly("other");
+        }
+    }
 }

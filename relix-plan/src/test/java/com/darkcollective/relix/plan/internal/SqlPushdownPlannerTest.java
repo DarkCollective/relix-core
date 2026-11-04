@@ -2237,4 +2237,31 @@ final class SqlPushdownPlannerTest {
             assertThat(scanOf(push(ORDERS + "query { σ id = 1 (Orders) };")).parameters()).isEmpty();
         }
     }
+
+    /**
+     * ILIKE is a spelling of {@code LOWER(x) LIKE LOWER(p)} (#294), so it pushes exactly
+     * where that does. The library's LOWER is declined on every dialect, case mapping
+     * belonging to a backend's collation rather than to the function, so on each the
+     * selection stays in the engine, as the written-out form always has.
+     */
+    @Nested
+    @DisplayName("ILIKE, which pushes where LOWER(x) LIKE LOWER(p) does")
+    class Ilike {
+
+        @Test
+        @DisplayName("on every dialect it folds as its desugared form, which runs in the engine")
+        void foldsAsItsDesugaredForm() {
+            for (String dialect : List.of("postgres", "mysql", "sqlite", "duckdb", "sqlserver", "oracle", "db2", "h2")) {
+                String orders = "connection db from database { url: \"jdbc:h2:mem:x\", dialect: " + dialect + " };\n"
+                        + "source Orders from db { table: \"orders\", "
+                        + "schema: { id: NUMBER, name: STRING } };\n";
+                Optional<PhysicalNode.PushedScan> ilike = push(orders + "query { σ name ILIKE 'A%' (Orders) };");
+                Optional<PhysicalNode.PushedScan> lower =
+                        push(orders + "query { σ LOWER(name) LIKE LOWER('A%') (Orders) };");
+                assertThat(ilike.map(PhysicalNode.PushedScan::nativeQuery)).as(dialect)
+                        .isEqualTo(lower.map(PhysicalNode.PushedScan::nativeQuery))
+                        .isEmpty();
+            }
+        }
+    }
 }
