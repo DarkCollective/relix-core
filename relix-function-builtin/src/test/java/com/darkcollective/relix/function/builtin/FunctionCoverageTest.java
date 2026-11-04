@@ -216,6 +216,8 @@ final class FunctionCoverageTest {
             exact("ARRAY_TO_STRING", "a-1-?", new ArrayValue(List.of(s("a"), n("1"), NullValue.INSTANCE)),
                     s("-"), s("?")),
             exact("ARRAY_TO_STRING", "NULL", NullValue.INSTANCE, s("-")),
+            num("CARDINALITY", "3", new ArrayValue(List.of(s("a"), NullValue.INSTANCE, n("1")))),
+            num("ARRAY_LENGTH", "0", new ArrayValue(List.of()), n("1")),
             // ── Ordering ──────────────────────────────────────────────────────────
             num("LEAST", "2", n("5"), n("2"), n("8")),
             num("GREATEST", "8", n("5"), n("2"), n("8")));

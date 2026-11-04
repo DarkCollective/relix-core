@@ -202,6 +202,10 @@ final class ReferenceLookupTest {
                 assertThat(INSTALLED.entry(name)).as(name).contains(INSTALLED.function("Coalesce").orElseThrow());
             }
             assertThat(INSTALLED.lookup("ifnull").orElseThrow()).contains("# SQL names:", "`IFNULL(x, y)`");
+            for (String name : List.of("cardinality", "array_length", "ARRAY_LENGTH")) {
+                assertThat(INSTALLED.lookup(name).orElseThrow()).as(name)
+                        .contains("# Name: CARDINALITY", "`ARRAY_LENGTH(arr, 1)`");
+            }
         }
 
         @Test

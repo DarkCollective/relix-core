@@ -100,6 +100,7 @@ final class SqlNames {
     static Map<String, String> aliases() {
         Map<String, String> all = new java.util.TreeMap<>(ALIASES);
         all.put("LN", "Log");
+        all.put("ARRAY_LENGTH", "CARDINALITY");
         all.put("SUBSTR", "SUBSTRING");
         all.put("TRUNCATE", "TRUNC");
         return all;
@@ -119,6 +120,9 @@ final class SqlNames {
                 .forEach(e -> all.add(alias(e.getKey(), byName.get(e.getValue()), null)));
         // LN is the one-argument Log: Log(b, y) is a base, which LN has none of.
         all.add(alias("LN", byName.get("Log"), Arity.exactly(1)));
+        // ARRAY_LENGTH is CARDINALITY with PostgreSQL's dimension argument, whose only
+        // legal value for a one-dimensional array is 1.
+        all.add(alias("ARRAY_LENGTH", byName.get("CARDINALITY"), Arity.between(1, 2)));
 
         ScalarFunction substring = STRINGS.fn("SUBSTRING", STRING, PURE_DETERMINISTIC,
                 List.of(p("s", STRING), p("start", NUMBER), p("length", NUMBER)),

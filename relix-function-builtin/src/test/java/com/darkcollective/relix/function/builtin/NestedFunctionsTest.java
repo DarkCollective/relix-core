@@ -168,4 +168,62 @@ final class NestedFunctionsTest {
             assertThat(pushdown.render(PushdownTarget.sql("postgres"), List.of("rates"))).isEmpty();
         }
     }
+
+    @Nested
+    @DisplayName("Counting an array's elements (#293)")
+    final class CountingAnArray {
+
+        private final ArrayValue three = new ArrayValue(List.of(s("a"), NULL, n("1")));
+
+        @Test
+        @DisplayName("CARDINALITY counts every element, NULL ones included")
+        void countsNullElements() {
+            assertThat(call("CARDINALITY", three)).isEqualTo(new NumberValue(new BigDecimal("3")));
+            assertThat(call("ARRAY_LENGTH", three)).isEqualTo(new NumberValue(new BigDecimal("3")));
+        }
+
+        @Test
+        @DisplayName("an empty array is 0 by either name, and a NULL array NULL")
+        void emptyAndNull() {
+            ArrayValue empty = new ArrayValue(List.of());
+            assertThat(call("CARDINALITY", empty)).isEqualTo(new NumberValue(BigDecimal.ZERO));
+            assertThat(call("ARRAY_LENGTH", empty, n("1"))).isEqualTo(new NumberValue(BigDecimal.ZERO));
+            assertThat(call("CARDINALITY", NULL)).isEqualTo(NULL);
+            assertThat(call("ARRAY_LENGTH", NULL, n("1"))).isEqualTo(NULL);
+        }
+
+        @Test
+        @DisplayName("a value that is not an array is refused, as ARRAY_TO_STRING refuses it")
+        void nonArrayRefused() {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> call("CARDINALITY", s("abc")))
+                    .hasMessage("CARDINALITY: expected an array, got STRING");
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> call("ARRAY_LENGTH", n("3")))
+                    .hasMessage("ARRAY_LENGTH: expected an array, got NUMBER");
+        }
+
+        @Test
+        @DisplayName("ARRAY_LENGTH's dimension must be 1, the only one an array has")
+        void dimensionMustBeOne() {
+            assertThat(call("ARRAY_LENGTH", three, n("1"))).isEqualTo(new NumberValue(new BigDecimal("3")));
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> call("ARRAY_LENGTH", three, n("2")))
+                    .hasMessage("ARRAY_LENGTH: an array has one dimension, so the dimension must be 1, got 2");
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> call("ARRAY_LENGTH", three, s("1")))
+                    .hasMessage("ARRAY_LENGTH: expected NUMBER dimension, got STRING");
+            assertThat(call("ARRAY_LENGTH", three, NULL)).isEqualTo(NULL);
+        }
+
+        @Test
+        @DisplayName("Len of an array names CARDINALITY")
+        void lenOfAnArrayNamesCardinality() {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> call("LENGTH", three))
+                    .hasMessageContaining("use CARDINALITY for an array's length");
+        }
+
+        @Test
+        @DisplayName("no backend counts it: the list is built in the engine")
+        void noPushdown() {
+            assertThat(function("CARDINALITY").pushdown().render(new PushdownTarget("sql", "postgres"), List.of("x")))
+                    .isEmpty();
+        }
+    }
 }
