@@ -441,7 +441,7 @@ final class ReferenceIndex {
               "is-null", "is null", "isnull", "null"),
             e("predicates/like.md",       "predicate", "LIKE",        "LIKE",
               "Pattern matching with wildcards",
-              "like", "like escape"),
+              "like", "like escape", "ilike", "not ilike", "case-insensitive like"),
 
             // ── Language constructs ──────────────────────────────────────────
             e("language/assignment.md",     "language", "Assignment",    ":=",
@@ -540,7 +540,7 @@ final class ReferenceIndex {
             e("language/collate.md",           "language", "COLLATE", "COLLATE",
               "Compare, sort and group strings under a collation: s COLLATE NOCASE",
               "collate", "collation", "nocase", "case-insensitive", "case insensitive",
-              "ignore case", "binary collation", "locale", "ilike"),
+              "ignore case", "binary collation", "locale"),
             e("language/cast.md",              "language", "CAST", "CAST",
               "Convert a value to a type: CAST(x AS NUMBER)",
               "cast", "convert", "conversion", "type conversion",

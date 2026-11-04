@@ -74,7 +74,7 @@ public final class Identifiers {
             "join", "semi", "anti", "ljoin", "rjoin", "fjoin", "usemi", "asof",
             "ijoin", "within", "ties", "cross", "union", "uall", "ounion", "diff",
             "minus", "except", "inter", "intersect", "div", "symdiff", "compose",
-            "and", "or", "not", "null", "is", "in", "like",
+            "and", "or", "not", "null", "is", "in", "like", "ilike",
             // Not lexer keywords, but read as SQL's datetime keywords wherever a value
             // goes, so a column of the name prints delimited to stay a column.
             "current_date", "current_time", "current_timestamp", "localtimestamp");
