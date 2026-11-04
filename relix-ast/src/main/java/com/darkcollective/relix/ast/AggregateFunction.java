@@ -57,7 +57,8 @@ import java.util.Optional;
  * <p>An aggregate whose result depends on the order it reads its rows in —
  * {@code STRING_AGG}, {@code COLLECT} — may carry an {@linkplain #orderBy() ordering}:
  * the group's rows are read in that order, as SQL's {@code STRING_AGG(x, ', ' ORDER BY y)}
- * reads them. Every other aggregate has none.
+ * reads them. {@code MODE} reads one too, to break a tie: the first of the equally
+ * frequent values in that order wins. Every other aggregate has none.
  *
  * @param alias     the optional output column name
  * @param distinct  whether the aggregate reads each distinct argument value once

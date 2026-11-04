@@ -89,6 +89,23 @@ public enum AggregateOperator {
      */
     STRING_AGG,
     /**
+     * Whether every value in a group is true: SQL's {@code BOOL_AND}, and its standard
+     * name {@code EVERY}. NULLs are skipped, and a group with no value is NULL.
+     */
+    BOOL_AND,
+    /**
+     * Whether any value in a group is true: SQL's {@code BOOL_OR}. NULLs are skipped, and
+     * a group with no value is NULL.
+     */
+    BOOL_OR,
+    /**
+     * The most frequent value in a group: PostgreSQL's {@code MODE() WITHIN GROUP (ORDER
+     * BY x)} and Oracle's {@code STATS_MODE(x)}. A tie goes to the first of the equally
+     * frequent values in the aggregate's {@link AggregateFunction#orderBy() ordering},
+     * which is the value itself, ascending, when it has none: the smallest.
+     */
+    MODE,
+    /**
      * SQL's {@code GROUPING(k, …)}: which of the named grouping keys a row has rolled up.
      * A key a row's grouping set leaves out is NULL in that row, as a NULL in the data
      * may be too, and this is how the two are told apart. Each named key is one bit,

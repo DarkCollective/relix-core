@@ -409,12 +409,20 @@ aggregate         ::= ( "SUM" | "AVG" | "MIN" | "MAX" ) "(" "DISTINCT"? operand 
                     | "COUNT" "(" ( "DISTINCT"? operand | "*" ) ")" agg_filter? ( arrow name )?
                     | ( "ARGMAX" | "ARGMIN" ) "(" operand "," operand ")" agg_filter? ( arrow name )?
                     | statistic CALL_OPEN "DISTINCT"? operand ")" agg_filter? ( arrow name )?
+                    | ( "BOOL_AND" | "EVERY" | "BOOL_OR" ) CALL_OPEN "DISTINCT"? argument ")"
+                      agg_filter? ( arrow name )?
+                    | ( "MODE" | "STATS_MODE" ) CALL_OPEN
+                      ( operand agg_order? ")"
+                      | ")" "WITHIN" ( "γ" | "GROUP" ) "(" "ORDER" "BY" sort_key ")" )
+                      agg_filter? ( arrow name )?
                     | ( "GROUPING" | "GROUPING_ID" ) CALL_OPEN operand ( "," operand )* ")" ( arrow name )?
                     | ( "PERCENTILE_CONT" | "PERCENTILE_DISC" ) CALL_OPEN operand
                       ( "," operand ")"
                       | ")" "WITHIN" ( "γ" | "GROUP" ) "(" "ORDER" "BY" sort_key ")" )
                       agg_filter? ( arrow name )?
-/* Matched by their text, so none is reserved: a column may be called median. */
+/* Matched by their text, so none is reserved: a column may be called median, or mode.
+   EVERY is BOOL_AND, and STATS_MODE is MODE; a MODE's tie goes to the first of the
+   equally frequent values in its ORDER BY, the value ascending when it has none. */
 statistic         ::= "STDDEV" | "STDDEV_SAMP" | "STDDEV_POP"
                     | "VARIANCE" | "VAR_SAMP" | "VAR_POP" | "MEDIAN"
 /* One aggregate in three engines' spellings, each matched by its text:
@@ -531,7 +539,8 @@ per_names         ::= "PER" name ( "," name )*
    ROLLING SUM(amount) OVER PARTITION PER region AS region_total (Orders) */
 rolling           ::= "ROLLING" ( ( "SUM" | "AVG" | "COUNT" | "MIN" | "MAX" ) "(" operand ")"
                                 | ( "STDDEV" | "STDDEV_SAMP" | "STDDEV_POP" | "VARIANCE" | "VAR_SAMP" | "VAR_POP" )
-                                  CALL_OPEN operand ")" )
+                                  CALL_OPEN operand ")"
+                                | ( "BOOL_AND" | "EVERY" | "BOOL_OR" ) CALL_OPEN argument ")" )
                       "OVER" ( ( ( INTEGER | "ALL" ) "ROWS" | frame_clause ) window_sort
                              | "PARTITION" window_sort? )
                       per_names? "AS" name input

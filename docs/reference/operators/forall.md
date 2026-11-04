@@ -115,7 +115,7 @@ whole of what ∀ spares you, and the reason it is an operator rather than sugar
 ```
 
 # See Also:
-[semi-join](../joins/semi-join.md), [anti-join](../joins/anti-join.md), [division](../set-operations/division.md), [group](group.md), [and](../predicates/and.md)
+[semi-join](../joins/semi-join.md), [anti-join](../joins/anti-join.md), [division](../set-operations/division.md), [group](group.md), [and](../predicates/and.md), [bool_and](../aggregates/bool_and.md)
 
 # Notes:
 ∀ is first-class (not desugared) and pushes down in the keyed, single-connection
