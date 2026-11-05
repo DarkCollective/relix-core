@@ -720,6 +720,10 @@ final class ProvenanceEvaluatorTest {
             assertThatThrownBy(() -> provWeighted(selfLoop + "query { CLOSURE src, dst (Edges) };",
                     PolynomialSemiring.INSTANCE, null, 1000))
                     .hasMessageContaining("256-term limit");
+            // an idempotent semiring over a longer cycle converges as it always did
+            String ring = "Edges := [| src | dst |\n| 1 | 2 |\n| 2 | 3 |\n| 3 | 4 |\n| 4 | 5 |\n| 5 | 1 |];\n";
+            assertThat(annotations(provWeighted(ring + "query { CLOSURE src, dst (Edges) };",
+                    BooleanSemiring.INSTANCE, null, UNLIMITED))).hasSize(25);
             // an acyclic graph is unaffected
             assertThat(annotations(provWeighted(CHAIN + "query { CLOSURE src, dst (Edges) };",
                     PolynomialSemiring.INSTANCE, null, UNLIMITED))).hasSize(3);

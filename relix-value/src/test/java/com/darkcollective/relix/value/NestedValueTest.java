@@ -134,8 +134,10 @@ final class NestedValueTest {
             assertThat(ValuePath.navigate(dotted, "['a.b']")).isEqualTo(num(1));
             assertThat(ValuePath.navigate(dotted, "[\"a.b\"]")).isEqualTo(num(1));
             assertThat(ValuePath.navigate(dotted, "c['x]y']")).isEqualTo(num(2));
-            assertThatThrownBy(() -> ValuePath.parse("['a.b"))
-                    .hasMessageContaining("Unterminated quoted key");
+            for (String bad : List.of("['a.b", "['a.b'", "['a.b'x]")) {
+                assertThatThrownBy(() -> ValuePath.parse(bad))
+                        .hasMessageContaining("Unterminated quoted key");
+            }
         }
 
         @Test
