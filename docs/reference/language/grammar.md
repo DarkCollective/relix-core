@@ -59,7 +59,8 @@ script            ::= namespace_decl? env_decl? statement*
 namespace_decl    ::= "namespace" script_name ";"
 env_decl          ::= "env" ( "from" STRING_DQ )? ( "using" STRING_DQ )? ";"
 
-/* "private" hides a declaration from scripts that import this one. */
+/* "private" hides a declaration from every file that imports this one, whatever
+   the form of the import; the declaring file and its own definitions still use it. */
 statement         ::= "private"? ( import_stmt
                                  | source_decl
                                  | connection_decl
@@ -71,7 +72,7 @@ statement         ::= "private"? ( import_stmt
 /* Statement-layer names are plain words; backticks are not accepted here. */
 script_name       ::= WORD
 
-/* import "lib.relix";                      everything the file exports
+/* import "lib.relix";                      everything the file does not mark private
    import relation Totals from "lib.relix"; one name, of a stated kind
    import { A, B } from "lib.relix";        several names
    import Totals from "lib.relix";          one name                     */
