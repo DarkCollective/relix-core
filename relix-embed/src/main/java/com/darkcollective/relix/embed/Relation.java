@@ -2200,7 +2200,7 @@ public final class Relation {
         if (!unresolved.isEmpty()) {
             throw new RelixException("cannot plan this relation; " + becauseOf(unresolved));
         }
-        List<String> functions = new ArrayList<>();
+        java.util.Set<String> functions = new java.util.LinkedHashSet<>();
         collectUnknownFunctions(node, functions);
         if (!functions.isEmpty()) {
             // A relation sees the declarations that existed when it was built, so a table
@@ -2215,12 +2215,11 @@ public final class Relation {
     }
 
     /** The table functions a LATERAL in this expression calls that this relation's symbol table does not hold. */
-    private void collectUnknownFunctions(RelNode current, List<String> names) {
+    private void collectUnknownFunctions(RelNode current, java.util.Set<String> names) {
         if (current instanceof com.darkcollective.relix.ast.LateralJoinNode lateral
                 && lateral.right() instanceof com.darkcollective.relix.ast.RelationFunctionCall call
                 && model.symbolTable().lookupFunction(call.functionName()).stream()
-                        .noneMatch(f -> f instanceof com.darkcollective.relix.symbol.function.RelationFunctionSymbol)
-                && !names.contains(call.functionName())) {
+                        .noneMatch(f -> f instanceof com.darkcollective.relix.symbol.function.RelationFunctionSymbol)) {
             names.add(call.functionName());
         }
         current.children().forEach(child -> collectUnknownFunctions(child, names));
