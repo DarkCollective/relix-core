@@ -134,12 +134,12 @@ final class SqlExpressionsTest {
         }
 
         @Test
-        @DisplayName("unary negation and arithmetic")
+        @DisplayName("unary negation folds, arithmetic does not")
         void unaryAndArithmetic() {
             assertThat(render(unary(attr("x")))).hasValue("(-x)");
             var expr = arith(
                     attr("price"), ArithmeticOperator.MULTIPLY, num("2"));
-            assertThat(render(expr)).hasValue("(price * 2)");
+            assertThat(render(expr)).as("arithmetic runs in the engine").isEmpty();
         }
 
         @Test

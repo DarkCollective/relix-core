@@ -132,17 +132,16 @@ final class PushdownCorpus {
                     Dialect.SQLSERVER, Dialect.DB2);
 
     /**
-     * The dialects that fold an AS-OF join: Postgres, DuckDB, which spells
-     * {@code LATERAL} the same way, and SQL Server, which spells it {@code APPLY}.
+     * The dialects that fold an AS-OF join: none.
      *
-     * <p>{@code Dialect.supportsLateralAsOf} is the answer, and it is a claim about
-     * {@code LATERAL} rather than about the operator: H2 2.x has none, and MySQL grew one
-     * in 8.0.14 that a declared dialect cannot confirm the server is new enough for.
-     * DuckDB is the second witness to this renderer's SQL, and the first that runs in the
-     * gate rather than behind a container.
+     * <p>The nearest-row lookup renders as a {@code LATERAL} sub-select ordered by the
+     * match column, but it ends in {@code LIMIT 1}, and the engine's {@code TIES (FIRST|LAST)}
+     * rule picks among rows tied on the match value by <em>input order</em>, which a table
+     * does not have. DuckDB, for one, answers the insertion-order-first row whatever the
+     * ordering says. A tie depends on the data and cannot be excluded from a plan, so the
+     * fold is declined everywhere and the AS-OF cases below assert exactly that.
      */
-    private static final Set<Dialect> FOLDS_LATERAL_ASOF =
-            EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLSERVER, Dialect.DB2);
+    private static final Set<Dialect> FOLDS_LATERAL_ASOF = EnumSet.noneOf(Dialect.class);
 
     /**
      * The dialects that execute a pushed {@code OVER} clause — see
@@ -374,6 +373,7 @@ final class PushdownCorpus {
         groups.put("∀ — a group survives only when every row satisfies the condition", universal());
         groups.put("⨝ — two tables on one connection, folded into one SELECT", joins());
         groups.put("ASOF — the nearest row in time, as a LATERAL sub-select", asOfJoins());
+        groups.put("IJOIN — an Allen relation between two intervals, over NULL and inverted ones", intervalJoins());
         groups.put("connection.table — the same joins over tables no source declares", dottedReferences());
         groups.put("names that are not identifiers — order-lines and unit-price", delimitedNames());
         groups.put("⋈ — a natural join, equating the columns two headings share", naturalJoins());
@@ -439,13 +439,49 @@ final class PushdownCorpus {
                 "σ code LIKE '%B%' (Orders)");
     }
 
+    /**
+     * Arithmetic is declined, on every dialect. A backend computes {@code +}, {@code -}
+     * and {@code *} in the column's own type, and the engine in arbitrary-precision
+     * decimal, so a pushed one raises where the engine answers ({@code INT + 1} past
+     * 2147483647 on H2, DuckDB, PostgreSQL, SQL Server and Db2; a DuckDB
+     * {@code DECIMAL} product) or answers in binary floating point where the engine
+     * answers in decimal ({@code 0.1 * 3} over a {@code DOUBLE}). The declared schema says
+     * {@code NUMBER} whatever the column is, so which case a column is in cannot be read
+     * at plan time. The first three {@code Nums} rows are the ones that tell.
+     */
     private static List<Case> arithmetic() {
-        return cases(
-                "σ amount * qty > 200 (Orders)",
-                "σ amount - qty < 100 (Orders)",
-                "σ amount + qty = 102 (Orders)",
-                "σ (amount + qty) * 2 > 210 (Orders)",
-                "σ -amount < -60 (Orders)");
+        return List.of(
+                Case.declined("σ amount * qty > 200 (Orders)"),
+                Case.declined("σ amount - qty < 100 (Orders)"),
+                Case.declined("σ amount + qty = 102 (Orders)"),
+                Case.declined("σ (amount + qty) * 2 > 210 (Orders)"),
+                Case.of("σ -amount < -60 (Orders)"),
+                // The largest INT plus one: 2147483648 in the engine, an overflow error in
+                // the database were it computed there.
+                Case.declined("π nid, n + 1 → r (Nums)"),
+                Case.declined("π nid, n * n → r (Nums)"),
+                Case.declined("γ SUM(n + 1) → s (Nums)"),
+                // The square of the largest DECIMAL(12,3), which leaves DuckDB's DECIMAL.
+                Case.declined("π nid, p * p → r (Nums)"),
+                // Binary floating point: 0.1 * 3 is 0.30000000000000004 in a database and 0.3
+                // in the engine, which reads a double as the decimal it prints as.
+                Case.declined("π nid, f * 3 → r (Nums)"),
+                Case.declined("σ f + 0.1 = 0.3 (Nums)"),
+                // Temporal subtraction is a DURATION in the engine and an interval, a
+                // number or an error in a database, depending on which.
+                Case.declined("π oid, placed - placed → d (Orders)"),
+                Case.declined("π oid, placed - TIMESTAMP '2024-01-01T00:00:00Z' → d (Orders)"),
+                Case.declined("π cid, joined - joined → d (Customers)"),
+                Case.declined("π cid, joined - DATE '2020-01-01' → d (Customers)"),
+                // Mod by zero: DuckDB answers NULL and relix raises. DuckDB declines, so
+                // both of its runs raise the same message; the others still fold, and a
+                // database's message for a zero divisor is its own.
+                Case.diverging("π nid, Mod(n, m) → r (Nums)",
+                        EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DB2),
+                        EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DB2),
+                        "a zero divisor raises on both runs, in the database's words on the "
+                        + "folded one. The fold is still asserted; DuckDB, which answers NULL "
+                        + "for it, is the dialect that declines."));
     }
 
     private static List<Case> temporal() {
@@ -529,10 +565,12 @@ final class PushdownCorpus {
                 TRUNCATES_DATES));
         cases.add(Case.of("σ DATE_TRUNC('day', stamped) ≥ TIMESTAMP '2024-01-15T00:00:00Z' (Orders)",
                 TRUNCATES_DATES));
-        // A unit the spelling cannot read back out of the rendered literal declines,
-        // but that claim has no agreement case behind it: the engine rejects an unknown
-        // unit too, so both runs raise rather than answering. It is asserted where the
-        // rendering is — PushdownSpellingsTest, in relix-function-builtin.
+        // A unit the engine rejects is declined even where the database would truncate to
+        // it: Postgres, DuckDB and Db2 all know week, quarter and century, so a fold would
+        // answer where the engine raises. Both runs now raise the same message.
+        for (String unit : List.of("week", "quarter", "century")) {
+            cases.add(Case.declined("π oid, DATE_TRUNC('" + unit + "', placed) → t (Orders)"));
+        }
         return cases;
     }
 
@@ -586,29 +624,29 @@ final class PushdownCorpus {
      */
     private static List<Case> maths() {
         return List.of(
-                Case.of("π oid, Abs(amount - 150) → a (Orders)"),
-                Case.of("π oid, Sgn(amount - 100) → a (Orders)"),
-                Case.of("σ Abs(amount - 150) < 60 (Orders)"),
-                Case.of("γ region, SUM(Abs(amount - 150)) → spread (Orders)"),
-                // The rounding functions, over an argument that actually has a fraction to
-                // round. These read `amount / qty` until division stopped folding, and the
-                // quotients there are 50, 250 and 25 — every one of them whole, so Int,
-                // Ceil and Round were being asked to round nothing. A decimal literal gives
-                // them 0.5, 150.5 and -49.5 without reaching for an operator that declines.
-                Case.of("π oid, Int(amount - 99.5) → a (Orders)", ROUNDS_IN_DECIMAL),
-                Case.of("π oid, Ceil(amount - 99.5) → a (Orders)", ROUNDS_IN_DECIMAL),
-                Case.of("π oid, Round(amount - 99.5) → a (Orders)", ROUNDS_IN_DECIMAL),
-                Case.of("π oid, Round(amount - 99.5, 2) → a (Orders)", ROUNDS_IN_DECIMAL),
-                Case.of("π oid, Abs(Int(99.5 - amount)) → a (Orders)", ROUNDS_IN_DECIMAL),
+                Case.of("π nid, Abs(p) → a (Nums)"),
+                Case.of("π nid, Sgn(p) → a (Nums)"),
+                Case.of("σ Abs(p) < 60 (Nums)"),
+                Case.of("γ m, SUM(Abs(p)) → spread (Nums)"),
+                // The rounding functions, over a column that actually has a fraction to
+                // round, halves on both sides of zero included: Nums.p holds 0.5, 150.5,
+                // -49.5 and -100. They read an arithmetic expression for these until
+                // arithmetic stopped folding (see arithmetic()), and a column is the
+                // argument that still reaches the database.
+                Case.of("π nid, Int(p) → a (Nums)", ROUNDS_IN_DECIMAL),
+                Case.of("π nid, Ceil(p) → a (Nums)", ROUNDS_IN_DECIMAL),
+                Case.of("π nid, Round(p) → a (Nums)", ROUNDS_IN_DECIMAL),
+                Case.of("π nid, Round(p, 2) → a (Nums)", ROUNDS_IN_DECIMAL),
+                Case.of("π nid, Abs(Int(p)) → a (Nums)", ROUNDS_IN_DECIMAL),
                 // Inside an aggregate the argument is spelled for the connection too, so a
                 // rounding function declines on SQLite there exactly as it does outside
                 // one. It was spelled for the generic dialect, which folded it on SQLite
                 // and would have sent SQL Server a ROUND with no length.
-                Case.of("γ region, SUM(Round(amount - 99.5)) → s (Orders)", ROUNDS_IN_DECIMAL),
+                Case.of("γ m, SUM(Round(p)) → s (Nums)", ROUNDS_IN_DECIMAL),
                 // Truncation towards zero has no single SQL name — MySQL spells it
                 // TRUNCATE(x, 0) and Postgres TRUNC(x) — so it is offered only to the
                 // dialects that name a backend.
-                Case.of("π oid, Fix(99.5 - amount) → a (Orders)", TRUNCATES_NUMBERS));
+                Case.of("π nid, Fix(p) → a (Nums)", TRUNCATES_NUMBERS));
     }
 
     /**
@@ -804,7 +842,7 @@ final class PushdownCorpus {
         return List.of(
                 Case.of("π region, amount (Orders)"),
                 Case.of("π amount → value (Orders)"),
-                Case.of("π oid, amount * qty → line (Orders)"),
+                Case.declined("π oid, amount * qty → line (Orders)"),
                 Case.of("δ (π region (Orders))"),
                 Case.of("δ (π region, amount (σ amount > 50 (Orders)))"));
     }
@@ -819,8 +857,7 @@ final class PushdownCorpus {
                 "γ region, MAX(amount) → hi (Orders)",
                 "γ COUNT(*) → n (Orders)",
                 "γ SUM(amount) → total (Orders)",
-                "γ region, qty, COUNT(*) → n (Orders)",
-                "γ region, SUM(amount * qty) → weighted (Orders)");
+                "γ region, qty, COUNT(*) → n (Orders)");
     }
 
     /**
@@ -964,6 +1001,30 @@ final class PushdownCorpus {
                 Case.declined("Probes ASOF " + backward + " WITHIN DURATION 'PT90M' History"),
                 Case.declined("Probes ASOF INNER " + backward
                         + " WITHIN DURATION 'PT90M' History"));
+    }
+
+    /**
+     * Every Allen relation, over intervals chosen to make a SQL condition and the engine's
+     * test part ways.
+     *
+     * <p>The engine drops a row with a NULL endpoint. A SQL condition does so only if it
+     * reads the NULL endpoint, and {@code PRECEDES} (l.e &lt; r.s) never reads l.s: the row
+     * {@code (NULL, 01-02)} was returned by a pushed {@code PRECEDES} and by no local one,
+     * until the fold added an {@code IS NOT NULL} on each of the four endpoints. The
+     * inverted interval {@code (01-06, 01-02)} is the other hazard: each relation is the
+     * predicate on the endpoints alone, so an interval that ends before it starts can
+     * satisfy {@code MEETS} or {@code DURING}, and the engine evaluates the predicate
+     * itself whenever a side holds one rather than trusting a sweep that assumes none does.
+     */
+    private static List<Case> intervalJoins() {
+        List<Case> cases = new ArrayList<>();
+        for (String relation : List.of("INTERSECTS", "PRECEDES", "PRECEDED_BY", "MEETS", "MET_BY",
+                "OVERLAPS", "OVERLAPPED_BY", "STARTS", "STARTED_BY", "DURING", "CONTAINS",
+                "FINISHES", "FINISHED_BY", "EQUALS")) {
+            cases.add(Case.of("SpansL IJOIN " + relation
+                    + " (SpansL.s, SpansL.e, SpansR.s, SpansR.e) SpansR"));
+        }
+        return cases;
     }
 
     /**
@@ -1304,6 +1365,7 @@ final class PushdownCorpus {
                 // non-NULL values of `amount + qty` summing to 457.
                 Case.declined("γ region, AVG(amount) → mean (Orders)"),
                 Case.declined("γ AVG(amount + qty) → mean (Orders)"),
+                Case.declined("γ region, SUM(amount * qty) → weighted (Orders)"),
                 Case.declined("ROLLING AVG(amount) OVER ALL ROWS SORT oid AS run (Orders)"),
                 // And everything a declined division is inside. These four sat in the
                 // maths group as folding, and passed for the same reason the σ above it

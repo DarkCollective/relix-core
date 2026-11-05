@@ -17,8 +17,10 @@ after a million rows have crossed the network.
 
 Nothing is lost when a fold fails. The answer is identical either way; what
 changes is where the work happens and how much data moves. So pushdown is never
-a correctness question, only a performance one — and the plan is where you read
-the answer:
+a correctness question, only a performance one. That is kept true by declining a
+fold wherever a backend cannot be made to answer as the engine does — arithmetic on
+numbers, an `ASOF` join, the units of `DATE_TRUNC` the engine rejects, each described
+below — rather than by documenting a difference. The plan is where you read the answer:
 
 ```
 Select                                                    ← computed by the engine
@@ -87,9 +89,9 @@ where it can fold. That is why the two features compound — see
 | ⋈ natural join | `JOIN … ON` equating the shared columns | either side is not a bare table scan, the two sides are on different connections or are the same relation, or a shared column has a different type on each side |
 | ⋉ semi join, ▷ anti join | `WHERE EXISTS (SELECT 1 FROM … WHERE cond)`, `NOT EXISTS` for the anti join; a σ on the right goes inside it | as for ⨝ |
 | ⟕ left outer join | `LEFT JOIN … ON cond`; a σ on the right goes in the `ON`, one on the left in the `WHERE` | as for ⨝ |
-| `LATERAL` | the first related row, `L [OUTER] LATERAL (λ 1 (τ k (σ θ (S))))`, as `ASOF` folds below | the right side is any other shape, the left carries a σ, or the dialect has no lateral, as for `ASOF` |
-| `ASOF` join | `LEFT JOIN LATERAL (… ORDER BY … LIMIT 1) ON TRUE`, or `JOIN LATERAL` for the `INNER` form | the dialect is not PostgreSQL, DuckDB, Db2 or SQL Server (which spells it `OUTER APPLY (SELECT TOP 1 …)`), or the join carries a `WITHIN` tolerance |
-| `IJOIN` interval | `JOIN … ON` over the endpoints | either side is not a bare scan, or they are on different connections |
+| `LATERAL` | the first related row, `L [OUTER] LATERAL (λ 1 (τ k (σ θ (S))))`, as `LEFT JOIN LATERAL (… LIMIT 1) ON TRUE` (`OUTER APPLY (SELECT TOP 1 …)` on SQL Server) | the right side is any other shape, the left carries a σ, or the dialect is not PostgreSQL, DuckDB, Db2 or SQL Server |
+| `ASOF` join | never — see below | always |
+| `IJOIN` interval | `JOIN … ON` over the endpoints, each one tested `IS NOT NULL` | either side is not a bare scan, or they are on different connections |
 | `WINDOW` / `ROLLING` | `OVER (PARTITION BY … ORDER BY …)` | the dialect is MySQL, or a projection, grouping or limit is already folded |
 
 A join folds the same way whether its tables are declared sources or are named
@@ -158,6 +160,19 @@ A [subquery](../language/subquery.md) that the optimizer writes as a join
 statement, and a correlated `LATERAL` over a filtered table a join. One that stays a
 lateral runs in the engine, reading each table it names through pushdown.
 
+**An `ASOF` join is computed here, on every backend.** The nearest row can be asked of a
+database as a `LATERAL` sub-select ordered by the match column and cut to one row, but
+that cut cannot apply the join's tie rule. When several right rows share the nearest
+match value, `TIES (FIRST|LAST)` keeps the first or the last *in input order*, and a
+table has no input order: `LIMIT 1` takes whichever of the tied rows the database
+reaches first, which on DuckDB is the one inserted first whatever the `ORDER BY` says.
+Whether a tie exists depends on the data, not on the query, so no plan can rule it out.
+The join reads each of its two tables through pushdown, and matches them here.
+
+An `IJOIN` does fold, and returns the engine's answer: a row with a `NULL` endpoint
+matches nothing, so the condition tests all four endpoints `IS NOT NULL` — a relation
+such as `PRECEDES` never reads the left start, and SQL would otherwise keep the row.
+
 ## SQL: which expressions fold
 
 Inside a folded operator, an expression folds if every part of it does.
@@ -169,7 +184,7 @@ Inside a folded operator, an expression folds if every part of it does.
 | `DATE`, `TIME`, `TIMESTAMP` literals, on every dialect but SQLite | temporal literals on SQLite, which has no date type |
 | `DURATION` literals, on PostgreSQL and DuckDB | `DURATION` literals on other dialects |
 | `= ≠ < ≤ > ≥`, `∧ ∨ ¬`, `IS [NOT] NULL`, `IN`, `LIKE` | |
-| `+ - *` and unary minus | division `/` |
+| unary minus; a date or timestamp moved by a `DURATION` literal (`ts + DURATION 'P1M'`) | division `/`; `+ - *` between numbers; `-` between two dates or timestamps |
 
 A part that does not fold does not merely omit itself — it stops the whole
 operator folding, and everything above that operator with it.
@@ -188,11 +203,28 @@ decimal scale is a configuration rather than a spelling. So a filter or projecti
 containing a division reads its rows and finishes here.
 
 Where that matters on a large table, the lever is to filter on something that folds
-and divide above it. Multiplication is exact on every backend, so a threshold on a
-ratio can often be written as one on the numerator instead — though the two are the
-same question only where the divisor's sign is known and it is never zero, since
-multiplying across a comparison turns it around for a negative divisor, and the
-division would have raised where the multiplication has an answer.
+and compute above it.
+
+**So is addition, subtraction and multiplication of numbers.** The engine's `NUMBER` has
+arbitrary precision, and it reads a `DOUBLE` column as the decimal text it prints as.
+A backend computes `+ - *` in the column's own type, and the two part ways in three
+places that depend on the data rather than on the query:
+
+- *Overflow.* `n + 1` over an `INT` holding 2147483647 is `2147483648` here and an
+  error on H2, DuckDB, PostgreSQL, SQL Server and Db2; a `DECIMAL` product can overflow
+  in DuckDB the same way.
+- *Binary floating point.* `f * 3` over a `DOUBLE` of `0.1` is `0.30000000000000004`
+  there and `0.3` here, so a filter such as `f + 0.1 = 0.3` keeps different rows.
+- *Subtracting dates.* `ts - ts` is a `DURATION` here, and in a database an interval,
+  a number of days or an error, depending on which.
+
+The declared schema says `NUMBER` whatever the column is, so the planner cannot tell
+which case a column is in, and a cast to a wide type would still disagree for values
+wider than the cast. An expression containing one reads its rows and finishes here. A
+date or timestamp moved by a `DURATION` literal is the arithmetic that folds: the
+literal says what the other side is, and each dialect writes the duration in its own
+date arithmetic. A column used as an argument of a function that folds — `Abs(p)`,
+`Round(p)` — still folds; it is the arithmetic *inside* an argument that does not.
 
 ## SQL: which functions fold
 
@@ -202,10 +234,10 @@ large table. Of the built-in scalar functions, **twenty-seven** have a SQL spell
 | Function | SQL |
 |---|---|
 | `YEAR`, `MONTH`, `DAY`, `HOUR`, `MINUTE`, `SECOND` | `EXTRACT(unit FROM e)`; `DATEPART(unit, SWITCHOFFSET(e, '+00:00'))` on SQL Server; SQLite declines them |
-| `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL, DuckDB and Db2, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect, SQLite and SQL Server decline it |
+| `DATE_TRUNC` | `date_trunc(…)` on PostgreSQL, DuckDB and Db2, `CAST(DATE_FORMAT(…) AS DATETIME)` on MySQL; the generic dialect, SQLite and SQL Server decline it, and so does every dialect for a unit other than `year`, `month`, `day`, `hour`, `minute` or `second`, which the engine rejects although PostgreSQL, DuckDB and Db2 would truncate to a `week` or a `quarter` |
 | `Abs`, `Int`, `Ceil`, `Sgn`, `Round` | `ABS`, `FLOOR`, `CEILING`, `SIGN`, `ROUND` (`ROUND(e, 0)` on SQL Server); SQLite, which rounds in floating point, declines `Int`, `Ceil` and `Round` |
 | `Fix` | `TRUNCATE(e, 0)` on MySQL, `TRUNC(e)` on PostgreSQL, DuckDB and Db2, `ROUND(e, 0, 1)` on SQL Server; the generic dialect and SQLite decline it |
-| `Mod` | `MOD(x, y)`; MySQL, SQLite and SQL Server decline it |
+| `Mod` | `MOD(x, y)`; MySQL, DuckDB, SQLite and SQL Server decline it (DuckDB answers NULL for a zero divisor, where the engine raises) |
 | `LEAST`, `GREATEST` | `LEAST(…)`, `GREATEST(…)` on **MySQL and Db2**, the two that propagate a NULL argument as relix does; nowhere else |
 | `IIf` | `CASE WHEN c THEN a WHEN NOT (c) THEN b END` |
 | `Switch` | `CASE WHEN c1 THEN v1 … [ELSE default] END` |
@@ -346,12 +378,12 @@ comparison at all, at the cost of computing those in the engine — see
 | Dialect | Identifiers | Notable |
 |---|---|---|
 | `generic` (default) | unquoted, unless not a plain identifier | no `DATE_TRUNC`; relies on the backend folding unquoted identifiers, and on its string comparison being the common one — see below |
-| `postgres` | `"quoted"` | with DuckDB, the only dialects that fold an `ASOF` join, `DURATION` literals and `NULLS LAST`; string *ordering* is collated, string equality is not |
+| `postgres` | `"quoted"` | with DuckDB, the only dialects that fold `DURATION` literals and `NULLS LAST`; string *ordering* is collated, string equality is not |
 | `mysql` | `` `quoted` `` | no window functions, so those are computed in the engine; `DATE_TRUNC` folds through `DATE_FORMAT`; string comparison and ordering are collated |
-| `db2` | unquoted, unless not a plain identifier | Db2 11.5 or later; PostgreSQL's SQL for `NULLS LAST`, `date_trunc` and an `ASOF` join, `FETCH FIRST` for a limit; strings compare and order exactly in a UTF-8 database — see below |
-| `sqlserver` | `[bracketed]` | `OFFSET … FETCH`, so a limit folds only over a sort; NULLs placed with `CASE`; `ASOF` through `APPLY`; no `DURATION`, `DATE_TRUNC` or string counting; string comparison and ordering are collated — see below |
+| `db2` | unquoted, unless not a plain identifier | Db2 11.5 or later; PostgreSQL's SQL for `NULLS LAST` and `date_trunc`, `FETCH FIRST` for a limit; strings compare and order exactly in a UTF-8 database — see below |
+| `sqlserver` | `[bracketed]` | `OFFSET … FETCH`, so a limit folds only over a sort; NULLs placed with `CASE`; `LATERAL` through `APPLY`; no `DURATION`, `DATE_TRUNC` or string counting; string comparison and ordering are collated — see below |
 | `sqlite` | `"quoted"` | no date or time types, so no temporal literal, `EXTRACT` or `DATE_TRUNC` folds; `LIKE` is sent as `GLOB`; rounding runs in the engine; strings compare and order exactly |
-| `duckdb` | `"quoted"` | PostgreSQL's SQL — `NULLS LAST`, `date_trunc`, an `ASOF` join through `LATERAL`, window functions — with a binary default collation, so neither string comparison nor string ordering is collated |
+| `duckdb` | `"quoted"` | PostgreSQL's SQL — `NULLS LAST`, `date_trunc`, `LATERAL`, window functions — with a binary default collation, so neither string comparison nor string ordering is collated |
 
 Each dialect writes a table name one part at a time, so a schema-qualified
 `table: "sales.orders"` becomes `"sales"."orders"` on PostgreSQL. On `generic`, a
@@ -396,7 +428,7 @@ forms.
 SQLite's `LIKE` ignores the case of ASCII letters, and no collation changes that, so a
 pattern is sent as the case-sensitive `GLOB` instead — see [like](../predicates/like.md).
 Its `ROUND`, `FLOOR` and `CEILING` answer in binary floating point, so `Round`, `Int`
-and `Ceil` are computed here. It has no `LATERAL`, so an `ASOF` join runs in the
+and `Ceil` are computed here. It has no `LATERAL`, so one runs in the
 engine. A SQLite connection, like a DuckDB one, names a file: `jdbc:sqlite::memory:` is
 private to the JDBC connection that opened it.
 
@@ -419,8 +451,8 @@ the differences change *what* folds rather than how it is written:
 - **No boolean value.** `TRUE` is written `1`, `IsNull` is a `CASE`, and NULLs are
   placed last with `CASE WHEN e IS NULL THEN 1 ELSE 0 END` rather than a boolean key.
 
-An `ASOF` join folds as `OUTER APPLY (SELECT TOP 1 …)`, or `CROSS APPLY` for the
-`INNER` form — the same correlated lookup `LATERAL` is elsewhere. A string literal is
+A `LATERAL` folds as `OUTER APPLY (SELECT TOP 1 …)`, or `CROSS APPLY` for the
+`INNER` form. A string literal is
 written `N'…'`, so a character outside the database's code page survives the trip.
 `Len`, `Left`, `Right` and `Mid` are computed here: T-SQL's `LEN` counts UTF-16 units
 and ignores trailing spaces.
@@ -442,8 +474,8 @@ converted. Two differences remain that no collation removes, and both are narrow
 
 Db2 for Linux, UNIX and Windows is recognised from a `jdbc:db2:` URL, or named with
 `dialect: db2`, and is supported from 11.5. Most of what relix renders it takes as
-written — `NULLS LAST`, typed temporal literals, `date_trunc`, window functions, and an
-`ASOF` join as `LEFT JOIN LATERAL (… LIMIT 1) ON TRUE`. A limit is the standard's
+written — `NULLS LAST`, typed temporal literals, `date_trunc`, window functions, and a `LATERAL`
+as `LEFT JOIN LATERAL (… LIMIT 1) ON TRUE`. A limit is the standard's
 `FETCH FIRST n ROWS ONLY`, which Db2 accepts with or without an `ORDER BY`.
 
 Three things differ:

@@ -174,6 +174,19 @@ final class PushdownSpellingsTest {
         }
 
         @Test
+        @DisplayName("declines a unit the engine rejects, though the backend would accept it")
+        void unitsTheEngineRejects() {
+            for (String unit : List.of("week", "quarter", "century", "decade", "")) {
+                assertThat(render("DATE_TRUNC", POSTGRES, "'" + unit + "'", "\"at\"")).as(unit).isEmpty();
+                assertThat(render("DATE_TRUNC", DUCKDB, "'" + unit + "'", "at")).as(unit).isEmpty();
+                assertThat(render("DATE_TRUNC", DB2, "'" + unit + "'", "at")).as(unit).isEmpty();
+                assertThat(render("DATE_TRUNC", MONGO, "\"" + unit + "\"", "\"$at\"")).as(unit).isEmpty();
+            }
+            assertThat(render("DATE_TRUNC", POSTGRES, "'YEAR'", "\"at\"")).isPresent();
+            assertThat(render("DATE_TRUNC", POSTGRES, "\"unit\"", "\"at\"")).isEmpty();
+        }
+
+        @Test
         @DisplayName("declines an argument count it has no spelling for")
         void wrongArgumentCount() {
             assertThat(render("DATE_TRUNC", POSTGRES, "'day'")).isEmpty();
@@ -283,7 +296,6 @@ final class PushdownSpellingsTest {
         @DisplayName("becomes MOD(x, y) where the dialect truncates and raises on zero as relix does")
         void folds() {
             assertThat(render("Mod", POSTGRES, "\"x\"", "\"y\"")).contains("MOD(\"x\", \"y\")");
-            assertThat(render("Mod", DUCKDB, "x", "y")).contains("MOD(x, y)");
             assertThat(render("Mod", DB2, "x", "y")).contains("MOD(x, y)");
             assertThat(render("Mod", GENERIC, "x", "y")).contains("MOD(x, y)");
         }
@@ -296,8 +308,10 @@ final class PushdownSpellingsTest {
         }
 
         @Test
-        @DisplayName("declines MySQL, SQLite and SQL Server, whose modulo differs on an edge or a type")
+        @DisplayName("declines MySQL, DuckDB, SQLite and SQL Server, whose modulo differs on an edge or a type")
         void declines() {
+            // DuckDB answers NULL for a zero divisor where relix raises.
+            assertThat(render("Mod", DUCKDB, "x", "y")).isEmpty();
             assertThat(render("Mod", MYSQL, "`x`", "`y`")).isEmpty();
             assertThat(render("Mod", SQLITE, "x", "y")).isEmpty();
             assertThat(render("Mod", SQLSERVER, "x", "y")).isEmpty();

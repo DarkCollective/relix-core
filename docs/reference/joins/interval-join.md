@@ -72,7 +72,14 @@ any time.
 Column names may be qualified with a table prefix (`Table.column`). The four
 endpoint columns are resolved to indices at plan time; the validator checks they
 exist in their respective schemas and share a compatible temporal type. The
-operation runs in-engine and never pushes down to SQL or MongoDB backends.
+operation folds into the database over two bare tables on one SQL connection (see
+*SQL pushdown* in the limitations) and otherwise runs in-engine, as described next.
+
+Each relation is exactly the endpoint predicate listed above, and nothing more: it does
+not require an interval to run forwards. An interval whose end is before its start
+(`[6, 2)`) is not rejected, and it matches whichever relations its endpoints satisfy —
+`PRECEDES` and `MEETS` read only the end of the left interval, `DURING` reads both —
+whether the join runs in the engine or in the database. A NULL endpoint matches nothing.
 
 Execution is endpoint-based rather than a quadratic nested loop. For the eleven
 relations whose intervals must overlap or touch, IJOIN sorts the interval
@@ -385,12 +392,19 @@ converses are first-class keywords (plus the `INTERSECTS` convenience), so you
 never need to swap Left and Right or hand-write a theta join to express a
 relation — including `EQUALS`, `OVERLAPPED_BY`, `MET_BY`, and `PRECEDED_BY`.
 
+The plane sweep, the sorted band and the sort-merge rely on every interval running
+forwards. When either input holds an interval whose end is before its start, the engine
+tests every pair against the relation's predicate instead, which costs `O(n·m)` for that
+join and gives the answer the predicate defines.
+
 **SQL pushdown.** Over two bare connection tables on one
 JDBC connection, an IJOIN folds into a single `JOIN … ON <endpoint predicate>`
 pushed scan whose `ON` clause is the chosen relation's endpoint comparison — e.g.
 `OVERLAPS` → `l.s < r.s AND l.e > r.s AND l.e < r.e`. The comparisons mirror the
-in-engine test exactly, and SQL's three-valued logic excludes any NULL-endpoint row
-(matching the engine's NULL-endpoint drop). It works on **every** SQL dialect (only
+in-engine test exactly, and each of the four endpoints is also tested `IS NOT NULL`, so a
+NULL-endpoint row matches nothing as it does in the engine; without the test SQL would
+keep a row for a relation whose predicate never reads the NULL endpoint (`PRECEDES` never
+reads the left start). It works on **every** SQL dialect (only
 `<`/`=`/`>` are used — no SQL:2011 period-predicate syntax is required); a join
 spanning two connections, or a non-database source, falls back to the in-engine
 executor. MongoDB pushdown is not implemented.

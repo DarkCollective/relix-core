@@ -107,6 +107,40 @@ final class SubqueryPushdownTest {
         }
     }
 
+    /**
+     * The tree as written runs too. Pushing a subquery reads the schema annotation of the
+     * nodes inside the predicate, and only the rewritten tree used to carry them: a caller
+     * that skips the optimizer was told "No schema annotation for AggregationNode".
+     */
+    @ParameterizedTest(name = "as written: {0}")
+    @CsvSource(delimiter = '#', textBlock = """
+            π NAME (σ ID IN (π CID (db.ORDERS)) (db.CUSTOMERS))
+            π NAME (σ ID NOT IN (π CID (db.ORDERS)) (db.CUSTOMERS))
+            π NAME (σ ID = ANY (π CID (db.ORDERS)) (db.CUSTOMERS))
+            π NAME (σ ID >= ALL (π CID (σ CID IS NOT NULL (db.ORDERS))) (db.CUSTOMERS))
+            π NAME (σ EXISTS (σ CID = db.CUSTOMERS.ID (db.ORDERS)) (db.CUSTOMERS))
+            π NAME (σ NOT EXISTS (σ CID = db.CUSTOMERS.ID ∧ AMOUNT > 50 (db.ORDERS)) (db.CUSTOMERS))
+            """)
+    void asWrittenRunsAndAgrees(String relix) {
+        try (Relix pushed = Relix.builder().jdbc("db", DB).build()) {
+            Relation relation = pushed.relation(relix);
+            assertThat(rows(relation.asWritten())).containsExactlyInAnyOrderElementsOf(rows(relation));
+        }
+    }
+
+    private static List<String> rows(Relation relation) {
+        List<String> rows = new ArrayList<>();
+        relation.toList().forEach(t -> {
+            List<String> cells = new ArrayList<>();
+            t.schema().columns().forEach(c -> {
+                Value v = t.get(c.name());
+                cells.add(v.isNull() ? "NULL" : v.asDisplayString());
+            });
+            rows.add(String.join("|", cells));
+        });
+        return rows;
+    }
+
     /** A minimal {@link DataSource} over {@code DriverManager}. */
     private record H2(String url) implements DataSource {
         @Override public Connection getConnection() throws SQLException {

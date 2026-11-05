@@ -424,4 +424,53 @@ final class IntervalJoinExecutionTest extends ProcessorTestSupport {
                     .containsExactlyInAnyOrderElementsOf(oracle(rel, lefts, rights));
         }
     }
+
+    /**
+     * A relation is its endpoint predicate, so an interval whose end is before its start
+     * can satisfy one (DURING, MEETS, PRECEDES, ...). The sweep, the sorted band and the
+     * merge all assume the interval runs forwards, and used to answer differently for such
+     * a row per relation, and differently from a pushed {@code JOIN ... ON}, which is the
+     * predicate itself. Now the predicate decides whenever either side holds one.
+     */
+    private static List<Ivl> randomUnorderedIntervals(Random rnd, int n, int idBase) {
+        List<Ivl> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            out.add(new Ivl(idBase + i, rnd.nextInt(UNIVERSE), rnd.nextInt(UNIVERSE)));
+        }
+        return out;
+    }
+
+    @ParameterizedTest
+    @EnumSource(AllenRelation.class)
+    @DisplayName("an inverted interval (end before start) is matched by the relation's predicate, as written")
+    void invertedIntervalsFollowThePredicate(AllenRelation rel) {
+        Random rnd = new Random(0x1AFE ^ rel.ordinal());
+        for (int trial = 0; trial < 25; trial++) {
+            List<Ivl> lefts  = randomUnorderedIntervals(rnd, 6, 100);
+            List<Ivl> rights = randomUnorderedIntervals(rnd, 6, 200);
+            assertThat(executeIjoin(rel, lefts, rights))
+                    .as("relation %s, trial %d", rel, trial)
+                    .containsExactlyInAnyOrderElementsOf(oracle(rel, lefts, rights));
+            assertThat(executeMergeIjoin(rel, lefts, rights))
+                    .as("merge variant, relation %s, trial %d", rel, trial)
+                    .containsExactlyInAnyOrderElementsOf(oracle(rel, lefts, rights));
+        }
+    }
+
+    @Test
+    @DisplayName("MEETS and DURING match a lone inverted interval where the predicate holds")
+    void invertedIntervalMatchesWhereThePredicateHolds() {
+        String left = "L := [| lid | ls | le |\n| 5 | 6 | 2 |];\n";
+        String right = "R := [| rid | rs | re |\n| 11 | 2 | 4 |\n| 10 | 1 | 5 |];\n";
+        // MEETS is le = rs: 2 = 2, true of R 11 alone. DURING is rs < ls and le < re,
+        // true of both: 1 < 6 and 2 < 5, and 2 < 6 and 2 < 4.
+        assertThat(executeInverted(left + right, "MEETS")).containsExactly("5-11");
+        assertThat(executeInverted(left + right, "DURING")).containsExactlyInAnyOrder("5-10", "5-11");
+    }
+
+    private static List<String> executeInverted(String tables, String relation) {
+        return collect(tables + "query { L IJOIN " + relation + " (L.ls, L.le, R.rs, R.re) R };").stream()
+                .map(r -> r.get("lid").asDisplayString() + "-" + r.get("rid").asDisplayString())
+                .toList();
+    }
 }

@@ -363,6 +363,7 @@ final class MathFunctions {
      * <ul>
      *   <li><b>MySQL</b> — {@code MOD} by zero returns NULL, or raises, according to
      *       {@code sql_mode}, where relix always raises.</li>
+     *   <li><b>DuckDB</b> — {@code MOD} by zero returns NULL, where relix raises.</li>
      *   <li><b>SQLite</b> — has no {@code MOD} function, and its {@code %} operator
      *       truncates its operands to integers, so it is a different function on a
      *       decimal column.</li>
@@ -378,7 +379,7 @@ final class MathFunctions {
         String y = arguments.get(1);
         if (target.isFamily(PushdownTarget.SQL)) {
             if (target.isVariant(Spellings.MYSQL) || target.isVariant(Spellings.SQLITE)
-                    || target.isVariant(Spellings.SQLSERVER)) {
+                    || target.isVariant(Spellings.SQLSERVER) || target.isVariant(Spellings.DUCKDB)) {
                 return Optional.empty();
             }
             return Optional.of("MOD(" + x + ", " + y + ")");

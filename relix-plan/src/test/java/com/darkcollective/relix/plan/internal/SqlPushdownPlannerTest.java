@@ -282,9 +282,9 @@ final class SqlPushdownPlannerTest {
         @Test
         @DisplayName("δ over a computed π still folds (DISTINCT applies to the expression)")
         void distinctOverComputedProjection() {
-            assertThat(scanOf(push(ORDERS + "query { δ (π amount * 2 → doubled (Orders)) };"))
+            assertThat(scanOf(push(ORDERS + "query { δ (π Mod(amount, 2) → odd (Orders)) };"))
                     .nativeQuery())
-                    .isEqualTo("SELECT DISTINCT (amount * 2) FROM orders");
+                    .isEqualTo("SELECT DISTINCT MOD(amount, 2) FROM orders");
         }
 
         @Test
@@ -1366,12 +1366,10 @@ final class SqlPushdownPlannerTest {
         }
 
         @Test
-        @DisplayName("two numbers are still added")
+        @DisplayName("two numbers are not added in SQL: the backend's integer type would overflow")
         void numbers() {
-            assertThat(sql("jdbc:postgresql://h/db", "π id + 1 → n (P)"))
-                    .contains("SELECT (\"id\" + 1) FROM \"p\"");
-            assertThat(sql("jdbc:h2:mem:x", "π id + Mod(id, 2) → n (P)"))
-                    .contains("SELECT (id + MOD(id, 2)) FROM p");
+            assertThat(sql("jdbc:postgresql://h/db", "π id + 1 → n (P)")).isEmpty();
+            assertThat(sql("jdbc:h2:mem:x", "π id + Mod(id, 2) → n (P)")).isEmpty();
         }
 
         @Test
@@ -1402,47 +1400,23 @@ final class SqlPushdownPlannerTest {
                 "schema: { qsym: STRING, qt: TIMESTAMP, bid: NUMBER } };\n";
 
         @Test
-        @DisplayName("backward (>=) folds into LEFT JOIN LATERAL (… ORDER BY qt DESC LIMIT 1)")
-        void backwardLeftOuter() {
-            PhysicalNode.PushedScan s = scanOf(push(TRADES_QUOTES
-                    + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };"));
-            assertThat(s.connection()).isEqualTo("db");
-            assertThat(s.nativeQuery()).isEqualTo(
-                    "SELECT \"Trades\".\"sym\", \"Trades\".\"t\", \"Trades\".\"px\", "
-                    + "\"Quotes\".\"qsym\", \"Quotes\".\"qt\", \"Quotes\".\"bid\" "
-                    + "FROM \"trades\" \"Trades\" LEFT JOIN LATERAL ("
-                    + "SELECT \"Quotes\".\"qsym\", \"Quotes\".\"qt\", \"Quotes\".\"bid\" FROM \"quotes\" \"Quotes\" "
-                    + "WHERE ((\"Trades\".\"sym\" = \"Quotes\".\"qsym\") AND (\"Trades\".\"t\" >= \"Quotes\".\"qt\")) "
-                    + "ORDER BY \"Quotes\".\"qt\" DESC LIMIT 1) \"Quotes\" ON TRUE");
-        }
-
-        @Test
-        @DisplayName("forward (<=) folds with ORDER BY qt ASC")
-        void forwardOrderAsc() {
-            assertThat(scanOf(push(TRADES_QUOTES
-                    + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t <= Quotes.qt Quotes };"))
-                    .nativeQuery())
-                    .contains("ORDER BY \"Quotes\".\"qt\" ASC LIMIT 1");
-        }
-
-        @Test
-        @DisplayName("the inner variant folds into a plain JOIN LATERAL (unmatched probes dropped)")
-        void innerVariantUsesInnerLateral() {
-            // The parser produces the left-outer form from ASOF; pushing the AST built with
-            // the inner flag is exercised through the planner — here we assert the default
-            // (left-outer) keeps LEFT JOIN LATERAL.
-            assertThat(scanOf(push(TRADES_QUOTES
-                    + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };"))
-                    .nativeQuery())
-                    .contains("LEFT JOIN LATERAL");
-        }
-
-        @Test
-        @DisplayName("the pushed scan output schema is left ⊕ right")
-        void outputSchemaIsConcatenation() {
-            PhysicalNode.PushedScan s = scanOf(push(TRADES_QUOTES
-                    + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };"));
-            assertThat(s.schema().columns()).hasSize(6);
+        @DisplayName("is never folded: LIMIT 1 cannot apply the input-order TIES rule")
+        void neverFolded() {
+            // A table has no input order, so which of several tied right rows a LATERAL
+            // sub-select takes is the database's choice, where the engine keeps the first
+            // or last. The fold is declined on every dialect that could render it.
+            for (String url : List.of("jdbc:postgresql://h/db", "jdbc:duckdb:/tmp/x.db",
+                    "jdbc:sqlserver://h;databaseName=db", "jdbc:db2://h:50000/db")) {
+                String setup = TRADES_QUOTES.replace("jdbc:postgresql://h/db", url);
+                for (String direction : List.of(">=", "<=")) {
+                    assertThat(push(setup + "query { Trades ASOF Trades.sym = Quotes.qsym "
+                            + "∧ Trades.t " + direction + " Quotes.qt Quotes };"))
+                            .as("%s %s", url, direction).isEmpty();
+                }
+                assertThat(push(setup + "query { Trades ASOF INNER Trades.sym = Quotes.qsym "
+                        + "∧ Trades.t >= Quotes.qt TIES(FIRST) Quotes };"))
+                        .as("%s inner", url).isEmpty();
+            }
         }
 
         @Test
@@ -1536,8 +1510,8 @@ final class SqlPushdownPlannerTest {
             assertThat(s.nativeQuery()).isEqualTo(
                     "SELECT Stays.sid, Stays.checkin, Stays.checkout, Bookings.bid, Bookings.bfrom, Bookings.bto "
                     + "FROM stays Stays JOIN bookings Bookings ON "
-                    + "(Stays.checkin < Bookings.bfrom AND Stays.checkout > Bookings.bfrom "
-                    + "AND Stays.checkout < Bookings.bto)");
+                    + "(" + GUARD + "(Stays.checkin < Bookings.bfrom AND Stays.checkout > Bookings.bfrom "
+                    + "AND Stays.checkout < Bookings.bto))");
         }
 
         @Test
@@ -1547,23 +1521,33 @@ final class SqlPushdownPlannerTest {
                     + "query { Stays IJOIN INTERSECTS "
                     + "(Stays.checkin, Stays.checkout, Bookings.bfrom, Bookings.bto) Bookings };"))
                     .nativeQuery())
-                    .endsWith("ON (Stays.checkin < Bookings.bto AND Bookings.bfrom < Stays.checkout)");
+                    .endsWith("ON (" + GUARD
+                            + "(Stays.checkin < Bookings.bto AND Bookings.bfrom < Stays.checkout))");
         }
 
         @Test
         @DisplayName("DURING, CONTAINS, MEETS, EQUALS, PRECEDES each render their endpoint predicate")
         void otherRelations() {
             assertThat(intervalCondition("DURING"))
-                    .isEqualTo("(Bookings.bfrom < Stays.checkin AND Stays.checkout < Bookings.bto)");
+                    .isEqualTo("(" + GUARD + "(Bookings.bfrom < Stays.checkin AND Stays.checkout < Bookings.bto))");
             assertThat(intervalCondition("CONTAINS"))
-                    .isEqualTo("(Stays.checkin < Bookings.bfrom AND Bookings.bto < Stays.checkout)");
+                    .isEqualTo("(" + GUARD + "(Stays.checkin < Bookings.bfrom AND Bookings.bto < Stays.checkout))");
             assertThat(intervalCondition("MEETS"))
-                    .isEqualTo("(Stays.checkout = Bookings.bfrom)");
+                    .isEqualTo("(" + GUARD + "(Stays.checkout = Bookings.bfrom))");
             assertThat(intervalCondition("EQUALS"))
-                    .isEqualTo("(Stays.checkin = Bookings.bfrom AND Stays.checkout = Bookings.bto)");
+                    .isEqualTo("(" + GUARD + "(Stays.checkin = Bookings.bfrom AND Stays.checkout = Bookings.bto))");
             assertThat(intervalCondition("PRECEDES"))
-                    .isEqualTo("(Stays.checkout < Bookings.bfrom)");
+                    .isEqualTo("(" + GUARD + "(Stays.checkout < Bookings.bfrom))");
         }
+
+        /**
+         * NULL endpoints match nothing in the engine, but SQL keeps a row whose predicate
+         * never reads the NULL endpoint (PRECEDES ignores the left start), so all four are
+         * guarded in every relation.
+         */
+        private static final String GUARD =
+                "Stays.checkin IS NOT NULL AND Stays.checkout IS NOT NULL AND "
+                + "Bookings.bfrom IS NOT NULL AND Bookings.bto IS NOT NULL AND ";
 
         /** Pushes an interval join with {@code relation} and returns just its ON condition. */
         private static String intervalCondition(String relation) {
@@ -1587,7 +1571,9 @@ final class SqlPushdownPlannerTest {
                     + "query { Stays IJOIN MEETS "
                     + "(Stays.checkin, Stays.checkout, Bookings.bfrom, Bookings.bto) Bookings };"))
                     .nativeQuery())
-                    .endsWith("ON (\"Stays\".\"checkout\" = \"Bookings\".\"bfrom\")");
+                    .endsWith("ON (\"Stays\".\"checkin\" IS NOT NULL AND \"Stays\".\"checkout\" IS NOT NULL"
+                            + " AND \"Bookings\".\"bfrom\" IS NOT NULL AND \"Bookings\".\"bto\" IS NOT NULL"
+                            + " AND (\"Stays\".\"checkout\" = \"Bookings\".\"bfrom\"))");
         }
 
         @Test
@@ -2185,19 +2171,12 @@ final class SqlPushdownPlannerTest {
         }
 
         @Test
-        @DisplayName("an AS-OF join folds into the LATERAL lookup, the sub-select aliased too")
-        void asOfFolds() {
+        @DisplayName("an AS-OF join is not folded, a dotted reference or not")
+        void asOfIsDeclined() {
             String pg = "connection shop from database { url: \"jdbc:postgresql://h/db\" };\n";
-            assertThat(scanOf(pushDotted(pg + "query { shop.trades ASOF "
+            assertThat(pushDotted(pg + "query { shop.trades ASOF "
                     + "shop.trades.sym = shop.quotes.qsym ∧ shop.trades.t >= shop.quotes.qt "
-                    + "shop.quotes };")).nativeQuery())
-                    .isEqualTo("SELECT \"trades\".\"sym\", \"trades\".\"t\", "
-                            + "\"quotes\".\"qsym\", \"quotes\".\"qt\" "
-                            + "FROM \"trades\" \"trades\" LEFT JOIN LATERAL ("
-                            + "SELECT \"quotes\".\"qsym\", \"quotes\".\"qt\" FROM \"quotes\" \"quotes\" "
-                            + "WHERE ((\"trades\".\"sym\" = \"quotes\".\"qsym\") "
-                            + "AND (\"trades\".\"t\" >= \"quotes\".\"qt\")) "
-                            + "ORDER BY \"quotes\".\"qt\" DESC LIMIT 1) \"quotes\" ON TRUE");
+                    + "shop.quotes };")).isEmpty();
         }
 
         @Test
@@ -2207,7 +2186,9 @@ final class SqlPushdownPlannerTest {
                     + "(shop.stays.checkin, shop.stays.checkout, shop.bookings.bfrom, shop.bookings.bto) "
                     + "shop.bookings };")).nativeQuery())
                     .isEqualTo("SELECT stays.checkin, stays.checkout, bookings.bfrom, bookings.bto "
-                            + "FROM stays stays JOIN bookings bookings ON (stays.checkout = bookings.bfrom)");
+                            + "FROM stays stays JOIN bookings bookings ON (stays.checkin IS NOT NULL "
+                            + "AND stays.checkout IS NOT NULL AND bookings.bfrom IS NOT NULL "
+                            + "AND bookings.bto IS NOT NULL AND (stays.checkout = bookings.bfrom))");
         }
     }
     @Nested

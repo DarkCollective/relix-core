@@ -301,22 +301,14 @@ query { ByFirst };
 ```
 
 # SQL pushdown:
-On a **PostgreSQL**, **DuckDB** or **Db2** connection an AS-OF over two bare connection
-tables folds into a single
-`LEFT JOIN LATERAL (SELECT … ORDER BY <match> DESC|ASC LIMIT 1) ON TRUE` pushed scan,
-so the database does the nearest-match lookup. The ordering inequality fixes the
-`ORDER BY` direction (backward → `DESC`, forward → `ASC`); the inner variant uses a
-plain `JOIN LATERAL … ON TRUE`. On a **SQL Server** connection the same lookup is
-spelled `OUTER APPLY (SELECT TOP 1 … ORDER BY <match> DESC|ASC)`, and the inner
-variant `CROSS APPLY`. `LATERAL` is absent from H2 (the GENERIC dialect) and
-version-gated in MySQL (8.0.14+), and SQLite has none, so those fall back to the
-in-engine executor. A `WITHIN` tolerance also
-falls back (the bound leans on temporal arithmetic with no portable SQL form), as
-does a join spanning two connections. MongoDB pushdown is not implemented.
-
-When pushed, ties on the match column are resolved by the database's `LIMIT 1` row
-ordering rather than the in-engine `TIES(FIRST|LAST)` rule; the two agree unless the
-tied right rows differ in a selected column (a documented divergence).
+An AS-OF join is always computed by the engine. Each of its two inputs is still read
+through pushdown, so a filter on either table runs in the database, but the nearest-row
+match is made here. The match could be asked of a database as a `LATERAL` sub-select
+ordered by the match column and cut to one row, and that cut cannot apply `TIES(FIRST|LAST)`:
+the rule keeps the first or last tied row *in input order*, and a table has no input
+order, so the database would return whichever tied row it reached first. Whether rows tie
+depends on the data, so the join is not folded for any dialect, with or without a `WITHIN`
+tolerance. MongoDB pushdown is not implemented.
 
 # Limitations:
 Exactly one ordering inequality is required; zero inequalities (equality only)
