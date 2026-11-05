@@ -29,6 +29,7 @@ import com.darkcollective.relix.ast.TimeOperand;
 import com.darkcollective.relix.ast.TimestampOperand;
 import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.FunctionCall;
+import com.darkcollective.relix.ast.internal.NumberArithmetic;
 import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.Operand;
 import com.darkcollective.relix.ast.ParameterOperand;
@@ -66,7 +67,6 @@ import com.darkcollective.relix.symbol.function.ScalarFunctionSymbol;
 import com.darkcollective.relix.symbol.table.SymbolTable;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
@@ -397,9 +397,7 @@ public final class OperandEvaluator {
         if (divisor.compareTo(BigDecimal.ZERO) == 0) {
             throw new EvaluationException("Division by zero");
         }
-        return new NumberValue(requireNumber(left, "/")
-                .divide(divisor, 10, RoundingMode.HALF_UP)
-                .stripTrailingZeros());
+        return new NumberValue(NumberArithmetic.divide(requireNumber(left, "/"), divisor));
     }
 
     private Value evaluateFunction(FunctionCall call, Row row) {

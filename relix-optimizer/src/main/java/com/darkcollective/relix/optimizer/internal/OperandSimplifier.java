@@ -39,6 +39,7 @@ import com.darkcollective.relix.ast.TimeOperand;
 import com.darkcollective.relix.ast.TimestampOperand;
 import com.darkcollective.relix.ast.DurationOperand;
 import com.darkcollective.relix.ast.FunctionCall;
+import com.darkcollective.relix.ast.internal.NumberArithmetic;
 import com.darkcollective.relix.ast.NumberOperand;
 import com.darkcollective.relix.ast.ParameterOperand;
 import com.darkcollective.relix.ast.Operand;
@@ -51,7 +52,6 @@ import com.darkcollective.relix.ast.UnaryOperand;
 import com.darkcollective.relix.symbol.FunctionProperty;
 
 import java.math.BigDecimal;
-import java.math.MathContext;
 
 /**
  * Bottom-up rewriter that applies expression-simplification rules
@@ -441,7 +441,7 @@ final class OperandSimplifier {
             case PLUS     -> lv.add(rv);
             case MINUS    -> lv.subtract(rv);
             case MULTIPLY -> lv.multiply(rv);
-            case DIVIDE   -> lv.divide(rv, MathContext.DECIMAL64);
+            case DIVIDE   -> NumberArithmetic.divide(lv, rv);
         };
         // Normalise: strip trailing zeros and use plain decimal string.
         String str = result.stripTrailingZeros().toPlainString();
