@@ -27,11 +27,13 @@ orderᵢ − orderᵢ₋₁ > threshold      ⇒  new session
 
 The appended `AS <session>` column is a dense, 1-based `NUMBER` that increments at
 each boundary and restarts at `1` for every partition. The order column is typically
-a `TIMESTAMP` (with a `DURATION` gap, e.g. `DURATION 'PT30M'`) or a `NUMBER` (with a
-`NUMBER` gap) — leaning on the first-class temporal arithmetic substrate
+a `TIMESTAMP` (with a `DURATION` gap, e.g. `DURATION 'PT30M'`), a `DATE` (a date
+is measured from midnight, so `DURATION 'P1D'` keeps consecutive days together and
+splits the days either side of a missing one) or a `NUMBER` (with a `NUMBER` gap) — leaning on the first-class temporal arithmetic substrate
 (`TIMESTAMP − TIMESTAMP → DURATION`). The gap is **strict**: a gap exactly equal to
 the threshold stays in the same session. A `NULL` order value never opens a new
-session (it stays in the running one). The output schema is the input schema with the
+session (it stays in the running one). The threshold is zero or more: a negative gap
+is an error, since it would make every row a session of its own. The output schema is the input schema with the
 session column appended.
 
 SESSIONIZE buffers and sorts each partition before emitting, so it is a blocking

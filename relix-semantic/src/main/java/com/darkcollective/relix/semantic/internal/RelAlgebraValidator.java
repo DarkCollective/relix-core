@@ -1146,6 +1146,11 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
                     + " DURATION '" + gap.iso() + "' has calendar months, which have no fixed length");
             return;
         }
+        if (threshold instanceof DurationOperand gap && gap.value().isNegative()) {
+            error(node.location(), "Sessionize SESSIONIZE: GAP threshold must not be negative;"
+                    + " DURATION '" + gap.iso() + "' would make every row its own session");
+            return;
+        }
         if (orderType == null || orderType == ScalarType.ANY) {
             return;
         }
@@ -1894,6 +1899,10 @@ public final class RelAlgebraValidator implements RelNodeVisitor<Void> {
         } else if (!tolerance.isExact()) {
             error(node.location(), "AS-OF join: WITHIN tolerance must be an exact DURATION;"
                     + " DURATION '" + tolerance.iso() + "' has calendar months, which have no fixed length");
+        } else if (tolerance.value().isNegative()) {
+            error(node.location(), "AS-OF join: WITHIN tolerance must not be negative;"
+                    + " DURATION '" + tolerance.iso() + "' is a distance of less than zero,"
+                    + " which no match can satisfy");
         }
         if (matchOn == null) return;
         Optional<Schema> leftOpt  = annotations.get(node.left());
