@@ -297,11 +297,10 @@ final class PushdownSpellingsTest {
     final class Modulo {
 
         @Test
-        @DisplayName("becomes MOD(x, y) where the dialect truncates and raises on zero as relix does")
-        void folds() {
-            assertThat(render("Mod", POSTGRES, "\"x\"", "\"y\"")).contains("MOD(\"x\", \"y\")");
-            assertThat(render("Mod", DB2, "x", "y")).contains("MOD(x, y)");
-            assertThat(render("Mod", GENERIC, "x", "y")).contains("MOD(x, y)");
+        @DisplayName("casts each PostgreSQL operand to an exact NUMERIC through its text, since mod has no float8 form")
+        void postgresCastsItsOperands() {
+            assertThat(render("Mod", POSTGRES, "\"x\"", "\"y\""))
+                    .contains("MOD(CAST(CAST(\"x\" AS TEXT) AS NUMERIC), CAST(CAST(\"y\" AS TEXT) AS NUMERIC))");
         }
 
         @Test
@@ -312,8 +311,12 @@ final class PushdownSpellingsTest {
         }
 
         @Test
-        @DisplayName("declines MySQL, DuckDB, SQLite and SQL Server, whose modulo differs on an edge or a type")
+        @DisplayName("declines an unidentified backend, Db2, MySQL, DuckDB, SQLite and SQL Server, whose modulo differs on an edge or a type")
         void declines() {
+            // H2's MOD truncates both operands to integers: Mod(2.5, 7) is 2, not 2.5.
+            assertThat(render("Mod", GENERIC, "x", "y")).isEmpty();
+            // Db2's works in binary over a DOUBLE: Mod(123456789012345678, 3) is 16.
+            assertThat(render("Mod", DB2, "x", "y")).isEmpty();
             // DuckDB answers NULL for a zero divisor where relix raises.
             assertThat(render("Mod", DUCKDB, "x", "y")).isEmpty();
             assertThat(render("Mod", MYSQL, "`x`", "`y`")).isEmpty();

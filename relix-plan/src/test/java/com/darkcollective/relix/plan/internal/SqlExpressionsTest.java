@@ -134,14 +134,14 @@ final class SqlExpressionsTest {
         }
 
         @Test
-        @DisplayName("unary negation folds, arithmetic does not")
+        @DisplayName("a negated literal folds everywhere; a negated column and arithmetic fold only where exact")
         void unaryAndArithmetic() {
-            assertThat(render(unary(attr("x")))).hasValue("(-x)");
+            assertThat(render(unary(num("5")))).hasValue("(-5)");
+            assertThat(render(unary(attr("x")))).as("-x is not an INT").isEmpty();
             var expr = arith(
                     attr("price"), ArithmeticOperator.MULTIPLY, num("2"));
             assertThat(render(expr)).as("arithmetic runs in the engine").isEmpty();
         }
-
         @Test
         @DisplayName("a scalar function call is not translatable")
         void functionCallUnsupported() {
@@ -438,6 +438,104 @@ final class SqlExpressionsTest {
                     .isEmpty();
             assertThat(SqlExpressions.operand(d, SqlExpressions.ColumnRenderer.STRIP_QUALIFIER, Dialect.GENERIC, FUNCTIONS))
                     .isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("number arithmetic, exact where the dialect has a type for it")
+    class ExactArithmetic {
+
+        private final com.darkcollective.relix.symbol.Schema schema =
+                new com.darkcollective.relix.symbol.Schema(List.of(
+                        new com.darkcollective.relix.symbol.ColumnDefinition("a", ScalarType.NUMBER),
+                        new com.darkcollective.relix.symbol.ColumnDefinition("b", ScalarType.NUMBER),
+                        new com.darkcollective.relix.symbol.ColumnDefinition("s", ScalarType.STRING),
+                        new com.darkcollective.relix.symbol.ColumnDefinition("t", ScalarType.TIMESTAMP)));
+
+        private Optional<String> typed(Operand op, Dialect dialect) {
+            return SqlExpressions.operand(op,
+                    ColumnRenderer.typed(ColumnRenderer.STRIP_QUALIFIER, schema), dialect, FUNCTIONS);
+        }
+
+        private static String exact(String column) {
+            return "CAST(CAST(" + column + " AS TEXT) AS NUMERIC)";
+        }
+
+        @Test
+        @DisplayName("PostgreSQL casts each column through its text and each literal, and nests without re-casting")
+        void postgresFolds() {
+            assertThat(typed(arith(attr("a"), ArithmeticOperator.PLUS, num("1")), Dialect.POSTGRES))
+                    .hasValue("(" + exact("a") + " + CAST(1 AS NUMERIC))");
+            assertThat(typed(arith(attr("a"), ArithmeticOperator.MINUS, attr("b")), Dialect.POSTGRES))
+                    .hasValue("(" + exact("a") + " - " + exact("b") + ")");
+            assertThat(typed(arith(arith(attr("a"), ArithmeticOperator.PLUS, attr("b")),
+                    ArithmeticOperator.MULTIPLY, num("2")), Dialect.POSTGRES))
+                    .hasValue("((" + exact("a") + " + " + exact("b") + ") * CAST(2 AS NUMERIC))");
+            assertThat(typed(unary(attr("a")), Dialect.POSTGRES)).hasValue("(-" + exact("a") + ")");
+            assertThat(typed(arith(unary(num("3")), ArithmeticOperator.PLUS, attr("a")), Dialect.POSTGRES))
+                    .hasValue("((-CAST(3 AS NUMERIC)) + " + exact("a") + ")");
+        }
+
+        @Test
+        @DisplayName("a function's number result is an operand, cast like a column")
+        void functionResult() {
+            assertThat(typed(arith(func("Abs", attr("a")), ArithmeticOperator.PLUS, num("1")), Dialect.POSTGRES))
+                    .hasValue("(" + exact("ABS(a)") + " + CAST(1 AS NUMERIC))");
+        }
+
+        @Test
+        @DisplayName("every other dialect leaves the arithmetic, and a negated column, to the engine")
+        void otherDialectsDecline() {
+            for (Dialect d : Dialect.values()) {
+                if (d == Dialect.POSTGRES) {
+                    continue;
+                }
+                assertThat(typed(arith(attr("a"), ArithmeticOperator.PLUS, attr("b")), d)).as("%s +", d).isEmpty();
+                assertThat(typed(arith(attr("a"), ArithmeticOperator.MINUS, num("1")), d)).as("%s -", d).isEmpty();
+                assertThat(typed(arith(attr("a"), ArithmeticOperator.MULTIPLY, attr("b")), d)).as("%s *", d).isEmpty();
+                assertThat(typed(unary(attr("a")), d)).as("%s negation", d).isEmpty();
+                assertThat(typed(unary(num("1")), d)).as("%s negated literal", d).hasValue("(-1)");
+            }
+        }
+
+        @Test
+        @DisplayName("division declines, and so does an operand not known to be a number")
+        void declines() {
+            assertThat(typed(arith(attr("a"), ArithmeticOperator.DIVIDE, attr("b")), Dialect.POSTGRES)).isEmpty();
+            assertThat(typed(arith(attr("a"), ArithmeticOperator.MULTIPLY, attr("t")), Dialect.POSTGRES)).isEmpty();
+            assertThat(typed(arith(attr("t"), ArithmeticOperator.MINUS, attr("t")), Dialect.POSTGRES)).isEmpty();
+            assertThat(typed(arith(attr("a"), ArithmeticOperator.MINUS, str("x")), Dialect.POSTGRES)).isEmpty();
+            assertThat(typed(arith(attr("a"), ArithmeticOperator.MINUS, attr("unknown")), Dialect.POSTGRES)).isEmpty();
+            assertThat(typed(arith(attr("a"), ArithmeticOperator.MINUS, func("Nope", attr("a"))), Dialect.POSTGRES)).isEmpty();
+            assertThat(typed(unary(attr("s")), Dialect.POSTGRES)).isEmpty();
+            // A renderer that knows no types cannot say a column is a number.
+            assertThat(SqlExpressions.operand(arith(attr("a"), ArithmeticOperator.PLUS, attr("b")),
+                    ColumnRenderer.STRIP_QUALIFIER, Dialect.POSTGRES, FUNCTIONS)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("declines when an operand that is a number has no spelling here, on either side")
+        void unspelledOperand() {
+            // Sin returns a NUMBER and no dialect spells it, so the operand is a number the
+            // dialect cannot write.
+            assertThat(typed(arith(func("Sin", attr("a")), ArithmeticOperator.PLUS, num("1")), Dialect.POSTGRES)).isEmpty();
+            assertThat(typed(arith(num("1"), ArithmeticOperator.PLUS, func("Sin", attr("a"))), Dialect.POSTGRES)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("declines when a number nested in the arithmetic is not one, on either side")
+        void nestedNonNumber() {
+            assertThat(typed(arith(arith(attr("a"), ArithmeticOperator.MINUS, attr("t")),
+                    ArithmeticOperator.MULTIPLY, num("2")), Dialect.POSTGRES)).isEmpty();
+            assertThat(typed(arith(arith(attr("t"), ArithmeticOperator.MINUS, attr("a")),
+                    ArithmeticOperator.MULTIPLY, num("2")), Dialect.POSTGRES)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("a string sum is still a concatenation")
+        void stringPlusIsStillConcatenation() {
+            assertThat(typed(arith(attr("s"), ArithmeticOperator.PLUS, str("x")), Dialect.POSTGRES))
+                    .hasValue("(s || 'x')");
         }
     }
 

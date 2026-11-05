@@ -100,6 +100,21 @@ public final class SqlExpressions {
         }
 
         /**
+         * Whether a reference is known to hold a number, which is what lets {@code + - *}
+         * over it be written as exact decimal arithmetic ({@link Dialect#exactNumber}): a
+         * date or a boolean cast to a decimal is an error where the engine's operator
+         * would have meant something else.
+         *
+         * <p>A renderer built without a schema knows nothing, and answers no.
+         *
+         * @param attribute the reference
+         * @return {@code true} only when the reference is a NUMBER column
+         */
+        default boolean numeric(String attribute) {
+            return false;
+        }
+
+        /**
          * {@code self}, answering {@link #text} from {@code schema}: a STRING column holds
          * text, an ANY column or a name the schema does not have may, and any other
          * column does not.
@@ -126,6 +141,13 @@ public final class SqlExpressions {
                             .map(c -> c.type() == ScalarType.STRING ? Text.STRING
                                     : c.type() == ScalarType.ANY ? Text.UNKNOWN : Text.NOT_STRING)
                             .orElse(Text.UNKNOWN);
+                }
+
+                @Override
+                public boolean numeric(String attribute) {
+                    return schema.column(column(attribute))
+                            .map(c -> c.type() == ScalarType.NUMBER)
+                            .orElse(false);
                 }
             };
         }
@@ -177,6 +199,11 @@ public final class SqlExpressions {
                 @Override
                 public Text text(String attribute) {
                     return self.text(attribute);
+                }
+
+                @Override
+                public boolean numeric(String attribute) {
+                    return self.numeric(attribute);
                 }
             };
         }
@@ -295,7 +322,7 @@ public final class SqlExpressions {
             case TimestampOperand ts -> ts.isZoned() ? dialect.zonedTimestampLiteral(ts.atOffset())
                     : dialect.timestampLiteral(ts.value());
             case DurationOperand d -> dialect.durationLiteral(d.months(), d.value());
-            case UnaryOperand u -> operand(u.operand(), cols, dialect, functions).map(o -> "(-" + o + ")");
+            case UnaryOperand u -> negation(u, cols, dialect, functions);
             case BinaryArithmeticExpression e -> arithmetic(e, cols, dialect, functions);
             case SetLiteralOperand s -> setLiteral(s, cols, dialect, functions);
             // A function call pushes when the function itself supplies a spelling for
@@ -449,17 +476,78 @@ public final class SqlExpressions {
             return binary(e.left(), e.operator() == ArithmeticOperator.PLUS ? "+" : "-",
                     e.right(), cols, dialect, functions);
         }
-        // Every other + - * is evaluated in-engine. The engine's NUMBER is arbitrary
-        // precision and reads a DOUBLE column as the decimal text it prints as, while a
-        // backend adds, subtracts and multiplies in the column's own type: INT + 1 raises
-        // on H2, DuckDB, PostgreSQL and SQL Server where the engine answers 2147483648,
-        // a DuckDB DECIMAL product can overflow, 0.1 * 3 over a DOUBLE comes back
-        // 0.30000000000000004, and a raw `-` over two timestamps is an interval, a number
-        // or an error depending on the backend, never the engine's DURATION. The declared
-        // schema says NUMBER whatever the column is, so the renderer cannot tell which
-        // case it is in, and casting every operand to a wide type would still disagree
-        // for values wider than the cast. Declining costs a scan and never an answer.
-        return Optional.empty();
+        // Every other + - * is sent only as exact decimal arithmetic. The engine's NUMBER is
+        // arbitrary precision and reads a DOUBLE column as the decimal text it prints as,
+        // while a backend adds, subtracts and multiplies in the column's own type: INT + 1
+        // raises on H2, DuckDB, PostgreSQL and SQL Server where the engine answers
+        // 2147483648, a DuckDB DECIMAL product can overflow, 0.1 * 3 over a DOUBLE comes
+        // back 0.30000000000000004, and a raw `-` over two timestamps is an interval, a
+        // number or an error depending on the backend, never the engine's DURATION. The
+        // declared schema says NUMBER whatever the column is, so a dialect is asked for a
+        // type that is exact for every numeric column (Dialect.exactNumber), and one with
+        // none leaves the arithmetic to the engine. So does an operand not known to be a
+        // number, which a cast to a decimal would turn into an error.
+        if (!dialect.addsExactly() || !isNumber(e.left(), cols, functions)
+                || !isNumber(e.right(), cols, functions)) {
+            return Optional.empty();
+        }
+        Optional<String> op = sqlOp(e.operator());
+        Optional<String> l = exactOperand(e.left(), cols, dialect, functions);
+        Optional<String> r = exactOperand(e.right(), cols, dialect, functions);
+        if (op.isEmpty() || l.isEmpty() || r.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of("(" + l.get() + " " + op.get() + " " + r.get() + ")");
+    }
+
+    /**
+     * Whether {@code operand} is known to hold a number: a number literal, a column the
+     * renderer's schema types NUMBER, a call whose function returns NUMBER, or arithmetic
+     * and negation over those.
+     */
+    private static boolean isNumber(Operand operand, ColumnRenderer cols, PushdownFunctions functions) {
+        return switch (operand) {
+            case NumberOperand ignored -> true;
+            case AttributeOperand a -> cols.numeric(a.name());
+            case UnaryOperand u -> isNumber(u.operand(), cols, functions);
+            case BinaryArithmeticExpression b ->
+                    isNumber(b.left(), cols, functions) && isNumber(b.right(), cols, functions);
+            case FunctionCall f -> functions.scalar(f.functionName())
+                    .map(fn -> fn.signature().returnType() == ScalarType.NUMBER).orElse(false);
+            default -> false;
+        };
+    }
+
+    /**
+     * An operand of exact arithmetic, as an exact decimal: a literal or column cast, and
+     * arithmetic or negation already exact, which is left as it is.
+     */
+    private static Optional<String> exactOperand(Operand operand, ColumnRenderer cols, Dialect dialect,
+                                                 PushdownFunctions functions) {
+        return switch (operand) {
+            case NumberOperand n -> dialect.exactNumberLiteral(n.value());
+            case BinaryArithmeticExpression b -> arithmetic(b, cols, dialect, functions);
+            case UnaryOperand u -> exactOperand(u.operand(), cols, dialect, functions)
+                    .map(o -> "(-" + o + ")");
+            default -> operand(operand, cols, dialect, functions).flatMap(dialect::exactNumber);
+        };
+    }
+
+    /**
+     * A negated operand. A literal is negated as it is, which cannot leave any type's
+     * range. Anything else is negated as an exact decimal, or not at all: the smallest
+     * value of an integer type has no negation in that type, so {@code -n} over an
+     * {@code INT} raises where the engine answers 2147483648.
+     */
+    private static Optional<String> negation(UnaryOperand u, ColumnRenderer cols, Dialect dialect,
+                                             PushdownFunctions functions) {
+        if (u.operand() instanceof NumberOperand n) {
+            return Optional.of("(-" + n.value() + ")");
+        }
+        if (!dialect.addsExactly() || !isNumber(u.operand(), cols, functions)) {
+            return Optional.empty();
+        }
+        return exactOperand(u, cols, dialect, functions);
     }
 
     /**
@@ -540,6 +628,28 @@ public final class SqlExpressions {
             joiner.add(sql.get());
         }
         return Optional.of(joiner.toString());
+    }
+
+    /**
+     * This operator's SQL spelling, or empty for division.
+     *
+     * <p><b>Division is declined, on every backend.</b> A relix {@code /} is exact decimal
+     * arithmetic to ten places, rounded half-up; no {@code /} the planner can emit answers
+     * the same question. H2 and PostgreSQL divide two integers as integers, so
+     * {@code 81 / 2} is {@code 40} where the engine says {@code 40.5}. MySQL's scale is the
+     * operand's plus {@code div_precision_increment}, four by default, so {@code amount / 3}
+     * comes back {@code 33.3333} against {@code 33.3333333333}. Division by zero is a third
+     * disagreement: the engine raises, PostgreSQL raises, MySQL answers NULL. A cast would
+     * fix the first and not the others, and matching ten-place half-up rounding is not
+     * something SQL text can promise. The whole expression declines with it.
+     */
+    private static Optional<String> sqlOp(ArithmeticOperator op) {
+        return switch (op) {
+            case PLUS     -> Optional.of("+");
+            case MINUS    -> Optional.of("-");
+            case MULTIPLY -> Optional.of("*");
+            case DIVIDE   -> Optional.empty();
+        };
     }
 
     private static String sqlOp(ComparisonOperator op) {

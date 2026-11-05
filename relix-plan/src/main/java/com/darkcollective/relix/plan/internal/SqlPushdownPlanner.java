@@ -64,12 +64,15 @@ import com.darkcollective.relix.lang.ast.source.ConnectionTableSourceConfig;
 import com.darkcollective.relix.plan.internal.SqlExpressions.ColumnRenderer;
 import com.darkcollective.relix.semantic.SchemaAnnotations;
 import com.darkcollective.relix.symbol.ColumnDefinition;
+import com.darkcollective.relix.cost.StatisticsSource;
+import com.darkcollective.relix.symbol.RelationStatistics;
 import com.darkcollective.relix.symbol.Schema;
 
 import com.darkcollective.relix.ast.AttributeOperand;
 import com.darkcollective.relix.symbol.ScalarType;
 
 import com.darkcollective.relix.ast.Predicate;
+import com.darkcollective.relix.ast.ComparisonOperator;
 import com.darkcollective.relix.ast.ComparisonPredicate;
 import com.darkcollective.relix.ast.ElementOfPredicate;
 import com.darkcollective.relix.ast.PatternPredicate;
@@ -165,6 +168,13 @@ final class SqlPushdownPlanner implements PushdownRenderer {
      */
     private PushdownFunctions functions;
 
+    /**
+     * The candidate keys of a relation, which is what lets an AS-OF join fold: with a key
+     * among the columns the match is decided by, no two right rows tie. Nothing the planner
+     * does not know, so the default knows no keys and no AS-OF join folds.
+     */
+    private final StatisticsSource keys;
+
     SqlPushdownPlanner(SchemaAnnotations schemas,
                        Map<String, SourceDeclaration> sources,
                        Map<String, ConnectionDeclaration> connections,
@@ -173,17 +183,23 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         this.sources = sources;
         this.connections = connections;
         this.functions = PushdownFunctions.of(Objects.requireNonNull(functions, "functions"));
+        this.keys = StatisticsSource.NONE;
     }
 
-    /** As above, reading the annotations afresh at each use — see {@link #schemas}. */
+    /**
+     * As above, reading the annotations afresh at each use — see {@link #schemas} — and
+     * also knowing the candidate keys of a relation — see {@link #keys}.
+     */
     SqlPushdownPlanner(java.util.function.Supplier<SchemaAnnotations> schemas,
             Map<String, SourceDeclaration> sources,
             Map<String, ConnectionDeclaration> connections,
-            FunctionCatalog functions) {
+            FunctionCatalog functions,
+            StatisticsSource keys) {
         this.schemas = Objects.requireNonNull(schemas, "schemas");
         this.sources = sources;
         this.connections = connections;
         this.functions = PushdownFunctions.of(Objects.requireNonNull(functions, "functions"));
+        this.keys = Objects.requireNonNull(keys, "keys");
     }
 
     @Override
@@ -1849,20 +1865,152 @@ final class SqlPushdownPlanner implements PushdownRenderer {
     }
 
     /**
-     * Declines an AS-OF join: it is always evaluated in-engine.
+     * Folds an AS-OF join (ADR-0014) over two bare connection-table scans into a
+     * {@code LATERAL} "nearest row" lookup, when no two right rows can tie: for each probe
+     * row the database runs a correlated sub-select that filters the right table by the
+     * match condition, orders it by the match column in the direction the inequality
+     * implies, and takes the single nearest row ({@code … ORDER BY r.ts DESC LIMIT 1}). A
+     * {@code LEFT JOIN LATERAL … ON TRUE} preserves unmatched probes (left-outer, the
+     * default); a plain {@code JOIN LATERAL … ON TRUE} drops them (the inner variant).
      *
-     * <p>The nearest-row lookup is expressible as a {@code LATERAL} sub-select ordered by
-     * the match column, and {@link Dialect#nearestRowJoin} still renders one. What it cannot
-     * express is the engine's tie rule. When several right rows share the nearest match
-     * value, {@code TIES (FIRST|LAST)} keeps the first or last <em>in input order</em>, and
-     * a table has no input order: {@code LIMIT 1} (or {@code TOP 1}) takes whichever tied
-     * row the database reaches first, which on DuckDB is the insertion-order-first row
-     * whatever the query says. A tie cannot be ruled out from the plan, since it depends on
-     * the data, so a pushed AS-OF could return a different row from the in-engine one for
-     * the same query. A fold must return what local evaluation returns, so none is made.
+     * <p><b>The fold is made only when the match is unique.</b> The nearest-row lookup is
+     * the engine's answer except for its tie rule: when several right rows share the nearest
+     * match value, {@code TIES (FIRST|LAST)} keeps the first or last <em>in input order</em>,
+     * and a table has no input order, so {@code LIMIT 1} takes whichever tied row the
+     * database reaches first. Whether a tie exists is a property of the data, so the plan
+     * can rule it out only from a constraint: a candidate key of the right relation whose
+     * columns are all among those the match is decided by — the right columns the condition
+     * equates with a left column, and the match column. Rows agreeing on all of those would
+     * agree on the key. {@link #keyedMatch} states the rule; without a known key, or with a
+     * condition of any other shape, the join is evaluated in-engine.
+     *
+     * <p>Also falls back to in-engine execution when the inputs are not two bare scans on
+     * one connection, the dialect lacks {@code LATERAL} support
+     * ({@link Dialect#supportsLateralAsOf}), the condition is untranslatable, or a
+     * {@code WITHIN} tolerance is present — the tolerance bound leans on temporal arithmetic
+     * that has no portable SQL form.
      */
     private Optional<Pushed> asOfJoin(AsOfJoinNode node) {
-        return Optional.empty();
+        if (node.tolerance().isPresent()) {
+            return Optional.empty();   // WITHIN bound has no portable SQL form — keep in-engine
+        }
+        Optional<Pushed> leftOpt = build(node.left());
+        Optional<Pushed> rightOpt = build(node.right());
+        if (leftOpt.isEmpty() || rightOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        Pushed left = leftOpt.get();
+        Pushed right = rightOpt.get();
+        if (!bareJoinable(left, right)) {
+            return Optional.empty();
+        }
+        Dialect dialect = left.dialect;
+        if (!dialect.supportsLateralAsOf()) {
+            return Optional.empty();
+        }
+        Set<String> leftRel = Set.of(left.relationName.toLowerCase(Locale.ROOT));
+        Set<String> rightRel = Set.of(right.relationName.toLowerCase(Locale.ROOT));
+        // A condition qualifies by relation name, never by the SQL alias, so the names are the sets.
+        JoinPlanning.AsOfMatch match = JoinPlanning.extractAsOfMatch(
+                node.condition(), schemaOf(node.left()), schemaOf(node.right()), leftRel, rightRel);
+        if (match == null) {
+            return Optional.empty();
+        }
+        String matchColumn = right.baseColumns.get(match.rightMatchIndex()).name();
+        if (!keyedMatch(node.condition(), matchColumn, right, schemaOf(node.left()),
+                schemaOf(node.right()), leftRel, rightRel)) {
+            return Optional.empty();   // a tie cannot be ruled out, and the tie rule is input order
+        }
+        JoinAliases aliases = JoinAliases.of(left, right);
+        ColumnRenderer renderer = joinRenderer(left, right, aliases, dialect);
+        // A join condition compares the two sides' columns to each other, so it renders
+        // in comparison position. Both sides share the connection, hence one answer.
+        StringColumns joinStrings = stringColumnsOf(left.baseColumns, right.baseColumns);
+        ColumnRenderer comparing = comparingRenderer(renderer, joinStrings,
+                left.exactStrings, dialect, dialect::exactStringComparison);
+        ColumnRenderer ordering = comparingRenderer(renderer, joinStrings,
+                left.ordersExactly, dialect, dialect::exactStringOrder);
+
+        Optional<String> condition = SqlExpressions.predicate(node.condition(), comparing, ordering,
+                dialect, functions);
+        if (condition.isEmpty()) {
+            return Optional.empty();
+        }
+        String orderBy = qualified(dialect, aliases.right(), matchColumn)
+                + (match.backward() ? " DESC" : " ASC");
+
+        Optional<String> from = dialect.nearestRowJoin(
+                dialect.table(left.tableName) + " " + dialect.quote(aliases.left()),
+                String.join(", ", qualifiedColumns(dialect, aliases.right(), right.baseColumns)),
+                "FROM " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
+                        + " WHERE " + condition.get(),
+                orderBy, dialect.quote(aliases.right()), node.inner());
+        if (from.isEmpty()) {
+            return Optional.empty();
+        }
+
+        List<String> selectList = new ArrayList<>();
+        selectList.addAll(qualifiedColumns(dialect, aliases.left(), left.baseColumns));
+        selectList.addAll(qualifiedColumns(dialect, aliases.right(), right.baseColumns));
+        return Optional.of(new Pushed(left.connectorType, left.connection, from.get(), selectList,
+                schemaOf(node), renderer, dialect));
+    }
+
+    /**
+     * Whether an AS-OF match can have at most one nearest right row: the condition is
+     * nothing but column equalities between the two sides and the one ordering inequality,
+     * and the right relation has a known candidate key made only of columns among the
+     * equated ones and the match column.
+     *
+     * <p>The equalities are required to be column-to-column. A column held to a constant
+     * would also narrow a key, but a condition with a filter in it is a different shape
+     * from the one the nearest-row sub-select reproduces, so it is not folded either.
+     * NULLs do not matter: a NULL partition or match value satisfies neither the equality
+     * nor the inequality, so such a right row is never a candidate, and a key's own NULLs
+     * (a unique index allows several) are not reached because only primary keys are read.
+     */
+    private boolean keyedMatch(Predicate condition, String matchColumn, Pushed right,
+                               Schema leftSchema, Schema rightSchema,
+                               Set<String> leftRel, Set<String> rightRel) {
+        Set<String> decided = new LinkedHashSet<>();
+        decided.add(matchColumn.toLowerCase(Locale.ROOT));
+        if (!collectEqualities(condition, decided, leftSchema, rightSchema, leftRel, rightRel)) {
+            return false;
+        }
+        return keys.forRelation(right.relationName)
+                .map(RelationStatistics::keys).orElse(List.of()).stream()
+                .anyMatch(key -> !key.isEmpty() && key.stream()
+                        .allMatch(c -> decided.contains(c.toLowerCase(Locale.ROOT))));
+    }
+
+    /**
+     * Adds to {@code into} the right-side column of every equality in {@code p}, and says
+     * whether {@code p} held nothing else but equalities and ordering inequalities between
+     * columns of opposite sides.
+     */
+    private static boolean collectEqualities(Predicate p, Set<String> into, Schema leftSchema,
+                                             Schema rightSchema, Set<String> leftRel,
+                                             Set<String> rightRel) {
+        if (p instanceof AndPredicate a) {
+            return collectEqualities(a.left(), into, leftSchema, rightSchema, leftRel, rightRel)
+                    && collectEqualities(a.right(), into, leftSchema, rightSchema, leftRel, rightRel);
+        }
+        if (!(p instanceof ComparisonPredicate c)
+                || !(c.left() instanceof AttributeOperand la)
+                || !(c.right() instanceof AttributeOperand ra)) {
+            return false;
+        }
+        JoinPlanning.Side a = JoinPlanning.sideOf(la.name(), leftSchema, rightSchema, leftRel, rightRel);
+        JoinPlanning.Side b = JoinPlanning.sideOf(ra.name(), leftSchema, rightSchema, leftRel, rightRel);
+        if (a == null || b == null || a.left() == b.left()) {
+            return false;
+        }
+        if (c.operator() == ComparisonOperator.EQUAL) {
+            JoinPlanning.Side rightSide = a.left() ? b : a;
+            into.add(rightSchema.columns().get(rightSide.index()).name().toLowerCase(Locale.ROOT));
+            return true;
+        }
+        return c.operator() != ComparisonOperator.NOT_EQUAL;   // the one inequality
     }
 
     /**

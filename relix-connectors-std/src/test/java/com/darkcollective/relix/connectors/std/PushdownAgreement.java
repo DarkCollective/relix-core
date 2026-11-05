@@ -105,7 +105,34 @@ final class PushdownAgreement {
      * the corpus was written without, and a cost decision moving under it is not what a
      * dotted-reference case is here to test.
      */
-    private static final CatalogProvider CATALOG = new JdbcCatalogProvider()::tableSchema;
+    private static final CatalogProvider CATALOG = keysOnly(new JdbcCatalogProvider());
+
+    /**
+     * {@code real}'s schemas, and from its statistics only the candidate keys.
+     *
+     * <p>A key is the one statistic a fold depends on: an AS-OF join folds only when its
+     * right side is keyed on the columns the match is decided by. Row counts and column
+     * statistics stay out for the reason the schema-only provider kept them out — a cost
+     * decision moving under the corpus is not what a case here is for.
+     */
+    private static CatalogProvider keysOnly(JdbcCatalogProvider real) {
+        return new CatalogProvider() {
+            @Override
+            public java.util.Optional<com.darkcollective.relix.symbol.Schema> tableSchema(
+                    com.darkcollective.relix.lang.ast.ConnectionDeclaration connection, String table) {
+                return real.tableSchema(connection, table);
+            }
+
+            @Override
+            public java.util.Optional<com.darkcollective.relix.symbol.RelationStatistics> tableStatistics(
+                    com.darkcollective.relix.lang.ast.ConnectionDeclaration connection, String table) {
+                return real.tableStatistics(connection, table)
+                        .filter(s -> !s.keys().isEmpty())
+                        .map(s -> new com.darkcollective.relix.symbol.RelationStatistics(
+                                java.util.OptionalLong.empty(), Map.of(), s.keys()));
+            }
+        };
+    }
 
     private final String preamble;
     private final Dialect dialect;

@@ -949,6 +949,93 @@ public enum Dialect {
     }
 
     /**
+     * Renders a value the database holds as a number as the exact decimal the engine
+     * reads it as, so that {@code + - *} over it return what the engine's own do — or
+     * empty where this dialect has no type that can promise that.
+     *
+     * <p>The engine's NUMBER is a {@code BigDecimal}: addition, subtraction and
+     * multiplication never overflow and never round, and a {@code DOUBLE} or {@code REAL}
+     * column is read as the shortest decimal text it prints as ({@code 0.1}, not
+     * {@code 0.1000000000000000055…}). A backend does these sums in the column's own
+     * type, which is why they are not sent as written: {@code INT + 1} raises at
+     * 2147483647 on H2, DuckDB, PostgreSQL and SQL Server, a DuckDB {@code DECIMAL}
+     * product overflows, and {@code 0.1 * 3} over a {@code DOUBLE} is
+     * {@code 0.30000000000000004}.
+     *
+     * <p>The cast is the answer only where the target type is exact for every value a
+     * column of any numeric type can hold, because the planner sees the relix type of a
+     * column (NUMBER) and not the database's: it cannot tell an {@code INT} from a
+     * {@code DOUBLE} from a {@code DECIMAL(38,0)}. That leaves one dialect.
+     *
+     * <ul>
+     *   <li>{@link #POSTGRES}: {@code NUMERIC} without a precision is arbitrary precision,
+     *       so a sum, difference or product of any two values is exact. The operand goes
+     *       through {@code TEXT} because a direct cast is not what the driver reads: a
+     *       {@code float8} casts to 15 significant digits ({@code 0.30000000000000004}
+     *       becomes {@code 0.3}) and a {@code float4} to six, where the driver reads
+     *       the 17 and 9 the column prints. Casting its text reads the same digits.
+     *       Checked against PostgreSQL 16 over {@code float8}, {@code float4} and exact
+     *       columns.</li>
+     *   <li>{@link #MYSQL}: {@code DECIMAL} holds 65 digits with at most 30 after the
+     *       point, and a product's scale beyond 30 is rounded, so two columns of scale 16
+     *       multiply inexactly. A {@code DOUBLE} also converts only to 30 places:
+     *       {@code 4.9e-324} becomes zero.</li>
+     *   <li>{@link #DUCKDB}: {@code DECIMAL} holds 38 digits and raises on overflow; a
+     *       {@code DOUBLE} converts to it with its binary digits ({@code 0.30000000000000004}
+     *       becomes {@code 0.300000000000000064}), or not at all: {@code 1e22} does not fit
+     *       a {@code DECIMAL(38,18)}.</li>
+     *   <li>{@link #SQLSERVER}: {@code DECIMAL} holds 38 digits and raises on overflow,
+     *       and a {@code float} converts to a decimal of the scale it is given, not of
+     *       the digits it prints.</li>
+     *   <li>{@link #DB2}: {@code DECIMAL} holds 31 digits and {@code DECFLOAT(34)} rounds
+     *       to 34, so a product of two wide operands is rounded.</li>
+     *   <li>{@link #SQLITE}: has no exact decimal; an integer sum past 64 bits becomes a
+     *       binary float.</li>
+     *   <li>{@link #GENERIC}: an unidentified backend, of which H2 is only one.</li>
+     * </ul>
+     *
+     * <p>A dialect whose column types the planner could read would admit more: a sum of
+     * {@code INT} columns fits a {@code DECIMAL(38,0)} on every backend that has one. It
+     * does not read them, so those dialects evaluate the arithmetic in the engine.
+     *
+     * @param sql a rendered expression of number type: a column, a function's result;
+     *            must not be null
+     * @return the expression as an exact decimal; or empty when this dialect declines
+     */
+    public Optional<String> exactNumber(String sql) {
+        return switch (this) {
+            case POSTGRES -> Optional.of("CAST(CAST(" + sql + " AS TEXT) AS NUMERIC)");
+            case GENERIC, MYSQL, DUCKDB, SQLITE, SQLSERVER, DB2 -> Optional.empty();
+        };
+    }
+
+    /**
+     * Renders a number written in the query as an exact decimal, as {@link #exactNumber}
+     * does a column. A literal needs its own cast because a bare integer literal has a
+     * type of its own: {@code 2147483647 + 1} over two literals is an {@code INT}
+     * overflow on PostgreSQL.
+     *
+     * @param literal the number as written, e.g. {@code 12} or {@code 0.5}; must not be null
+     * @return the literal as an exact decimal; or empty when this dialect declines
+     */
+    public Optional<String> exactNumberLiteral(String literal) {
+        return switch (this) {
+            case POSTGRES -> Optional.of("CAST(" + literal + " AS NUMERIC)");
+            case GENERIC, MYSQL, DUCKDB, SQLITE, SQLSERVER, DB2 -> Optional.empty();
+        };
+    }
+
+    /**
+     * Whether this dialect adds, subtracts and multiplies numbers exactly — whether
+     * {@link #exactNumber} has an answer.
+     *
+     * @return {@code true} when {@code + - *} between numbers fold into this dialect
+     */
+    public boolean addsExactly() {
+        return exactNumber("x").isPresent();
+    }
+
+    /**
      * Names this dialect to a function library, so a function can supply its own
      * spelling here without the planner knowing anything about it.
      *
