@@ -151,6 +151,20 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
         return Identifiers.render(name);
     }
 
+    /**
+     * The left operand of a binary operator, parenthesised. In source form, a left
+     * operand that is the same operator is written bare: the parser reads
+     * {@code A ∪ B ∪ C} left to right, so the bare chain reads back as the same tree,
+     * where {@code ((A) ∪ (B)) ∪ (C)} nests one level of parentheses per operator and a
+     * long chain would print past the depth the parser accepts.
+     */
+    private String leftOperand(RelNode left, Class<? extends RelNode> operator) {
+        if (source && operator.isInstance(left) && before.apply(left).isEmpty()) {
+            return left.accept(this);
+        }
+        return "(" + print(left) + ")";
+    }
+
     @Override
     public String visit(RelationNode node) {
         if (source) {
@@ -232,7 +246,7 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(NaturalJoinNode node) {
-        return "(" + print(node.left()) + ") " + spelling.of("⋈") + " (" + print(node.right()) + ")";
+        return leftOperand(node.left(), NaturalJoinNode.class) + " " + spelling.of("⋈") + " (" + print(node.right()) + ")";
     }
 
     @Override
@@ -308,32 +322,32 @@ public final class PrettyPrinter implements RelNodeVisitor<String> {
 
     @Override
     public String visit(ProductNode node) {
-        return "(" + print(node.left()) + ") " + spelling.of("×") + " (" + print(node.right()) + ")";
+        return leftOperand(node.left(), ProductNode.class) + " " + spelling.of("×") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(UnionNode node) {
-        return "(" + print(node.left()) + ") " + spelling.of("∪") + " (" + print(node.right()) + ")";
+        return leftOperand(node.left(), UnionNode.class) + " " + spelling.of("∪") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(UnionAllNode node) {
-        return "(" + print(node.left()) + ") " + spelling.of("⊎") + " (" + print(node.right()) + ")";
+        return leftOperand(node.left(), UnionAllNode.class) + " " + spelling.of("⊎") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(OuterUnionNode node) {
-        return "(" + print(node.left()) + ") " + spelling.of("⊔") + " (" + print(node.right()) + ")";
+        return leftOperand(node.left(), OuterUnionNode.class) + " " + spelling.of("⊔") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(DifferenceNode node) {
-        return "(" + print(node.left()) + ") " + spelling.of("−") + " (" + print(node.right()) + ")";
+        return leftOperand(node.left(), DifferenceNode.class) + " " + spelling.of("−") + " (" + print(node.right()) + ")";
     }
 
     @Override
     public String visit(IntersectionNode node) {
-        return "(" + print(node.left()) + ") " + spelling.of("∩") + " (" + print(node.right()) + ")";
+        return leftOperand(node.left(), IntersectionNode.class) + " " + spelling.of("∩") + " (" + print(node.right()) + ")";
     }
 
     @Override

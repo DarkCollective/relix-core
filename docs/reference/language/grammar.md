@@ -935,7 +935,16 @@ are easy to miss in the rules above.
   ISO-8601 values.
 - **Statement order.** `namespace` must be the first statement and `env` the next;
   the other statements may come in any order.
-- **Nesting depth.** One expression may nest at most 250 levels deep.
+- **Nesting depth.** One expression may nest at most 250 levels deep. That counts every
+  construct that holds another: relational operators and subqueries, function calls,
+  array and struct literals, parentheses, `CASE`, a unary `-` or `¬`, and a struct or
+  array type. A flat chain of one operator, `a ∧ b ∧ c …`, `a + b + c …`, `R ∪ S ∪ T …`,
+  does not nest, but it builds a tree that every later phase walks, so a chain of
+  relational operators is limited to 250 operators and any other chain to 500. A text
+  past a limit is rejected where the limit is passed, with a message that says which.
+- **Braces in strings and comments.** Inside a brace block a string of either quote, a
+  `--` comment and a `/* */` comment may hold `{` and `}`; none of them counts as a
+  brace. A byte-order mark at the very start of a script is skipped.
 
 The grammar says what parses. Analysis then checks what it means: that every column
 exists, that a positional rename names every column, that `SAMPLE`'s probability is
