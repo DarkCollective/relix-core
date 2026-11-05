@@ -6,7 +6,7 @@ env from "<file>";
 env using "<profile>";
 env from "<file>" using "<profile>";
 
-env from ".relix-env.json" using "development";
+env from "relix-env.json" using "development";
 
 # Description:
 `env` names the file and the profile that a script's `${VAR}` placeholders are meant
@@ -29,7 +29,10 @@ execution: no file is read, no profile is selected, and a script that names a fi
 that does not exist is not an error. Where a `${NAME}` placeholder gets its value is
 decided by the program that runs the script, not by the engine. A program embedding
 Relix gives the session a resolver of its own; the `relix` command resolves a
-placeholder from a profile (`-P`, `-D`) or the environment.
+placeholder from `-D`, a profile (`-P`) or the environment, and ignores the statement.
+The interactive `relix-repl` ignores it too: it takes the environment from its own
+`--env <name>` option or the `:env <name>` command, reading `relix-env.json` files
+from the working directory up to the home directory.
 
 A session built with a sealed sandbox refuses the statement, as it refuses any
 statement that reaches outside the session.
@@ -39,7 +42,7 @@ A script that names its environment file and profile, and otherwise runs as usua
 statement has to be the first in a script, so these are shown as they would be saved:
 
 ```
-env from ".relix-env.json" using "development";
+env from "relix-env.json" using "development";
 
 Tiers := [
 | tier   | rate |
