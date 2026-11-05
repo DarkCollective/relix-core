@@ -78,4 +78,80 @@ final class OperatorEdgeCasesTest {
             assertThat(rows(relix.relation("E ASOF E.ts >= F.at WITHIN DURATION 'PT0S' F"))).hasSize(1);
         }
     }
+
+    @Test
+    @DisplayName("OPTIMIZE leaves out a row whose objective or constraint value is NULL")
+    void optimizeNulls() {
+        try (Relix relix = Relix.open()) {
+            relix.define("""
+                    N := [| id | v    | w    |
+                    | a  | 5    | 1    |
+                    | b  | NULL | 1    |
+                    | c  | 7    | NULL |
+                    | d  | 3    | 2    |];
+                    """);
+            assertThat(both(relix, "τ id (OPTIMIZE MAXIMIZE SUM(v) SUBJECT TO SUM(w) <= 3 (N))"))
+                    .containsExactly("a 5 1", "d 3 2");
+            assertThat(both(relix, "τ id (OPTIMIZE ALLOCATE (0, 1) MAXIMIZE SUM(v) SUBJECT TO SUM(w) <= 3 -> x (N))"))
+                    .extracting(r -> r.substring(0, 1)).containsExactly("a", "b", "c", "d");
+        }
+    }
+
+    /**
+     * Run in a JVM of its own, without the solver on the class path: solvers are discovered
+     * once per JVM, so the test JVM's answer cannot be taken back.
+     */
+    public static final class NoSolverMain {
+        public static void main(String[] args) {
+            try (Relix relix = Relix.open()) {
+                relix.define("S := [| id | v | w |\n| a | 1 | 1 |];");
+                Relation relation = relix.relation("OPTIMIZE MAXIMIZE SUM(v) SUBJECT TO SUM(w) <= 3 (S)");
+                for (Runnable action : List.<Runnable>of(relation::explain, relation::explainJson, relation::toList)) {
+                    try {
+                        action.run();
+                        System.out.println("NO FAILURE");
+                    } catch (RuntimeException e) {
+                        System.out.println(e.getClass().getName() + ": " + e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("explain() without a solver gives the public failure type and message")
+    void explainWithoutSolver() throws Exception {
+        String classPath = java.util.Arrays.stream(System.getProperty("java.class.path")
+                        .split(java.io.File.pathSeparator))
+                .filter(entry -> !entry.contains("relix-solver-ojalgo"))
+                .collect(Collectors.joining(java.io.File.pathSeparator));
+        Process process = new ProcessBuilder(
+                java.nio.file.Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp", classPath, NoSolverMain.class.getName())
+                .redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        process.waitFor();
+        assertThat(output.lines().filter(l -> l.startsWith("com.") || l.startsWith("NO ")).toList())
+                .hasSize(3)
+                .allSatisfy(line -> assertThat(line)
+                        .startsWith("com.darkcollective.relix.embed.QueryExecutionException: ")
+                        .contains("needs a mathematical-programming solver and none is installed")
+                        .doesNotContain("NoSolverInstalledException"));
+    }
+
+    @Test
+    @DisplayName("DOWNSAMPLE leaves out a row whose timestamp is NULL")
+    void downsampleNullTimestamp() {
+        try (Relix relix = Relix.open()) {
+            relix.define("""
+                    T0 := [| id | ts                   |
+                    | 1  | 2026-01-01T00:10:00Z |
+                    | 2  | 2026-01-01T00:20:00Z |
+                    | 3  | NULL                 |];
+                    T := { π id, CAST(ts AS TIMESTAMP) → ts (T0) };
+                    """);
+            assertThat(both(relix, "DOWNSAMPLE ts BY '1d' USING COUNT (T)")).hasSize(1)
+                    .allSatisfy(r -> assertThat(r).endsWith(" 2"));
+        }
+    }
 }
