@@ -16,6 +16,10 @@
 package com.darkcollective.relix.ast.internal;
 
 import com.darkcollective.relix.ast.PatternPredicate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
@@ -26,6 +30,14 @@ import java.util.function.Function;
  * <p>{@code %} becomes {@code .*} and {@code _} becomes {@code .}; every regex
  * metacharacter is escaped so it matches literally; the result is anchored with
  * {@code ^}…{@code $} so it matches the whole value, as {@code LIKE} does.
+ *
+ * <p>{@code %} and {@code _} match any character, a line terminator included, as they
+ * do in SQL: the regex is compiled in dotall mode.
+ *
+ * <p>The in-engine evaluator does not run that regex. {@link #matches} reads the same
+ * pattern with a wildcard matcher whose cost is at most the product of the two lengths,
+ * where a regex backtracks exponentially on {@code %a%a%a%…c}, and keeps the parsed
+ * pattern for the next row, a constant pattern being the usual case.
  *
  * <p>This lives beside {@link PatternPredicate} because more than one consumer
  * needs it — the in-engine predicate evaluator and the MongoDB {@code $regex}
@@ -39,8 +51,6 @@ import java.util.function.Function;
  * <ul>
  *   <li><b>Case sensitivity.</b> This translation is case-sensitive. MySQL's
  *       {@code LIKE} is case-insensitive under its default collation.</li>
- *   <li><b>Newlines.</b> {@code _} maps to regex {@code .}, which does not match
- *       a line terminator; SQL's {@code _} matches any character.</li>
  *   <li><b>Default escape.</b> Without {@code ESCAPE}, no character escapes here,
  *       so a backslash is a literal backslash. PostgreSQL and MySQL read a backslash
  *       as an escape by default.</li>
@@ -82,8 +92,8 @@ public final class LikePatterns {
      * @throws IllegalArgumentException if the pattern ends with the escape character
      */
     public static String toRegex(String pattern, Optional<String> escape) {
-        return "^" + translate(pattern, escape, ".*", ".",
-                ch -> METACHARACTERS.indexOf(ch) >= 0 ? "\\" + ch : String.valueOf(ch)) + "$";
+        return "^(?s:" + translate(pattern, escape, ".*", ".",
+                ch -> METACHARACTERS.indexOf(ch) >= 0 ? "\\" + ch : String.valueOf(ch)) + ")$";
     }
 
     /**
@@ -123,5 +133,103 @@ public final class LikePatterns {
             }
         }
         return out.toString();
+    }
+
+    // =========================================================================
+    // Direct matcher
+    // =========================================================================
+
+    /** Token for {@code %}. */
+    private static final int ANY_SEQUENCE = -1;
+    /** Token for {@code _}. */
+    private static final int ANY_CHARACTER = -2;
+    /** Patterns kept for the next row; a script rarely has more than a handful. */
+    private static final int CACHE_LIMIT = 256;
+
+    private record Key(String pattern, Optional<String> escape) {
+    }
+
+    private static final Map<Key, int[]> COMPILED = new LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Key, int[]> eldest) {
+            return size() > CACHE_LIMIT;
+        }
+    };
+
+    /**
+     * Whether {@code text} satisfies the {@code LIKE} pattern, whole value, comparing code
+     * points. {@code %} and {@code _} match any character including a line terminator.
+     *
+     * @param text    the value; must not be null
+     * @param pattern the LIKE pattern; must not be null
+     * @param escape  the escape character, or empty for none; must not be null
+     * @return whether the value matches
+     * @throws IllegalArgumentException if the pattern ends with the escape character
+     */
+    public static boolean matches(String text, String pattern, Optional<String> escape) {
+        Objects.requireNonNull(text, "text");
+        int[] tokens = compile(pattern, escape);
+        int[] value = text.codePoints().toArray();
+        int t = 0;
+        int p = 0;
+        int starAt = -1;
+        int resume = 0;
+        while (t < value.length) {
+            if (p < tokens.length && tokens[p] == ANY_SEQUENCE) {
+                starAt = p++;
+                resume = t;
+            } else if (p < tokens.length && (tokens[p] == ANY_CHARACTER || tokens[p] == value[t])) {
+                p++;
+                t++;
+            } else if (starAt >= 0) {
+                p = starAt + 1;
+                t = ++resume;
+            } else {
+                return false;
+            }
+        }
+        while (p < tokens.length && tokens[p] == ANY_SEQUENCE) {
+            p++;
+        }
+        return p == tokens.length;
+    }
+
+    private static int[] compile(String pattern, Optional<String> escape) {
+        Objects.requireNonNull(pattern, "pattern");
+        Objects.requireNonNull(escape, "escape");
+        Key key = new Key(pattern, escape);
+        synchronized (COMPILED) {
+            int[] known = COMPILED.get(key);
+            if (known != null) {
+                return known;
+            }
+        }
+        int escapeChar = escape.map(e -> e.codePointAt(0)).orElse(-1);
+        List<Integer> tokens = new ArrayList<>();
+        int[] chars = pattern.codePoints().toArray();
+        for (int i = 0; i < chars.length; i++) {
+            int ch = chars[i];
+            if (ch == escapeChar) {
+                if (++i == chars.length) {
+                    throw new IllegalArgumentException(
+                            "LIKE pattern must not end with the escape character");
+                }
+                tokens.add(chars[i]);
+            } else if (ch == '%') {
+                // a run of % is one
+                if (tokens.isEmpty() || tokens.getLast() != ANY_SEQUENCE) {
+                    tokens.add(ANY_SEQUENCE);
+                }
+            } else if (ch == '_') {
+                tokens.add(ANY_CHARACTER);
+            } else {
+                tokens.add(ch);
+            }
+        }
+        int[] compiled = tokens.stream().mapToInt(Integer::intValue).toArray();
+        synchronized (COMPILED) {
+            COMPILED.put(key, compiled);
+        }
+        return compiled;
     }
 }

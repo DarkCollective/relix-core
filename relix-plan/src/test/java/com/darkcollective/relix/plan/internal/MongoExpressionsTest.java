@@ -214,14 +214,14 @@ final class MongoExpressionsTest {
         @DisplayName("LIKE %pattern% → $regex anchored ^.*pattern.*$")
         void likeWithLeadingAndTrailingPercent() {
             assertThat(match(like(attr("name"), str("%smith%"))))
-                    .hasValue("{\"name\": {\"$regex\": \"^.*smith.*$\"}}");
+                    .hasValue("{\"name\": {\"$regex\": \"^(?s:.*smith.*)$\"}}");
         }
 
         @Test
         @DisplayName("LIKE … ESCAPE makes the escaped % literal, and a trailing escape stays in the engine")
         void likeEscape() {
             assertThat(match(AstBuilders.like(attr("label"), str("%0!%%"), false, '!')))
-                    .hasValue("{\"label\": {\"$regex\": \"^.*0%.*$\"}}");
+                    .hasValue("{\"label\": {\"$regex\": \"^(?s:.*0%.*)$\"}}");
             assertThat(match(AstBuilders.like(attr("label"), str("50!"), false, '!'))).isEmpty();
         }
 
@@ -229,14 +229,14 @@ final class MongoExpressionsTest {
         @DisplayName("LIKE prefix% → $regex ^prefix.*$")
         void likePrefix() {
             assertThat(match(like(attr("name"), str("Alice%"))))
-                    .hasValue("{\"name\": {\"$regex\": \"^Alice.*$\"}}");
+                    .hasValue("{\"name\": {\"$regex\": \"^(?s:Alice.*)$\"}}");
         }
 
         @Test
         @DisplayName("LIKE _BC → $regex ^.BC$")
         void likeUnderscore() {
             assertThat(match(like(attr("code"), str("_BC"))))
-                    .hasValue("{\"code\": {\"$regex\": \"^.BC$\"}}");
+                    .hasValue("{\"code\": {\"$regex\": \"^(?s:.BC)$\"}}");
         }
 
         @Test
@@ -244,14 +244,14 @@ final class MongoExpressionsTest {
         void likeEscapesMetacharacters() {
             // pattern "a.b" → regex "^a\.b$"; backslash in JSON is doubled → "^a\\.b$"
             assertThat(match(like(attr("val"), str("a.b"))))
-                    .hasValue("{\"val\": {\"$regex\": \"^a\\\\.b$\"}}");
+                    .hasValue("{\"val\": {\"$regex\": \"^(?s:a\\\\.b)$\"}}");
         }
 
         @Test
         @DisplayName("NOT LIKE → $not $regex")
         void notLike() {
             assertThat(match(AstBuilders.notLike(attr("name"), str("%test%"))))
-                    .hasValue("{\"$and\": [{\"name\": {\"$not\": {\"$regex\": \"^.*test.*$\"}}}, "
+                    .hasValue("{\"$and\": [{\"name\": {\"$not\": {\"$regex\": \"^(?s:.*test.*)$\"}}}, "
                             + "{\"name\": {\"$ne\": null}}]}");
         }
 
@@ -259,7 +259,7 @@ final class MongoExpressionsTest {
         @DisplayName("qualifier on field is dropped")
         void qualifierDropped() {
             assertThat(match(like(attr("Docs.name"), str("A%"))))
-                    .hasValue("{\"name\": {\"$regex\": \"^A.*$\"}}");
+                    .hasValue("{\"name\": {\"$regex\": \"^(?s:A.*)$\"}}");
         }
 
         @Test

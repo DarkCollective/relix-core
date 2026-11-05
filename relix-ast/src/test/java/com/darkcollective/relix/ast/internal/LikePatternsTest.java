@@ -194,18 +194,91 @@ final class LikePatternsTest {
         }
 
         @Test
-        @DisplayName("_ does not match a newline (SQL's does)")
-        void underscoreDoesNotMatchNewline() {
-            assertThat(matches("a\nb", "a_b")).isFalse();
-        }
-
-        @Test
         @DisplayName("a backslash is literal — the ESCAPE clause is not modelled")
         void backslashIsNotAnEscape() {
             // In SQL, LIKE '100\%' matches the literal "100%". Here the backslash
             // is literal and the % is still a wildcard.
             assertThat(matches("100%", "100\\%")).isFalse();
             assertThat(matches("100\\anything", "100\\%")).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("the direct matcher")
+    class DirectMatcher {
+
+        private boolean like(String text, String pattern) {
+            return LikePatterns.matches(text, pattern, java.util.Optional.empty());
+        }
+
+        @Test
+        @DisplayName("% and _ match every line terminator, as they do in SQL")
+        void wildcardsMatchNewlines() {
+            for (String terminator : new String[] {"\n", "\r", "\u0085", "\u2028", "\u2029"}) {
+                assertThat(like("a" + terminator + "b", "a%b")).as("%% over %s", terminator.codePointAt(0)).isTrue();
+                assertThat(like("a" + terminator + "b", "a_b")).as("_ over %s", terminator.codePointAt(0)).isTrue();
+                // and the regex a pushdown sends does too
+                assertThat(matches("a" + terminator + "b", "a%b")).isTrue();
+                assertThat(matches("a" + terminator + "b", "a_b")).isTrue();
+            }
+        }
+
+        @Test
+        @DisplayName("agrees with the regex on a sweep of patterns and values")
+        void agreesWithRegex() {
+            String[] patterns = {"", "%", "_", "a%", "%a", "%a%", "a_c", "%a%b%", "a%%b", "__", "%_%", "ab%ab", "x%y_z"};
+            String[] values = {"", "a", "ab", "abc", "ba", "aab", "abab", "ababab", "xyz", "xaayqz", "a\nb", "\uD83D\uDE00a"};
+            for (String pattern : patterns) {
+                for (String value : values) {
+                    assertThat(like(value, pattern))
+                            .as("'%s' LIKE '%s'", value, pattern)
+                            .isEqualTo(matches(value, pattern));
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("counts a code point outside the BMP as one character")
+        void codePoints() {
+            assertThat(like("\uD83D\uDE00", "_")).isTrue();
+            assertThat(like("\uD83D\uDE00", "__")).isFalse();
+        }
+
+        @Test
+        @DisplayName("honours an escape")
+        void escape() {
+            assertThat(LikePatterns.matches("10%", "10!%", java.util.Optional.of("!"))).isTrue();
+            assertThat(LikePatterns.matches("100", "10!%", java.util.Optional.of("!"))).isFalse();
+            org.assertj.core.api.Assertions.assertThatIllegalArgumentException()
+                    .isThrownBy(() -> LikePatterns.matches("x", "x!", java.util.Optional.of("!")))
+                    .withMessage("LIKE pattern must not end with the escape character");
+        }
+
+        @Test
+        @DisplayName("takes polynomial time where a regex backtracks exponentially")
+        void noCatastrophicBacktracking() {
+            String pattern = "%a".repeat(60) + "%c";
+            String text = "a".repeat(3000) + "b";
+            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                    java.time.Duration.ofSeconds(5),
+                    () -> assertThat(like(text, pattern)).isFalse());
+        }
+
+        @Test
+        @DisplayName("keeps compiling correct when more patterns than the cache holds are used")
+        void cacheEviction() {
+            for (int i = 0; i < 600; i++) {
+                assertThat(like("v" + i, "v" + i)).isTrue();
+                assertThat(like("v" + i, "w" + i)).isFalse();
+            }
+            assertThat(like("v1", "v1")).isTrue();
+        }
+
+        @Test
+        @DisplayName("rejects null")
+        void nulls() {
+            assertThatNullPointerException().isThrownBy(() -> like(null, "a"));
+            assertThatNullPointerException().isThrownBy(() -> like("a", null));
         }
     }
 }

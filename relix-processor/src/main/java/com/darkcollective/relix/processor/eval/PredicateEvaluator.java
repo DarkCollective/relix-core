@@ -236,7 +236,7 @@ public final class PredicateEvaluator {
 
     private static boolean likeMatch(String text, String pattern, Optional<String> escape) {
         try {
-            return text.matches(LikePatterns.toRegex(pattern, escape));
+            return LikePatterns.matches(text, pattern, escape);
         } catch (IllegalArgumentException e) {
             throw new EvaluationException(e.getMessage() + ": \"" + pattern + "\"");
         }
