@@ -973,10 +973,10 @@ final class RecursionExecutor {
                 Value wt = row.get(weightCol);
                 if (f.isNull() || w.isNull() || wt.isNull()) return;
                 if (wt instanceof NumberValue nv) {
-                    edgeList.add(new TraceEdge(f, w, nv.value().doubleValue()));
+                    edgeList.add(new TraceEdge(f, w, nv.value()));
                     if (undirected) {
                         // One edge, traversable either way at the same cost.
-                        edgeList.add(new TraceEdge(w, f, nv.value().doubleValue()));
+                        edgeList.add(new TraceEdge(w, f, nv.value()));
                     }
                 }
             });
@@ -1029,10 +1029,10 @@ final class RecursionExecutor {
     }
 
     /** A directed, weighted edge for TRACE. */
-    private record TraceEdge(Value from, Value to, double weight) {}
+    private record TraceEdge(Value from, Value to, java.math.BigDecimal weight) {}
 
     /** A best-path entry: total cost + the ordered node sequence. */
-    private record TracePath(double cost, List<Value> path) {}
+    private record TracePath(java.math.BigDecimal cost, List<Value> path) {}
 
     /**
      * Single-source optimal paths: seeds only the edges leaving {@code seed} then
@@ -1104,7 +1104,7 @@ final class RecursionExecutor {
                     // Avoid creating loops: the path already visits reach.from()
                     // at position 0; if w is already in the path, skip.
                     if (pe.path().contains(w)) continue;
-                    double newCost = pe.cost() + e.weight();
+                    java.math.BigDecimal newCost = pe.cost().add(e.weight());
                     Pair newKey = new Pair(reach.from(), w);
                     TracePath cur = best.get(newKey);
                     if (cur == null || isBetter(newCost, cur.cost(), minimize)) {
@@ -1148,7 +1148,7 @@ final class RecursionExecutor {
             Value pathVal = new ArrayValue(pathSeq);
             outputRows.add(ArrayRow.of(outputSchema,
                     List.of(fromVal, toVal,
-                            new NumberValue(java.math.BigDecimal.valueOf(pe.cost())),
+                            new NumberValue(pe.cost()),
                             pathVal)));
         }
         return outputRows;
@@ -1172,19 +1172,19 @@ final class RecursionExecutor {
         }
         Map<Value, List<TraceEdge>> adjacency = new HashMap<>();
         for (TraceEdge e : edges) {
-            if (e.weight() < 0) {
+            if (e.weight().signum() < 0) {
                 return null;     // negative weight → Dijkstra unsound; signal fallback
             }
             adjacency.computeIfAbsent(e.from(), k -> new ArrayList<>()).add(e);
         }
 
-        record QEntry(Value node, double dist) {}
-        Map<Value, Double> dist = new HashMap<>();
+        record QEntry(Value node, java.math.BigDecimal dist) {}
+        Map<Value, java.math.BigDecimal> dist = new HashMap<>();
         Map<Value, Value> prev = new HashMap<>();
         Set<Value> finalized = new HashSet<>();
-        PriorityQueue<QEntry> pq = new PriorityQueue<>(Comparator.comparingDouble(QEntry::dist));
-        dist.put(s, 0.0);
-        pq.add(new QEntry(s, 0.0));
+        PriorityQueue<QEntry> pq = new PriorityQueue<>(Comparator.comparing(QEntry::dist));
+        dist.put(s, java.math.BigDecimal.ZERO);
+        pq.add(new QEntry(s, java.math.BigDecimal.ZERO));
 
         while (!pq.isEmpty()) {
             QEntry top = pq.poll();
@@ -1204,8 +1204,9 @@ final class RecursionExecutor {
                 if (finalized.contains(v)) {
                     continue;
                 }
-                double nd = top.dist() + e.weight();
-                if (nd < dist.getOrDefault(v, Double.POSITIVE_INFINITY)) {
+                java.math.BigDecimal nd = top.dist().add(e.weight());
+                java.math.BigDecimal known = dist.get(v);
+                if (known == null || nd.compareTo(known) < 0) {
                     dist.put(v, nd);
                     prev.put(v, u);
                     pq.add(new QEntry(v, nd));
@@ -1224,13 +1225,15 @@ final class RecursionExecutor {
         Collections.reverse(path);
         Row row = ArrayRow.of(outputSchema, List.of(
                 s, t,
-                new NumberValue(java.math.BigDecimal.valueOf(dist.get(t))),
+                new NumberValue(dist.get(t)),
                 new ArrayValue(path)));
         return List.of(row);
     }
 
     /** Returns true if {@code candidate} is strictly better than {@code current}. */
-    private static boolean isBetter(double candidate, double current, boolean minimize) {
-        return minimize ? candidate < current : candidate > current;
+    private static boolean isBetter(java.math.BigDecimal candidate, java.math.BigDecimal current,
+                                    boolean minimize) {
+        int order = candidate.compareTo(current);
+        return minimize ? order < 0 : order > 0;
     }
 }

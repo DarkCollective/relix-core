@@ -131,4 +131,18 @@ final class OptimizedEqualsWrittenTest {
         org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(10), () ->
                 assertThat(both("U := [| t |\n| " + text + " |];\nquery { σ t LIKE '" + pattern + "' (U) };")).isEmpty());
     }
+
+    @Test
+    @DisplayName("TRACE adds weights as exact decimals, in the relaxation and in the single-pair search")
+    void traceWeightsAreExact() {
+        String edges = "E := [| s | d | w |\n| a | b | 0.1 |\n| b | c | 0.2 |\n| x | y | 9007199254740993 |];\n";
+        List<String> all = both(edges + "query { σ s = 'a' ∧ d = 'c' (TRACE s, d VIA w MINIMIZE AS p (E)) };");
+        assertThat(all).hasSize(1);
+        assertThat(all.get(0)).contains("0.3").doesNotContain("0.30000000000000004");
+        List<String> big = both(edges + "query { σ s = 'x' ∧ d = 'y' (TRACE s, d VIA w MINIMIZE AS p (E)) };");
+        assertThat(big.get(0)).contains("9007199254740993");
+        List<String> pairs = both(edges + "query { TRACE s, d VIA w MINIMIZE AS p (E) };");
+        assertThat(pairs.toString()).contains("0.3").doesNotContain("0.30000000000000004")
+                .contains("9007199254740993");
+    }
 }
