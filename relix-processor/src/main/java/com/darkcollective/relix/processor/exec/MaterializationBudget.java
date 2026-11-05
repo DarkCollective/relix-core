@@ -231,7 +231,8 @@ final class MaterializationBudget {
         int cap = ctx.maxMaterializedRows();
         if (cap != ExecutionContext.UNLIMITED_MATERIALIZED_ROWS && held > cap) {
             throw owner instanceof PhysicalNode.Iterate ? refuseRounds(owner, cap)
-                    : refuseAccumulated(owner, cap);
+                    : owner instanceof PhysicalNode.Fixpoint ? refuseAccumulated(owner, cap)
+                    : refuseResult(owner, cap);
         }
     }
 
@@ -290,6 +291,17 @@ final class MaterializationBudget {
      * a buffer filled from a child and the wrong advice here — a fixpoint's accumulator is
      * filled by its own derivation, so the lever is the recursion rather than its input.
      */
+    /**
+     * An operator that builds its result in memory before it emits any of it — a
+     * closure, a shortest-path search, a grouping — and whose result outgrew the cap.
+     */
+    private static EvaluationException refuseResult(PhysicalNode owner, int cap) {
+        return new EvaluationException(
+                name(owner) + " built more than " + cap + " row" + (cap == 1 ? "" : "s")
+                + " of result in memory before emitting any. Reduce what reaches it (a σ below "
+                + "it, or a bound on its endpoints), or raise maxMaterializedRows");
+    }
+
     private static EvaluationException refuseAccumulated(PhysicalNode owner, int cap) {
         return new EvaluationException(
                 name(owner) + " accumulated more than " + cap + " row"
