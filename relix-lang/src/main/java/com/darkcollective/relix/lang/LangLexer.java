@@ -131,7 +131,8 @@ final class LangLexer {
     }
 
     LangLexer(String source, String filePath) {
-        this.input    = source;
+        // A byte-order mark is how some editors say "UTF-8"; it is no part of the script
+        this.input    = source.startsWith("\uFEFF") ? source.substring(1) : source;
         this.filePath = java.util.Objects.requireNonNull(filePath, "filePath");
         this.pos      = 0;
         this.line     = 1;
@@ -258,10 +259,9 @@ final class LangLexer {
      * current lexer position (which must be immediately after an already-
      * consumed <code>&#123;</code>).
      *
-     * <p>Brace depth tracking honours nested braces but not string literals
-     * (i.e. braces inside strings are counted — callers that need to delegate
-     * to {@link com.darkcollective.relix.parser.RelAlgebraParser} pass the RA
-     * grammar which itself handles strings correctly).
+     * <p>Brace depth tracking honours nested braces, skipping the braces inside a
+     * string literal (either quote) and inside a {@code --} or {@code /* *}{@code /}
+     * comment, so that the block ends where the RA lexer will say it ends.
      *
      * @return the extracted block
      * @throws LangParseException if the input ends before the matching <code>&#125;</code>
@@ -287,34 +287,77 @@ final class LangLexer {
                 // A quote escaped outside a string, JSON's \"x\" leaked into the script,
                 // starts no string: the RA parser names the slip
                 advance();
-            } else if (c == '"') {
-                // Skip string literal content so its braces are not counted
-                advance();
-                while (pos < input.length() && input.charAt(pos) != '"') {
-                    if (input.charAt(pos) == '\\') {
-                        advance(); // skip escape character
-                    }
+            } else if (c == '"' || c == '\'') {
+                // Skip string literal content so its braces are not counted. Either
+                // quote opens a string; a doubled quote is two adjacent strings, which
+                // this scan reads the same way the RA lexer reads one
+                skipQuoted(c);
+            } else if (c == '-' && input.startsWith("--", pos)) {
+                // A line comment, which works anywhere whitespace does
+                while (pos + 1 < input.length() && input.charAt(pos + 1) != '\n') {
                     advance();
                 }
-                // pos is now on the closing '"' or at end
+            } else if (c == '/' && input.startsWith("/*", pos)) {
+                advance();
+                advance();
+                while (pos < input.length() && !input.startsWith("*/", pos)) {
+                    advance();
+                }
+                if (pos >= input.length()) {
+                    break;
+                }
+                advance(); // the '*'; the loop's own advance takes the '/'
             }
             advance();
         }
         throw new LangParseException("Unterminated brace block", startLine, startCol);
     }
 
+    /** Leaves {@code pos} on the closing quote of the string opened at {@code pos}, or at the end. */
+    private void skipQuoted(char quote) {
+        advance();
+        while (pos < input.length() && input.charAt(pos) != quote) {
+            if (input.charAt(pos) == '\\') {
+                advance(); // skip escape character
+            }
+            advance();
+        }
+    }
+
     /**
      * Extracts a bracket-balanced block of raw source text, starting at the
-     * current lexer position (immediately after an already-consumed {@code [}).
+     * current lexer position (immediately after an already-consumed {@code [}), for a
+     * Markdown table.
+     *
+     * <p>A {@code "} quotes a stretch of its own line, brackets included, when the line
+     * holds a closing {@code "}; a lone {@code "}, as in a cell {@code 5" pipe}, is text.
      *
      * @return the extracted block
      * @throws LangParseException if the input ends before the matching {@code ]}
      */
     RawBlock consumeRawBracketBlock() {
+        return consumeRawBracketBlock(false);
+    }
+
+    /**
+     * As {@link #consumeRawBracketBlock()}, for a {@code csv[ ]} table: a field that
+     * <em>starts</em> with {@code "} is quoted as RFC 4180 quotes it, so it may hold
+     * brackets, commas and line breaks, and a doubled {@code ""} is a quote inside it.
+     * A {@code "} anywhere else in a field is text.
+     *
+     * @return the extracted block
+     * @throws LangParseException if the input ends before the matching {@code ]}
+     */
+    RawBlock consumeRawCsvBlock() {
+        return consumeRawBracketBlock(true);
+    }
+
+    private RawBlock consumeRawBracketBlock(boolean csv) {
         int startLine = line;
         int startCol = col;
         int start = pos;
         int depth = 1;
+        boolean fieldStart = true;   // csv: only a quote that opens a field quotes
 
         while (pos < input.length()) {
             char c = input.charAt(pos);
@@ -327,18 +370,43 @@ final class LangLexer {
                     advance(); // consume ']'
                     return new RawBlock(text, startLine, startCol);
                 }
-            } else if (c == '"') {
+            } else if (c == '"' && (csv ? fieldStart : closesOnThisLine(pos))) {
                 advance();
-                while (pos < input.length() && input.charAt(pos) != '"') {
-                    if (input.charAt(pos) == '\\') {
+                while (pos < input.length()) {
+                    char inside = input.charAt(pos);
+                    if (inside == '"') {
+                        if (csv && input.startsWith("\"\"", pos)) {
+                            advance(); // a doubled quote is a quote inside the field
+                            advance();
+                            continue;
+                        }
+                        break;
+                    }
+                    if (!csv && inside == '\\') {
                         advance();
                     }
                     advance();
                 }
             }
+            if (csv) {
+                fieldStart = c == ',' || c == '\n' || fieldStart && c == ' ';
+            }
             advance();
         }
         throw new LangParseException("Unterminated bracket block", startLine, startCol);
+    }
+
+    /** Whether a {@code "} follows {@code at} on the same line. */
+    private boolean closesOnThisLine(int at) {
+        for (int i = at + 1; i < input.length() && input.charAt(i) != '\n'; i++) {
+            if (input.charAt(i) == '"') {
+                return true;
+            }
+            if (input.charAt(i) == '\\') {
+                i++;
+            }
+        }
+        return false;
     }
 
     /**

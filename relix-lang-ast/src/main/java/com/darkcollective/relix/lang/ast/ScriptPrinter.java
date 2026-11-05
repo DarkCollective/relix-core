@@ -434,14 +434,21 @@ public final class ScriptPrinter {
         return sb.append(']').toString();
     }
 
+    /** Whether a CSV field has to be quoted for the reader to take it back as written. */
+    private static boolean needsQuotes(String field) {
+        return field.contains(",") || field.contains("\"") || field.contains("[")
+                || field.contains("]") || field.contains("\n") || field.contains("\r");
+    }
+
     /**
-     * One CSV line, a field quoted when it holds a comma or a quote — the reason a table
-     * is written as csv[ ] at all — with an embedded quote doubled, as the reader takes it.
+     * One CSV line, a field quoted when it holds a comma, a quote, a line break or a
+     * bracket — the table's own close is a bracket, and the scan for it reads inside quotes
+     * only — with an embedded quote doubled, as the reader takes it.
      */
     private static String csvLine(List<String> fields) {
         StringJoiner line = new StringJoiner(", ");
         for (String field : fields) {
-            line.add(field.contains(",") || field.contains("\"")
+            line.add(needsQuotes(field)
                     ? '"' + field.replace("\"", "\"\"") + '"'
                     : field);
         }

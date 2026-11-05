@@ -201,6 +201,18 @@ public final class ScriptParser {
     // =========================================================================
 
     private Script parseScript() {
+        try {
+            return parseStatements();
+        } catch (StackOverflowError tooDeep) {
+            // The depth caps keep a parse well inside the stack the JVM gives a thread by
+            // default; a thread given less than that is refused here rather than failed
+            throw new LangParseException(
+                    "The script nests too deeply to parse on this thread's stack",
+                    current.line(), current.column());
+        }
+    }
+
+    private Script parseStatements() {
         Optional<String> namespace = Optional.empty();
         List<Statement> statements = new ArrayList<>();
         Optional<Span> namespaceSpan = Optional.empty();
@@ -742,7 +754,7 @@ public final class ScriptParser {
             // The lexer's pos will then be past '[', ready for bracket-block extraction.
             advance(); // consume 'csv', lexer scans '[' → current = LBRACKET
             LangToken bracket = requireBracketToken();
-            LangLexer.RawBlock raw = lexer.consumeRawBracketBlock();
+            LangLexer.RawBlock raw = lexer.consumeRawCsvBlock();
             current = lexer.next();
             body = inlineTableBody(name, parseCsvInlineTable(name, raw, bracket));
         } else if (current.type() == LangTokenType.LBRACKET) {
@@ -844,6 +856,13 @@ public final class ScriptParser {
             while (current.type() == LangTokenType.COMMA) {
                 advance();
                 params.add(parseParameterDefinition());
+            }
+        }
+        Set<String> parameterNames = new HashSet<>();
+        for (ParameterDefinition p : params) {
+            if (!parameterNames.add(p.name().toLowerCase(Locale.ROOT))) {
+                throw new LangParseException("Function '" + name + "' declares parameter '"
+                        + p.name() + "' more than once", current.line(), current.column());
             }
         }
         consume(LangTokenType.RPAREN);
@@ -1139,21 +1158,27 @@ public final class ScriptParser {
 
         String[] lines = raw.text().split("\\R", -1);
         for (int i = 0; i < lines.length; i++) {
-            String trimmed = lines[i].trim();
+            String record = lines[i];
+            // A quoted field may hold a line break: the record runs to the line that closes it
+            int first = i;
+            while (opensQuote(record) && i + 1 < lines.length) {
+                record = record + "\n" + lines[++i];
+            }
+            String trimmed = record.trim();
             if (trimmed.isEmpty()) {
                 continue;
             }
             List<String> cells = parseCsvLine(trimmed);
             if (headers == null) {
                 headers = Collections.unmodifiableList(new ArrayList<>(cells));
-                requireColumnNames(headers, "CSV", raw, lines, i);
-                refuseTypedHeaders(name, headers, "csv[", raw, lines, i);
+                requireColumnNames(headers, "CSV", raw, lines, first);
+                refuseTypedHeaders(name, headers, "csv[", raw, lines, first);
             } else {
-                requireWidth(cells, headers, "CSV", raw, lines, i);
+                requireWidth(cells, headers, "CSV", raw, lines, first);
                 rows.add(Collections.unmodifiableList(new ArrayList<>(cells)));
-                int indent = lines[i].length() - lines[i].stripLeading().length();
+                int indent = lines[first].length() - lines[first].stripLeading().length();
                 rowLocations.add(new SourceLocation(filePath,
-                        raw.startLine() + i, (i == 0 ? raw.startCol() : 1) + indent));
+                        raw.startLine() + first, (first == 0 ? raw.startCol() : 1) + indent));
             }
         }
 
@@ -1163,6 +1188,34 @@ public final class ScriptParser {
                     openToken.line(), openToken.column());
         }
         return new CsvInlineTable(headers, rows, rowLocations);
+    }
+
+    /**
+     * Whether {@code record} ends inside a quoted field. A quote opens one only at the
+     * start of a field, as {@link #parseCsvLine} reads it, so a {@code "} in the middle of
+     * a field is text.
+     */
+    private static boolean opensQuote(String record) {
+        boolean inQuote = false;
+        boolean fieldStart = true;
+        for (int i = 0; i < record.length(); i++) {
+            char c = record.charAt(i);
+            if (inQuote) {
+                if (c == '"') {
+                    if (i + 1 < record.length() && record.charAt(i + 1) == '"') {
+                        i++;
+                    } else {
+                        inQuote = false;
+                    }
+                }
+            } else if (c == '"' && fieldStart) {
+                inQuote = true;
+                fieldStart = false;
+            } else {
+                fieldStart = c == ',' || fieldStart && c == ' ';
+            }
+        }
+        return inQuote;
     }
 
     private List<String> parseCsvLine(String line) {
@@ -1628,11 +1681,33 @@ public final class ScriptParser {
     LangToken consume(LangTokenType expected) {
         if (current.type() != expected) {
             throw new LangParseException(
-                    "Expected '" + expected.name().toLowerCase().replace('_', ' ') + "'", current);
+                    "Expected " + spelling(expected), current);
         }
         LangToken tok = current;
         advance();
         return tok;
+    }
+
+    /** How a token type is written in a script, for a message that says what was expected. */
+    private static String spelling(LangTokenType type) {
+        return switch (type) {
+            case ASSIGN -> "':='";
+            case COLON -> "':'";
+            case SEMICOLON -> "';'";
+            case COMMA -> "','";
+            case LPAREN -> "'('";
+            case RPAREN -> "')'";
+            case LBRACE -> "'{'";
+            case RBRACE -> "'}'";
+            case LBRACKET -> "'['";
+            case RBRACKET -> "']'";
+            case ARROW -> "'->'";
+            case RANGE -> "'..'";
+            case IDENTIFIER, DELIMITED_IDENTIFIER -> "a name";
+            case STRING_LIT -> "a string";
+            case NUMBER_LIT -> "a number";
+            default -> "'" + type.name().toLowerCase() + "'";
+        };
     }
 
     /** Advances to the next token. */
@@ -1867,6 +1942,23 @@ public final class ScriptParser {
      * @return the parsed type; never null
      */
     Type requireType() {
+        if (++typeDepth > MAX_TYPE_NESTING) {
+            throw error("A type nests more than " + MAX_TYPE_NESTING + " levels deep");
+        }
+        try {
+            return requireTypeAtDepth();
+        } finally {
+            typeDepth--;
+        }
+    }
+
+    /** How deeply struct and array types may nest, the depth the expression parser allows. */
+    private static final int MAX_TYPE_NESTING = 250;
+
+    /** Current nesting of {@link #requireType()}. */
+    private int typeDepth;
+
+    private Type requireTypeAtDepth() {
         if (current.type() == LangTokenType.LBRACE) {
             return structType();
         }
