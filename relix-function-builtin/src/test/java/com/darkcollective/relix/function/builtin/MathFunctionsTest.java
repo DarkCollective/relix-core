@@ -275,4 +275,61 @@ final class MathFunctionsTest {
                     .hasMessage("Mod: expected NUMBER argument, got STRING");
         }
     }
+
+    @Nested
+    @DisplayName("Results a decimal cannot hold")
+    final class OutOfRange {
+
+        @Test
+        @DisplayName("an overflow says so instead of quoting the JDK's number parser")
+        void overflow() {
+            assertThatThrownBy(() -> call("Exp", n("1000"))).hasMessage("Exp: result out of range");
+            assertThatThrownBy(() -> call("Degrees", n("1e308"))).hasMessage("Degrees: result out of range");
+            assertThatThrownBy(() -> call("Power", n("2.5"), n("10000.5"))).hasMessage("Power: result out of range");
+            assertThatThrownBy(() -> call("Sqr", n("1e600"))).hasMessage("Sqr: argument out of range");
+            assertThatThrownBy(() -> call("Log", n("1e600"))).hasMessage("Log: argument out of range");
+            assertThatThrownBy(() -> call("Atan2", n("1e600"), n("1"))).hasMessage("Atan2: argument out of range");
+            assertThatThrownBy(() -> call("Power", n("2"), n("100001")))
+                    .hasMessage("Power: result out of range");
+        }
+
+        @Test
+        @DisplayName("a question with no real answer says that")
+        void notANumber() {
+            assertThatThrownBy(() -> call("Power", n("-2"), n("0.5")))
+                    .hasMessage("Power: a negative number cannot be raised to a fractional power");
+            assertThatThrownBy(() -> call("Power", n("0"), n("-1")))
+                    .hasMessage("Power: zero cannot be raised to a negative power");
+            assertThatThrownBy(() -> call("Power", n("0"), n("-1000000")))
+                    .hasMessage("Power: zero cannot be raised to a negative power");
+            assertThatThrownBy(() -> call("Power", n("0"), n("-1.5")))
+                    .hasMessage("Power: zero cannot be raised to a negative power");
+        }
+
+        @Test
+        @DisplayName("an integer power is exact, where a double would round")
+        void exactIntegerPower() {
+            assertThat(number(call("Power", n("9223372036854775807"), n("2"))))
+                    .isEqualTo("85070591730234615847396907784232501249");
+            assertThat(number(call("Power", n("2"), n("10000"))).toPlainString()).hasSize(3011);
+            assertThat(number(call("Power", n("10"), n("400"))).precision()).isEqualTo(1);
+            assertThat(number(call("Power", n("1.5"), n("3")))).isEqualTo("3.375");
+            assertThat(number(call("Power", n("-2"), n("3")))).isEqualTo("-8");
+            assertThat(number(call("Power", n("2"), n("-2")))).isEqualTo("0.25");
+            assertThat(number(call("Power", n("3"), n("-1"))))
+                    .isEqualTo("0.3333333333333333333333333333333333");
+            assertThat(number(call("Power", n("0"), n("0")))).isEqualTo("1");
+            assertThat(number(call("Power", n("0"), n("5")))).isEqualTo("0");
+            assertThat(number(call("Power", n("1"), n("1000000")))).isEqualTo("1");
+            assertThat(number(call("Power", n("0"), n("1000000")))).isEqualTo("0");
+        }
+
+        @Test
+        @DisplayName("a fractional exponent still goes through floating point")
+        void fractionalPower() {
+            assertThat(number(call("Power", n("4"), n("0.5"))).doubleValue()).isEqualTo(2.0);
+            assertThatThrownBy(() -> call("Power", n("2"), n("1000000.0")))
+                    .hasMessage("Power: result out of range");
+        }
+    }
 }

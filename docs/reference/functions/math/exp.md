@@ -21,8 +21,8 @@ Undo a natural log:
   π Exp(log_value) → original (Measurements)
 
 # Limitations:
-NUMBER only; NULL in → NULL out. Floating-point result; very large inputs overflow
-to infinity.
+NUMBER only; NULL in → NULL out. Floating-point result; an input whose result
+exceeds the range of a double (about Exp(709)) is an error, not infinity.
 
 # Alternatives:
 Log is the inverse; Power(base, exp) for a base other than e.

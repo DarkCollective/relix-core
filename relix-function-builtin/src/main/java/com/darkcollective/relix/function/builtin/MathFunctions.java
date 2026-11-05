@@ -25,6 +25,7 @@ import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.function.PushdownTarget;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
@@ -235,8 +236,37 @@ final class MathFunctions {
         if (args.get(0).isNull()) {
             return NullValue.INSTANCE;
         }
-        double x = number(args.get(0), function).doubleValue();
-        return new NumberValue(BigDecimal.valueOf(operation.applyAsDouble(x)));
+        double x = finite(number(args.get(0), function), function);
+        return real(operation.applyAsDouble(x), function);
+    }
+
+    /**
+     * An argument as a {@code double}, rejecting one too large for it: the transcendental
+     * functions work in binary floating point, and an argument beyond its range has no
+     * answer there, where the JDK would turn it into infinity and fail later with a
+     * message about a character.
+     */
+    private static double finite(BigDecimal x, String function) {
+        double d = x.doubleValue();
+        if (Double.isInfinite(d)) {
+            throw reject(function + ": argument out of range");
+        }
+        return d;
+    }
+
+    /**
+     * A {@code double} result as a NUMBER, rejecting the two values a decimal cannot hold.
+     * Infinity is an overflow and NaN is the answer to a question with none, such as the
+     * square root of a negative number or a negative base raised to a fractional power.
+     */
+    private static NumberValue real(double result, String function) {
+        if (Double.isNaN(result)) {
+            throw reject(function + ": result is not a number");
+        }
+        if (Double.isInfinite(result)) {
+            throw reject(function + ": result out of range");
+        }
+        return new NumberValue(BigDecimal.valueOf(result));
     }
 
     /** Returns an inverse-trig argument that lies in [-1, 1], rejecting one outside. */
@@ -261,14 +291,14 @@ final class MathFunctions {
             return NullValue.INSTANCE;
         }
         if (args.size() == 1) {
-            double x = number(args.get(0), "Log").doubleValue();
+            double x = finite(number(args.get(0), "Log"), "Log");
             if (x <= 0) {
                 throw reject("Log: argument must be positive");
             }
-            return new NumberValue(BigDecimal.valueOf(Math.log(x)));
+            return real(Math.log(x), "Log");
         }
-        double base = number(args.get(0), "Log").doubleValue();
-        double y = number(args.get(1), "Log").doubleValue();
+        double base = finite(number(args.get(0), "Log"), "Log");
+        double y = finite(number(args.get(1), "Log"), "Log");
         if (base <= 0 || y <= 0) {
             throw reject("Log: arguments must be positive");
         }
@@ -280,16 +310,16 @@ final class MathFunctions {
         if (Math.pow(base, whole) == y) {
             ratio = whole;
         }
-        return new NumberValue(BigDecimal.valueOf(ratio));
+        return real(ratio, "Log");
     }
 
     private static Value atan2(List<Value> args) {
         if (args.get(0).isNull() || args.get(1).isNull()) {
             return NullValue.INSTANCE;
         }
-        double y = number(args.get(0), "Atan2").doubleValue();
-        double x = number(args.get(1), "Atan2").doubleValue();
-        return new NumberValue(BigDecimal.valueOf(Math.atan2(y, x)));
+        double y = finite(number(args.get(0), "Atan2"), "Atan2");
+        double x = finite(number(args.get(1), "Atan2"), "Atan2");
+        return real(Math.atan2(y, x), "Atan2");
     }
 
     private static Value round(List<Value> args) {
@@ -327,13 +357,66 @@ final class MathFunctions {
         return Optional.empty();
     }
 
+    /** The most digits an exact integer power may have; beyond it the call is refused. */
+    private static final int MAX_POWER_DIGITS = 100_000;
+
+    /** The largest exponent {@link BigDecimal#pow(int)} accepts. */
+    private static final int MAX_POWER_EXPONENT = 999_999_999;
+
+    /**
+     * {@code Power(base, exp)}. A whole-number exponent is computed exactly in decimal
+     * arithmetic, so {@code Power(9223372036854775807, 2)} has every digit and
+     * {@code Power(10, 400)} is not an overflow; a negative one is the reciprocal to 34
+     * significant digits. Any other exponent works in binary floating point, as the
+     * transcendental functions do, and is refused where that has no answer: a negative
+     * base raised to a fractional power, or a result beyond the range of a double.
+     */
     private static Value power(List<Value> args) {
         if (args.get(0).isNull() || args.get(1).isNull()) {
             return NullValue.INSTANCE;
         }
-        double base = number(args.get(0), "Power").doubleValue();
-        double exponent = number(args.get(1), "Power").doubleValue();
-        return new NumberValue(BigDecimal.valueOf(Math.pow(base, exponent)));
+        BigDecimal base = number(args.get(0), "Power");
+        BigDecimal exponent = number(args.get(1), "Power");
+        if (exponent.signum() == 0) {
+            return new NumberValue(BigDecimal.ONE);
+        }
+        boolean whole = exponent.stripTrailingZeros().scale() <= 0;
+        if (whole && exponent.abs().compareTo(BigDecimal.valueOf(MAX_POWER_EXPONENT)) <= 0) {
+            return exactPower(base, exponent.intValueExact());
+        }
+        if (whole && base.signum() == 0) {
+            if (exponent.signum() < 0) {
+                throw reject("Power: zero cannot be raised to a negative power");
+            }
+            return new NumberValue(BigDecimal.ZERO);
+        }
+        if (base.signum() < 0 && !whole) {
+            throw reject("Power: a negative number cannot be raised to a fractional power");
+        }
+        if (base.signum() == 0 && exponent.signum() < 0) {
+            throw reject("Power: zero cannot be raised to a negative power");
+        }
+        return real(Math.pow(finite(base, "Power"), finite(exponent, "Power")), "Power");
+    }
+
+    private static Value exactPower(BigDecimal base, int exponent) {
+        int n = Math.abs(exponent);
+        if (base.signum() == 0) {
+            if (exponent < 0) {
+                throw reject("Power: zero cannot be raised to a negative power");
+            }
+            return new NumberValue(BigDecimal.ZERO);
+        }
+        BigDecimal unit = base.abs().stripTrailingZeros();
+        if (unit.compareTo(BigDecimal.ONE) != 0
+                && (long) n * Math.max(1, unit.precision()) > MAX_POWER_DIGITS) {
+            throw reject("Power: result out of range");
+        }
+        BigDecimal result = base.pow(n);
+        if (exponent < 0) {
+            result = BigDecimal.ONE.divide(result, MathContext.DECIMAL128);
+        }
+        return new NumberValue(result.stripTrailingZeros());
     }
 
     /**

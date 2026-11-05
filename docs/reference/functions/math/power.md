@@ -11,8 +11,11 @@ quantities (doubling, compound factors) and for roots (a fractional exponent lik
 0.5 is a square root).
 
 # Technical Description:
-Power(base: NUMBER, exp: NUMBER) → NUMBER. Returns base^exp (Math.pow). A NULL in
-either argument returns NULL. PURE, DETERMINISTIC. Floating-point result.
+Power(base: NUMBER, exp: NUMBER) → NUMBER. Returns base^exp. A whole-number exponent
+is computed exactly in decimal arithmetic, so Power(9223372036854775807, 2) is
+85070591730234615847396907784232501249; a negative one is the reciprocal, to 34
+significant digits. Any other exponent is computed in binary floating point
+(Math.pow). A NULL in either argument returns NULL. PURE, DETERMINISTIC.
 
 # Examples:
 Powers of two:
@@ -25,9 +28,10 @@ Cube root via fractional exponent:
   π Power(volume, 0.333333) → side (Cubes)
 
 # Limitations:
-NUMBER arguments; NULL in either → NULL out. Floating-point result. Some
-base/exponent combinations (e.g. negative base with a fractional exponent) yield
-NaN.
+NUMBER arguments; NULL in either → NULL out. A fractional exponent gives a
+floating-point result. Where there is no answer the call is an error: a negative base
+with a fractional exponent, zero to a negative power, a result beyond the range of a
+double (fractional exponent) or of 100000 digits (whole exponent).
 
 # Alternatives:
 Sqr for the square root specifically; Exp/Log for base-e work.
