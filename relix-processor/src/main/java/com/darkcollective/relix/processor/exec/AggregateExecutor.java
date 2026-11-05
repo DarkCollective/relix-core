@@ -88,6 +88,10 @@ final class AggregateExecutor {
         List<GroupingKey> groupKeys = node.groupingKeys();
         OperandEvaluator eval = ctx.operandEval();
 
+        if (node.aggregates().stream().allMatch(AggregateExecutor::constantState)) {
+            return executeFolding(node, ctx);
+        }
+
         IndexedRelation indexed;
         try (Stream<Row> input = dispatch.buffering(node.input(), ctx, node)) {
             indexed = IndexedRelation.build(inputSchema, input,
@@ -106,6 +110,113 @@ final class AggregateExecutor {
                     entry.getValue(), ctx.operandEval()));
         }
         return BagRelation.of(outputSchema, outputRows).stream();
+    }
+
+    /**
+     * Whether {@code agg} keeps a fixed amount of state per group however many rows it
+     * reads: a count, a sum, an extremum, a running variance, a boolean fold, the best
+     * row so far. Such an aggregate needs no row of its group after it has folded it in.
+     * One that is {@code DISTINCT} remembers every value it has seen, and one that reads
+     * its group in an order ({@code ORDER BY}, or {@code MODE}, which breaks ties by
+     * value) needs the whole group, as do {@code MEDIAN}, {@code PERCENTILE_*},
+     * {@code COLLECT} and {@code STRING_AGG}, whose results are the values themselves.
+     */
+    private static boolean constantState(AggregateFunction agg) {
+        if (agg.distinct() || !agg.orderBy().isEmpty()) {
+            return false;
+        }
+        return switch (agg.operator()) {
+            case SUM, AVG, COUNT, MIN, MAX, ARGMAX, ARGMIN, STDDEV, STDDEV_SAMP, STDDEV_POP,
+                 VARIANCE, VAR_SAMP, VAR_POP, BOOL_AND, BOOL_OR, GROUPING -> true;
+            default -> false;
+        };
+    }
+
+    /** One group's running state in {@link #executeFolding}. */
+    private static final class GroupState {
+        final List<Value> shown;
+        final Reduction[] reductions;
+
+        GroupState(List<Value> shown, Reduction[] reductions) {
+            this.shown = shown;
+            this.reductions = reductions;
+        }
+    }
+
+    /**
+     * Hash aggregation that folds each row into its group's accumulators as it arrives and
+     * keeps no row, so the memory held is one accumulator per group per aggregate rather
+     * than the input. {@code γ COUNT(*) (Range(1, 5000000))} holds one counter.
+     *
+     * <p>Rows are folded in input order and the groups come out in order of first
+     * appearance, exactly as the buffering path does, and the key a row shows is chosen by
+     * the same rule as {@link #shownKey}. The groups themselves are the one thing held,
+     * and are what the materialisation cap and its event count.
+     */
+    private Stream<Row> executeFolding(PhysicalNode.Aggregate node, EvalCtx ctx) {
+        Schema outputSchema = node.schema();
+        List<GroupingKey> groupKeys = node.groupingKeys();
+        List<AggregateFunction> aggregates = node.aggregates();
+        OperandEvaluator eval = ctx.operandEval();
+        List<Type> keyTypes = ExecSupport.keyTypes(outputSchema, groupKeys.size());
+
+        Map<List<Value>, GroupState> groups = new java.util.LinkedHashMap<>();
+        // Metered like TOP: what is held is the groups, not the rows that reach them, so the
+        // cap and the MATERIALIZE event both answer in groups. forEach, not an iterator,
+        // so the poll after each row sees the group that row created.
+        try (Stream<Row> input = MaterializationBudget.holding(node,
+                dispatch.execute(node.input(), ctx), ctx, groups::size)) {
+            input.forEach(row -> {
+                List<Value> key = ExecSupport.canonicalKey(bucketKey(row, groupKeys, eval), keyTypes);
+                GroupState state = groups.get(key);
+                if (state == null) {
+                    state = new GroupState(new ArrayList<>(groupKey(row, groupKeys, eval)),
+                            reductions(aggregates, eval));
+                    groups.put(key, state);
+                }
+                for (int i = 0; i < groupKeys.size(); i++) {
+                    Operand expression = groupKeys.get(i).expression();
+                    if (expression instanceof CollateOperand) {
+                        Value value = eval.evaluate(expression, row);
+                        if (!value.isNull()
+                                && ValueComparator.compareNonNull(value, state.shown.get(i)) < 0) {
+                            state.shown.set(i, value);
+                        }
+                    }
+                }
+                for (Reduction reduction : state.reductions) {
+                    if (reduction != null) {
+                        reduction.accept(row);
+                    }
+                }
+            });
+        }
+        if (groupKeys.isEmpty() && groups.isEmpty()) {
+            groups.put(List.of(), new GroupState(List.of(), reductions(aggregates, eval)));
+        }
+
+        List<Row> outputRows = new ArrayList<>(groups.size());
+        for (GroupState state : groups.values()) {
+            List<Value> output = new ArrayList<>(outputSchema.width());
+            output.addAll(state.shown);
+            for (int i = 0; i < aggregates.size(); i++) {
+                AggregateFunction agg = aggregates.get(i);
+                output.add(agg.operator() == AggregateOperator.GROUPING
+                        ? groupingValue(agg, groupKeys, allKeys(groupKeys))
+                        : state.reductions[i].finish());
+            }
+            outputRows.add(ArrayRow.of(outputSchema, output));
+        }
+        return BagRelation.of(outputSchema, outputRows).stream();
+    }
+
+    private static Reduction[] reductions(List<AggregateFunction> aggregates, OperandEvaluator eval) {
+        Reduction[] reductions = new Reduction[aggregates.size()];
+        for (int i = 0; i < reductions.length; i++) {
+            AggregateFunction agg = aggregates.get(i);
+            reductions[i] = agg.operator() == AggregateOperator.GROUPING ? null : new Reduction(agg, eval);
+        }
+        return reductions;
     }
 
     /**
@@ -369,23 +480,7 @@ final class AggregateExecutor {
      * once.
      */
     static Value computeAggregate(AggregateFunction agg, List<Row> rows, OperandEvaluator eval) {
-        String name = agg.operator().name();
-        com.darkcollective.relix.function.AggregateFunction reduction =
-                eval.functions().aggregate(name).orElseThrow(() -> new EvaluationException(
-                        "Unknown aggregate: " + name + (eval.functions().isEmpty()
-                                ? " (no function library is installed — check that a"
-                                        + " FunctionLibrary provider is on the module path)"
-                                : "")));
-
-        // [argument] for a one-value reduction, [rank, yield] for ARGMAX/ARGMIN.
-        List<Operand> arguments = new ArrayList<>(2);
-        arguments.add(agg.argument());
-        agg.yieldExpr().ifPresent(arguments::add);
-
-        boolean skipNulls = reduction.signature().skipsNulls();
-        Accumulator accumulator = reduction.accumulator(eval.functionContext());
-        // DISTINCT: each value once, under the engine's equality (1 and 1.0 are one value).
-        Set<List<Value>> seen = agg.distinct() ? new HashSet<>() : null;
+        Reduction reduction = new Reduction(agg, eval);
         // An ordered aggregate — STRING_AGG(x, ', ' ORDER BY y) — reads its group in that order.
         // MODE breaks a tie by that order, and with none given reads its values ascending,
         // so the smallest of the most frequent wins (#296).
@@ -398,6 +493,40 @@ final class AggregateExecutor {
             ordered.sort(rowComparator(order, eval));
         }
         for (Row row : ordered) {
+            reduction.accept(row);
+        }
+        return reduction.finish();
+    }
+
+    /** One aggregate's accumulator over one group, fed a row at a time. */
+    private static final class Reduction {
+
+        private final OperandEvaluator eval;
+        private final List<Operand> arguments;
+        private final boolean skipNulls;
+        private final Accumulator accumulator;
+        /** DISTINCT: each value once, under the engine's equality (1 and 1.0 are one value). */
+        private final Set<List<Value>> seen;
+
+        Reduction(AggregateFunction agg, OperandEvaluator eval) {
+            String name = agg.operator().name();
+            com.darkcollective.relix.function.AggregateFunction reduction =
+                    eval.functions().aggregate(name).orElseThrow(() -> new EvaluationException(
+                            "Unknown aggregate: " + name + (eval.functions().isEmpty()
+                                    ? " (no function library is installed — check that a"
+                                            + " FunctionLibrary provider is on the module path)"
+                                    : "")));
+            this.eval = eval;
+            // [argument] for a one-value reduction, [rank, yield] for ARGMAX/ARGMIN.
+            this.arguments = new ArrayList<>(2);
+            arguments.add(agg.argument());
+            agg.yieldExpr().ifPresent(arguments::add);
+            this.skipNulls = reduction.signature().skipsNulls();
+            this.accumulator = reduction.accumulator(eval.functionContext());
+            this.seen = agg.distinct() ? new HashSet<>() : null;
+        }
+
+        void accept(Row row) {
             List<Value> values = new ArrayList<>(arguments.size());
             boolean absent = false;
             for (Operand argument : arguments) {
@@ -406,13 +535,16 @@ final class AggregateExecutor {
                 values.add(value);
             }
             if (skipNulls && absent) {
-                continue;
+                return;
             }
             if (seen != null && !seen.add(ExecSupport.canonicalKey(values, List.of()))) {
-                continue;
+                return;
             }
             accumulator.accumulate(values);
         }
-        return accumulator.finish();
+
+        Value finish() {
+            return accumulator.finish();
+        }
     }
 }

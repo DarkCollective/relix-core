@@ -135,8 +135,9 @@ final class MaterializationBudgetTest extends ProcessorTestSupport {
     private static final String BLOCKING = """
             PIVOT       ~ Pivot       ~ query { PIVOT amount BY dst PER src (Edges) };
             sort        ~ Sort        ~ query { τ amount DESC (Edges) };
-            aggregate   ~ Aggregate   ~ query { γ grp, SUM(amount) → total (Edges) };
-            scalar γ    ~ Aggregate   ~ query { γ SUM(amount) → total (Edges) };
+            aggregate   ~ Aggregate   ~ query { γ grp, MEDIAN(amount) → mid (Edges) };
+            scalar γ    ~ Aggregate   ~ query { γ MEDIAN(amount) → mid (Edges) };
+            distinct γ  ~ Aggregate   ~ query { γ grp, COUNT(DISTINCT amount) → n (Edges) };
             universal   ~ Universal   ~ query { ∀ grp : amount > 0 (Edges) };
             WINDOW      ~ Window      ~ query { WINDOW RANK() SORT amount DESC PER grp AS rnk (Edges) };
             SESSIONIZE  ~ Sessionize  ~ query { SESSIONIZE ts GAP DURATION 'PT30M' PER grp AS session (Edges) };
@@ -394,6 +395,39 @@ final class MaterializationBudgetTest extends ProcessorTestSupport {
                         assertThat(e.description()).isEqualTo("buffered 2 rows for TopK");
                         assertThat(e.metrics().duration()).isPresent();
                     });
+        }
+
+        /** Four rows in two groups: a folding γ holds two accumulators. */
+        private static final String FOLDING = "query { γ grp, SUM(amount) → total, COUNT(*) → n (Edges) };";
+
+        @Test
+        @DisplayName("a γ that folds holds one accumulator per group: two groups fit a cap of two")
+        void foldingAggregateHoldsOnePerGroup() {
+            assertThatCode(() -> runCapped(FOLDING, 2)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("a scalar γ that folds holds one accumulator however many rows it reads")
+        void scalarFoldHoldsOne() {
+            assertThatCode(() -> runCapped("query { γ SUM(amount) → total, COUNT(*) → n (Edges) };", 1))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("a folding γ past the cap refuses on its groups")
+        void foldingAggregateRefusesOnGroups() {
+            assertThatThrownBy(() -> runCapped(FOLDING, 1))
+                    .isInstanceOf(EvaluationException.class)
+                    .hasMessageContaining("Aggregate")
+                    .hasMessageContaining("held more than 1 row");
+        }
+
+        @Test
+        @DisplayName("a folding γ reports the groups it held, not the rows it read")
+        void foldingAggregateReportsGroups() {
+            assertThat(materializations(FOLDING))
+                    .singleElement()
+                    .satisfies(e -> assertThat(e.description()).isEqualTo("buffered 2 rows for Aggregate"));
         }
 
         @Test

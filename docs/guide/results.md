@@ -464,8 +464,12 @@ relix.relation("γ customer, SUM(amount) → total (Orders)").run().events().str
 ```
 
 ```
-buffered 3 rows for Aggregate (3)
+buffered 2 rows for Aggregate (2)
 ```
+
+A grouping that only folds its rows in (sums, counts, extremes) keeps one accumulator per
+group, so it reports the two groups it held rather than the three rows it read; a sort, or
+a grouping that needs its values (`MEDIAN`, `COLLECT`), reports the rows it read.
 
 The row count is on the event as a number as well as in the sentence, so a host can compare
 it against the estimate the plan carried rather than parse it back out of prose.
@@ -602,7 +606,7 @@ timed.events().stream()
 
 ```
 SCAN — scanned 3 rows
-MATERIALIZE — buffered 3 rows for Aggregate
+MATERIALIZE — buffered 2 rows for Aggregate
 ROWS — query delivered 2 rows
 ```
 
