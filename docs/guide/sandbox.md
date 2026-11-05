@@ -132,7 +132,7 @@ relation.
 |---|---|
 | `maxInputChars` | The length of the text one call may pass. Longer text is refused before it is parsed. |
 | `maxOutputRows` | The rows one query returns. |
-| `maxMaterializedRows` | The rows one blocking operator may buffer. |
+| `maxMaterializedRows` | The rows one blocking operator may buffer, or the result a closure, a path search or a trace builds before emitting any. A grouping that only counts, sums, averages, takes extremes, deviations or booleans, or the best row, holds one accumulator per group instead of its input, and is charged for its groups; one that needs the values themselves (`MEDIAN`, `PERCENTILE_*`, `MODE`, `COLLECT`, `STRING_AGG`, `DISTINCT`, or an `ORDER BY`) buffers its input. |
 | `maxFixpointRounds` | The rounds one recursion may run. |
 | `maxProcessedRows` | The work one execution may do, counted as rows passed from one operator to the next. |
 | `timeoutMillis` | How long one execution may run. |
@@ -164,7 +164,8 @@ query stopped: it processed more than 10000 rows, the limit for one execution
 `maxProcessedRows` counts every row an operator hands to the one above it, so the same
 query over the same data stops at the same point on any machine. The timeout is checked
 at the same points, so it catches anything that moves rows, but it depends on the
-machine. It cannot interrupt a call that never returns to the engine, such as a JDBC
+machine. A long loop inside one operator (a recursion round, a covering search, a window frame
+over a long partition) checks it too. It cannot interrupt a call that never returns to the engine, such as a JDBC
 driver waiting on its database; `Relix.cancel()` can, from another thread (see
 [Stopping a query](results.md#stopping-a-query)). Prefer `maxProcessedRows` for a
 reproducible limit and use the timeout as a backstop.

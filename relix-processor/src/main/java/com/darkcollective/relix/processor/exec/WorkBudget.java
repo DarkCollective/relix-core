@@ -159,6 +159,26 @@ final class WorkBudget {
         Cancellation.check(cancellation);
     }
 
+    /**
+     * Raises when the deadline has passed or the execution has been cancelled, without
+     * charging a row.
+     *
+     * <p>For the inner loops of an operator that does a long stretch of work between two
+     * rows it emits (a relaxation round, a candidate search): the row boundaries
+     * {@link #charge} watches are not reached while such a loop runs, so it calls this
+     * itself, every so many iterations.
+     *
+     * @throws EvaluationException if the deadline has passed or the thread was interrupted
+     *         or the execution cancelled
+     */
+    void checkpoint() {
+        if (timed && System.nanoTime() - deadline > 0) {
+            throw new EvaluationException("query stopped: it ran longer than " + describe(timeout)
+                    + ", the limit for one execution");
+        }
+        Cancellation.check(cancellation);
+    }
+
     /** A timeout as the refusal names it: whole seconds as seconds, anything else in milliseconds. */
     static String describe(Duration timeout) {
         long millis = timeout.toMillis();
