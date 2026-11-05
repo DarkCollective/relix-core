@@ -117,4 +117,4 @@ proved rather than collected — and it is a scalar, so it sits on
 - [introspection stdlib](introspection-stdlib.md) — `relix.schema(rel)`, the
   columns of one relation, which pairs naturally with its keys.
 - [reserved namespace](introspection-catalog.md) — `relix.catalog`.
-- `relix help catalog` — every `relix.*` relation and its columns.
+- `relix.catalog` — lists every `relix.*` relation.

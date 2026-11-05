@@ -3218,7 +3218,7 @@ public final class RelAlgebraParser {
      * top N overall rather than the top N of each group. That is the form {@code LIM-003}
      * produces when it fuses {@code λ} over {@code τ}, and the form {@code PrettyPrinter}
      * emits for it, so a grammar that could not read it back made the optimizer's own
-     * output unparseable: {@code --optimize} printed a rewritten query that could not be
+     * output unparseable: {@code relix optimize} printed a rewritten query that could not be
      * run or pasted anywhere. Both node corpora carry a {@code TOP} with grouping keys, so
      * the round-trip guards had never been shown the shape the optimizer actually makes.
      */

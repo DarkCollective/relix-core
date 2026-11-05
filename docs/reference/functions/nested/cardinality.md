@@ -46,7 +46,8 @@ one difference from PostgreSQL. `LENGTH` of an array is refused, and the message
 names CARDINALITY.
 
 # SQL names:
-`ARRAY_LENGTH(arr, 1)` is `CARDINALITY(arr)`, except that an empty array is 0 rather than PostgreSQL's NULL.
+PostgreSQL's `ARRAY_LENGTH` is this function under its other name: `ARRAY_LENGTH(arr, 1)` is
+`CARDINALITY(arr)`, except that an empty array is 0 rather than PostgreSQL's NULL.
 
 # See Also:
 [collect](../../aggregates/collect.md), [array_to_string](array_to_string.md), [unnest](../../operators/unnest.md), [Len](../string/len.md)

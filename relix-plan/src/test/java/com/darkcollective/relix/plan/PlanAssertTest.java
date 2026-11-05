@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@link PlanAssert} is the assert issue #727 was written about, and its deliverable
  * is the failure message, so the negative cases here assert that the message carries
  * the plan — rendered by the same {@link PhysicalPlanPrinter} a user sees under
- * {@code --explain}, so a failure and a bug report describe the plan identically.
+ * {@code relix explain}, so a failure and a bug report describe the plan identically.
  */
 @DisplayName("PlanAssert — plan assertions that print the plan")
 final class PlanAssertTest {

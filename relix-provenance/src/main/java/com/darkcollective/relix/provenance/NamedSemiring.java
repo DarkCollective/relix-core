@@ -22,7 +22,7 @@ import java.util.Objects;
 
 /**
  * A {@link Semiring} together with the names it answers to and a line describing it —
- * one entry in the registry a {@code --provenance} request is resolved against.
+ * one entry in the registry a {@code relix provenance} request is resolved against.
  *
  * <p>Naming is kept out of {@link Semiring} deliberately. A semiring is an algebraic
  * structure and its identity is its operations; what it is <em>called</em> is registry

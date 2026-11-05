@@ -3,8 +3,9 @@
 An editor, a notebook, a command-line shell and an assistant all need more from the engine
 than a query's rows. They read scripts from somewhere of their own, colour text as the
 user types it, and learn the joins a user keeps writing. This page covers the three
-methods that serve them. The command-line tool and the interactive shell that ship with
-Relix are built on these methods and nothing else.
+methods that serve them. The `relix` command-line tool and the interactive shell are built on these methods and
+nothing else; they are separate programs, released apart from the engine jar (see
+[Getting the library](installing.md#the-relix-command)).
 
 ## Parsing a script
 

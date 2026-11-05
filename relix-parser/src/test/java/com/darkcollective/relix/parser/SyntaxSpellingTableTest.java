@@ -145,6 +145,20 @@ final class SyntaxSpellingTableTest extends ParserTestSupport {
         row("`∉`", "σ dept ∉ {\"hr\", \"eng\"} (Employees)",
                    "SELECT dept NOT IN {\"hr\", \"eng\"} (Employees)");
 
+        row("`⁺`", "CLOSURE a, b (E)", "E⁺ OVER (a, b)");
+        row("`*`", "RCLOSURE a, b (E)", "E* OVER (a, b)");
+        row("`~`", "σ code ~ 'x' (R)", "σ code MATCHES 'x' (R)");
+        row("`!~`", "σ code !~ 'x' (R)", "σ code NOT MATCHES 'x' (R)");
+        rowOfGroups("`~*`, `!~*`", List.of(
+                List.of("σ code ~* 'x' (R)"),
+                List.of("σ code !~* 'x' (R)")));
+
+        // ── Operators with no glyph ──────────────────────────────────────────
+        row("`USEMI`", "A USEMI A.i = B.j B");
+        row("`ASOF`", "A ASOF A.k = B.k ∧ A.t >= B.t B");
+        row("`IJOIN`", "A IJOIN OVERLAPS (s, e, s2, e2) B");
+        row("`LATERAL`", "A LATERAL (B)");
+
         // ── Nullary relation literals ────────────────────────────────────────
         row("`UNIT`", "UNIT", "DEE");
         row("`EMPTY`", "EMPTY", "DUM");

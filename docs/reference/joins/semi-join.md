@@ -87,7 +87,7 @@ however many rows of S match it, or [EXISTS](../predicates/exists.md) and
 [anti join](anti-join.md); `IN` over a list of values is [IN](../predicates/in.md).
 
 # See Also:
-[anti-join](anti-join.md), [theta-join](theta-join.md), [natural-join](natural-join.md), [forall](../operators/forall.md), [distinct](../operators/distinct.md)
+[anti-join](anti-join.md), [universal-semi-join](universal-semi-join.md), [theta-join](theta-join.md), [natural-join](natural-join.md), [forall](../operators/forall.md), [distinct](../operators/distinct.md)
 
 # Notes:
 Prefer ⋉ over `δ (π left.* (left ⨝ right))` — it expresses existence directly and

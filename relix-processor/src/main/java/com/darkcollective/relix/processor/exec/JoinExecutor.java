@@ -696,7 +696,7 @@ final class JoinExecutor {
      * when the condition yielded no equi-join key.  Plan and execution therefore cannot
      * disagree about which strategy runs, and the planner emits a
      * {@code PLAN/JOIN-NESTED-LOOP} event explaining why it chose this one —
-     * so a quadratic join is visible in {@code --trace} rather than only in the clock.
+     * so a quadratic join is visible in {@code relix trace} rather than only in the clock.
      */
     private static boolean hashable(PhysicalNode.Join join) {
         return join.algorithm() == PhysicalNode.JoinAlgorithm.HASH;

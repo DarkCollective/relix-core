@@ -39,7 +39,7 @@ relation position; backtick them (`` `unit` ``) to name a relation `unit`.
 Downstream properties: cardinality is exact (1 or 0) rather than estimated, the
 cost tier is `INLINE`, the literal is whole-row distinct and `BOUNDED`, and it is
 never pushed down to a backend (it has no connection to push to). Under
-`--provenance` the literals *are* the semiring identities: `UNIT` is the empty
+`relix provenance` the literals *are* the semiring identities: `UNIT` is the empty
 tuple annotated `one()` (contributing no lineage of its own) and `EMPTY` is the
 empty K-relation. The planner emits an ordinary inline scan over the empty schema,
 so no new physical operator or executor path exists for them.

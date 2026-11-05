@@ -78,6 +78,8 @@ reference reads it by.
   [Interval join](joins/interval-join.md)
 - Keep the rows that have a match in another relation →
   [Semi join](joins/semi-join.md), or that have none → [Anti join](joins/anti-join.md)
+- Keep the rows that match *every* row of another relation: the products affordable
+  within every department's budget → [Universal semi join](joins/universal-semi-join.md)
 - Keep the rows of both sides, matched or not → [Full outer join](joins/full-outer-join.md)
 - Rows related to every one of something: students who took all the required courses
   → [Division](set-operations/division.md), [Universal](operators/forall.md)

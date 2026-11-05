@@ -82,4 +82,4 @@ rather than cached at start-up.
 - [observability feed](introspection-events.md) — `relix.events`, which answers what
   the last run *did* rather than what is installed.
 - [introspection stdlib](introspection-stdlib.md) — the structural catalogs.
-- `relix help catalog` — every `relix.*` relation and its columns.
+- `relix.catalog` — lists every `relix.*` relation.

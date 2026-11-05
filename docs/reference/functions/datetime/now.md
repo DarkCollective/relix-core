@@ -43,10 +43,10 @@ not still compares against one instant.
 # Reproducible runs (pinned clock):
 By default NOW() reads the wall clock, so a query with a relative window returns
 different rows each time it runs — which makes a result impossible to reproduce
-later. Pass `relix --now <ISO-8601 UTC instant>` (or set `RELIX_NOW`) to pin
+later. Pass `relix --now=<ISO-8601 UTC instant>` (or set `RELIX_NOW`) to pin
 NOW(), CURRENT_DATE() and CURRENT_TIME() to a fixed instant for the whole run:
 
-  relix --exec --now 2026-07-22T12:00:00Z report.relix
+  relix run --now=2026-07-22T12:00:00Z report.relix
 
 Every evaluation in that run then sees the same instant, so replaying the script
 over the same data yields byte-identical results however much later it runs. The

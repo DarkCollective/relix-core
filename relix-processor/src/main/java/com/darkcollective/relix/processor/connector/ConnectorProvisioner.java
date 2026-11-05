@@ -168,7 +168,7 @@ public final class ConnectorProvisioner {
 
     /**
      * The connector type tokens available to download from the catalog (e.g. for a
-     * {@code relix connectors list}).  Loads the catalog (which may fetch the hosted
+     * {@code relix connectors ls}).  Loads the catalog (which may fetch the hosted
      * URL); returns an empty set if the catalog can't be loaded.
      *
      * @return the cataloged connector types, sorted

@@ -78,6 +78,11 @@ intact. A single expression may mix them freely.
 | `⊥` | `NULL` | Null check |
 | `∈` | `IN` | Element of |
 | `∉` | `NOT IN` | Not element of (two tokens) |
+| `⁺` | `CLOSURE` | Transitive closure, written after its relation: `E⁺ OVER (a, b)` is `CLOSURE a, b (E)` |
+| `*` | `RCLOSURE` | Reflexive-transitive closure, written after its relation: `E* OVER (a, b)` is `RCLOSURE a, b (E)` |
+| `~` | `MATCHES` | Regular-expression match |
+| `!~` | `NOT MATCHES` | Regular-expression non-match |
+| `~*`, `!~*` | — | Regular-expression match and non-match, ignoring case |
 
 ## Nullary relation literals
 
@@ -89,6 +94,18 @@ operators.
 |---------|-------|---------|
 | `UNIT` | `DEE` | Empty heading, one (empty) tuple — TRUE; the identity of `×` |
 | `EMPTY` | `DUM` | Empty heading, no tuple — FALSE |
+
+## Operators with no glyph
+
+These operators are written only as words. They have no Unicode form, so there is no
+second spelling to choose: the word is the operator.
+
+| Keyword | Alias | Operation |
+|---------|-------|-----------|
+| `USEMI` | — | Universal semi-join: left rows that match every right row |
+| `ASOF` | — | As-of join: match each row to the nearest-in-time row |
+| `IJOIN` | — | Interval join: match intervals by an Allen relation |
+| `LATERAL` | — | Lateral join: evaluate a function call or a relation per left row |
 
 ## SQL-prior aliases
 

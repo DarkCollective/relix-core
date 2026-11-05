@@ -223,7 +223,7 @@ wrote a weight down — and gets the textbook answer over a bare `(parent, child
 ### Installing one by name
 
 Implementing the interface is enough to pass a semiring to `provenance(...)` yourself. To
-make one resolvable *by name* — so that `--provenance --semiring kinship` reaches it, and
+make one resolvable *by name* — so that `relix provenance --semiring kinship` reaches it, and
 it appears in the list of installed semirings — publish a `SemiringLibrary`:
 
 ```java

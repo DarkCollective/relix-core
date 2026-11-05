@@ -72,6 +72,32 @@ To work on Relix itself, or to depend on a change that is not released,
 repository under the version in the build; a consuming build reaches it by adding
 `mavenLocal()` to the repositories above.
 
+## The `relix` command
+
+The jar is for programs that embed the engine. To run `.relix` scripts from a shell,
+as one stage of a pipeline, use the `relix` command, which is released on its own from
+[DarkCollective/relix-cli](https://github.com/DarkCollective/relix-cli) as a
+self-contained image that needs no Java. With Homebrew:
+
+```bash
+brew tap DarkCollective/relix
+brew trust --formula darkcollective/relix/relix
+brew install relix
+```
+
+With Scoop:
+
+```powershell
+scoop bucket add relix https://github.com/DarkCollective/scoop-relix
+scoop install relix
+```
+
+Or download the archive for your platform from the
+[releases](https://github.com/DarkCollective/relix-cli/releases), check it against
+`checksums.txt`, unpack it and put its `bin/` on your `PATH`. `relix doc TOPIC` shows a
+reference page from the command line, and `relix version` prints the versions of the
+command and of the engine it runs.
+
 ## Java 21
 
 Relix targets **Java 21** and the jar is compiled for it. A build on an earlier JDK

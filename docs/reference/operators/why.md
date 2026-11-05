@@ -9,12 +9,12 @@ WHY (Relation)
 WHY **reifies a tuple's lineage provenance as ordinary data**: it emits every result
 tuple of its input unchanged, plus one added nested column, `provenance`, that records
 *which source rows produced that tuple and how they combined*. Provenance is thereby
-promoted from a terminal side-channel report (`--provenance` JSON) to a first-class
+promoted from a terminal side-channel report (`relix provenance` JSON) to a first-class
 `relation → relation` operator, so the rest of the algebra — `σ`, `π`, `μ` — can slice
 lineage like any other column.
 
 WHY is a **self-terminating reification boundary**: the lineage semiring is threaded
-*below* it (exactly as the `--provenance --semiring lineage` side-channel does), frozen
+*below* it (exactly as the `relix provenance --semiring lineage` side-channel does), frozen
 into the `provenance` column *at* it, and inert ordinary data *above* it. Nothing above
 WHY re-threads the annotation, so the rest of a query operates on plain nested values,
 not live bookkeeping.
@@ -285,13 +285,13 @@ field of that name, the added column replaces it.
 The `provenance` column is typed ANY, so paths into it (`variables.relation`,
 `variables.columns.oid`) are not statically type-checked until a Map type / field-access
 operand lands. v1 reifies the **lineage** semiring only; the cheap semirings
-(boolean / counting / tropical / cost) stay on the `--provenance --semiring …`
+(boolean / counting / tropical / cost) stay on the `relix provenance --semiring …`
 side-channel. Lineage stops at the nearest non-positive operator (the aggregation wall).
 A polynomial past `MAX_MONOMIALS` (256) is truncated and flagged. WHY is a hard barrier
 and is never pushed to SQL/MongoDB.
 
 # Alternatives:
-`--provenance --semiring lineage` is the streaming **side-channel sibling**: the same
+`relix provenance --semiring lineage` is the streaming **side-channel sibling**: the same
 lineage, surfaced as a terminal report rather than a data column. Use WHY when you want
 to *query* lineage with ordinary views; use the side-channel for a one-shot dump or for
 the cheap semirings (reachability, path count, shortest path, cheapest route). The

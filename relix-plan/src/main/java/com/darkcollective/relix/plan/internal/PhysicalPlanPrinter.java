@@ -33,7 +33,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 
 /**
- * Renders a {@link PhysicalNode} plan as an ASCII tree for {@code --explain}.
+ * Renders a {@link PhysicalNode} plan as an ASCII tree for {@code relix explain}.
  *
  * <p>The output focuses on the <em>physical</em> decisions the planner made — the
  * choices that are invisible in the logical IR report: which sub-trees were

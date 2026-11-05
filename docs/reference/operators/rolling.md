@@ -249,4 +249,4 @@ for the matching partition:
 `ROLLING AVG(price) … PER ticker (σ ticker = "ACME" (Ticks))`. This is safe
 because the frame never crosses a partition boundary. Only equalities on a
 partition key are pushed; predicates on other columns stay as a residual σ above
-the operator. Look for a `WINDOW-001` record in `--optimize` output.
+the operator. Look for a `WINDOW-001` record in `relix optimize --report` output.
