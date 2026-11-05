@@ -115,4 +115,20 @@ final class OptimizedEqualsWrittenTest {
         assertThat(both(views + "query { σ person.first = 'Ada' (Nested) };")).hasSize(1);
         assertThat(both(views + "query { γ MAX(LEN(person.first)) → m (Nested) };")).hasSize(1);
     }
+
+    @Test
+    @DisplayName("LIKE lets % and _ match a line terminator")
+    void likeMatchesNewlines() {
+        assertThat(both("U := [| a |\n| 1 |];\nquery { π (('a' + CHR(10) + 'b') LIKE 'a%b') → p, (('a' + CHR(10) + 'b') LIKE 'a_b') → q (U) };").get(0))
+                .contains("true").doesNotContain("false");
+    }
+
+    @Test
+    @DisplayName("LIKE with many % over a long value answers promptly")
+    void likeDoesNotBacktrack() {
+        String pattern = "%a".repeat(60) + "%c";
+        String text = "a".repeat(3000) + "b";
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(10), () ->
+                assertThat(both("U := [| t |\n| " + text + " |];\nquery { σ t LIKE '" + pattern + "' (U) };")).isEmpty());
+    }
 }
