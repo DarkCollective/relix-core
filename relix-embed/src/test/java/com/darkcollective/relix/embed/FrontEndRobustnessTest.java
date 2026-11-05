@@ -153,6 +153,33 @@ final class FrontEndRobustnessTest {
         }
 
         @Test
+        @DisplayName("a chain too long for the thread's stack fails as a query failure, not a StackOverflowError")
+        void executionBoundary() {
+            String union = T + "query { T" + " ⊎ T".repeat(3000) + " };";
+            Relation relation = onStack(64L << 20, () -> {
+                try (Relix relix = Relix.open()) {
+                    return relix.script(union).get(0);
+                }
+            });
+            AtomicReference<Throwable> raised = new AtomicReference<>();
+            Thread thread = new Thread(null, () -> {
+                try {
+                    relation.toList();
+                } catch (Throwable e) {
+                    raised.set(e);
+                }
+            }, "small-stack", 1L << 20);
+            thread.start();
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            assertThat(raised.get()).isInstanceOf(QueryExecutionException.class)
+                    .hasMessageContaining("too deeply nested");
+        }
+
+        @Test
         @DisplayName("a tree built in code that is too deep to analyse is a diagnostic, not a StackOverflowError")
         void builtTreeBackstop() {
             // Built the way the parser would never build it: 100000 nested DISTINCTs, through
@@ -377,6 +404,15 @@ final class FrontEndRobustnessTest {
             Script reparsed = Relix.parse(printed);
             assertThat(ScriptPrinter.print(reparsed)).isEqualTo(printed);
             assertThat(printed).doesNotContain("((");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {" ∧ a > 1", " ∨ a > 1"})
+        @DisplayName("a predicate chain of 600 terms prints flat and reads back")
+        void longPredicateChains(String connective) {
+            String text = "query { σ a > 0" + connective.repeat(600) + " (T) };";
+            String printed = ScriptPrinter.print(Relix.parse(text));
+            assertThat(ScriptPrinter.print(Relix.parse(printed))).isEqualTo(printed);
         }
 
         @Test

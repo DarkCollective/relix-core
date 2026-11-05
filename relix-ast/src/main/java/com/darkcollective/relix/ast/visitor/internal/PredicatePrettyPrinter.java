@@ -56,14 +56,24 @@ public final class PredicatePrettyPrinter implements PredicateVisitor<String> {
         return node.left().accept(operandPrinter) + " " + spelling.of(node.operator().symbol()) + " " + node.right().accept(operandPrinter);
     }
 
+    /**
+     * The left operand of {@code ∧} or {@code ∨}. The parser reads {@code a ∧ b ∧ c} left
+     * to right, so a left operand that is the same connective is written bare: it reads
+     * back as the same tree, where a parenthesis per term would nest as deep as the chain
+     * is long.
+     */
+    private String left(Predicate left, Class<? extends Predicate> connective) {
+        return connective.isInstance(left) ? left.accept(this) : "(" + left.accept(this) + ")";
+    }
+
     @Override
     public String visit(AndPredicate node) {
-        return "(" + node.left().accept(this) + ") " + spelling.of("∧") + " (" + node.right().accept(this) + ")";
+        return left(node.left(), AndPredicate.class) + " " + spelling.of("∧") + " (" + node.right().accept(this) + ")";
     }
 
     @Override
     public String visit(OrPredicate node) {
-        return "(" + node.left().accept(this) + ") " + spelling.of("∨") + " (" + node.right().accept(this) + ")";
+        return left(node.left(), OrPredicate.class) + " " + spelling.of("∨") + " (" + node.right().accept(this) + ")";
     }
 
     @Override
