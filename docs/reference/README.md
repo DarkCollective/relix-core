@@ -207,7 +207,9 @@ Writing constant values, including the first-class temporal types.
 ## 10. Built-in functions
 
 Scalar functions usable in any expression (projection, selection, aggregate
-argument).
+argument). An argument that must be a whole number (a length, a position, a character
+code, a count of units) has its fraction cut off toward zero, so `Left(s, 1.9)` is
+`Left(s, 1)`; `Round` and `CInt` are the functions that round.
 
 **String** —
 [Len](functions/string/len.md),
