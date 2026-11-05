@@ -325,6 +325,23 @@ final class MathFunctionsTest {
         }
 
         @Test
+        @DisplayName("an exponent beyond what an exact power takes falls to floating point")
+        void hugeWholeExponent() {
+            assertThat(number(call("Power", n("0"), n("1000000000")))).isEqualTo("0");
+            assertThat(number(call("Power", n("1"), n("1000000000"))).doubleValue()).isEqualTo(1.0);
+            assertThatThrownBy(() -> call("Power", n("0"), n("-1000000000")))
+                    .hasMessage("Power: zero cannot be raised to a negative power");
+            assertThatThrownBy(() -> call("Power", n("2"), n("1000000000")))
+                    .hasMessage("Power: result out of range");
+            assertThatThrownBy(() -> call("Power", n("-2"), n("1000000000")))
+                    .hasMessage("Power: result out of range");
+            assertThat(number(call("Power", n("0"), n("0.5"))).signum()).isZero();
+            assertThat(number(call("Power", n("2"), n("0.5"))).doubleValue()).isCloseTo(1.41421356, within(1e-7));
+            assertThatThrownBy(() -> call("Power", n("0"), n("-0.5")))
+                    .hasMessage("Power: zero cannot be raised to a negative power");
+        }
+
+        @Test
         @DisplayName("a fractional exponent still goes through floating point")
         void fractionalPower() {
             assertThat(number(call("Power", n("4"), n("0.5"))).doubleValue()).isEqualTo(2.0);
