@@ -29,7 +29,9 @@ An inline table binds an InlineRelationSymbol. In the markdown form, column name
 come from the header row and all values are strings unless a column contains only
 numbers (which infers NUMBER). In the csv form, the first non-blank line is the
 header and fields with commas are quoted. Use csv[ ] when values contain commas or
-pipe characters.
+pipe characters. A csv field is quoted when it begins with `"`; it may then hold commas,
+brackets and line breaks, with `""` for a quote inside it. A `"` that does not begin a
+field is ordinary text, as it is in a markdown cell (`| 5" pipe |`).
 
 A `schema { col: TYPE, … }` block after the rows declares column types, as a CSV
 source's `schema:` field does. Each cell of a declared column is parsed to its type as

@@ -146,7 +146,7 @@ final class NestedSchemaTypeTest {
         @Test
         @DisplayName("an unclosed array is refused")
         void unclosedArrayIsRefused() {
-            assertRejected("{ x: [STRING }", "rbracket");
+            assertRejected("{ x: [STRING }", "Expected ']'");
         }
     }
 

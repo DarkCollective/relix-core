@@ -287,7 +287,7 @@ class ScriptParserStatementTest {
             assertThatThrownBy(() -> parse("R /* kept */ ANTI\n  R.a = S.a S;"))
                     .hasMessageStartingWith("a result is written query { … }: write query { R ANTI R.a = S.a S };");
             // Not an expression, or an assignment: the parser's own message.
-            assertThatThrownBy(() -> parse("orders customers;")).hasMessageContaining("Expected 'assign'");
+            assertThatThrownBy(() -> parse("orders customers;")).hasMessageContaining("Expected ':='");
             assertThatThrownBy(() -> parse("X = { R };")).hasMessageNotContaining("query");
             assertThat(parse("X /* the view */ := { R };").statements()).hasSize(1);
         }
