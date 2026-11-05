@@ -21,7 +21,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.darkcollective.relix:relix:1.0.0-rc12'
+    implementation 'com.darkcollective.relix:relix:1.0.0-rc13'
 }
 ```
 
@@ -31,7 +31,7 @@ and a Maven build the same way:
 <dependency>
     <groupId>com.darkcollective.relix</groupId>
     <artifactId>relix</artifactId>
-    <version>1.0.0-rc12</version>
+    <version>1.0.0-rc13</version>
 </dependency>
 ```
 
@@ -54,8 +54,8 @@ nothing compiles against it:
 
 ```gradle
 dependencies {
-    implementation 'com.darkcollective.relix:relix:1.0.0-rc12'
-    runtimeOnly 'com.darkcollective.relix:relix-solver-ojalgo:1.0.0-rc12'
+    implementation 'com.darkcollective.relix:relix:1.0.0-rc13'
+    runtimeOnly 'com.darkcollective.relix:relix-solver-ojalgo:1.0.0-rc13'
 }
 ```
 
