@@ -188,7 +188,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
         }
         HttpRequestSpec request = buildRequest(relationName, http, schema, pushdown);
         HttpFetchResult result = send(request, relationName);
-        if (result.statusCode() == 204 || result.statusCode() == 205) {
+        if (result.statusCode() == 204) {
             return Stream.empty(); // success with no content: a response that says "no records"
         }
         if (result.statusCode() < 200 || result.statusCode() >= 300) {
@@ -348,7 +348,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
     private static String describe(Throwable failure) {
         List<String> parts = new ArrayList<>();
         Throwable t = failure;
-        for (int depth = 0; t != null && depth < 5; depth++, t = t.getCause()) {
+        for (; t != null; t = t.getCause()) {
             String part = t.getMessage() == null
                     ? t.getClass().getSimpleName()
                     : t.getClass().getSimpleName() + ": " + t.getMessage();
@@ -649,7 +649,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
         byte[] bytes = response.body();
         String encoding = response.headers().firstValue("Content-Encoding").orElse("")
                 .strip().toLowerCase(Locale.ROOT);
-        if (encoding.equals("gzip") || encoding.equals("x-gzip")) {
+        if (encoding.equals("gzip")) {
             try (java.util.zip.GZIPInputStream in =
                          new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(bytes))) {
                 bytes = in.readAllBytes();
@@ -669,9 +669,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
             String parameter = part.strip();
             if (parameter.regionMatches(true, 0, "charset=", 0, 8)) {
                 String name = parameter.substring(8).strip();
-                if (name.length() >= 2 && name.startsWith("\"") && name.endsWith("\"")) {
-                    name = name.substring(1, name.length() - 1);
-                }
+                name = name.replace("\"", "");
                 try {
                     return java.nio.charset.Charset.forName(name);
                 } catch (IllegalArgumentException unknown) {

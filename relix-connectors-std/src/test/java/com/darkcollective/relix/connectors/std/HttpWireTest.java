@@ -90,6 +90,15 @@ final class HttpWireTest {
             exchange.getResponseHeaders().add("Content-Encoding", "gzip");
             sendBytes(exchange, 200, out.toByteArray());
         });
+        server.createContext("/deflate", exchange -> {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            try (java.util.zip.DeflaterOutputStream z = new java.util.zip.DeflaterOutputStream(out)) {
+                z.write("[{\"name\": \"squeezed\"}]".getBytes(StandardCharsets.UTF_8));
+            }
+            exchange.getResponseHeaders().add("Content-Encoding", "deflate");
+            exchange.getResponseHeaders().add("Content-Type", "application/json; charset=\"utf-8\"");
+            sendBytes(exchange, 200, out.toByteArray());
+        });
         server.createContext("/empty", exchange -> {
             exchange.getRequestBody().readAllBytes();
             exchange.sendResponseHeaders(204, -1);
@@ -196,6 +205,12 @@ final class HttpWireTest {
     @DisplayName("a gzip body is decompressed when Content-Encoding says so")
     void gzip() {
         assertThat(exec(open("/gzip")).getFirst().get("name").asDisplayString()).isEqualTo("zipped");
+    }
+
+    @Test
+    @DisplayName("a deflate body is decompressed, and a quoted charset name is read")
+    void deflate() {
+        assertThat(exec(open("/deflate")).getFirst().get("name").asDisplayString()).isEqualTo("squeezed");
     }
 
     @Test

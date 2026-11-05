@@ -40,7 +40,6 @@ import com.darkcollective.relix.processor.eval.ValueComparator;
 import com.darkcollective.relix.processor.exec.QualifiedRow;
 import com.darkcollective.relix.processor.exec.RelNodeExecutor;
 import com.darkcollective.relix.value.Value;
-import com.darkcollective.relix.provenance.Polynomial;
 import com.darkcollective.relix.provenance.PolynomialSemiring;
 import com.darkcollective.relix.provenance.Semiring;
 import com.darkcollective.relix.symbol.Schema;
@@ -406,8 +405,7 @@ public final class ProvenanceEvaluator {
                 // and a polynomial "converges" there only because the cap on its terms cut
                 // the series short — a self-loop would otherwise return a 256-term
                 // prefix while a longer cycle raised. Both are the same fact, so both raise.
-                if (round > nodes.size() + 1 && next.values().stream()
-                        .anyMatch(k -> k instanceof Polynomial p && p.truncated())) {
+                if (round > nodes.size() + 1 && semiring instanceof PolynomialSemiring) {
                     throw new EvaluationException(
                             "weighted CLOSURE over a cyclic graph has unboundedly many derivations, "
                             + "so its polynomial annotation does not converge: it was cut at the "
