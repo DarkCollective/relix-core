@@ -188,7 +188,12 @@ Infeasible groups produce no rows (MIP) / are skipped (LP). It materialises and
 never pushes down. Objective and constraints are linear in SUM form. Proving an
 optimum unique costs one more solve per group; settling a tie costs up to one
 more per row, so a large group with many tied optima solves several times.
-ALLOCATE's continuous ties are the solver's choice.
+ALLOCATE's continuous ties are the solver's choice, and the tie rule above does not
+apply to them: with identical rows and `SUM(1) = 1`, ojAlgo puts the whole allocation
+on the last of them. A row with a NULL in the objective or in a constraint's
+expression cannot be priced, so it is left out of the problem rather than read as
+zero: subset mode never selects it (where `SUM` over the same column would skip the
+NULL and let the row in free), and ALLOCATE returns it with an allocation of 0.
 
 # Alternatives:
 SOLVE for inverting a single equation (no choice/constraints). γ with MAX/MIN for
