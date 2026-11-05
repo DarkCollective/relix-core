@@ -371,6 +371,8 @@ final class LangLexer {
                     return new RawBlock(text, startLine, startCol);
                 }
             } else if (c == '"' && (csv ? fieldStart : closesOnThisLine(pos))) {
+                int quoteLine = line;
+                int quoteCol = col;
                 advance();
                 while (pos < input.length()) {
                     char inside = input.charAt(pos);
@@ -386,6 +388,10 @@ final class LangLexer {
                         advance();
                     }
                     advance();
+                }
+                if (csv && pos >= input.length()) {
+                    throw new LangParseException("Unterminated quoted field in CSV table, opened at line "
+                            + quoteLine, quoteLine, quoteCol);
                 }
             }
             if (csv) {

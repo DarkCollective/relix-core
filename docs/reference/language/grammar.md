@@ -939,9 +939,14 @@ are easy to miss in the rules above.
   construct that holds another: relational operators and subqueries, function calls,
   array and struct literals, parentheses, `CASE`, a unary `-` or `¬`, and a struct or
   array type. A flat chain of one operator, `a ∧ b ∧ c …`, `a + b + c …`, `R ∪ S ∪ T …`,
-  does not nest, but it builds a tree that every later phase walks, so a chain of
-  relational operators is limited to 250 operators and any other chain to 500. A text
-  past a limit is rejected where the limit is passed, with a message that says which.
+  does not nest, but it builds a left-deep tree that analysis, planning and execution
+  walk one operator at a time, so a chain of more than 5000 operators is rejected where
+  the 5001st is written. Below that limit the stack of the thread running the query is
+  what decides: on a thread with the JVM's default 1 MB stack, a chain of about 290 `⋈`,
+  330 `⊎`, 390 `∪`, 1500 `+`, 1900 `∧` or 2500 `∨` is analysed and run, and a longer one
+  is reported as an error ("too deeply nested, or a chain of operators in it too long")
+  rather than run. A larger thread stack raises those numbers: over 5000 `∪` run on an
+  8 MB stack. Splitting the expression into views keeps each chain short.
 - **Braces in strings and comments.** Inside a brace block a string of either quote, a
   `--` comment and a `/* */` comment may hold `{` and `}`; none of them counts as a
   brace. A byte-order mark at the very start of a script is skipped.

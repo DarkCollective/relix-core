@@ -370,20 +370,18 @@ public final class RelAlgebraParser {
     /**
      * How many operators one flat chain may hold: {@code a ∧ b ∧ c …}, {@code R ∪ S ∪ T …},
      * {@code a + b + c …}. A chain is read by a loop, so it costs the parser no stack, but
-     * it builds a left-deep tree, and every later phase (analysis, planning, execution,
-     * printing) recurses down that tree, one frame per operator. The cap keeps the tree
-     * shallow enough for those phases on the smallest stack in ordinary use.
+     * it builds a left-deep tree, and every later phase (analysis, planning, execution)
+     * recurses down that tree, one frame per operator.
+     *
+     * <p>The limit is set above what a thread with the JVM's default 1 MB stack gets
+     * through, so that nothing that runs there is refused: measured, such a thread
+     * analyses and runs a chain of about 290 {@code ⋈}, 330 {@code ⊎}, 390 {@code ∪},
+     * 1500 {@code +}, 1900 {@code ∧} and 2500 {@code ∨}, and an 8 MB one over 5000
+     * {@code ∪}. A chain between what the thread can walk and this limit is not refused
+     * here; the phase that overflows reports it as an error, and the limit only stops a
+     * text from building a tree no stack could walk.
      */
-    private static final int MAX_CHAIN_LENGTH = 500;
-
-    /**
-     * The same cap for a chain of relational operators, {@code R ∪ S ∪ T …}, lower because
-     * planning and optimising a left-deep relational tree costs several frames an operator:
-     * measured, a 1 MB stack plans 250 and no more than a few hundred beyond it. It is also
-     * the nesting cap, so a chain printed with a parenthesis per operator, as the plan
-     * display does, nests no deeper than the parser would have accepted.
-     */
-    private static final int MAX_RELATION_CHAIN_LENGTH = MAX_NESTING_DEPTH;
+    private static final int MAX_CHAIN_LENGTH = 5000;
 
     /** Opens one more level of nesting, refusing the one past {@link #MAX_NESTING_DEPTH}. */
     private void enterNesting() {
@@ -395,12 +393,8 @@ public final class RelAlgebraParser {
 
     /** Refuses the operator that makes a chain longer than {@link #MAX_CHAIN_LENGTH}. */
     private void checkChain(int operators, Token at) {
-        checkChain(operators, at, MAX_CHAIN_LENGTH);
-    }
-
-    private void checkChain(int operators, Token at, int limit) {
-        if (operators > limit) {
-            throw error(at, "expression chains more than " + limit
+        if (operators > MAX_CHAIN_LENGTH) {
+            throw error(at, "expression chains more than " + MAX_CHAIN_LENGTH
                     + " operators; split it into views");
         }
     }
@@ -464,7 +458,7 @@ public final class RelAlgebraParser {
         int operators = 0;
         while ((isBinaryRelOperator(current.type()) || startsOuterLateral())
                 && precedence(startsOuterLateral() ? TokenType.LATERAL : current.type()) >= minPrecedence) {
-            checkChain(++operators, current, MAX_RELATION_CHAIN_LENGTH);
+            checkChain(++operators, current);
             boolean outerLateral = startsOuterLateral();
             if (outerLateral) {
                 advance(); // OUTER
