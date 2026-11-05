@@ -184,7 +184,8 @@ Project down to the columns you want if the extra pair is noise.
 A quote that is too old is not useful. Adding `WITHIN DURATION 'PT5M'` keeps
 only trades where the most recent quote was within 5 minutes — stale trades get
 no match. Because the default behaviour is left-outer, stale trades emit NULLs;
-combining with `INNER` drops them entirely.
+combining with `INNER` drops them entirely. The tolerance is a distance, so it is
+zero or more: a negative one is an error, since no match could satisfy it.
 
 `WITHIN` measures a real temporal distance, so the match column has to be a
 `TIMESTAMP`. An inline table holds text, so `to_timestamp` converts it first —

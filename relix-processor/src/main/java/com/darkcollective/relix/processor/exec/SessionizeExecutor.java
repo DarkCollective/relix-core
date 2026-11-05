@@ -27,7 +27,9 @@ import com.darkcollective.relix.processor.internal.ArrayRow;
 import com.darkcollective.relix.processor.Row;
 import com.darkcollective.relix.processor.eval.OperandEvaluator;
 import com.darkcollective.relix.processor.eval.ValueComparator;
+import com.darkcollective.relix.value.DateValue;
 import com.darkcollective.relix.value.NumberValue;
+import com.darkcollective.relix.value.TimestampValue;
 import com.darkcollective.relix.value.Value;
 import com.darkcollective.relix.symbol.ColumnDefinition;
 import com.darkcollective.relix.symbol.ScalarType;
@@ -138,7 +140,17 @@ final class SessionizeExecutor {
         if (boundary.isNull()) {
             return false;
         }
-        return ValueComparator.compareNonNull(current, boundary) > 0;
+        // DATE + DURATION is a DATE when the duration is whole days and a TIMESTAMP
+        // otherwise, and neither compares with the other: a date is compared as its
+        // midnight (UTC), so a gap of P1D separates a date from the day after the next.
+        return ValueComparator.compareNonNull(midnight(current), midnight(boundary)) > 0;
+    }
+
+    private static Value midnight(Value value) {
+        Value canonical = ValueComparator.canonical(value);
+        return canonical instanceof DateValue date
+                ? new TimestampValue(date.value().atStartOfDay(java.time.ZoneOffset.UTC).toInstant())
+                : value;
     }
 
 }
