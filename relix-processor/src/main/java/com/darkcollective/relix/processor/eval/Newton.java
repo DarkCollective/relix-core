@@ -60,6 +60,9 @@ final class Newton {
     /** The damping a search starts with, relative to the largest entry of {@code JᵀJ}. */
     static final BigDecimal START_DAMPING = new BigDecimal("1E-3");
 
+    /** The smallest scale the damping floor is taken against, where JᵀJ vanishes outright. */
+    private static final BigDecimal ABSOLUTE_FLOOR = new BigDecimal("1E-30");
+
     private Newton() {
     }
 
@@ -94,7 +97,11 @@ final class Newton {
             if (damping == null) {
                 damping = START_DAMPING.multiply(scale, Dual.CONTEXT);
             }
-            damping = damping.max(MIN_DAMPING.multiply(scale, Dual.CONTEXT));
+            // The floor follows the system's own scale (not 1 + it), so that at a root the
+            // equations flatten into — side * side = 0 — damping falls with JᵀJ and the
+            // iteration keeps halving toward the root instead of stalling short of it.
+            damping = damping.max(MIN_DAMPING.multiply(
+                    normal.largestEntry().max(ABSOLUTE_FLOOR), Dual.CONTEXT));
             // JᵀJ + μI is positive definite for μ > 0, and μ is held far above the
             // elimination's singularity threshold, so this system always has a solution.
             BigDecimal[] delta = LinearSystems.solve(normal.damped(damping), normal.gradient())
@@ -129,20 +136,51 @@ final class Newton {
             return Optional.empty();
         }
         if (residuals.length == n) {
+            String miss = unmet(equations, unknowns, rows, x, residuals, tolerance);
+            if (miss != null) {
+                throw new EvaluationException("SOLVE: the equations have no solution — the"
+                        + " closest the search came leaves " + miss
+                        + " between the sides of an equation, for " + subject.get());
+            }
+            // A root the equations flatten into (side * side = 0) is approached from one
+            // side and stopped within a few tolerances of it; an unknown that small is zero
+            // when the equations still hold with it so.
+            BigDecimal[] snapped = x.clone();
+            boolean changed = false;
             for (int i = 0; i < n; i++) {
-                SolveEquation equation = equations.get(i);
-                BigDecimal size = BigDecimal.ONE
-                        .max(Dual.evaluate(equation.left(), unknowns, x, rows.getFirst()).value().abs())
-                        .max(Dual.evaluate(equation.right(), unknowns, x, rows.getFirst()).value().abs());
-                if (residuals[i].value().abs().compareTo(tolerance.multiply(size, Dual.CONTEXT)) > 0) {
-                    throw new EvaluationException("SOLVE: the equations have no solution — the"
-                            + " closest the search came leaves "
-                            + EquationSystemSolver.rounded(residuals[i].value()).toPlainString()
-                            + " between the sides of an equation, for " + subject.get());
+                if (snapped[i].signum() != 0 && snapped[i].abs().compareTo(tolerance.multiply(BigDecimal.TEN)) <= 0) {
+                    snapped[i] = BigDecimal.ZERO;
+                    changed = true;
+                }
+            }
+            if (changed) {
+                try {
+                    if (unmet(equations, unknowns, rows, snapped,
+                            residuals(equations, unknowns, rows, snapped), tolerance) == null) {
+                        return Optional.of(snapped);
+                    }
+                } catch (EvaluationException ignored) {
+                    // zero is outside the equations' domain: keep the converged point
                 }
             }
         }
         return Optional.of(x);
+    }
+
+    /** The first residual that exceeds the tolerance, rounded for display, or null if none. */
+    private static String unmet(List<SolveEquation> equations, List<String> unknowns,
+                                List<Row> rows, BigDecimal[] x, Dual[] residuals,
+                                BigDecimal tolerance) {
+        for (int i = 0; i < unknowns.size(); i++) {
+            SolveEquation equation = equations.get(i);
+            BigDecimal size = BigDecimal.ONE
+                    .max(Dual.evaluate(equation.left(), unknowns, x, rows.getFirst()).value().abs())
+                    .max(Dual.evaluate(equation.right(), unknowns, x, rows.getFirst()).value().abs());
+            if (residuals[i].value().abs().compareTo(tolerance.multiply(size, Dual.CONTEXT)) > 0) {
+                return EquationSystemSolver.rounded(residuals[i].value()).toPlainString();
+            }
+        }
+        return null;
     }
 
     /** The residuals at {@code x}, naming the row or group if one divides by zero. */
