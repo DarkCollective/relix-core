@@ -139,10 +139,12 @@ final class CoverExecutor {
         Arrays.fill(remaining, true);
 
         while (universeNonEmpty(universe)) {
+            ctx.checkpoint();
             int bestIdx = -1;
             int bestScore = 0;
             for (int i = 0; i < candidates.size(); i++) {
                 if (!remaining[i]) continue;
+                ctx.checkpoint();
                 int score = score(candidates.get(i), subsets, universe);
                 if (score > bestScore) {
                     bestScore = score;
@@ -164,6 +166,7 @@ final class CoverExecutor {
             // Drop zero-scoring candidates (they can never cover anything new).
             for (int i = 0; i < candidates.size(); i++) {
                 if (!remaining[i]) continue;
+                ctx.checkpoint();
                 if (score(candidates.get(i), subsets, universe) == 0) {
                     remaining[i] = false;
                 }
@@ -379,7 +382,7 @@ final class CoverExecutor {
      */
     private static List<Set<List<Value>>> buildConstructiveUniverse(ConstructiveCoverContext cctx) {
         return buildConstructiveUniverse(cctx.subsets(), cctx.factorDomains(),
-                cctx.factorStart(), cctx.factorEnd());
+                cctx.factorStart(), cctx.factorEnd(), cctx.evalCtx()::checkpoint);
     }
 
     /**
@@ -391,7 +394,8 @@ final class CoverExecutor {
             List<int[]> subsets,
             List<List<Row>> factorDomains,
             int[] factorStart,
-            int[] factorEnd) {
+            int[] factorEnd,
+            Runnable checkpoint) {
 
         int numFactors = factorDomains.size();
         List<Set<List<Value>>> universe = new ArrayList<>(subsets.size());
@@ -409,7 +413,8 @@ final class CoverExecutor {
                     }
                 }
             }
-            enumerateCombinationsInto(involvedFactors, factorDomains, factorStart, factorEnd, subset, demanded);
+            enumerateCombinationsInto(involvedFactors, factorDomains, factorStart, factorEnd, subset, demanded,
+                    checkpoint);
             universe.add(demanded);
         }
 
@@ -425,7 +430,10 @@ final class CoverExecutor {
                                            List<Set<List<Value>>> universe) {
         for (int si = 0; si < cctx.subsets().size(); si++) {
             int[] subset = cctx.subsets().get(si);
-            universe.get(si).removeIf(tuple -> !hasValidCompletion(cctx, tuple, subset));
+            universe.get(si).removeIf(tuple -> {
+                cctx.evalCtx().checkpoint();
+                return !hasValidCompletion(cctx, tuple, subset);
+            });
         }
     }
 
@@ -473,6 +481,7 @@ final class CoverExecutor {
         int[] idx = new int[n];
 
         while (true) {
+            cctx.evalCtx().checkpoint();
             Value[] vals = Arrays.copyOf(base, width);
             for (int i = 0; i < n; i++) {
                 int f = unboundFactors.get(i);
@@ -512,6 +521,7 @@ final class CoverExecutor {
         int stallCount = 0;
 
         while (universeNonEmpty(universe) && stallCount <= stallLimit) {
+            cctx.evalCtx().checkpoint();
             Value[] partial = new Value[cctx.width()];
             Arrays.fill(partial, NullValue.INSTANCE);
             boolean rowComplete = true;
@@ -570,6 +580,7 @@ final class CoverExecutor {
         Row best = null;
         int bestScore = -1;
         for (Row factorRow : cctx.factorDomains().get(curFactor)) {
+            cctx.evalCtx().checkpoint();
             Value[] tentative = Arrays.copyOf(partial, cctx.width());
             for (int ci = cctx.factorStart()[curFactor]; ci < cctx.factorEnd()[curFactor]; ci++) {
                 tentative[ci] = factorRow.get(ci - cctx.factorStart()[curFactor]);
@@ -627,9 +638,11 @@ final class CoverExecutor {
             for (List<Value> demanded : universe.get(s)) {
                 boolean match = true;
                 for (int pi = 0; pi < subset.length; pi++) {
-                    Value committed = tentative[subset[pi]];
-                    if (committed == NullValue.INSTANCE) continue;
-                    if (!committed.equals(demanded.get(pi))) { match = false; break; }
+                    // Factors bind in order, so a column is committed exactly when it
+                    // belongs to the current or an earlier factor; a real NULL value in a
+                    // committed column must still be matched, so NULL cannot mark "unbound".
+                    if (subset[pi] >= cctx.factorEnd()[curFactor]) continue;
+                    if (!tentative[subset[pi]].equals(demanded.get(pi))) { match = false; break; }
                 }
                 if (match) score++;
             }
@@ -667,7 +680,8 @@ final class CoverExecutor {
             int[] factorStart,
             int[] factorEnd,
             int[] subset,
-            Set<List<Value>> out) {
+            Set<List<Value>> out,
+            Runnable checkpoint) {
 
         int n = factors.size();
         if (n == 0) return;
@@ -679,6 +693,7 @@ final class CoverExecutor {
         int[] idx = new int[n];
 
         while (true) {
+            checkpoint.run();
             List<Value> tuple = new ArrayList<>(subset.length);
             for (int ci : subset) {
                 for (int i = 0; i < n; i++) {
@@ -701,8 +716,12 @@ final class CoverExecutor {
         }
     }
 
-    /** Removes one tuple from the first non-empty demanded set in the universe. */
-    private static void removeFirstUniverseTuple(List<Set<List<Value>>> universe) {
+    /**
+     * Removes one tuple from the first non-empty demanded set in the universe.
+     * Package-private so a test can pin the stall step on its own: a greedy dead end
+     * that reaches it is a property of the data's constraints, not something to hunt for.
+     */
+    static void removeFirstUniverseTuple(List<Set<List<Value>>> universe) {
         for (Set<List<Value>> demanded : universe) {
             if (!demanded.isEmpty()) {
                 demanded.remove(demanded.iterator().next());

@@ -61,6 +61,11 @@ record EvalCtx(DataSourceConnector connector,
                 ctx.maxMaterializedRows(), WorkBudget.startingNow(ctx), ctx);
     }
 
+    /** Raises if the query's deadline has passed or it was cancelled; see {@link WorkBudget#checkpoint}. */
+    void checkpoint() {
+        work.checkpoint();
+    }
+
     /** Returns a new context with {@code name} bound to {@code rows} (shadowing any prior binding). */
     EvalCtx withBinding(String name, List<Row> rows) {
         Map<String, List<Row>> copy = new HashMap<>(recursionBindings);

@@ -125,7 +125,8 @@ final class RecursionExecutor {
 
         Set<Pair> result = (boundSource.isPresent() || boundTarget.isPresent())
                 ? boundedClosure(node, boundSource, boundTarget, adjacency, reverse, nodes)
-                : allPairsClosure(node, edges, adjacency, nodes);
+                : allPairsClosure(node, edges, adjacency, nodes, ctx::checkpoint,
+                        held -> MaterializationBudget.charge(node, held, ctx));
 
         List<Row> outputRows = new ArrayList<>(result.size());
         for (Pair p : result) {
@@ -150,12 +151,14 @@ final class RecursionExecutor {
 
     /** The original all-pairs transitive (R⁺) / reflexive-transitive (R*) closure. */
     private static Set<Pair> allPairsClosure(PhysicalNode.Closure node, Set<Pair> edges,
-                                             Map<Value, List<Value>> adjacency, Set<Value> nodes) {
+                                             Map<Value, List<Value>> adjacency, Set<Value> nodes,
+                                             Runnable checkpoint, java.util.function.LongConsumer held) {
         Set<Pair> result = new LinkedHashSet<>(edges);   // base: the 1-step pairs (R⁺)
         Set<Pair> delta  = new LinkedHashSet<>(edges);
         while (!delta.isEmpty()) {
             Set<Pair> next = new LinkedHashSet<>();
             for (Pair p : delta) {
+                checkpoint.run();
                 List<Value> successors = adjacency.get(p.to());
                 if (successors == null) {
                     continue;
@@ -168,6 +171,7 @@ final class RecursionExecutor {
                 }
             }
             result.addAll(next);
+            held.accept(result.size());
             delta = next;
         }
 
@@ -428,7 +432,8 @@ final class RecursionExecutor {
             }
         }
         Map<Pair, Integer> shortest = shortestHops(searchEdges, searchAdjacency, maxHops,
-                backwards ? boundTarget : boundSource);
+                backwards ? boundTarget : boundSource, ctx::checkpoint,
+                held -> MaterializationBudget.charge(node, held, ctx));
 
         // Emit pairs whose shortest length is within the window, ordered by (from, to).
         Comparator<Value> order = ValueComparator.NULLS_LAST;
@@ -474,7 +479,9 @@ final class RecursionExecutor {
      */
     private static Map<Pair, Integer> shortestHops(Set<Pair> edges,
                                                    Map<Value, List<Value>> adjacency,
-                                                   int maxHops, Optional<Value> seed) {
+                                                   int maxHops, Optional<Value> seed,
+                                                   Runnable checkpoint,
+                                                   java.util.function.LongConsumer held) {
         // The 1-step frontier is the edge set; each round extends every frontier pair by
         // one hop, recording a derived pair only on first (shortest) discovery.
         Map<Pair, Integer> shortest = new LinkedHashMap<>();
@@ -490,6 +497,7 @@ final class RecursionExecutor {
         for (int depth = 1; depth < maxHops && !frontier.isEmpty(); depth++) {
             Set<Pair> next = new LinkedHashSet<>();
             for (Pair sp : frontier) {
+                checkpoint.run();
                 List<Value> successors = adjacency.get(sp.to());
                 if (successors == null) {
                     continue;
@@ -502,6 +510,7 @@ final class RecursionExecutor {
                     }
                 }
             }
+            held.accept(shortest.size());
             frontier = next;
         }
         return shortest;
@@ -992,12 +1001,14 @@ final class RecursionExecutor {
             for (TraceEdge e : edgeList) {
                 seedEdge(best, e, minimize);
             }
-            relax(best, edgeList, minimize, maxRounds, label, node.sense());
+            relax(best, edgeList, minimize, maxRounds, label, node.sense(),
+                    held -> { ctx.checkpoint(); MaterializationBudget.charge(node, held, ctx); });
             outputRows = emitTrace(outputSchema, best, false);
         } else if (!targetOnly) {
             // Single-source from s, optionally narrowed to a fixed destination.
             Map<Pair, TracePath> best = singleSourceTrace(
-                    boundSource.get(), edgeList, minimize, maxRounds, label, node.sense());
+                    boundSource.get(), edgeList, minimize, maxRounds, label, node.sense(),
+                    held -> { ctx.checkpoint(); MaterializationBudget.charge(node, held, ctx); });
             if (boundTarget.isPresent()) {
                 Value t = boundTarget.get();
                 best.keySet().removeIf(k -> !k.to().equals(t));
@@ -1010,7 +1021,8 @@ final class RecursionExecutor {
                 reversed.add(new TraceEdge(e.to(), e.from(), e.weight()));
             }
             Map<Pair, TracePath> best = singleSourceTrace(
-                    boundTarget.get(), reversed, minimize, maxRounds, label, node.sense());
+                    boundTarget.get(), reversed, minimize, maxRounds, label, node.sense(),
+                    held -> { ctx.checkpoint(); MaterializationBudget.charge(node, held, ctx); });
             outputRows = emitTrace(outputSchema, best, true);
         }
         return BagRelation.of(outputSchema, outputRows).stream();
@@ -1027,14 +1039,15 @@ final class RecursionExecutor {
      * relaxes over the full edge set, so every entry is keyed {@code (seed, ·)}.
      */
     private static Map<Pair, TracePath> singleSourceTrace(Value seed, List<TraceEdge> edges,
-            boolean minimize, int maxRounds, String label, ObjectiveSense sense) {
+            boolean minimize, int maxRounds, String label, ObjectiveSense sense,
+            java.util.function.LongConsumer tick) {
         Map<Pair, TracePath> best = new HashMap<>();
         for (TraceEdge e : edges) {
             if (e.from().equals(seed)) {
                 seedEdge(best, e, minimize);
             }
         }
-        relax(best, edges, minimize, maxRounds, label, sense);
+        relax(best, edges, minimize, maxRounds, label, sense, tick);
         return best;
     }
 
@@ -1053,9 +1066,20 @@ final class RecursionExecutor {
      * {@code --max-fixpoint-rounds} guard fires on improvement cycles.
      */
     private static void relax(Map<Pair, TracePath> best, List<TraceEdge> edges,
-            boolean minimize, int maxRounds, String label, ObjectiveSense sense) {
+            boolean minimize, int maxRounds, String label, ObjectiveSense sense,
+            java.util.function.LongConsumer tick) {
+        // Edges leaving each node, in input order: extending a path then reads only the
+        // edges that can extend it, instead of scanning every edge for every entry.
+        Map<Value, List<TraceEdge>> leaving = new HashMap<>();
+        for (TraceEdge e : edges) {
+            leaving.computeIfAbsent(e.from(), k -> new ArrayList<>()).add(e);
+        }
         int round = 0;
         boolean changed = true;
+        // Entries that are new or improved since they were last extended. An entry left
+        // alone offers the same extensions it did before, and each was either taken or not
+        // better, so extending it again can change nothing: only these need visiting.
+        Set<Pair> dirty = new HashSet<>(best.keySet());
         while (changed) {
             if (round >= maxRounds) {
                 throw new EvaluationException(
@@ -1066,14 +1090,16 @@ final class RecursionExecutor {
             }
             round++;
             changed = false;
+            Set<Pair> improved = new HashSet<>();
             // Snapshot entries to avoid ConcurrentModificationException
             List<Map.Entry<Pair, TracePath>> snapshot = new ArrayList<>(best.entrySet());
             for (Map.Entry<Pair, TracePath> entry : snapshot) {
                 Pair reach = entry.getKey();         // (origin → v)
+                if (!dirty.contains(reach) && !improved.contains(reach)) continue;
                 TracePath pe = entry.getValue();
+                tick.accept(best.size());
                 // Extend via each edge (v → w, ew)
-                for (TraceEdge e : edges) {
-                    if (!e.from().equals(reach.to())) continue;
+                for (TraceEdge e : leaving.getOrDefault(reach.to(), List.of())) {
                     Value w = e.to();
                     // Avoid creating loops: the path already visits reach.from()
                     // at position 0; if w is already in the path, skip.
@@ -1085,10 +1111,12 @@ final class RecursionExecutor {
                         List<Value> newPath = new ArrayList<>(pe.path());
                         newPath.add(w);
                         best.put(newKey, new TracePath(newCost, List.copyOf(newPath)));
+                        improved.add(newKey);
                         changed = true;
                     }
                 }
             }
+            dirty = improved;
         }
     }
 

@@ -100,7 +100,8 @@ final class WindowExecutor {
         for (var entry : indexed.groups().entrySet()) {
             List<Row> partition = new ArrayList<>(entry.getValue());
             partition.sort(comparator);
-            List<Value> values = computePartition(node, partition, comparator, eval);
+            ctx.checkpoint();
+            List<Value> values = computePartition(node, partition, comparator, eval, ctx::checkpoint);
             for (int i = 0; i < partition.size(); i++) {
                 output.add(ExecSupport.appendColumn(outputSchema, inputSchema, partition.get(i),
                         node.outputColumn(), values.get(i)));
@@ -115,13 +116,16 @@ final class WindowExecutor {
      * positional values over the full partition (ties detected via {@code comparator}).
      */
     private static List<Value> computePartition(PhysicalNode.Window node, List<Row> partition,
-                                                Comparator<Row> comparator, OperandEvaluator eval) {
+                                                Comparator<Row> comparator, OperandEvaluator eval,
+                                                Runnable checkpoint) {
         return switch (node.function()) {
             case WindowFunction.AggregateWindow a -> {
                 AggregateFunction agg = AggregateFunction.of(a.operator(), a.argument());
                 List<Value> values = new ArrayList<>(partition.size());
                 Frames frames = new Frames(partition, node.frame(), node.sortSpecs(), comparator, eval);
                 for (int i = 0; i < partition.size(); i++) {
+                    // A frame is recomputed per row, so a long partition is the long loop.
+                    checkpoint.run();
                     values.add(AggregateExecutor.computeAggregate(agg, frames.rows(i), eval));
                 }
                 yield values;
