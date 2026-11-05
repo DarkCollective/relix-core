@@ -35,9 +35,10 @@ A session built with a sealed sandbox refuses the statement, as it refuses any
 statement that reaches outside the session.
 
 # Examples:
-A script that names its environment file and profile, and otherwise runs as usual:
+A script that names its environment file and profile, and otherwise runs as usual. The
+statement has to be the first in a script, so these are shown as they would be saved:
 
-```relix
+```
 env from ".relix-env.json" using "development";
 
 Tiers := [
@@ -52,7 +53,7 @@ query { Tiers };
 
 The shortest form, which names neither:
 
-```relix
+```
 env;
 
 Tiers := [
