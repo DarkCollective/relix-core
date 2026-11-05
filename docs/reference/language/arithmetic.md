@@ -22,7 +22,10 @@ level associates to the left, and parentheses group as usual. `||` binds more lo
 than `+` as it does in PostgreSQL, so `'n = ' || n + 1` adds before it joins.
 
 The arithmetic is exact decimal: `0.1 + 0.2` is `0.3`. Division keeps ten places and
-drops trailing zeros, and dividing by zero is an error. Division therefore never
+drops trailing zeros, and dividing by zero is an error. The same rule applies when the
+optimizer folds a constant quotient, so `1 / 3` is `0.3333333333` either way. A
+quotient smaller than the tenth place rounds to `0`, so `1 / 100000000000` is `0`, and
+a comparison such as `a / b = 0` holds for it. Division therefore never
 truncates: `7 / 2` is `3.5`, as in MySQL and Oracle. PostgreSQL, SQL Server and
 SQLite give `3` for two integers, because there an integer divided by an integer is an
 integer; Relix has one exact NUMBER type, so there are no integer operands to divide.
