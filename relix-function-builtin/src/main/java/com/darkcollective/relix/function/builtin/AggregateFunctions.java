@@ -420,6 +420,7 @@ final class AggregateFunctions {
             StringBuilder joined = new StringBuilder(values.get(0));
             for (int i = 1; i < values.size(); i++) {
                 joined.append(separators.get(i)).append(values.get(i));
+                Arguments.checkLength("STRING_AGG", joined.length());
             }
             return new StringValue(joined.toString());
         }

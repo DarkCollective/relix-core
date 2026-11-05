@@ -50,9 +50,24 @@ public final class JsonValues {
     }
 
     /** Thrown when the input is not well-formed JSON. */
-    public static final class JsonParseException extends RuntimeException {
+    public static class JsonParseException extends RuntimeException {
         public JsonParseException(String message) {
             super(message);
+        }
+    }
+
+    /**
+     * The deepest nesting of arrays and objects a document may have. The parser and
+     * everything that walks its result are recursive, so a document nested deeper than
+     * any real one would otherwise end in a {@link StackOverflowError} on whichever
+     * thread read it.
+     */
+    public static final int MAX_DEPTH = 512;
+
+    /** Thrown when a well-formed-so-far document nests deeper than {@link #MAX_DEPTH}. */
+    public static final class JsonDepthException extends JsonParseException {
+        public JsonDepthException(int position) {
+            super("JSON nests more than " + MAX_DEPTH + " levels deep, at position " + position);
         }
     }
 
@@ -77,6 +92,7 @@ public final class JsonValues {
     private static final class Parser {
         private final String s;
         private int pos;
+        private int depth;
 
         Parser(String s) {
             this.s = s;
@@ -92,13 +108,24 @@ public final class JsonValues {
             }
             char c = s.charAt(pos);
             return switch (c) {
-                case '{' -> parseObject();
-                case '[' -> parseArray();
+                case '{' -> nested(this::parseObject);
+                case '[' -> nested(this::parseArray);
                 case '"' -> new StringValue(parseString());
                 case 't', 'f' -> parseBoolean();
                 case 'n' -> parseNull();
                 default -> parseNumber();
             };
+        }
+
+        private <T extends Value> T nested(java.util.function.Supplier<T> parse) {
+            if (++depth > MAX_DEPTH) {
+                throw new JsonDepthException(pos);
+            }
+            try {
+                return parse.get();
+            } finally {
+                depth--;
+            }
         }
 
         private StructValue parseObject() {

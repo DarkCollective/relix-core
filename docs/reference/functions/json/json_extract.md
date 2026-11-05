@@ -19,7 +19,7 @@ element.
 JSON_EXTRACT(doc: STRING, path: STRING) → the value at `path`, typed as JSON types it,
 so its column is of no one type. PURE, DETERMINISTIC. The answer is NULL when `doc` is
 not JSON, when the path reaches nothing, and when it reaches JSON's `null`. A NULL
-argument gives NULL; a malformed path is refused.
+argument gives NULL; a malformed path is refused, and so is a document nested more than 512 levels deep.
 
 Where the kind is known, the other two say so: JSON_VALUE gives text, and JSON_QUERY
 an object or array.

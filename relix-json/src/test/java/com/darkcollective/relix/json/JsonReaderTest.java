@@ -22,6 +22,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Unit tests for the {@link JsonReader} parser. */
 final class JsonReaderTest {
@@ -211,5 +212,18 @@ final class JsonReaderTest {
         assertThat(root.get("flag")).isEqualTo(Boolean.TRUE);
         assertThat(root.get("missing")).isNull();
         assertThat(root.get("nested")).isEqualTo(List.of("a \" b", "c \\ d"));
+    }
+
+    @Test
+    void refusesNestingPastTheDepthCapInsteadOfOverflowingTheStack() {
+        int deep = JsonReader.MAX_DEPTH + 1;
+        assertThatThrownBy(() -> JsonReader.parse("[".repeat(deep) + "]".repeat(deep)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("nests more than " + JsonReader.MAX_DEPTH);
+        assertThatThrownBy(() -> JsonReader.parse("{\"a\":".repeat(100_000)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("nests more than");
+        int allowed = JsonReader.MAX_DEPTH;
+        assertThat(JsonReader.parse("[".repeat(allowed) + "]".repeat(allowed))).isInstanceOf(List.class);
     }
 }

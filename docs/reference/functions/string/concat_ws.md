@@ -13,7 +13,7 @@ optional parts do not leave doubled separators behind.
 # Technical Description:
 CONCAT_WS(separator: STRING, value, …) → STRING. One or more values of any type,
 each written as it displays; NULL values are skipped. A NULL separator gives NULL.
-PURE, DETERMINISTIC.
+A result longer than 100,000,000 characters is refused. PURE, DETERMINISTIC.
 
 # Examples:
 An address from optional parts:

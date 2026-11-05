@@ -203,4 +203,18 @@ final class JsonValuesTest {
                     .hasMessageContaining("Trailing");
         }
     }
+
+    @Test
+    @DisplayName("nesting past the depth cap is refused, not left to overflow the stack")
+    void depthCap() {
+        int deep = JsonValues.MAX_DEPTH + 1;
+        assertThatThrownBy(() -> JsonValues.parse("[".repeat(deep) + "]".repeat(deep)))
+                .isInstanceOf(JsonValues.JsonDepthException.class)
+                .isInstanceOf(JsonParseException.class)
+                .hasMessageContaining("nests more than " + JsonValues.MAX_DEPTH);
+        assertThatThrownBy(() -> JsonValues.parse("{\"a\":".repeat(100_000)))
+                .isInstanceOf(JsonValues.JsonDepthException.class);
+        int allowed = JsonValues.MAX_DEPTH;
+        assertThat(JsonValues.parse("[".repeat(allowed) + "]".repeat(allowed))).isInstanceOf(ArrayValue.class);
+    }
 }

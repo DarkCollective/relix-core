@@ -14,7 +14,7 @@ length is cut to it, from its end.
 RPAD(s: STRING, length: NUMBER [, fill: STRING]) → STRING. Lengths count
 characters. The fill repeats and is cut to fit; an empty fill leaves a short string
 as it is, and a length of zero or less gives `''`. A NULL in any argument returns
-NULL. PURE, DETERMINISTIC.
+NULL. A length that would make the result longer than 100,000,000 characters is refused. PURE, DETERMINISTIC.
 
 # Examples:
 Dot leaders to a fixed width:

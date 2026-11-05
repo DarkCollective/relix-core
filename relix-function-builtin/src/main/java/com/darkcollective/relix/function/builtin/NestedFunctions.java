@@ -138,6 +138,11 @@ final class NestedFunctions {
                 parts.add(nullText.asDisplayString());
             }
         }
+        long length = 0;
+        for (String part : parts) {
+            length += part.length() + separator.asDisplayString().length();
+        }
+        Arguments.checkLength("ARRAY_TO_STRING", length);
         return new StringValue(String.join(separator.asDisplayString(), parts));
     }
 

@@ -85,6 +85,27 @@ final class Arguments {
         }
     }
 
+    /**
+     * The longest string any function builds: a hundred million characters. A function
+     * whose result could be longer is refused before the result is built, so a query
+     * cannot exhaust the heap by writing a string.
+     */
+    static final long MAX_STRING_LENGTH = 100_000_000L;
+
+    /**
+     * Refuses a result of {@code length} characters when it would be longer than
+     * {@link #MAX_STRING_LENGTH}.
+     *
+     * @param function the function's name, for the message
+     * @param length   the length the result would have, in UTF-16 units or more
+     */
+    static void checkLength(String function, long length) {
+        if (length > MAX_STRING_LENGTH) {
+            throw reject(function + ": the result would be longer than " + MAX_STRING_LENGTH
+                    + " characters");
+        }
+    }
+
     /** A value this function cannot work with, phrased for the person who wrote the query. */
     static IllegalArgumentException reject(String message) {
         return new IllegalArgumentException(message);

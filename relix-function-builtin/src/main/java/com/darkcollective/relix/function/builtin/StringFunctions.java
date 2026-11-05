@@ -28,6 +28,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 
+import static com.darkcollective.relix.function.builtin.Arguments.checkLength;
 import static com.darkcollective.relix.function.builtin.Arguments.integer;
 import static com.darkcollective.relix.function.builtin.Arguments.reject;
 import static com.darkcollective.relix.function.builtin.Arguments.string;
@@ -200,9 +201,9 @@ final class StringFunctions {
                             if (args.get(0).isNull()) {
                                 return NullValue.INSTANCE;
                             }
-                            return new StringValue(string(args.get(0), "Replace")
-                                    .replace(string(args.get(1), "Replace"),
-                                            string(args.get(2), "Replace")));
+                            return replace(string(args.get(0), "Replace"),
+                                    string(args.get(1), "Replace"),
+                                    string(args.get(2), "Replace"));
                         }),
 
                 // SQL's padding, as PostgreSQL pads: to a length in characters, cutting
@@ -267,12 +268,36 @@ final class StringFunctions {
             return new StringValue(s);
         }
         int need = length - have;
+        // The result is at least `length` code points, so a length no string may reach is
+        // refused before anything is built.
+        checkLength(function, length);
+        // Repeat the fill until it holds `need` code points, counting the fill once: the
+        // padding is built in one pass and cut, not re-measured after every append.
+        int fillPoints = CodePoints.length(fill);
         StringBuilder padding = new StringBuilder();
-        while (CodePoints.length(padding.toString()) < need) {
+        for (long points = 0; points < need; points += fillPoints) {
             padding.append(fill);
         }
         String cut = CodePoints.substring(padding.toString(), 0, need);
+        checkLength(function, (long) cut.length() + s.length());
         return new StringValue(left ? cut + s : s + cut);
+    }
+
+    /** {@code REPLACE(s, find, replacement)}: every occurrence replaced, the result length checked first. */
+    private static Value replace(String s, String find, String replacement) {
+        if (replacement.length() > find.length()) {
+            // An empty `find` matches before every character and after the last.
+            long occurrences = 0;
+            if (find.isEmpty()) {
+                occurrences = (long) s.length() + 1;
+            } else {
+                for (int at = s.indexOf(find); at >= 0; at = s.indexOf(find, at + find.length())) {
+                    occurrences++;
+                }
+            }
+            checkLength("Replace", s.length() + occurrences * (replacement.length() - find.length()));
+        }
+        return new StringValue(s.replace(find, replacement));
     }
 
     /** {@code REPEAT(s, n)}: {@code s} written {@code n} times, the empty string for none or fewer. */
@@ -282,14 +307,11 @@ final class StringFunctions {
         }
         String s = string(args.get(0), "REPEAT");
         int count = integer(args.get(1), "REPEAT");
-        if (count > 0 && (long) s.length() * count > MAX_REPEATED) {
-            throw reject("REPEAT: the result would be longer than " + MAX_REPEATED + " characters");
+        if (count > 0) {
+            checkLength("REPEAT", (long) s.length() * count);
         }
         return new StringValue(count <= 0 ? "" : s.repeat(count));
     }
-
-    /** The longest string {@code REPEAT} builds: a hundred million characters. */
-    private static final long MAX_REPEATED = 100_000_000L;
 
     /**
      * PostgreSQL's {@code split_part(s, delimiter, n)}: the {@code n}-th field of
@@ -331,10 +353,16 @@ final class StringFunctions {
             return NullValue.INSTANCE;
         }
         String separator = string(args.get(0), "CONCAT_WS");
-        return new StringValue(args.subList(1, args.size()).stream()
+        List<String> parts = args.subList(1, args.size()).stream()
                 .filter(v -> !v.isNull())
                 .map(Value::asDisplayString)
-                .collect(java.util.stream.Collectors.joining(separator)));
+                .toList();
+        long length = 0;
+        for (String part : parts) {
+            length += part.length() + separator.length();
+        }
+        checkLength("CONCAT_WS", length);
+        return new StringValue(String.join(separator, parts));
     }
 
     /**

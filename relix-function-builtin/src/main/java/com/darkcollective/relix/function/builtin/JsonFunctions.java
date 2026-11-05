@@ -127,6 +127,9 @@ final class JsonFunctions {
         Value current;
         try {
             current = JsonValues.parse(string(doc, function));
+        } catch (JsonValues.JsonDepthException tooDeep) {
+            // Not "not JSON": the text may be valid, and answering NULL would hide that.
+            throw reject(function + ": " + tooDeep.getMessage());
         } catch (JsonValues.JsonParseException notJson) {
             return Optional.empty();
         }

@@ -16,7 +16,7 @@ ARRAY_TO_STRING(array, separator: STRING [, null_text: STRING]) → STRING. Each
 element is written as it displays, in the array's order. A NULL element is left
 out, or written as `null_text` where one is given, as PostgreSQL's
 `array_to_string` does. A NULL array or separator gives NULL; anything else that is
-not an array is an error. PURE, DETERMINISTIC.
+not an array is an error. A result longer than 100,000,000 characters is refused. PURE, DETERMINISTIC.
 
 # Examples:
 An order's tags as a list:
