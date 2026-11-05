@@ -30,7 +30,7 @@ schema (like a view). Binding is by substitution — the planner inlines the bod
 with each parameter reference replaced by the supplied argument, then re-infers
 its schema. Scalar arguments must be constant expressions (no column references);
 a correlated argument needs a `LATERAL` join instead. Nested TVF calls inline
-transitively; recursion is rejected at plan time. The RELATION keyword is
+transitively; recursion is rejected when the script is analysed. The RELATION keyword is
 case-insensitive.
 
 **Relation parameters.** `E: RELATION(src, weight: NUMBER)` declares a relation
@@ -150,8 +150,8 @@ Scalar arguments must be constant — you cannot pass a column from the surround
 query; use a `LATERAL` join for that. A relation argument is a relation's name:
 to pass an expression, name it as a view first. A function with a relation
 parameter cannot be called through `LATERAL`, whose arguments are the left
-side's values, row by row. A TVF body cannot reference itself (recursion is
-rejected). The body is not pushed down to SQL as a unit.
+side's values, row by row. A TVF body cannot reference itself, directly or through other functions or views
+(recursion is rejected when the script is analysed, with the call that closes the loop). The body is not pushed down to SQL as a unit.
 
 # Alternatives:
 A plain view (`Name := { … };`) when no parameters are needed. FIX for genuine

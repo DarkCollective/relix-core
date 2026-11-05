@@ -252,6 +252,6 @@ final class RelationParameterExecutionTest {
                 def loop(E: RELATION(x)) : RELATION := { loop(E) };
                 query { loop(T) };
                 """).toList())
-                .hasMessageContaining("Recursive table-valued function 'loop'");
+                .hasMessageContaining("Function 'loop' refers to itself");
     }
 }
