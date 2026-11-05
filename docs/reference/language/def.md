@@ -17,8 +17,9 @@ formatter, or a tax calculation once, then use it wherever you need it. Mark it
 A scalar `def` binds a ScalarFunctionSymbol with typed parameters and a return
 type (NUMBER, STRING, BOOLEAN, ANY, or a temporal type). The body is a single operand
 expression over the parameters. Calls resolve in predicates and projected
-expressions via the symbol table, falling back to the builtin registry. `private`
-suppresses re-export on import. Functions must be declared before they are called.
+expressions via the symbol table, falling back to the builtin registry. A `private`
+def cannot be called from any other file, whatever the form of the import; the
+file's own definitions, public ones included, still call it. Functions must be declared before they are called.
 
 # Examples:
 A simple calculation:

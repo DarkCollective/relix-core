@@ -159,6 +159,15 @@ public final class SymbolCollector {
     private final CatalogProvider catalog;
     private final GeneratorCatalog generators;
 
+    /** Symbol key → the file that declared it (the origin, which an import keeps). */
+    private final Map<String, String> owners = new LinkedHashMap<>();
+    /** Keys of the symbols declared {@code private}. */
+    private final Set<String> privateKeys = new java.util.HashSet<>();
+    /** File → lower-cased names of its {@code private} declarations, for the import message. */
+    private final Map<String, Set<String>> privateNames = new LinkedHashMap<>();
+    /** Lower-cased name of a {@code private} connection → the file that declared it. */
+    private final Map<String, String> privateConnections = new LinkedHashMap<>();
+
     SymbolCollector(ImportGraph graph, SymbolTable symbolTable) {
         this(graph, symbolTable, CatalogProvider.NONE);
     }
@@ -193,7 +202,53 @@ public final class SymbolCollector {
         }
         resolveConnectionTableReferences();
         validateConnectionReferences();
+        checkPrivateAccess();
         collectStatistics();
+    }
+
+    /**
+     * Rejects a reference to a {@code private} declaration from any file but the one that
+     * declared it, whatever route the importing file took to the name.
+     */
+    private void checkPrivateAccess() {
+        PrivateAccess access = new PrivateAccess(symbolTable, owners, privateKeys,
+                privateConnections, errors);
+        String rootPath = graph.rootPath();
+        for (String path : graph.processingOrder()) {
+            graph.script(path).ifPresent(script -> access.checkFile(path, script, path.equals(rootPath)));
+        }
+    }
+
+    /** The key a symbol is owned under: kind, namespace, name and, for a function, arity. */
+    static String keyOf(Symbol sym) {
+        String base = sym.namespace().toLowerCase(Locale.ROOT) + ":" + sym.canonicalName();
+        return sym instanceof FunctionSymbol fn ? "f:" + base + "/" + fn.parameters().size() : "r:" + base;
+    }
+
+    /**
+     * Records that {@code sym} was declared in {@code origin}, or reports a clash when a
+     * different file already declared the same name. Every file of a script shares one set of
+     * names ({@code private} hides a name, it does not give the file a scope of its own), so a
+     * name two files both declare would have one silently replace the other.
+     *
+     * @return {@code false} when the name clashes and the symbol must not be registered
+     */
+    private boolean claim(Symbol sym, String origin, String filePath, SourceLocation at, boolean exported) {
+        String key = keyOf(sym);
+        String existing = owners.get(key);
+        if (existing != null && !existing.equals(origin)) {
+            errors.add(SemanticError.error(fileOf(at, filePath), at.line(), at.column(),
+                    "'" + sym.declaredName() + "' is declared in both '" + existing + "' and '"
+                    + origin + "'; a name can be declared once across the files of a script"));
+            return false;
+        }
+        owners.put(key, origin);
+        if (!exported) {
+            privateKeys.add(key);
+            privateNames.computeIfAbsent(origin, k -> new java.util.HashSet<>())
+                    .add(sym.canonicalName());
+        }
+        return true;
     }
 
     /**
@@ -407,6 +462,7 @@ public final class SymbolCollector {
             return;
         }
         connections.put(key, conn);
+        if (!conn.exported()) privateConnections.put(key, filePath);
     }
 
     private void handleSource(String filePath, String namespace,
@@ -431,6 +487,7 @@ public final class SymbolCollector {
         SourceRelationSymbol sym = new SourceRelationSymbol(
                 namespace, src.name(), Provenance.USER, ShadowPolicy.PERMITTED, schema);
 
+        if (!claim(sym, filePath, filePath, src.location(), src.exported())) return;
         if (registerAndCheck(sym, filePath)) {
             sources.put(sym.canonicalName(), src);
             if (src.exported()) exports.put(sym.canonicalName(), sym);
@@ -447,6 +504,7 @@ public final class SymbolCollector {
                     UNRESOLVED_SCHEMA, query.expression());
         };
 
+        if (!claim(sym, filePath, filePath, asgn.location(), asgn.exported())) return;
         if (registerAndCheck(sym, filePath)) {
             if (asgn.exported()) exports.put(sym.canonicalName(), sym);
             if (asgn.body() instanceof InlineTableBody inline
@@ -476,6 +534,7 @@ public final class SymbolCollector {
         }
         ScalarFunctionSymbol sym = builder.build();
 
+        if (!claim(sym, filePath, filePath, def.location(), def.exported())) return;
         if (registerAndCheck(sym, filePath)) {
             if (def.exported()) exports.put(sym.canonicalName(), sym);
         }
@@ -493,6 +552,7 @@ public final class SymbolCollector {
         }
         RelationFunctionSymbol sym = builder.build();
 
+        if (!claim(sym, filePath, filePath, def.location(), def.exported())) return;
         if (registerAndCheck(sym, filePath)) {
             if (def.exported()) exports.put(sym.canonicalName(), sym);
         }
@@ -511,7 +571,7 @@ public final class SymbolCollector {
         switch (imp.kind()) {
             case BULK -> {
                 for (Symbol sym : sourceExports.values()) {
-                    importSymbol(filePath, namespace, sym, imp.sourcePath(), exports);
+                    importSymbol(filePath, namespace, sym, imp, exports);
                 }
             }
             case SOURCE, RELATION, FUNCTION, UNQUALIFIED -> {
@@ -519,9 +579,13 @@ public final class SymbolCollector {
                     String key = name.toLowerCase(Locale.ROOT);
                     Symbol sym = sourceExports.get(key);
                     if (sym == null) {
-                        errors.add(SemanticError.error(filePath, 0, 0,
-                                "Symbol '" + name + "' not found or not exported by '"
-                                        + imp.sourcePath() + "'"));
+                        boolean hidden = privateNames.getOrDefault(resolvedPath, Set.of()).contains(key);
+                        errors.add(SemanticError.error(filePath, imp.location().line(),
+                                imp.location().column(),
+                                "Symbol '" + name + "' "
+                                        + (hidden ? "is private to '" + imp.sourcePath()
+                                                + "' and cannot be imported"
+                                        : "not found or not exported by '" + imp.sourcePath() + "'")));
                         continue;
                     }
                     if (!kindMatches(imp.kind(), sym)) {
@@ -530,7 +594,7 @@ public final class SymbolCollector {
                                         + "' is not a " + kindLabel(imp.kind())));
                         continue;
                     }
-                    importSymbol(filePath, namespace, sym, imp.sourcePath(), exports);
+                    importSymbol(filePath, namespace, sym, imp, exports);
                 }
             }
         }
@@ -542,8 +606,10 @@ public final class SymbolCollector {
      * when importing a {@link SourceRelationSymbol}.
      */
     private void importSymbol(String filePath, String namespace,
-                              Symbol sym, String sourcePath, Map<String, Symbol> exports) {
+                              Symbol sym, ImportStatement imp, Map<String, Symbol> exports) {
         Symbol adapted = namespace.equals(sym.namespace()) ? sym : withNamespace(sym, namespace);
+        String origin = owners.getOrDefault(keyOf(sym), imp.sourcePath());
+        if (!claim(adapted, origin, filePath, imp.location(), true)) return;
         if (registerAndCheck(adapted, filePath)) {
             exports.put(adapted.canonicalName(), adapted);
             if (sym instanceof SourceRelationSymbol) {
