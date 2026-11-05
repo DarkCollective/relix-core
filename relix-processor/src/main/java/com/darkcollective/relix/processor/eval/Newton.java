@@ -148,9 +148,9 @@ final class Newton {
             BigDecimal[] snapped = x.clone();
             boolean changed = false;
             for (int i = 0; i < n; i++) {
-                if (snapped[i].signum() != 0 && snapped[i].abs().compareTo(tolerance.multiply(BigDecimal.TEN)) <= 0) {
+                if (snapped[i].abs().compareTo(tolerance.multiply(BigDecimal.TEN)) <= 0) {
+                    changed |= snapped[i].signum() != 0;
                     snapped[i] = BigDecimal.ZERO;
-                    changed = true;
                 }
             }
             if (changed) {
