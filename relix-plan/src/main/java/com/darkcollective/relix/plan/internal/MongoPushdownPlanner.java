@@ -84,7 +84,12 @@ final class MongoPushdownPlanner implements PushdownRenderer {
         this.functions = functions.withContext(context);
     }
 
-    private final SchemaAnnotations schemas;
+    /**
+     * The planner's current annotations, read at every use: the planner annotates the
+     * trees it builds while planning (a subquery lowered to a lateral join, an inlined
+     * function body), so a reference taken at construction misses every node made since.
+     */
+    private final java.util.function.Supplier<SchemaAnnotations> schemas;
     private final Map<String, SourceDeclaration> sources;
     private final Map<String, ConnectionDeclaration> connections;
     /**
@@ -98,7 +103,18 @@ final class MongoPushdownPlanner implements PushdownRenderer {
                          Map<String, SourceDeclaration> sources,
                          Map<String, ConnectionDeclaration> connections,
                          FunctionCatalog functions) {
-        this.schemas = schemas;
+        this.schemas = () -> schemas;
+        this.sources = sources;
+        this.connections = connections;
+        this.functions = PushdownFunctions.of(Objects.requireNonNull(functions, "functions"));
+    }
+
+    /** As above, reading the annotations afresh at each use — see {@link #schemas}. */
+    MongoPushdownPlanner(java.util.function.Supplier<SchemaAnnotations> schemas,
+            Map<String, SourceDeclaration> sources,
+            Map<String, ConnectionDeclaration> connections,
+            FunctionCatalog functions) {
+        this.schemas = Objects.requireNonNull(schemas, "schemas");
         this.sources = sources;
         this.connections = connections;
         this.functions = PushdownFunctions.of(Objects.requireNonNull(functions, "functions"));
@@ -144,7 +160,7 @@ final class MongoPushdownPlanner implements PushdownRenderer {
         }
         // A bare named query ("query Docs;") plans a fresh leaf that schema inference
         // does not annotate; without a schema we cannot push, so fall back to a Scan.
-        Optional<Schema> schema = schemas.get(node);
+        Optional<Schema> schema = schemas.get().get(node);
         return schema.map(s -> new Pushed(declaration.connectorType(), connection, table.table(), s));
     }
 
@@ -250,7 +266,7 @@ final class MongoPushdownPlanner implements PushdownRenderer {
     }
 
     private Schema schemaOf(RelNode node) {
-        return schemas.require(node, "during MongoDB pushdown");
+        return schemas.get().require(node, "during MongoDB pushdown");
     }
 
     /** Mutable accumulator for one collection's pushable sub-tree (never shared). */

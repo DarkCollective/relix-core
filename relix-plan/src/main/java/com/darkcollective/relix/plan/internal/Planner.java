@@ -374,11 +374,11 @@ public final class Planner {
         List<PushdownRenderer> renderers = new ArrayList<>();
         Map<String, ConnectionDeclaration> jdbcConnections = connectionsOfType(connections, "jdbc");
         if (!jdbcConnections.isEmpty()) {
-            renderers.add(new SqlPushdownPlanner(schemas, sources, jdbcConnections, functions));
+            renderers.add(new SqlPushdownPlanner(() -> this.schemas, sources, jdbcConnections, functions));
         }
         Map<String, ConnectionDeclaration> mongoConnections = connectionsOfType(connections, "mongodb");
         if (!mongoConnections.isEmpty()) {
-            renderers.add(new MongoPushdownPlanner(schemas, sources, mongoConnections, functions));
+            renderers.add(new MongoPushdownPlanner(() -> this.schemas, sources, mongoConnections, functions));
         }
         this.pushdowns = List.copyOf(renderers);
     }

@@ -231,6 +231,9 @@ final class PushdownFixture {
         String probes = "probes" + suffix;
         String history = "history" + suffix;
         String docs = "docs" + suffix;
+        String spansL = "spansl" + suffix;
+        String spansR = "spansr" + suffix;
+        String nums = "nums" + suffix;
         String q = connection.getMetaData().getIdentifierQuoteString();
         String lines = q + "order-lines" + suffix + q;
         try (Statement st = connection.createStatement()) {
@@ -240,6 +243,9 @@ final class PushdownFixture {
             st.execute(flavour.adapt("DROP TABLE IF EXISTS " + probes));
             st.execute(flavour.adapt("DROP TABLE IF EXISTS " + history));
             st.execute(flavour.adapt("DROP TABLE IF EXISTS " + docs));
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + spansL));
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + spansR));
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + nums));
             st.execute(flavour.adapt("CREATE TABLE " + orders + " ("
                     + "oid INT, cid INT, region VARCHAR(10)" + collate
                     + ", code VARCHAR(20)" + collate
@@ -351,6 +357,48 @@ final class PushdownFixture {
                     + "(4, NULL), "
                     + "(5, '[{\"sku\": \"Z9\"}]'), "
                     + "(6, '{\"Customer\": {\"name\": \"Cy\"}, \"customer\": null}')"));
+            // Two tables of intervals, for an interval join. Each side holds the shapes a
+            // relation's predicate can disagree with SQL about: a zero-length interval, an
+            // interval that ends before it starts, and one NULL endpoint on each side. A
+            // relation such as PRECEDES never reads the left START, so SQL keeps a row whose
+            // start is NULL unless it is excluded by hand, and the engine drops every row
+            // with a NULL endpoint. The right side's rows touch, meet and nest around the
+            // left's, so each of the fourteen relations has a pair.
+            st.execute(flavour.adapt("CREATE TABLE " + spansL + " (id INT, s "
+                    + flavour.unconverted + ", e " + flavour.unconverted + ")"));
+            st.execute(flavour.adapt("INSERT INTO " + spansL + " VALUES "
+                    + "(1, '2026-01-01 00:00:00', '2026-01-05 00:00:00'), "
+                    + "(2, '2026-01-05 00:00:00', '2026-01-08 00:00:00'), "
+                    + "(3, '2026-01-04 00:00:00', '2026-01-04 00:00:00'), "
+                    + "(4, '2026-01-06 00:00:00', '2026-01-02 00:00:00'), "
+                    + "(5, NULL,                  '2026-01-02 00:00:00'), "
+                    + "(6, '2026-01-02 00:00:00', NULL)"));
+            st.execute(flavour.adapt("CREATE TABLE " + spansR + " (id INT, s "
+                    + flavour.unconverted + ", e " + flavour.unconverted + ")"));
+            st.execute(flavour.adapt("INSERT INTO " + spansR + " VALUES "
+                    + "(10, '2026-01-01 00:00:00', '2026-01-05 00:00:00'), "
+                    + "(11, '2026-01-02 00:00:00', '2026-01-04 00:00:00'), "
+                    + "(12, '2026-01-05 00:00:00', '2026-01-06 00:00:00'), "
+                    + "(13, '2026-01-03 00:00:00', '2026-01-03 00:00:00'), "
+                    + "(14, '2026-01-04 00:00:00', '2026-01-09 00:00:00'), "
+                    + "(15, NULL,                  '2026-01-09 00:00:00')"));
+
+            // Numbers at the edges of the types a backend would compute them in: the largest
+            // INT, so that adding one leaves the type; the largest DECIMAL(12,3), whose
+            // square leaves DuckDB's; a DOUBLE that is not a binary fraction; and a zero
+            // divisor in the first row.
+            st.execute(flavour.adapt("CREATE TABLE " + nums + " (nid INT, n INT, "
+                    + "p DECIMAL(12,3), f DOUBLE PRECISION, m INT)"));
+            st.execute(flavour.adapt("INSERT INTO " + nums + " VALUES "
+                    + "(1, 2147483647, 99999999.999, 0.1, 0), "
+                    + "(2, 7, 1.005, 0.2, 2), "
+                    + "(3, -7, 2.5, 0.30000000000000004, -2), "
+                    + "(4, NULL, NULL, NULL, NULL), "
+                    // Halves on both sides of zero, for the rounding and sign functions.
+                    + "(5, 100, 0.500, 1.5, 3), "
+                    + "(6, 250, 150.500, -2.5, 3), "
+                    + "(7, 50, -49.500, 0.5, 3), "
+                    + "(8, -50, -100.000, -0.5, 3)"));
         }
     }
 
@@ -425,6 +473,18 @@ final class PushdownFixture {
                 + "source Docs from db {\n"
                 + "    table: \"docs" + suffix + "\",\n"
                 + "    schema: { did: NUMBER, doc: STRING }\n"
+                + "};\n"
+                + "source SpansL from db {\n"
+                + "    table: \"spansl" + suffix + "\",\n"
+                + "    schema: { id: NUMBER, s: TIMESTAMP, e: TIMESTAMP }\n"
+                + "};\n"
+                + "source SpansR from db {\n"
+                + "    table: \"spansr" + suffix + "\",\n"
+                + "    schema: { id: NUMBER, s: TIMESTAMP, e: TIMESTAMP }\n"
+                + "};\n"
+                + "source Nums from db {\n"
+                + "    table: \"nums" + suffix + "\",\n"
+                + "    schema: { nid: NUMBER, n: NUMBER, p: NUMBER, f: NUMBER, m: NUMBER }\n"
                 + "};\n\n";
     }
 }

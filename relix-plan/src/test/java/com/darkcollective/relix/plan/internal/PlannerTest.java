@@ -1856,12 +1856,21 @@ final class PlannerTest {
         }
 
         @Test
-        @DisplayName("aggregate over an arithmetic expression folds into SQL (E8)")
+        @DisplayName("aggregate over a function expression folds into SQL (E8)")
         void aggregateOverExpressionToSql() {
             PhysicalNode.PushedScan s = assertThat(planPushed(
-                    ORDERS_SETUP + "query { γ id, SUM(amount * amount) → sq (Orders) };")).asNode(PhysicalNode.PushedScan.class);
+                    ORDERS_SETUP + "query { γ id, SUM(Mod(amount, 7)) → sq (Orders) };")).asNode(PhysicalNode.PushedScan.class);
             assertThat(s.nativeQuery())
-                    .isEqualTo("SELECT id, SUM((amount * amount)) FROM orders GROUP BY id");
+                    .isEqualTo("SELECT id, SUM(MOD(amount, 7)) FROM orders GROUP BY id");
+        }
+
+        @Test
+        @DisplayName("aggregate over arithmetic stays in the engine: a backend adds in its column type")
+        void aggregateOverArithmeticStaysInEngine() {
+            PhysicalNode plan = planPushed(
+                    ORDERS_SETUP + "query { γ id, SUM(amount * amount) → sq (Orders) };");
+            assertThat(plan).isNode(PhysicalNode.Aggregate.class);
+            assertThat(((PhysicalNode.Aggregate) plan).input()).isNode(PhysicalNode.PushedScan.class);
         }
 
         @Test
@@ -1949,7 +1958,7 @@ final class PlannerTest {
         @DisplayName("a sort above a computed projection is not folded (the key is a select-list alias)")
         void sortAboveProjectionNotFolded() {
             PhysicalNode plan = planPushed(
-                    ORDERS_SETUP + "query { τ doubled (π amount * 2 → doubled (Orders)) };");
+                    ORDERS_SETUP + "query { τ doubled (π Mod(amount, 2) → doubled (Orders)) };");
             assertThat(plan).isNode(PhysicalNode.Sort.class);
             assertThat(((PhysicalNode.Sort) plan).input()).isNode(PhysicalNode.PushedScan.class);
         }
@@ -1958,10 +1967,10 @@ final class PlannerTest {
         @DisplayName("a selection above a computed projection cannot fold — engine Select over a pushed projection")
         void selectionAboveProjectionNotFolded() {
             PhysicalNode plan = planPushed(
-                    ORDERS_SETUP + "query { σ doubled > 0 (π amount * 2 → doubled (Orders)) };");
+                    ORDERS_SETUP + "query { σ doubled > 0 (π Mod(amount, 2) → doubled (Orders)) };");
             assertThat(plan).isNode(PhysicalNode.Select.class);
             PhysicalNode.PushedScan pushed = assertThat(((PhysicalNode.Select) plan).input()).asNode(PhysicalNode.PushedScan.class);
-            assertThat(pushed.nativeQuery()).isEqualTo("SELECT (amount * 2) FROM orders");
+            assertThat(pushed.nativeQuery()).isEqualTo("SELECT MOD(amount, 2) FROM orders");
         }
 
         @Test
@@ -2257,11 +2266,11 @@ final class PlannerTest {
             // the ORDER BY — see `mergeOrderPushedIntoUnsortedSide`.)
             PhysicalNode.Join j = assertThat(planPushed(JOIN_SETUP
                     + "query { (τ id ASC (Orders)) ⨝ Orders.id = Customers.cid "
-                    + "(π cid * 1 → cid (Customers)) };")).asNode(PhysicalNode.Join.class);
+                    + "(π Mod(cid, 1) → cid (Customers)) };")).asNode(PhysicalNode.Join.class);
             assertThat(j.algorithm()).isEqualTo(JoinAlgorithm.MERGE);
             PhysicalNode.Sort sort = assertThat(j.right()).asNode(PhysicalNode.Sort.class);
             assertThat(assertThat(sort.input()).asNode(PhysicalNode.PushedScan.class).nativeQuery())
-                    .isEqualTo("SELECT (cid * 1) FROM customers");
+                    .isEqualTo("SELECT MOD(cid, 1) FROM customers");
         }
 
         @Test
@@ -2779,13 +2788,11 @@ final class PlannerTest {
                 "schema: { qsym: STRING, qt: TIMESTAMP, bid: NUMBER } };\n";
 
         @Test
-        @DisplayName("a Postgres-backed AS-OF folds into a PushedScan with a LATERAL lookup (ADR-0014 slice 5)")
-        void jdbcAsOfPushedDown() {
+        @DisplayName("a Postgres-backed AS-OF is not pushed: LIMIT 1 cannot apply the input-order tie rule")
+        void jdbcAsOfStaysInEngine() {
             PhysicalNode plan = planPushed(TQ_JDBC +
                     "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };");
-            assertThat(plan).isNode(PhysicalNode.PushedScan.class);
-            assertThat(((PhysicalNode.PushedScan) plan).nativeQuery())
-                    .contains("LEFT JOIN LATERAL").contains("ORDER BY \"Quotes\".\"qt\" DESC LIMIT 1");
+            assertThat(plan).isNode(PhysicalNode.AsOfJoin.class);
         }
 
         @Test
@@ -3018,7 +3025,9 @@ final class PlannerTest {
                     "(Events.estart, Events.eend, Bookings.bstart, Bookings.bend) Bookings };");
             assertThat(plan).isNode(PhysicalNode.PushedScan.class);
             assertThat(((PhysicalNode.PushedScan) plan).nativeQuery())
-                    .contains("JOIN bookings Bookings ON (Events.estart < Bookings.bstart");
+                    .contains("JOIN bookings Bookings ON (Events.estart IS NOT NULL AND Events.eend IS NOT NULL "
+                            + "AND Bookings.bstart IS NOT NULL AND Bookings.bend IS NOT NULL "
+                            + "AND (Events.estart < Bookings.bstart");
         }
     }
 

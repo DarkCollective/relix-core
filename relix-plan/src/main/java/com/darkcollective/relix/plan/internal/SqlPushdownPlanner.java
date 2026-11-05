@@ -150,7 +150,12 @@ final class SqlPushdownPlanner implements PushdownRenderer {
 
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
-    private final SchemaAnnotations schemas;
+    /**
+     * The planner's current annotations, read at every use: the planner annotates the
+     * trees it builds while planning (a subquery lowered to a lateral join, an inlined
+     * function body), so a reference taken at construction misses every node made since.
+     */
+    private final java.util.function.Supplier<SchemaAnnotations> schemas;
     private final Map<String, SourceDeclaration> sources;
     private final Map<String, ConnectionDeclaration> connections;
     /**
@@ -164,7 +169,18 @@ final class SqlPushdownPlanner implements PushdownRenderer {
                        Map<String, SourceDeclaration> sources,
                        Map<String, ConnectionDeclaration> connections,
                        FunctionCatalog functions) {
-        this.schemas = schemas;
+        this.schemas = () -> schemas;
+        this.sources = sources;
+        this.connections = connections;
+        this.functions = PushdownFunctions.of(Objects.requireNonNull(functions, "functions"));
+    }
+
+    /** As above, reading the annotations afresh at each use — see {@link #schemas}. */
+    SqlPushdownPlanner(java.util.function.Supplier<SchemaAnnotations> schemas,
+            Map<String, SourceDeclaration> sources,
+            Map<String, ConnectionDeclaration> connections,
+            FunctionCatalog functions) {
+        this.schemas = Objects.requireNonNull(schemas, "schemas");
         this.sources = sources;
         this.connections = connections;
         this.functions = PushdownFunctions.of(Objects.requireNonNull(functions, "functions"));
@@ -1833,96 +1849,29 @@ final class SqlPushdownPlanner implements PushdownRenderer {
     }
 
     /**
-     * Folds an AS-OF join (ADR-0014) over two bare connection-table scans
-     * into a {@code LATERAL} "nearest row" lookup: for each probe row the database runs
-     * a correlated sub-select that filters the right table by the match condition,
-     * orders it by the match column in the direction the inequality implies, and takes
-     * the single nearest row ({@code … ORDER BY r.ts DESC LIMIT 1}).  A {@code LEFT JOIN
-     * LATERAL … ON TRUE} preserves unmatched probes (left-outer, the default); a plain
-     * {@code JOIN LATERAL … ON TRUE} drops them (the inner variant).
+     * Declines an AS-OF join: it is always evaluated in-engine.
      *
-     * <p>Falls back to in-engine execution when the inputs are not two bare scans on one
-     * connection, the dialect lacks {@code LATERAL} support ({@link Dialect#supportsLateralAsOf}),
-     * the condition is untranslatable, or a {@code WITHIN} tolerance is present — the
-     * tolerance bound leans on temporal arithmetic that has no portable SQL form, so it
-     * is kept in-engine.
-     *
-     * <p><b>Tie semantics.</b> When several right rows share the nearest match value the
-     * in-engine executor's {@code TIES (FIRST|LAST)} rule resolves to a specific input-order
-     * row; under pushdown the database's {@code LIMIT 1} chooses one of the tied rows by
-     * its own row ordering instead.  The two agree whenever the tied rows are
-     * indistinguishable in the selected columns; the divergence is documented in ADR-0014.
+     * <p>The nearest-row lookup is expressible as a {@code LATERAL} sub-select ordered by
+     * the match column, and {@link Dialect#nearestRowJoin} still renders one. What it cannot
+     * express is the engine's tie rule. When several right rows share the nearest match
+     * value, {@code TIES (FIRST|LAST)} keeps the first or last <em>in input order</em>, and
+     * a table has no input order: {@code LIMIT 1} (or {@code TOP 1}) takes whichever tied
+     * row the database reaches first, which on DuckDB is the insertion-order-first row
+     * whatever the query says. A tie cannot be ruled out from the plan, since it depends on
+     * the data, so a pushed AS-OF could return a different row from the in-engine one for
+     * the same query. A fold must return what local evaluation returns, so none is made.
      */
     private Optional<Pushed> asOfJoin(AsOfJoinNode node) {
-        if (node.tolerance().isPresent()) {
-            return Optional.empty();   // WITHIN bound has no portable SQL form — keep in-engine
-        }
-        Optional<Pushed> leftOpt = build(node.left());
-        Optional<Pushed> rightOpt = build(node.right());
-        if (leftOpt.isEmpty() || rightOpt.isEmpty()) {
-            return Optional.empty();
-        }
-        Pushed left = leftOpt.get();
-        Pushed right = rightOpt.get();
-        if (!bareJoinable(left, right)) {
-            return Optional.empty();
-        }
-        Dialect dialect = left.dialect;
-        if (!dialect.supportsLateralAsOf()) {
-            return Optional.empty();
-        }
-        JoinAliases aliases = JoinAliases.of(left, right);
-        ColumnRenderer renderer = joinRenderer(left, right, aliases, dialect);
-        // A join condition compares the two sides' columns to each other, so it renders
-        // in comparison position. Both sides share the connection, hence one answer.
-        StringColumns joinStrings = stringColumnsOf(left.baseColumns, right.baseColumns);
-        ColumnRenderer comparing = comparingRenderer(renderer, joinStrings,
-                left.exactStrings, dialect, dialect::exactStringComparison);
-        ColumnRenderer ordering = comparingRenderer(renderer, joinStrings,
-                left.ordersExactly, dialect, dialect::exactStringOrder);
-
-        Optional<String> condition = SqlExpressions.predicate(node.condition(), comparing, ordering,
-                dialect, functions);
-        if (condition.isEmpty()) {
-            return Optional.empty();
-        }
-        // Decode the ordering inequality to drive the ORDER BY direction. A condition
-        // qualifies by relation name, never by the SQL alias, so the names are the sets.
-        JoinPlanning.AsOfMatch match = JoinPlanning.extractAsOfMatch(
-                node.condition(), schemaOf(node.left()), schemaOf(node.right()),
-                Set.of(left.relationName.toLowerCase(Locale.ROOT)),
-                Set.of(right.relationName.toLowerCase(Locale.ROOT)));
-        if (match == null) {
-            return Optional.empty();
-        }
-        String matchColumn = right.baseColumns.get(match.rightMatchIndex()).name();
-        String orderBy = qualified(dialect, aliases.right(), matchColumn)
-                + (match.backward() ? " DESC" : " ASC");
-
-        Optional<String> from = dialect.nearestRowJoin(
-                dialect.table(left.tableName) + " " + dialect.quote(aliases.left()),
-                String.join(", ", qualifiedColumns(dialect, aliases.right(), right.baseColumns)),
-                "FROM " + dialect.table(right.tableName) + " " + dialect.quote(aliases.right())
-                        + " WHERE " + condition.get(),
-                orderBy, dialect.quote(aliases.right()), node.inner());
-        if (from.isEmpty()) {
-            return Optional.empty();
-        }
-
-        List<String> selectList = new ArrayList<>();
-        selectList.addAll(qualifiedColumns(dialect, aliases.left(), left.baseColumns));
-        selectList.addAll(qualifiedColumns(dialect, aliases.right(), right.baseColumns));
-        return Optional.of(new Pushed(left.connectorType, left.connection, from.get(), selectList,
-                schemaOf(node), renderer, dialect));
+        return Optional.empty();
     }
 
     /**
      * Folds an interval join (ADR-0014) over two bare connection-table scans
      * into a plain inner {@code JOIN … ON} whose condition is the chosen Allen relation's
      * endpoint comparison (e.g. {@code OVERLAPS} → {@code l.s < r.s AND l.e > r.s AND l.e
-     * < r.e}).  The comparisons mirror the in-engine {@code allenTest} exactly, and SQL's
-     * three-valued logic excludes any NULL-endpoint row, matching the engine's
-     * NULL-endpoint drop.  Works on every dialect (only {@code <}/{@code =}/{@code >} are
+     * < r.e}).  The comparisons mirror the in-engine {@code allenTest} exactly, and an
+     * explicit {@code IS NOT NULL} on all four endpoints reproduces the engine's
+     * NULL-endpoint drop for the relations whose predicate does not read every endpoint.  Works on every dialect (only {@code <}/{@code =}/{@code >} are
      * used — no SQL:2011 period-predicate syntax is required).
      *
      * <p>Falls back to in-engine execution when the inputs are not two bare scans on one
@@ -1950,7 +1899,12 @@ final class SqlPushdownPlanner implements PushdownRenderer {
         if (ls.isEmpty() || le.isEmpty() || rs.isEmpty() || re.isEmpty()) {
             return Optional.empty();
         }
-        String condition = allenCondition(node.relation(), ls.get(), le.get(), rs.get(), re.get());
+        // A NULL endpoint matches nothing in the engine. SQL's three-valued logic only
+        // gives that for a relation whose predicate reads the NULL endpoint (PRECEDES
+        // never reads the left start), so the four are guarded explicitly.
+        String condition = "(" + ls.get() + " IS NOT NULL AND " + le.get() + " IS NOT NULL AND "
+                + rs.get() + " IS NOT NULL AND " + re.get() + " IS NOT NULL AND "
+                + allenCondition(node.relation(), ls.get(), le.get(), rs.get(), re.get()) + ")";
 
         List<String> selectList = new ArrayList<>();
         selectList.addAll(qualifiedColumns(dialect, aliases.left(), left.baseColumns));
@@ -2058,7 +2012,7 @@ final class SqlPushdownPlanner implements PushdownRenderer {
     }
 
     private Schema schemaOf(RelNode node) {
-        return schemas.require(node, "during SQL pushdown");
+        return schemas.get().require(node, "during SQL pushdown");
     }
 
     /** Mutable accumulator for one connection's pushable sub-tree (never shared). */

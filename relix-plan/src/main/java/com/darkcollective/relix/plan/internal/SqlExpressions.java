@@ -441,11 +441,25 @@ public final class SqlExpressions {
                 return dialect.concatenate(l.get(), r.get());
             }
         }
-        Optional<String> op = sqlOp(e.operator());
-        if (op.isEmpty()) {
-            return Optional.empty();
+        // A date or timestamp moved by a duration literal is the one arithmetic that is
+        // sent: the literal says what the other side is, and the dialect renders the
+        // duration (calendar months included) in a form its own date arithmetic reads.
+        if ((e.operator() == ArithmeticOperator.PLUS || e.operator() == ArithmeticOperator.MINUS)
+                && (e.left() instanceof DurationOperand || e.right() instanceof DurationOperand)) {
+            return binary(e.left(), e.operator() == ArithmeticOperator.PLUS ? "+" : "-",
+                    e.right(), cols, dialect, functions);
         }
-        return binary(e.left(), op.get(), e.right(), cols, dialect, functions);
+        // Every other + - * is evaluated in-engine. The engine's NUMBER is arbitrary
+        // precision and reads a DOUBLE column as the decimal text it prints as, while a
+        // backend adds, subtracts and multiplies in the column's own type: INT + 1 raises
+        // on H2, DuckDB, PostgreSQL and SQL Server where the engine answers 2147483648,
+        // a DuckDB DECIMAL product can overflow, 0.1 * 3 over a DOUBLE comes back
+        // 0.30000000000000004, and a raw `-` over two timestamps is an interval, a number
+        // or an error depending on the backend, never the engine's DURATION. The declared
+        // schema says NUMBER whatever the column is, so the renderer cannot tell which
+        // case it is in, and casting every operand to a wide type would still disagree
+        // for values wider than the cast. Declining costs a scan and never an answer.
+        return Optional.empty();
     }
 
     /**
@@ -536,42 +550,6 @@ public final class SqlExpressions {
             case LESS_EQUAL -> "<=";
             case GREATER -> ">";
             case GREATER_EQUAL -> ">=";
-        };
-    }
-
-    /**
-     * This dialect's spelling of an arithmetic operator, or empty where no backend
-     * computes what the engine computes.
-     *
-     * <p><b>Division is declined, on every backend.</b> A relix {@code /} is exact decimal
-     * arithmetic to ten places, rounded half-up; no {@code /} the planner can emit answers
-     * the same question:
-     *
-     * <ul>
-     *   <li>H2 and PostgreSQL divide two integers as integers, so {@code 81 / 2} is
-     *       {@code 40} where the engine says {@code 40.5} — a σ over it returns different
-     *       rows, not a differently-rounded number.</li>
-     *   <li>MySQL does produce a decimal, and still disagrees: its scale is the operand's
-     *       plus {@code div_precision_increment}, four by default, so {@code amount / 3}
-     *       comes back {@code 33.3333} against the engine's {@code 33.3333333333}.</li>
-     * </ul>
-     *
-     * <p>A cast would fix the first and not the second — a backend's own decimal scale is
-     * a configuration rather than a spelling, and matching ten-place half-up rounding on
-     * three backends is not something SQL text can promise. Division by zero is a third
-     * disagreement in the same place: the engine raises, PostgreSQL raises, MySQL answers
-     * NULL.
-     *
-     * <p>The whole expression declines with it, so a σ or π containing a division reads
-     * the table and finishes here. That is the ordinary cost of a decline, and the reason
-     * the renderer is allowed to decline at all: a slower plan, never a wrong answer.
-     */
-    private static Optional<String> sqlOp(ArithmeticOperator op) {
-        return switch (op) {
-            case PLUS     -> Optional.of("+");
-            case MINUS    -> Optional.of("-");
-            case MULTIPLY -> Optional.of("*");
-            case DIVIDE   -> Optional.empty();
         };
     }
 

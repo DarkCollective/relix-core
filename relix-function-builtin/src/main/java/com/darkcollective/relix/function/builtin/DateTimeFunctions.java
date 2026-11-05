@@ -947,6 +947,15 @@ final class DateTimeFunctions {
         }
         String unit = arguments.get(0);
         String timestamp = arguments.get(1);
+        // The engine accepts six units and raises on any other. Postgres, DuckDB, Db2 and
+        // MongoDB each accept more (week, quarter, century, ...), so a unit outside the six
+        // is left to the engine, which rejects it, rather than answered by the backend.
+        String quoted = unit.length() > 1 && unit.startsWith("\"") && unit.endsWith("\"")
+                ? "'" + unit.substring(1, unit.length() - 1) + "'" : unit;
+        if (!MYSQL_TRUNCATION_PATTERNS.containsKey(
+                Spellings.literal(quoted).map(u -> u.toLowerCase(Locale.ROOT)).orElse(""))) {
+            return Optional.empty();
+        }
         if (target.isFamily(PushdownTarget.SQL)) {
             if (target.isVariant(POSTGRES) || target.isVariant(DUCKDB) || target.isVariant(DB2)) {
                 return Optional.of("date_trunc(" + unit + ", " + timestamp + ")");
