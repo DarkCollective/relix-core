@@ -328,6 +328,81 @@ final class SolveExecutionTest extends ProcessorTestSupport {
         assertThat(byId(rows, "2")).hasValue("side", "-2");
     }
 
+    @Test
+    @DisplayName("a double root at zero is found, not reported as non-convergence")
+    void aDoubleRootAtZero() {
+        var rows = collect("""
+                Q := [
+                | id | area | side |
+                |----|------|------|
+                | 1  | 0    |      |
+                | 2  | 4    |      |
+                ];
+                query { SOLVE area = side * side (Q) };
+                """);
+        assertThat(byId(rows, "1")).hasValue("side", "0");
+        assertThat(byId(rows, "2")).hasValue("side", "2");
+        var cubes = collect("""
+                Q := [
+                | id | v | s |
+                |----|---|---|
+                | 1  | 0 |   |
+                ];
+                query { SOLVE v = s * s * s START s = 5 (Q) };
+                """);
+        assertThat(byId(cubes, "1")).hasValue("s", "0");
+    }
+
+    @Test
+    @DisplayName("an equation every value satisfies passes through; one with no solution is named")
+    void indeterminateRowsPassThrough() {
+        var rows = collect("""
+                Q := [
+                | id | a | b | c |
+                |----|---|---|---|
+                | 1  |   | 0 | 0 |
+                | 2  | 0 |   | 0 |
+                ];
+                R1 := { SOLVE c = a * b (Q) };
+                query { R1 };
+                """);
+        assertThat(byId(rows, "1").get("a").isNull()).isTrue();
+        var divided = collect("""
+                Q := [
+                | id | a | b | c |
+                |----|---|---|---|
+                | 2  | 0 |   | 0 |
+                ];
+                query { SOLVE c = a / b (Q) };
+                """);
+        assertThat(byId(divided, "2").get("b").isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a division by zero names the row")
+    void divisionByZeroNamesTheRow() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> collect("""
+                        Q := [
+                        | a | b | c |
+                        |---|---|---|
+                        | 5 | 0 |   |
+                        ];
+                        query { SOLVE c = a / b (Q) };
+                        """))
+                .hasMessageContaining("Division by zero")
+                .hasMessageContaining("for the row (c=NULL, a=5, b=0)");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> collect("""
+                        Q := [
+                        | a | b | c |
+                        |---|---|---|
+                        |   | 0 | 10 |
+                        ];
+                        query { SOLVE c = a * b (Q) };
+                        """))
+                .hasMessageContaining("division by zero while inverting")
+                .hasMessageContaining("for the row (c=10, a=NULL, b=0)");
+    }
+
     private static Row byShot(List<Row> rows, String id) {
         return rows.stream()
                 .filter(r -> id.equals(r.get("shot_id").asDisplayString()))

@@ -111,7 +111,12 @@ public final class EquationSolver {
         Operand knownSide   = inLeft ? right : left;
 
         BigDecimal target = asNumber(evaluator.evaluate(knownSide, row));
-        BigDecimal result = solveFor(unknownSide, unknown, target, row);
+        BigDecimal result;
+        try {
+            result = solveFor(unknownSide, unknown, target, row);
+        } catch (Indeterminate ignored) {
+            return row; // the equation holds for every value: nothing to fill in
+        }
 
         return withValue(row, index, new NumberValue(result));
     }
@@ -180,9 +185,21 @@ public final class EquationSolver {
 
     private static BigDecimal divide(BigDecimal dividend, BigDecimal divisor) {
         if (divisor.compareTo(BigDecimal.ZERO) == 0) {
+            if (dividend.compareTo(BigDecimal.ZERO) == 0) {
+                throw new Indeterminate(); // 0 = x * 0 holds for any x
+            }
             throw new EvaluationException("SOLVE: division by zero while inverting the equation");
         }
         return dividend.divide(divisor, 10, RoundingMode.HALF_UP).stripTrailingZeros();
+    }
+
+    /** Signals an equation with no single answer because every value satisfies it. */
+    private static final class Indeterminate extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        Indeterminate() {
+            super(null, null, false, false);
+        }
     }
 
     private static Row withValue(Row row, int index, Value value) {
