@@ -348,7 +348,11 @@ public final class ColumnPruningPass {
         if (!enumerable(schema)) return leaf;
 
         Set<String> required = need.get();
-        if (!names(schema).containsAll(required)) return leaf;
+        // A dotted read also asks for its head (a struct path's column), which is the
+        // relation's own name when the dot was a qualifier; that is not a missing column.
+        Set<String> available = names(schema);
+        String qualifier = lower(leaf.name());
+        if (!required.stream().allMatch(r -> available.contains(r) || r.equals(qualifier))) return leaf;
 
         List<ColumnDefinition> kept = schema.columns().stream()
                 .filter(c -> required.contains(lower(c.name())))
