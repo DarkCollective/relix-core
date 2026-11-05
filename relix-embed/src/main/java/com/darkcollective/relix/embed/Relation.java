@@ -1937,7 +1937,21 @@ public final class Relation {
      * whole of what {@link #asWritten()} and {@link #optimized()} settle.
      */
     private Relation forExecution() {
-        return rewriting == Rewriting.REWRITE ? optimized() : this;
+        try {
+            return rewriting == Rewriting.REWRITE ? optimized() : this;
+        } catch (StackOverflowError e) {
+            throw tooDeep(e);
+        }
+    }
+
+    /**
+     * An expression too deeply nested or too long for the thread's stack, restated as the
+     * query failure it is: the stack the engine walks a tree on is the caller's.
+     */
+    private static QueryExecutionException tooDeep(StackOverflowError e) {
+        return new QueryExecutionException("The expression is too deeply nested, or a chain "
+                + "of operators in it too long, to run on this thread's stack; split it into "
+                + "views, or run it on a thread with a larger stack", e);
     }
 
     private <K> AnnotatedRelation<K> annotate(Semiring<K> semiring, String weightColumn) {
@@ -1958,6 +1972,8 @@ public final class Relation {
             // Reads every row before it can annotate one, so there is no lazy window here:
             // the single catch covers the whole of it.
             throw asFailure(e);
+        } catch (StackOverflowError e) {
+            throw tooDeep(e);
         } finally {
             session.endQuery(cancellation);
         }
@@ -1996,6 +2012,10 @@ public final class Relation {
             connector.close();
             session.endQuery(cancellation);
             throw asFailure(e);
+        } catch (StackOverflowError e) {
+            connector.close();
+            session.endQuery(cancellation);
+            throw tooDeep(e);
         }
     }
 
@@ -2022,6 +2042,8 @@ public final class Relation {
                     return source.tryAdvance(action);
                 } catch (RuntimeException e) {
                     throw asFailure(e);
+                } catch (StackOverflowError e) {
+                    throw tooDeep(e);
                 }
             }
         };
@@ -2148,7 +2170,13 @@ public final class Relation {
     private void requireBounded() {
         BoundednessSource boundedness =
                 new GeneratorBoundednessSource(model.sources(), session.generators());
-        if (PropertyDeriver.boundedness(node, boundedness) == Boundedness.UNBOUNDED) {
+        Boundedness derived;
+        try {
+            derived = PropertyDeriver.boundedness(node, boundedness);
+        } catch (StackOverflowError e) {
+            throw tooDeep(e);
+        }
+        if (derived == Boundedness.UNBOUNDED) {
             throw new UnboundedRelationException(
                     "cannot collect an unbounded relation into a list; add a bound "
                             + "(e.g. limit(n)), or stream it instead");

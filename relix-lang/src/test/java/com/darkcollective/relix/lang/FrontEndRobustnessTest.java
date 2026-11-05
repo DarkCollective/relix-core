@@ -204,7 +204,8 @@ final class FrontEndRobustnessTest {
                     .hasMessageContaining("Unterminated bracket block");
             assertThatThrownBy(() -> ScriptParser.parse("Z := csv[\na\n\"5"))
                     .isInstanceOf(LangParseException.class)
-                    .hasMessageContaining("Unterminated bracket block");
+                    .hasMessageContaining("Unterminated quoted field in CSV table, opened at line 3")
+                    .satisfies(e -> assertThat(((LangParseException) e).line()).isEqualTo(3));
         }
 
         @Test
