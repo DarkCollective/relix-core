@@ -442,6 +442,39 @@ final class SqlExpressionsTest {
     }
 
     @Nested
+    @DisplayName("a timestamp moved by a duration")
+    class MovedByDuration {
+
+        private Optional<String> pg(Operand op) {
+            return SqlExpressions.operand(op, SqlExpressions.ColumnRenderer.STRIP_QUALIFIER,
+                    Dialect.POSTGRES, FUNCTIONS);
+        }
+
+        @Test
+        @DisplayName("folds with the duration on either side, for + and -")
+        void folds() {
+            var d = duration(Duration.parse("PT30M"));
+            assertThat(pg(arith(attr("t"), ArithmeticOperator.PLUS, d)))
+                    .hasValue("(t + INTERVAL 'PT30M')");
+            assertThat(pg(arith(d, ArithmeticOperator.PLUS, attr("t"))))
+                    .hasValue("(INTERVAL 'PT30M' + t)");
+            assertThat(pg(arith(attr("t"), ArithmeticOperator.MINUS, d)))
+                    .hasValue("(t - INTERVAL 'PT30M')");
+        }
+
+        @Test
+        @DisplayName("declines when a side does not render, and for * and a number minus a number")
+        void declines() {
+            var d = duration(Duration.parse("PT30M"));
+            assertThat(pg(arith(attr("t"), ArithmeticOperator.MINUS, func("Nope", attr("t")))))
+                    .isEmpty();
+            assertThat(pg(arith(func("Nope", attr("t")), ArithmeticOperator.MINUS, d))).isEmpty();
+            assertThat(pg(arith(attr("t"), ArithmeticOperator.MULTIPLY, d))).isEmpty();
+            assertThat(pg(arith(attr("a"), ArithmeticOperator.MINUS, attr("b")))).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("temporal functions (ADR-0013)")
     class TemporalFunctions {
 
