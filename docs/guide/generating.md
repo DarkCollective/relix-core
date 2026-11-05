@@ -346,3 +346,45 @@ paid for every time it appears.
 
 Neither sampling operator is folded into a backend query — the rows are drawn in the engine,
 over rows the engine has read.
+
+## Shuffling and rolling
+
+Two more operators use randomness, and both are methods on `Relation`. `shuffle()` puts
+every row in a uniformly random order — a full permutation, rather than a subset — and
+`roll()` draws from the rows forever, with replacement, the way a die is rolled: the rows
+are the faces. Both take a seed that makes them reproducible, and without one they are
+volatile, as an unseeded sample is.
+
+```java
+relix.table("Dice", List.of("face"), List.of(
+        Map.of("face", 1), Map.of("face", 2), Map.of("face", 3),
+        Map.of("face", 4), Map.of("face", 5), Map.of("face", 6)));
+
+Relation shuffled = relix.relation("Dice").shuffle(11);
+System.out.println(shuffled.render());
+System.out.println(shuffled.toList().equals(relix.relation("Dice").shuffle(11).toList()));
+System.out.println(shuffled.count() + " rows, every one of them once");
+```
+
+```
+SHUFFLE SEED 11 (Dice)
+true
+6 rows, every one of them once
+```
+
+`roll` never ends, so it is an unbounded relation and gets the treatment of one: bound it
+with `limit` before a collecting terminal is willing to read it, or stream it.
+
+```java
+Relation twelve = relix.relation("Dice").roll(11).limit(12);
+System.out.println(twelve.render());
+System.out.println(twelve.count() + " rolls");
+```
+
+```
+λ 12 (ROLL SEED 11 (Dice))
+12 rolls
+```
+
+A shuffle buffers its input, as a sort does, and so it is refused over an input that never
+ends. The faces a `roll` draws from must be a finite relation.

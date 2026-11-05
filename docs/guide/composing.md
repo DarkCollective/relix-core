@@ -351,6 +351,156 @@ System.out.println(Show.heading(recognised.schema()));
 order_id:number, customer_id:number, status:string, amount:number, placed_at:timestamp
 ```
 
+### Joining on named columns
+
+A natural join matches on every column the two headings share, which is a surprise when
+they share one more than you meant. `joinUsing` names the columns to match on, and writes
+each of them once in the result, as SQL's `JOIN … USING (columns)` does. The left, right
+and full variants keep the unmatched rows of one side or both.
+
+These examples use a session of their own, with a few rows each:
+
+```java
+Relix shop = Relix.open();
+
+shop.table("Orders", List.of("order_id", "customer_id", "amount"), List.of(
+        Map.of("order_id", 1, "customer_id", 1, "amount", 120),
+        Map.of("order_id", 2, "customer_id", 2, "amount", 45),
+        Map.of("order_id", 3, "customer_id", 9, "amount", 60)));
+
+shop.table("Customers", List.of("customer_id", "name"), List.of(
+        Map.of("customer_id", 1, "name", "Alice"),
+        Map.of("customer_id", 2, "name", "Bob"),
+        Map.of("customer_id", 3, "name", "Cara")));
+
+Relation placed = shop.relation("Orders");
+Relation people = shop.relation("Customers");
+
+Relation matched = placed.joinUsing(people, "customer_id");
+System.out.println(matched.render());
+matched.toList().forEach(System.out::println);
+```
+
+```
+(Orders) ⋈ USING (customer_id) (Customers)
+(customer_id=1, order_id=1, amount=120, name=Alice)
+(customer_id=2, order_id=2, amount=45, name=Bob)
+```
+
+Order 3 belongs to customer 9, who is not in `Customers`, and Cara has placed no
+order, so neither appears. `leftJoinUsing` keeps every order, `rightJoinUsing` every
+customer, and `fullJoinUsing` both:
+
+```java
+placed.leftJoinUsing(people, "customer_id").toList().forEach(System.out::println);
+System.out.println("--");
+placed.fullJoinUsing(people, "customer_id").toList().forEach(System.out::println);
+```
+
+```
+(customer_id=1, order_id=1, amount=120, name=Alice)
+(customer_id=2, order_id=2, amount=45, name=Bob)
+(customer_id=9, order_id=3, amount=60, name=NULL)
+--
+(customer_id=1, order_id=1, amount=120, name=Alice)
+(customer_id=2, order_id=2, amount=45, name=Bob)
+(customer_id=9, order_id=3, amount=60, name=NULL)
+(customer_id=3, order_id=NULL, amount=NULL, name=Cara)
+```
+
+In the full join `customer_id` is the value of whichever side is present, so the row for
+customer 9 and the row for Cara each carry theirs.
+
+### A function or a relation per row
+
+`lateral` calls a table-valued function once for each row of the left relation, with
+arguments that may read that row's columns. The function is declared in the session like
+any other definition, and `lateral` takes its name and the argument expressions. The
+relation is built after the `define`, because a relation keeps the session as it was when
+it was built (see [A relation keeps the session it was built in](#a-relation-keeps-the-session-it-was-built-in)):
+
+```java
+shop.define("""
+        def ordersFor(cid: NUMBER): RELATION := { σ customer_id = cid (Orders) };
+        """);
+
+Relation perCustomer = shop.relation("Customers").lateral("ordersFor", attr("customer_id"));
+System.out.println(perCustomer.render());
+perCustomer.toList().forEach(System.out::println);
+```
+
+```
+(Customers) LATERAL ordersFor(customer_id)
+(customer_id=1, name=Alice, order_id=1, customer_id_r=1, amount=120)
+(customer_id=2, name=Bob, order_id=2, customer_id_r=2, amount=45)
+```
+
+The function's `customer_id` column collides with the customer's own, so it arrives as `customer_id_r`. A customer for whom the function returns no rows contributes none, as in an inner join. To
+write the right side as a relation instead of a function, put it in the text of the
+expression, as [When to write the expression instead](#when-to-write-the-expression-instead)
+describes: `Customers LATERAL (σ customer_id = Customers.customer_id (Orders))`.
+
+### Subqueries inside a condition
+
+A condition may ask a question of another relation. `exists` takes the relation's tree,
+which `node()` gives, and the inner relation reads the outer row's columns by qualified
+name:
+
+```java
+Relation withOrders = people.select(exists(
+        placed.select(eq(attr("Orders.customer_id"), attr("Customers.customer_id"))).node()));
+
+System.out.println(withOrders.render());
+withOrders.toList().forEach(System.out::println);
+```
+
+```
+σ EXISTS (σ Orders.customer_id = Customers.customer_id (Orders)) (Customers)
+(customer_id=1, name=Alice)
+(customer_id=2, name=Bob)
+```
+
+`quantified` is `ANY` or `ALL` over a relation's single column, with a comparison operator.
+"Not equal to all of them" is SQL's `NOT IN`, and finds the customers who have no order:
+
+```java
+Relation idle = people.select(quantified(attr("customer_id"),
+        com.darkcollective.relix.ast.ComparisonOperator.NOT_EQUAL,
+        com.darkcollective.relix.ast.Quantifier.ALL,
+        placed.project("customer_id").node()));
+
+System.out.println(idle.render());
+idle.toList().forEach(System.out::println);
+```
+
+```
+σ customer_id ≠ ALL (π customer_id (Orders)) (Customers)
+(customer_id=3, name=Cara)
+```
+
+`subquery` is the third form, a relation used as a single value in an expression. All
+three are rewritten by the optimizer into joins where they can be, so the cost of
+writing a question as a condition is not a per-row loop (see
+[Inspecting a query](inspecting.md)).
+
+### Comparing text under a collation
+
+`collate` says how an expression compares as text, as SQL's `COLLATE` does. It wraps the
+operand it applies to:
+
+```java
+Relation ignoringCase = people.select(
+        eq(collate(attr("name"), "NOCASE"), str("alice")));
+
+System.out.println(ignoringCase.render());
+ignoringCase.toList().forEach(System.out::println);
+```
+
+```
+σ name COLLATE NOCASE = "alice" (Customers)
+(customer_id=1, name=Alice)
+```
+
 ## Set operations
 
 The set operators take two relations with compatible headings.

@@ -131,6 +131,11 @@ A session downloads nothing on its own — a library call that fetched a jar int
 home directory would be a surprise you could not see coming. `Builder.provisioners` is
 how an application that means to offer that says so.
 
+The one thing a session may fetch without being told is a file a script names by an
+`https` URL in a `connection … from csv { url: … }`, which is what the script asked for;
+`Builder.remoteFiles(false)` makes that an error instead (see
+[Configuring a session](sessions.md#configuring-a-session)).
+
 ## Checking what you have
 
 `relix.version` is a relation listing one row per component actually present, which is

@@ -149,6 +149,25 @@ System.out.println("errors only: "
 errors only: 1
 ```
 
+Some slips are common and unambiguous enough that the parser reads them as what was meant
+rather than refusing the script: a `;` inside a statement's braces, and a view written
+without its braces. The script analyses and runs, and `validate` reports each slip as a
+warning, with the form to write instead:
+
+```java
+for (Diagnostic slip : relix.validate("""
+        Big := σ amount > 100 (Orders);
+        query { Big; };
+        """)) {
+    System.out.println(slip.severity() + ": " + slip.message());
+}
+```
+
+```
+WARNING: A view's expression goes in braces, and was read as if it were in them: write Big := { σ amount > 100 (Orders) };
+WARNING: The ';' before '}' was ignored: a statement ends with ';' after its closing brace, as in query { R };
+```
+
 `validate` also changes nothing: the text is analysed and discarded, so a session is never
 half-modified by a script that turned out not to analyse.
 
@@ -173,6 +192,8 @@ world rather than a tuning parameter:
 | `connector(connector)` | a backend of your own |
 | `scriptLoader(loader)` | what an `import` statement resolves through |
 | `maxFixpointRounds(n)` | the recursion safety valve |
+| `timeout(duration)` | the longest one execution may run |
+| `remoteFiles(allow)` | whether a file connection may fetch an `https` URL |
 | `provisioners(drivers, connectors)` | permission to download a missing driver or plugin |
 | `relationships(graph)` | join edges the schema does not carry |
 | `sessionEvents(events)` | the feed `relix.events` reports |
@@ -210,6 +231,52 @@ should not surprise its caller:
 - **A session serves imports from nothing.** It is assembled in memory and has no file, so
   an `import` resolves against whatever `scriptLoader` supplies and against nothing
   otherwise.
+
+A query that runs too long is stopped by `timeout`, which starts its clock when the query
+starts executing and is checked as rows pass between operators. It is the backstop to
+reach for when a limit on rows will not do; `maxProcessedRows` stops a query at the same
+point on every machine, where a timeout depends on the one it runs on.
+
+```java
+import java.time.Duration;
+
+try (Relix limited = Relix.builder().timeout(Duration.ofMillis(300)).build()) {
+    limited.define("source Naturals from generator { name: \"Naturals\" };");
+    try (Stream<Tuple> rows = limited.relation("σ Len(CStr(n)) = 0 (Naturals)").stream()) {
+        rows.toList();
+    } catch (RelixException e) {
+        System.out.println(e.getMessage());
+    }
+}
+```
+
+```
+query stopped: it ran longer than 300ms, the limit for one execution
+```
+
+`remoteFiles` is the other default worth knowing. A file connection may name its file by an
+`https` URL, which is fetched once per session and kept in `~/.relix/cache/files`; a later
+session asks the server whether the file changed and reuses the copy if it did not. Putting
+bytes on disk is more than some embedding programs want, and `remoteFiles(false)` makes a
+connection that names a URL an error instead of a download:
+
+```java
+try (Relix offline = Relix.builder().remoteFiles(false).build()) {
+    offline.define("""
+            connection feed from csv { url: "https://example.org/data/feed.csv" };
+            source Feed from feed { table: "feed", schema: { id: NUMBER } };
+            """);
+    try {
+        offline.relation("Feed").toList();
+    } catch (RelixException e) {
+        System.out.println(e.getMessage());
+    }
+}
+```
+
+```
+'https://example.org/data/feed.csv' is a remote file, and this session does not fetch remote files
+```
 
 ## Concurrency
 
