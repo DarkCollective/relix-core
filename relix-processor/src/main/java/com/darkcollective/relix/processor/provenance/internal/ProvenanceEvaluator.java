@@ -377,7 +377,7 @@ public final class ProvenanceEvaluator {
                 throw new EvaluationException(
                         "weighted CLOSURE exceeded " + maxRounds + " iteration round(s); a "
                         + "non-idempotent semiring (e.g. counting) over a cyclic graph does not "
-                        + "converge — make the graph acyclic or raise --max-fixpoint-rounds");
+                        + "converge — make the graph acyclic or raise the limit with maxFixpointRounds(n)");
             }
             round++;
             Map<Row, K> next = new LinkedHashMap<>();

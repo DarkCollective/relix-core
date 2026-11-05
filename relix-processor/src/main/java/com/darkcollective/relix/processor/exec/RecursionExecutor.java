@@ -608,7 +608,7 @@ final class RecursionExecutor {
                 throw new EvaluationException(
                         "FIX '" + name + "' exceeded " + maxRounds
                         + " iteration round(s); add a bound (e.g. λ n) below it, "
-                        + "or increase --max-fixpoint-rounds");
+                        + "or raise the limit with maxFixpointRounds(n)");
             }
             round++;
             final int r = round;
@@ -695,7 +695,7 @@ final class RecursionExecutor {
             if (round > ctx.maxFixpointRounds()) {
                 throw new EvaluationException(
                         "ITERATE '" + name + "' exceeded " + ctx.maxFixpointRounds()
-                        + " round(s); lower its round count or increase --max-fixpoint-rounds");
+                        + " round(s); lower its round count or raise the limit with maxFixpointRounds(n)");
             }
             final int r = round;
             final int size = state.size();
@@ -1085,8 +1085,8 @@ final class RecursionExecutor {
                 throw new EvaluationException(
                         "TRACE '" + label + "' exceeded " + maxRounds
                         + " iteration round(s); the graph may contain improvement cycles "
-                        + "under " + sense + ". Add a bound or increase "
-                        + "--max-fixpoint-rounds");
+                        + "under " + sense + ". Add a bound or raise the limit with "
+                        + "maxFixpointRounds(n)");
             }
             round++;
             changed = false;

@@ -329,7 +329,7 @@ try (Relix bounded = Relix.builder().maxFixpointRounds(2).build()) {
 
 ```
 QueryExecutionException
-FIX 'Reach' exceeded 2 iteration round(s); add a bound (e.g. λ n) below it, or increase --max-fixpoint-rounds
+FIX 'Reach' exceeded 2 iteration round(s); add a bound (e.g. λ n) below it, or raise the limit with maxFixpointRounds(n)
 ```
 
 The limit fails loudly rather than truncating, because a silently truncated fixpoint is a
