@@ -59,6 +59,11 @@ non-NULL value for a column yields NULL there, and COUNT counts every row
 including those whose columns are all NULL. MIN/MAX order values the way an
 ascending `τ` does, which is what lets them consolidate timestamps and strings.
 
+A row whose timestamp is NULL belongs to no window, so it is left out of every
+bucket and of every `COUNT`; a `γ` over the same column would form a NULL group, and
+DOWNSAMPLE does not, because a bucket is a span of time and a missing time is in none.
+Filter or default the column first (`COALESCE`) if those rows should count.
+
 Materialisation: `[bag]` — all input rows are buffered before any output row is
 emitted. Never pushes down to SQL or MongoDB.
 

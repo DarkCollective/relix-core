@@ -1625,9 +1625,14 @@ public final class Relation {
     public String explain(QueryEventListener listener) {
         Objects.requireNonNull(listener, "listener");
         requireResolvable();
-        PlannedQuery planned = new RelNodeExecutor()
-                .withObservedCardinalities(session.observedExpressions())
-                .planWithEstimates(node, planningContext(), listener);
+        PlannedQuery planned;
+        try {
+            planned = new RelNodeExecutor()
+                    .withObservedCardinalities(session.observedExpressions())
+                    .planWithEstimates(node, planningContext(), listener);
+        } catch (RuntimeException e) {
+            throw asFailure(e);
+        }
         return PhysicalPlanPrinter.explain(planned.plan(), planned.estimates());
     }
 
@@ -1654,9 +1659,13 @@ public final class Relation {
      */
     public PlannedQuery plan() {
         requireResolvable();
-        return new RelNodeExecutor()
-                .withObservedCardinalities(session.observedExpressions())
-                .planWithEstimates(node, planningContext(), QueryEventListener.NONE);
+        try {
+            return new RelNodeExecutor()
+                    .withObservedCardinalities(session.observedExpressions())
+                    .planWithEstimates(node, planningContext(), QueryEventListener.NONE);
+        } catch (RuntimeException e) {
+            throw asFailure(e);
+        }
     }
 
     // -------------------------------------------------------------------------
