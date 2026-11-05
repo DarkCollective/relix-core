@@ -77,6 +77,13 @@ A redirect is followed. A 301, 302, 307 or 308 answer to a `QUERY` resends the
 `QUERY` with its body, and a 303 fetches the result with `GET`, as RFC 10008
 specifies.
 
+The response is read as the charset its `Content-Type` names (UTF-8 when it names
+none), a leading byte order mark is ignored, and a body the server compressed
+(`Content-Encoding: gzip` or `deflate`) is decompressed. `204 No Content` is a
+source with no rows. A key that holds a dot is written in quoted brackets in a path:
+`at "$['a.b']"`. A connection that cannot be made fails the query with the cause and
+the URL.
+
 Typed columns coerce the extracted value to the declared type (NUMBER, STRING,
 BOOLEAN, ANY, DATE/TIME/TIMESTAMP/DURATION). A missing path navigates to NULL rather
 than erroring.
