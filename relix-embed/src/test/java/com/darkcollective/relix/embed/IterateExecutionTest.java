@@ -509,7 +509,7 @@ final class IterateExecutionTest {
                 assertThatThrownBy(() -> capped.script(LIFE + "query { ITERATE B (Glider, "
                         + GENERATION + ") ROUNDS 3 };").getLast().toList())
                         .hasMessageContaining("ITERATE 'B' exceeded 2 round(s)")
-                        .hasMessageContaining("--max-fixpoint-rounds");
+                        .hasMessageContaining("maxFixpointRounds");
                 assertThat(capped.script(LIFE + "query { ITERATE B (Glider, " + GENERATION
                         + ") ROUNDS 2 };").getLast()).rows().hasRowCount(5);
             }

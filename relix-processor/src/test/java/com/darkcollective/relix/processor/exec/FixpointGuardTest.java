@@ -277,7 +277,7 @@ final class FixpointGuardTest extends ProcessorTestSupport {
                     .hasMessageContaining("FIX")
                     .hasMessageContaining("R")         // the recursion variable name
                     .hasMessageContaining("1")
-                    .hasMessageContaining("--max-fixpoint-rounds");
+                    .hasMessageContaining("maxFixpointRounds");
         }
 
         @Test
