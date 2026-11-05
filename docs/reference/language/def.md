@@ -43,7 +43,9 @@ Private helper, not exported:
 The body is a single scalar expression, not a multi-statement procedure. Parameter
 and return types are scalar — the nested struct and array forms a source column may
 declare are not available here. For a function that returns a whole relation, use the
-RELATION return type (a table-valued function).
+RELATION return type (a table-valued function). A function cannot call itself, directly
+or through other functions: that is an error at the call that closes the loop. Each
+parameter has its own name.
 
 # Alternatives:
 A table-valued function (`: RELATION`) returns a relation rather than a value. The
