@@ -19,7 +19,7 @@ import com.darkcollective.relix.ast.Expr;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static com.darkcollective.relix.embed.EmbedAssertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -39,8 +39,8 @@ final class LateralFunctionVisibilityTest {
         try (Relix relix = Relix.open()) {
             relix.define(ORDERS);
             relix.define(ORDERS_FOR);
-            assertThat(relix.relation("π cid (Orders)").lateral("ordersFor", Expr.attr("cid")).toList())
-                    .hasSize(2);
+            assertThat(relix.relation("π cid (Orders)").lateral("ordersFor", Expr.attr("cid")))
+                    .hasRowCount(2);
         }
     }
 
