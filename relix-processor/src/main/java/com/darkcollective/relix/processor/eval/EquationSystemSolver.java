@@ -156,7 +156,12 @@ public final class EquationSystemSolver {
         }
         if (equations.size() == 1 && occurrences(equations.getFirst(), unknowns.getFirst()) == 1) {
             SolveEquation only = equations.getFirst();
-            return inverter.solve(only.left(), only.right(), row);
+            try {
+                return inverter.solve(only.left(), only.right(), row);
+            } catch (EvaluationException e) {
+                throw new EvaluationException(e.getMessage() + ", for the row "
+                        + describe(row, participating), e);
+            }
         }
 
         int n = unknowns.size();
@@ -166,7 +171,13 @@ public final class EquationSystemSolver {
             BigDecimal[][] a = new BigDecimal[n][];
             BigDecimal[] b = new BigDecimal[n];
             for (int i = 0; i < n; i++) {
-                Dual residual = residual(equations.get(i), unknowns, origin, row);
+                Dual residual;
+                try {
+                    residual = residual(equations.get(i), unknowns, origin, row);
+                } catch (EvaluationException e) {
+                    throw new EvaluationException(e.getMessage() + ", for the row "
+                            + describe(row, participating), e);
+                }
                 a[i] = residual.gradient();
                 b[i] = residual.value().negate();
             }

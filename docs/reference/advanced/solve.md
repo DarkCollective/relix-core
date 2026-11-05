@@ -61,11 +61,16 @@ constant. The iteration stops when no unknown moves by more than the tolerance i
 default 0.0000000001), and each equation must then hold to within the tolerance
 times the larger of 1 and the size of its sides; MAX n ROUNDS caps the attempts
 (default 100). A row that cannot be posed — the wrong number of blanks, or
-equations that do not determine the blanks (a singular linear system, or only a
-product of blanks fixed) — passes through unchanged. A row that is posed but has no
+equations that do not determine the blanks (a singular linear system, only a
+product of blanks fixed, or an equation every value satisfies, such as
+`c = a * b` with `b` and `c` both 0, which holds whatever `a` is) — passes through
+unchanged. A row that is posed but has no
 solution, or on which the search does not converge within its rounds, raises an
-error naming the row: a query does not return a blank it was asked to fill
-without saying so.
+error naming the row — a division by zero included, which names the row's values
+— because a query does not return a blank it was asked to fill without saying so.
+A root at which the equation flattens, such as `side = 0` in `area = side * side`
+with `area` 0, is found like any other; an unknown whose search stops within ten
+tolerances of 0, with the equations still holding at 0, is returned as 0.
 
 With PER, the rows are grouped by the keys and each group is fitted by least
 squares. The unknowns are the participating columns that are NULL in every row of
