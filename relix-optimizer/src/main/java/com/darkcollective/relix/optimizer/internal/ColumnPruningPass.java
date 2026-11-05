@@ -25,6 +25,7 @@ import com.darkcollective.relix.ast.GroupingKey;
 import com.darkcollective.relix.ast.LimitNode;
 import com.darkcollective.relix.ast.NaturalJoinNode;
 import com.darkcollective.relix.ast.Operand;
+import com.darkcollective.relix.ast.internal.AttributeNames;
 import com.darkcollective.relix.ast.internal.OperandWalker;
 import com.darkcollective.relix.ast.PairwiseUniversalNode;
 import com.darkcollective.relix.ast.Predicate;
@@ -530,7 +531,7 @@ public final class ColumnPruningPass {
     private static Set<String> columnsOf(Predicate predicate) {
         var columns = new HashSet<String>();
         OperandWalker.walk(predicate,
-                attr -> columns.add(lower(PredicateAttributeCollector.columnPart(attr.name()))),
+                attr -> addReads(columns, attr.name()),
                 fn -> { /* a function call's own name is not a column */ });
         return columns;
     }
@@ -546,8 +547,19 @@ public final class ColumnPruningPass {
 
     private static void collectInto(Operand expression, Set<String> columns) {
         OperandWalker.walk(expression,
-                attr -> columns.add(lower(PredicateAttributeCollector.columnPart(attr.name()))),
+                attr -> addReads(columns, attr.name()),
                 fn -> { /* a function call's own name is not a column */ });
+    }
+
+    /**
+     * Records the columns a dotted name may denote. {@code person.first} is a relation
+     * qualifier on {@code first} or a struct path into the column {@code person}, and
+     * nothing here can tell which, so both are read: dropping the head of a struct path
+     * leaves the read below to fail at run time. Keeping an extra column is safe.
+     */
+    private static void addReads(Set<String> columns, String name) {
+        columns.add(lower(PredicateAttributeCollector.columnPart(name)));
+        columns.add(lower(AttributeNames.pathHead(name)));
     }
 
     private static String lower(String name) {
