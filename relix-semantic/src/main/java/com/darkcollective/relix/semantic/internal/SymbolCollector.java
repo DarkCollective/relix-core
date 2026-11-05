@@ -411,7 +411,17 @@ public final class SymbolCollector {
 
     private void handleSource(String filePath, String namespace,
                                SourceDeclaration src, Map<String, Symbol> exports) {
-        Schema schema = schemaFromSourceConfig(src);
+        Schema schema;
+        try {
+            schema = schemaFromSourceConfig(src);
+        } catch (IllegalArgumentException e) {
+            // A schema block naming a column twice: reported where the source is, and the
+            // placeholder keeps the rest of the analysis from cascading
+            errors.add(SemanticError.error(fileOf(src.location(), filePath),
+                    src.location().line(), src.location().column(),
+                    "Source '" + src.name() + "': " + e.getMessage()));
+            schema = UNRESOLVED_SCHEMA;
+        }
         if (src.config() instanceof HttpSourceConfig http) {
             for (String problem : HttpSourceChecks.check(src, http)) {
                 errors.add(SemanticError.error(fileOf(src.location(), filePath),

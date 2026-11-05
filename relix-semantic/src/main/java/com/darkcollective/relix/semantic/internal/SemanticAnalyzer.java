@@ -394,6 +394,17 @@ public final class SemanticAnalyzer {
      *                   as the key for the root file in the import graph
      */
     private SemanticResult analyzeScript(Script rootScript, String rootPath) {
+        try {
+            return analyzePhases(rootScript, rootPath);
+        } catch (StackOverflowError tooDeep) {
+            // The parser caps how deeply text can nest, so only a tree built in code gets
+            // here; analysing it is a diagnostic, as for any other script it cannot accept
+            return SemanticResult.failure(List.of(SemanticError.error(rootPath, 0, 0,
+                    "The script nests too deeply to analyse; split the expression into views")));
+        }
+    }
+
+    private SemanticResult analyzePhases(Script rootScript, String rootPath) {
         // ── Phase 1: Build import graph ───────────────────────────────────────
         ImportGraph graph = ImportGraph.build(rootPath, rootScript, loader);
 
@@ -422,6 +433,9 @@ public final class SemanticAnalyzer {
 
         // ── Phase 3.2: View cycles — a view that reaches itself has no expansion ─
         errors.addAll(ViewCycles.check(symbolTable));
+
+        // ── Phase 3.3: Def cycles — a function whose body reaches itself ──────
+        errors.addAll(DefCycles.check(symbolTable));
 
         // ── Phase 3.5: System catalog relations (relix.*) — ADR-0007 ──────────
         // Registered after collection (extent depends on the collected symbols)

@@ -123,7 +123,7 @@ public final class SemanticValidator {
         // Phase 5b: validate root query statements.
         for (QueryStatement q : rootQueries) {
             switch (q.target()) {
-                case NamedQueryTarget named -> validateNamedTarget(named.name());
+                case NamedQueryTarget named -> validateNamedTarget(named.name(), q.location());
                 case ExpressionQueryTarget expr ->
                         validateTree(expr.expression(), SemanticAnalyzer.STDIN_PATH);
             }
@@ -143,9 +143,10 @@ public final class SemanticValidator {
      * Checks that a named query target ({@code query Foo;}) refers to a known
      * symbol.
      */
-    private void validateNamedTarget(String name) {
+    private void validateNamedTarget(String name, com.darkcollective.relix.ast.SourceLocation at) {
         if (symbolTable.lookupRelation(name).isEmpty()) {
-            errors.add(SemanticError.error(SemanticAnalyzer.STDIN_PATH, 0, 0,
+            errors.add(SemanticError.error(at.line() > 0 ? at.filePath() : SemanticAnalyzer.STDIN_PATH,
+                    at.line(), at.column(),
                     "Query target '" + name + "' is not defined"
                             + Suggestions.didYouMean(name, relationCandidates())));
         }
