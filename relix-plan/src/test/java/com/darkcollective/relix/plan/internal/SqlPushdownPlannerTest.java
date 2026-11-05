@@ -670,6 +670,27 @@ final class SqlPushdownPlannerTest {
                     + "query { τ n DESC (γ name, COUNT(*) → n (Orders)) };")).isPresent();
         }
 
+        /**
+         * MySQL resolves a HAVING's names against the select list, so a collated key
+         * (which is an expression there) cannot be named in it. The check has to see a
+         * string column through every shape a condition can take.
+         */
+        @Test
+        @DisplayName("a HAVING that names a collated grouping key declines, however it is written")
+        void havingOverCollatedKeyDeclines() {
+            String g = "(γ name, COUNT(*) → n (Orders))";
+            for (String condition : new String[] {
+                    "name = 'a'", "name = 'a' ∧ n > 1", "n > 1 ∨ name = 'a'", "NOT (name = 'a')",
+                    "name LIKE 'a%'", "name ∈ {'a', 'b'}", "Upper(name) = 'A'",
+                    "name IS NULL", "CASE WHEN name = 'a' THEN 1 ELSE 0 END = 1"}) {
+                assertThat(push(MYSQL_ORDERS + "query { σ " + condition + " " + g + " };"))
+                        .as(condition).isEmpty();
+            }
+            // Naming only the aggregate is unaffected, and so is a connection that is exact.
+            assertThat(push(MYSQL_ORDERS + "query { σ n > 1 " + g + " };")).isPresent();
+            assertThat(push(MYSQL_ORDERS_EXACT + "query { σ name = 'a' " + g + " };")).isPresent();
+        }
+
         @Test
         @DisplayName("a connection declaring collation: exact is left alone entirely")
         void declaredExactCollation() {
