@@ -234,6 +234,7 @@ final class PushdownFixture {
         String spansL = "spansl" + suffix;
         String spansR = "spansr" + suffix;
         String nums = "nums" + suffix;
+        String tied = "tied" + suffix;
         String q = connection.getMetaData().getIdentifierQuoteString();
         String lines = q + "order-lines" + suffix + q;
         try (Statement st = connection.createStatement()) {
@@ -246,6 +247,7 @@ final class PushdownFixture {
             st.execute(flavour.adapt("DROP TABLE IF EXISTS " + spansL));
             st.execute(flavour.adapt("DROP TABLE IF EXISTS " + spansR));
             st.execute(flavour.adapt("DROP TABLE IF EXISTS " + nums));
+            st.execute(flavour.adapt("DROP TABLE IF EXISTS " + tied));
             st.execute(flavour.adapt("CREATE TABLE " + orders + " ("
                     + "oid INT, cid INT, region VARCHAR(10)" + collate
                     + ", code VARCHAR(20)" + collate
@@ -303,9 +305,24 @@ final class PushdownFixture {
             st.execute(flavour.adapt("CREATE TABLE " + probes + " ("
                     + "pid INT, sym VARCHAR(10)" + collate
                     + ", ts " + flavour.unconverted + ")"));
+            // (sym, ts) is the table's primary key, which is what lets an AS-OF join over it
+            // fold: no two history rows can tie on the match. The columns are NOT NULL
+            // because SQL Server and Db2 refuse a key over a nullable one.
             st.execute(flavour.adapt("CREATE TABLE " + history + " ("
+                    + "hid INT, sym VARCHAR(10)" + collate + " NOT NULL"
+                    + ", ts " + flavour.unconverted + " NOT NULL, px INT, "
+                    + "PRIMARY KEY (sym, ts))"));
+            // The same rows with no key, and two of them tied: A at 11:00 twice. A join
+            // over it can tie, so it is evaluated in the engine, whose tie rule is input
+            // order and which a table cannot be asked for.
+            st.execute(flavour.adapt("CREATE TABLE " + tied + " ("
                     + "hid INT, sym VARCHAR(10)" + collate
                     + ", ts " + flavour.unconverted + ", px INT)"));
+            st.execute(flavour.adapt("INSERT INTO " + tied + " VALUES "
+                    + "(1, 'A', '2024-03-01 10:00:00', 100), "
+                    + "(2, 'A', '2024-03-01 11:00:00', 110), "
+                    + "(3, 'A', '2024-03-01 11:00:00', 111), "
+                    + "(4, 'A', '2024-03-01 12:00:00', 120)"));
             // Three rows an hour apart in partition A, one in B, and none in C — so a
             // probe can fall before, on, between and after them, and a partition can be
             // empty. B's row is at 10:30 rather than on the hour on purpose: a probe of
@@ -398,7 +415,10 @@ final class PushdownFixture {
                     + "(5, 100, 0.500, 1.5, 3), "
                     + "(6, 250, 150.500, -2.5, 3), "
                     + "(7, 50, -49.500, 0.5, 3), "
-                    + "(8, -50, -100.000, -0.5, 3)"));
+                    + "(8, -50, -100.000, -0.5, 3), "
+                    // The smallest INT, whose negation is not an INT; a DOUBLE of seventeen
+                    // digits, which a cast to a decimal rounds to fifteen or fewer.
+                    + "(9, -2147483648, 0.001, 123456789012345678, 5)"));
         }
     }
 
@@ -481,6 +501,10 @@ final class PushdownFixture {
                 + "source SpansR from db {\n"
                 + "    table: \"spansr" + suffix + "\",\n"
                 + "    schema: { id: NUMBER, s: TIMESTAMP, e: TIMESTAMP }\n"
+                + "};\n"
+                + "source Tied from db {\n"
+                + "    table: \"tied" + suffix + "\",\n"
+                + "    schema: { hid: NUMBER, sym: STRING, ts: TIMESTAMP, px: NUMBER }\n"
                 + "};\n"
                 + "source Nums from db {\n"
                 + "    table: \"nums" + suffix + "\",\n"

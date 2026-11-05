@@ -374,7 +374,7 @@ public final class Planner {
         List<PushdownRenderer> renderers = new ArrayList<>();
         Map<String, ConnectionDeclaration> jdbcConnections = connectionsOfType(connections, "jdbc");
         if (!jdbcConnections.isEmpty()) {
-            renderers.add(new SqlPushdownPlanner(() -> this.schemas, sources, jdbcConnections, functions));
+            renderers.add(new SqlPushdownPlanner(() -> this.schemas, sources, jdbcConnections, functions, source));
         }
         Map<String, ConnectionDeclaration> mongoConnections = connectionsOfType(connections, "mongodb");
         if (!mongoConnections.isEmpty()) {

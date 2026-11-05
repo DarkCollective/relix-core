@@ -439,19 +439,32 @@ final class MathFunctions {
     /**
      * {@code Mod} per backend. SQL {@code MOD(x, y)} and MongoDB {@code $mod} both
      * truncate towards zero, as relix does, and both raise on a zero divisor — so a
-     * folded call computes the engine's answer or fails as the engine would. Three SQL
-     * dialects are declined, each for a reason that would otherwise let the folded call
-     * answer differently:
+     * folded call computes the engine's answer or fails as the engine would, <em>for
+     * operands the backend's own {@code MOD} takes as they are</em>. The engine takes
+     * the remainder of two decimals; whether a backend does depends on the column's
+     * type, which the planner does not see. The SQL dialects:
      *
      * <ul>
+     *   <li><b>PostgreSQL</b> — folds, with each operand cast to an unconstrained
+     *       {@code NUMERIC} through its text (the cast {@code Dialect.exactNumber}
+     *       writes): {@code mod(numeric, numeric)} is the decimal remainder, truncated
+     *       towards zero, and raises on a zero divisor; and it has no {@code mod} over
+     *       a {@code float8}, so a bare {@code DOUBLE} column raised instead.</li>
+     *   <li><b>Db2</b> — declined: its {@code MOD} over a {@code DOUBLE} works in binary,
+     *       and {@code Mod(123456789012345678, 3)} comes back {@code 16} where relix
+     *       says {@code 2}.</li>
+     *   <li><b>unidentified (H2)</b> — declined: H2's {@code MOD} truncates both
+     *       operands to integers, so {@code Mod(2.5, 7)} is {@code 2} where relix says
+     *       {@code 2.5}.</li>
      *   <li><b>MySQL</b> — {@code MOD} by zero returns NULL, or raises, according to
      *       {@code sql_mode}, where relix always raises.</li>
-     *   <li><b>DuckDB</b> — {@code MOD} by zero returns NULL, where relix raises.</li>
+     *   <li><b>DuckDB</b> — {@code MOD} by zero returns NULL, where relix raises; and
+     *       over a {@code DOUBLE} it is a binary {@code fmod}.</li>
      *   <li><b>SQLite</b> — has no {@code MOD} function, and its {@code %} operator
      *       truncates its operands to integers, so it is a different function on a
      *       decimal column.</li>
-     *   <li><b>SQL Server</b> — spells modulo only as the {@code %} operator, whose
-     *       behaviour on a decimal column is not confirmed here.</li>
+     *   <li><b>SQL Server</b> — spells modulo only as the {@code %} operator, which
+     *       takes no {@code float}.</li>
      * </ul>
      */
     private static Optional<String> modSpelling(PushdownTarget target, List<String> arguments) {
@@ -461,15 +474,23 @@ final class MathFunctions {
         String x = arguments.get(0);
         String y = arguments.get(1);
         if (target.isFamily(PushdownTarget.SQL)) {
-            if (target.isVariant(Spellings.MYSQL) || target.isVariant(Spellings.SQLITE)
-                    || target.isVariant(Spellings.SQLSERVER) || target.isVariant(Spellings.DUCKDB)) {
-                return Optional.empty();
+            if (target.isVariant(Spellings.POSTGRES)) {
+                return Optional.of("MOD(" + exactNumber(x) + ", " + exactNumber(y) + ")");
             }
-            return Optional.of("MOD(" + x + ", " + y + ")");
+            return Optional.empty();
         }
         if (target.isFamily(PushdownTarget.MONGO)) {
             return Optional.of("{\"$mod\": [" + x + ", " + y + "]}");
         }
         return Optional.empty();
+    }
+
+    /**
+     * A PostgreSQL operand as the exact decimal the engine reads: through its text, because
+     * a direct cast rounds a {@code float8} to fifteen digits. The same spelling as
+     * {@code Dialect.exactNumber}, which lives where this module cannot reach.
+     */
+    private static String exactNumber(String sql) {
+        return "CAST(CAST(" + sql + " AS TEXT) AS NUMERIC)";
     }
 }

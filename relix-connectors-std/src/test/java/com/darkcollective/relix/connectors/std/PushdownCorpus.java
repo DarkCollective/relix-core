@@ -132,16 +132,33 @@ final class PushdownCorpus {
                     Dialect.SQLSERVER, Dialect.DB2);
 
     /**
-     * The dialects that fold an AS-OF join: none.
+     * The dialects that fold an AS-OF join, when the right side is keyed on the columns the
+     * match is decided by: the ones with a {@code LATERAL} or {@code APPLY} sub-select.
      *
-     * <p>The nearest-row lookup renders as a {@code LATERAL} sub-select ordered by the
-     * match column, but it ends in {@code LIMIT 1}, and the engine's {@code TIES (FIRST|LAST)}
-     * rule picks among rows tied on the match value by <em>input order</em>, which a table
-     * does not have. DuckDB, for one, answers the insertion-order-first row whatever the
-     * ordering says. A tie depends on the data and cannot be excluded from a plan, so the
-     * fold is declined everywhere and the AS-OF cases below assert exactly that.
+     * <p>The nearest-row lookup ends in {@code LIMIT 1}, and the engine's
+     * {@code TIES (FIRST|LAST)} rule picks among rows tied on the match value by <em>input
+     * order</em>, which a table does not have. DuckDB, for one, answers the
+     * insertion-order-first row whatever the ordering says. A tie is excluded only by a
+     * key: {@code History} is keyed on {@code (sym, ts)}, so a match on both cannot tie,
+     * while {@code Tied}, which has a tie and no key, and a match on {@code ts} alone are
+     * evaluated in the engine.
      */
-    private static final Set<Dialect> FOLDS_LATERAL_ASOF = EnumSet.noneOf(Dialect.class);
+    private static final Set<Dialect> FOLDS_LATERAL_ASOF =
+            EnumSet.of(Dialect.POSTGRES, Dialect.DUCKDB, Dialect.SQLSERVER, Dialect.DB2);
+
+    /**
+     * The dialects that add, subtract and multiply numbers in the database: those with a
+     * decimal type that is exact for any column — see {@code Dialect.exactNumber}.
+     */
+    private static final Set<Dialect> ADDS_EXACTLY = EnumSet.of(Dialect.POSTGRES);
+
+    /**
+     * The dialects that fold {@code Mod}: PostgreSQL, whose {@code mod(numeric, numeric)}
+     * is the remainder relix takes, once each operand is cast. H2 truncates both operands
+     * to integers, Db2 computes over a {@code DOUBLE} in binary, MySQL and DuckDB answer
+     * NULL for a zero divisor, and SQLite and SQL Server have no {@code MOD}.
+     */
+    private static final Set<Dialect> MODS_EXACTLY = EnumSet.of(Dialect.POSTGRES);
 
     /**
      * The dialects that execute a pushed {@code OVER} clause — see
@@ -440,48 +457,77 @@ final class PushdownCorpus {
     }
 
     /**
-     * Arithmetic is declined, on every dialect. A backend computes {@code +}, {@code -}
-     * and {@code *} in the column's own type, and the engine in arbitrary-precision
-     * decimal, so a pushed one raises where the engine answers ({@code INT + 1} past
-     * 2147483647 on H2, DuckDB, PostgreSQL, SQL Server and Db2; a DuckDB
-     * {@code DECIMAL} product) or answers in binary floating point where the engine
-     * answers in decimal ({@code 0.1 * 3} over a {@code DOUBLE}). The declared schema says
-     * {@code NUMBER} whatever the column is, so which case a column is in cannot be read
-     * at plan time. The first three {@code Nums} rows are the ones that tell.
+     * Arithmetic folds where the dialect has a decimal type exact for every column, and
+     * nowhere else. A backend computes {@code +}, {@code -} and {@code *} in the column's
+     * own type, and the engine in arbitrary-precision decimal, so an unconverted one raises
+     * where the engine answers ({@code INT + 1} past 2147483647 on H2, DuckDB, PostgreSQL,
+     * SQL Server and Db2; a DuckDB {@code DECIMAL} product) or answers in binary floating
+     * point where the engine answers in decimal ({@code 0.1 * 3} over a {@code DOUBLE}).
+     * The declared schema says {@code NUMBER} whatever the column is, so which case a column
+     * is in cannot be read at plan time, and a dialect folds only if its answer is the same
+     * for all of them. PostgreSQL's unconstrained {@code NUMERIC} is; the rest are declined
+     * (see {@code Dialect.exactNumber}). The {@code Nums} rows are the ones that tell: the
+     * largest and smallest {@code INT}, a {@code DECIMAL(12,3)} whose square leaves DuckDB's
+     * type, and doubles that are not binary fractions.
      */
     private static List<Case> arithmetic() {
         return List.of(
-                Case.declined("σ amount * qty > 200 (Orders)"),
-                Case.declined("σ amount - qty < 100 (Orders)"),
-                Case.declined("σ amount + qty = 102 (Orders)"),
-                Case.declined("σ (amount + qty) * 2 > 210 (Orders)"),
-                Case.of("σ -amount < -60 (Orders)"),
+                Case.of("σ amount * qty > 200 (Orders)", ADDS_EXACTLY),
+                Case.of("σ amount - qty < 100 (Orders)", ADDS_EXACTLY),
+                Case.of("σ amount + qty = 102 (Orders)", ADDS_EXACTLY),
+                Case.of("σ (amount + qty) * 2 > 210 (Orders)", ADDS_EXACTLY),
+                // Negation is arithmetic too: the smallest INT has no negation in its own type.
+                Case.of("σ -amount < -60 (Orders)", ADDS_EXACTLY),
+                Case.of("π nid, -n → r (Nums)", ADDS_EXACTLY),
+                // A negative literal is not a computation, and folds everywhere.
+                Case.of("σ amount > -60 (Orders)"),
                 // The largest INT plus one: 2147483648 in the engine, an overflow error in
                 // the database were it computed there.
-                Case.declined("π nid, n + 1 → r (Nums)"),
-                Case.declined("π nid, n * n → r (Nums)"),
-                Case.declined("γ SUM(n + 1) → s (Nums)"),
+                Case.of("π nid, n + 1 → r (Nums)", ADDS_EXACTLY),
+                Case.of("π nid, n - 1 → r (Nums)", ADDS_EXACTLY),
+                Case.of("π nid, n * n → r (Nums)", ADDS_EXACTLY),
+                // Past 64 bits as well: 2147483647 cubed.
+                Case.of("π nid, n * n * n → r (Nums)", ADDS_EXACTLY),
+                Case.of("π nid, 2147483647 + 1 → r (Nums)", ADDS_EXACTLY),
+                Case.of("γ SUM(n + 1) → s (Nums)", ADDS_EXACTLY),
+                Case.of("γ m, SUM(n * n) → s (Nums)", ADDS_EXACTLY),
                 // The square of the largest DECIMAL(12,3), which leaves DuckDB's DECIMAL.
-                Case.declined("π nid, p * p → r (Nums)"),
+                Case.of("π nid, p * p → r (Nums)", ADDS_EXACTLY),
+                Case.of("π nid, p - p * 3 → r (Nums)", ADDS_EXACTLY),
                 // Binary floating point: 0.1 * 3 is 0.30000000000000004 in a database and 0.3
-                // in the engine, which reads a double as the decimal it prints as.
-                Case.declined("π nid, f * 3 → r (Nums)"),
-                Case.declined("σ f + 0.1 = 0.3 (Nums)"),
+                // in the engine, which reads a double as the decimal it prints as. Row 3's
+                // f needs seventeen digits and row 9's is 1.2345678901234568E17, which a
+                // direct cast to a decimal would round.
+                Case.of("π nid, f * 3 → r (Nums)", ADDS_EXACTLY),
+                Case.of("π nid, f + f → r (Nums)", ADDS_EXACTLY),
+                Case.of("π nid, f * f → r (Nums)", ADDS_EXACTLY),
+                Case.of("σ f + 0.1 = 0.3 (Nums)", ADDS_EXACTLY),
+                Case.of("σ f * 3 > 0.9 (Nums)", ADDS_EXACTLY),
+                // A call's result is an operand too, and a number is mixed freely with it.
+                Case.of("π nid, Abs(p) + n → r (Nums)", ADDS_EXACTLY),
+                Case.of("π nid, Abs(n + 1) → r (Nums)", ADDS_EXACTLY),
+                // Division is exact to ten places in the engine and in no backend.
+                Case.declined("π nid, n / 3 → r (Nums)"),
+                Case.declined("π nid, (n + 1) / 3 → r (Nums)"),
                 // Temporal subtraction is a DURATION in the engine and an interval, a
-                // number or an error in a database, depending on which.
+                // number or an error in a database, depending on which; and nothing but a
+                // number is cast to a decimal.
                 Case.declined("π oid, placed - placed → d (Orders)"),
                 Case.declined("π oid, placed - TIMESTAMP '2024-01-01T00:00:00Z' → d (Orders)"),
                 Case.declined("π cid, joined - joined → d (Customers)"),
                 Case.declined("π cid, joined - DATE '2020-01-01' → d (Customers)"),
-                // Mod by zero: DuckDB answers NULL and relix raises. DuckDB declines, so
-                // both of its runs raise the same message; the others still fold, and a
-                // database's message for a zero divisor is its own.
-                Case.diverging("π nid, Mod(n, m) → r (Nums)",
-                        EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DB2),
-                        EnumSet.of(Dialect.GENERIC, Dialect.POSTGRES, Dialect.DB2),
+                // Mod by zero: PostgreSQL raises, as relix does, in its own words. DuckDB and
+                // MySQL answer NULL for it and decline, so both of their runs raise the same
+                // message. The fold is still asserted; only the message goes uncompared.
+                Case.diverging("π nid, Mod(n, m) → r (Nums)", MODS_EXACTLY, MODS_EXACTLY,
                         "a zero divisor raises on both runs, in the database's words on the "
-                        + "folded one. The fold is still asserted; DuckDB, which answers NULL "
-                        + "for it, is the dialect that declines."));
+                        + "folded one."),
+                // The remainder where no divisor is zero, which is compared: over an INT, over
+                // a DECIMAL whose fraction H2's MOD would truncate, and over a DOUBLE of
+                // seventeen digits, which Db2's MOD computes in binary (16 for 2).
+                Case.of("π nid, Mod(p, 7) → r (Nums)", MODS_EXACTLY),
+                Case.of("π nid, Mod(n, 7) → r (Nums)", MODS_EXACTLY),
+                Case.of("π nid, Mod(f, 3) → r (Nums)", MODS_EXACTLY));
     }
 
     private static List<Case> temporal() {
@@ -842,7 +888,7 @@ final class PushdownCorpus {
         return List.of(
                 Case.of("π region, amount (Orders)"),
                 Case.of("π amount → value (Orders)"),
-                Case.declined("π oid, amount * qty → line (Orders)"),
+                Case.of("π oid, amount * qty → line (Orders)", ADDS_EXACTLY),
                 Case.of("δ (π region (Orders))"),
                 Case.of("δ (π region, amount (σ amount > 50 (Orders)))"));
     }
@@ -992,10 +1038,18 @@ final class PushdownCorpus {
                 Case.of("Probes ASOF INNER " + forward + " History", FOLDS_LATERAL_ASOF),
                 Case.of("Probes ASOF Probes.sym = History.sym ∧ Probes.ts < History.ts History",
                         FOLDS_LATERAL_ASOF),
-                // No partition key: the sub-select filters on the inequality alone, so
-                // every probe reaches the whole history.
-                Case.of("Probes ASOF Probes.ts ≥ History.ts History", FOLDS_LATERAL_ASOF),
-                Case.of("Probes ASOF INNER Probes.ts ≤ History.ts History", FOLDS_LATERAL_ASOF),
+                // The equality may be written either way round.
+                Case.of("Probes ASOF History.sym = Probes.sym ∧ History.ts ≤ Probes.ts History",
+                        FOLDS_LATERAL_ASOF),
+                // No partition key: the match is on ts alone, and the key is (sym, ts), so
+                // two partitions' rows can tie at one instant. In the engine.
+                Case.declined("Probes ASOF Probes.ts ≥ History.ts History"),
+                Case.declined("Probes ASOF INNER Probes.ts ≤ History.ts History"),
+                // The right side has a tie and no key to exclude one: probe 2 and 3 sit on
+                // or after A's two rows at 11:00. The engine keeps the first or the last of
+                // them in input order, which no table can be asked for.
+                Case.declined("Probes ASOF " + backward.replace("History", "Tied") + " Tied"),
+                Case.declined("Probes ASOF INNER " + forward.replace("History", "Tied") + " Tied"),
                 // The tolerance has no portable SQL form and is kept in-engine — stated
                 // here so that a fold which grew to cover it would fail rather than pass.
                 Case.declined("Probes ASOF " + backward + " WITHIN DURATION 'PT90M' History"),
@@ -1365,7 +1419,7 @@ final class PushdownCorpus {
                 // non-NULL values of `amount + qty` summing to 457.
                 Case.declined("γ region, AVG(amount) → mean (Orders)"),
                 Case.declined("γ AVG(amount + qty) → mean (Orders)"),
-                Case.declined("γ region, SUM(amount * qty) → weighted (Orders)"),
+                Case.of("γ region, SUM(amount * qty) → weighted (Orders)", ADDS_EXACTLY),
                 Case.declined("ROLLING AVG(amount) OVER ALL ROWS SORT oid AS run (Orders)"),
                 // And everything a declined division is inside. These four sat in the
                 // maths group as folding, and passed for the same reason the σ above it
