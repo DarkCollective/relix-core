@@ -1859,9 +1859,9 @@ final class PlannerTest {
         @DisplayName("aggregate over a function expression folds into SQL (E8)")
         void aggregateOverExpressionToSql() {
             PhysicalNode.PushedScan s = assertThat(planPushed(
-                    ORDERS_SETUP + "query { γ id, SUM(Mod(amount, 7)) → sq (Orders) };")).asNode(PhysicalNode.PushedScan.class);
+                    ORDERS_SETUP + "query { γ id, SUM(Abs(amount)) → sq (Orders) };")).asNode(PhysicalNode.PushedScan.class);
             assertThat(s.nativeQuery())
-                    .isEqualTo("SELECT id, SUM(MOD(amount, 7)) FROM orders GROUP BY id");
+                    .isEqualTo("SELECT id, SUM(ABS(amount)) FROM orders GROUP BY id");
         }
 
         @Test
@@ -1958,7 +1958,7 @@ final class PlannerTest {
         @DisplayName("a sort above a computed projection is not folded (the key is a select-list alias)")
         void sortAboveProjectionNotFolded() {
             PhysicalNode plan = planPushed(
-                    ORDERS_SETUP + "query { τ doubled (π Mod(amount, 2) → doubled (Orders)) };");
+                    ORDERS_SETUP + "query { τ doubled (π Abs(amount) → doubled (Orders)) };");
             assertThat(plan).isNode(PhysicalNode.Sort.class);
             assertThat(((PhysicalNode.Sort) plan).input()).isNode(PhysicalNode.PushedScan.class);
         }
@@ -1967,10 +1967,10 @@ final class PlannerTest {
         @DisplayName("a selection above a computed projection cannot fold — engine Select over a pushed projection")
         void selectionAboveProjectionNotFolded() {
             PhysicalNode plan = planPushed(
-                    ORDERS_SETUP + "query { σ doubled > 0 (π Mod(amount, 2) → doubled (Orders)) };");
+                    ORDERS_SETUP + "query { σ doubled > 0 (π Abs(amount) → doubled (Orders)) };");
             assertThat(plan).isNode(PhysicalNode.Select.class);
             PhysicalNode.PushedScan pushed = assertThat(((PhysicalNode.Select) plan).input()).asNode(PhysicalNode.PushedScan.class);
-            assertThat(pushed.nativeQuery()).isEqualTo("SELECT MOD(amount, 2) FROM orders");
+            assertThat(pushed.nativeQuery()).isEqualTo("SELECT ABS(amount) FROM orders");
         }
 
         @Test
@@ -2266,11 +2266,11 @@ final class PlannerTest {
             // the ORDER BY — see `mergeOrderPushedIntoUnsortedSide`.)
             PhysicalNode.Join j = assertThat(planPushed(JOIN_SETUP
                     + "query { (τ id ASC (Orders)) ⨝ Orders.id = Customers.cid "
-                    + "(π Mod(cid, 1) → cid (Customers)) };")).asNode(PhysicalNode.Join.class);
+                    + "(π Abs(cid) → cid (Customers)) };")).asNode(PhysicalNode.Join.class);
             assertThat(j.algorithm()).isEqualTo(JoinAlgorithm.MERGE);
             PhysicalNode.Sort sort = assertThat(j.right()).asNode(PhysicalNode.Sort.class);
             assertThat(assertThat(sort.input()).asNode(PhysicalNode.PushedScan.class).nativeQuery())
-                    .isEqualTo("SELECT MOD(cid, 1) FROM customers");
+                    .isEqualTo("SELECT ABS(cid) FROM customers");
         }
 
         @Test
@@ -2788,11 +2788,26 @@ final class PlannerTest {
                 "schema: { qsym: STRING, qt: TIMESTAMP, bid: NUMBER } };\n";
 
         @Test
-        @DisplayName("a Postgres-backed AS-OF is not pushed: LIMIT 1 cannot apply the input-order tie rule")
+        @DisplayName("a Postgres-backed AS-OF with no known key is not pushed: LIMIT 1 cannot apply the input-order tie rule")
         void jdbcAsOfStaysInEngine() {
             PhysicalNode plan = planPushed(TQ_JDBC +
                     "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };");
             assertThat(plan).isNode(PhysicalNode.AsOfJoin.class);
+        }
+
+        @Test
+        @DisplayName("a Postgres-backed AS-OF whose right side is keyed on the match is pushed, from the model's statistics")
+        void jdbcKeyedAsOfIsPushed() {
+            String query = TQ_JDBC
+                    + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };";
+            SemanticModel m = model(query);
+            RelNode logical = ((ExpressionQueryTarget) m.rootQueries().get(0).target()).expression();
+            Map<String, RelationStatistics> keyed = Map.of("quotes",
+                    new RelationStatistics(OptionalLong.empty(), Map.of(), List.of(List.of("qsym", "qt"))));
+            PhysicalNode plan = new Planner(m.symbolTable(), m.nodeSchemas(), keyed, m.sources(),
+                    m.connections(), QueryEventListener.NONE, BoundednessSource.ALL_BOUNDED,
+                    m.functions()).plan(logical);
+            assertThat(((PhysicalNode.PushedScan) plan).nativeQuery()).contains("LATERAL");
         }
 
         @Test

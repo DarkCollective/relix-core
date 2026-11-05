@@ -282,9 +282,9 @@ final class SqlPushdownPlannerTest {
         @Test
         @DisplayName("δ over a computed π still folds (DISTINCT applies to the expression)")
         void distinctOverComputedProjection() {
-            assertThat(scanOf(push(ORDERS + "query { δ (π Mod(amount, 2) → odd (Orders)) };"))
+            assertThat(scanOf(push(ORDERS + "query { δ (π Abs(amount) → odd (Orders)) };"))
                     .nativeQuery())
-                    .isEqualTo("SELECT DISTINCT MOD(amount, 2) FROM orders");
+                    .isEqualTo("SELECT DISTINCT ABS(amount) FROM orders");
         }
 
         @Test
@@ -1387,10 +1387,15 @@ final class SqlPushdownPlannerTest {
         }
 
         @Test
-        @DisplayName("two numbers are not added in SQL: the backend's integer type would overflow")
+        @DisplayName("two numbers are added in SQL only as exact decimals: the backend's integer type would overflow")
         void numbers() {
-            assertThat(sql("jdbc:postgresql://h/db", "π id + 1 → n (P)")).isEmpty();
-            assertThat(sql("jdbc:h2:mem:x", "π id + Mod(id, 2) → n (P)")).isEmpty();
+            assertThat(sql("jdbc:postgresql://h/db", "π id + 1 → n (P)"))
+                    .contains("SELECT (CAST(CAST(\"id\" AS TEXT) AS NUMERIC) + CAST(1 AS NUMERIC)) FROM \"p\"");
+            for (String url : List.of("jdbc:h2:mem:x", "jdbc:mysql://h/db", "jdbc:duckdb:/tmp/x.db",
+                    "jdbc:sqlite::memory:", "jdbc:sqlserver://h", "jdbc:db2://h:50000/db")) {
+                assertThat(sql(url, "π id + 1 → n (P)")).as(url).isEmpty();
+                assertThat(sql(url, "π id + Abs(id) → n (P)")).as(url).isEmpty();
+            }
         }
 
         @Test
@@ -1420,14 +1425,29 @@ final class SqlPushdownPlannerTest {
                 "source Quotes from db { table: \"quotes\", " +
                 "schema: { qsym: STRING, qt: TIMESTAMP, bid: NUMBER } };\n";
 
+        private static final List<String> LATERAL_URLS = List.of("jdbc:postgresql://h/db",
+                "jdbc:duckdb:/tmp/x.db", "jdbc:sqlserver://h;databaseName=db", "jdbc:db2://h:50000/db");
+
+        /** The planner given {@code keys} as the candidate keys of every relation. */
+        private static Optional<PhysicalNode.PushedScan> pushKeyed(String src, List<List<String>> keys) {
+            SemanticModel model = model(src);
+            RelNode logical =
+                    ((ExpressionQueryTarget) model.rootQueries().get(0).target()).expression();
+            return new SqlPushdownPlanner(() -> model.nodeSchemas(), model.sources(), model.connections(),
+                    model.functions(),
+                    name -> Optional.of(new com.darkcollective.relix.symbol.RelationStatistics(
+                            java.util.OptionalLong.empty(), java.util.Map.of(), keys)))
+                    .tryPush(logical);
+        }
+
         @Test
-        @DisplayName("is never folded: LIMIT 1 cannot apply the input-order TIES rule")
-        void neverFolded() {
+        @DisplayName("is evaluated in-engine when no key is known: LIMIT 1 cannot apply the input-order TIES rule")
+        void notFoldedWithoutAKey() {
             // A table has no input order, so which of several tied right rows a LATERAL
             // sub-select takes is the database's choice, where the engine keeps the first
-            // or last. The fold is declined on every dialect that could render it.
-            for (String url : List.of("jdbc:postgresql://h/db", "jdbc:duckdb:/tmp/x.db",
-                    "jdbc:sqlserver://h;databaseName=db", "jdbc:db2://h:50000/db")) {
+            // or last. With no key to exclude a tie the fold is declined on every dialect
+            // that could render it.
+            for (String url : LATERAL_URLS) {
                 String setup = TRADES_QUOTES.replace("jdbc:postgresql://h/db", url);
                 for (String direction : List.of(">=", "<=")) {
                     assertThat(push(setup + "query { Trades ASOF Trades.sym = Quotes.qsym "
@@ -1438,6 +1458,83 @@ final class SqlPushdownPlannerTest {
                         + "∧ Trades.t >= Quotes.qt TIES(FIRST) Quotes };"))
                         .as("%s inner", url).isEmpty();
             }
+        }
+
+        @Test
+        @DisplayName("folds when the right side is keyed on the columns the match is decided by")
+        void foldsWhenKeyed() {
+            for (String url : LATERAL_URLS) {
+                String setup = TRADES_QUOTES.replace("jdbc:postgresql://h/db", url);
+                for (String direction : List.of(">=", ">", "<=", "<")) {
+                    PhysicalNode.PushedScan scan = scanOf(pushKeyed(setup
+                            + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t " + direction
+                            + " Quotes.qt Quotes };", List.of(List.of("qsym", "qt"))));
+                    assertThat(scan.nativeQuery()).as("%s %s", url, direction)
+                            .containsAnyOf("LATERAL (SELECT", "APPLY (SELECT TOP 1");
+                }
+                assertThat(scanOf(pushKeyed(setup + "query { Trades ASOF INNER Trades.sym = Quotes.qsym "
+                        + "∧ Trades.t >= Quotes.qt Quotes };", List.of(List.of("qsym", "qt")))).nativeQuery())
+                        .as("%s inner", url).containsAnyOf(" JOIN LATERAL (", "CROSS APPLY (");
+            }
+        }
+
+        @Test
+        @DisplayName("the nearest row is ordered by the match column, nearest first, and filtered by the whole condition")
+        void rendersTheLookup() {
+            assertThat(scanOf(pushKeyed(TRADES_QUOTES
+                    + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };",
+                    List.of(List.of("qsym", "qt")))).nativeQuery())
+                    .contains("LEFT JOIN LATERAL (SELECT")
+                    .contains("WHERE ((\"Trades\".\"sym\" = \"Quotes\".\"qsym\") "
+                            + "AND (\"Trades\".\"t\" >= \"Quotes\".\"qt\"))")
+                    .contains("ORDER BY \"Quotes\".\"qt\" DESC LIMIT 1");
+        }
+
+        @Test
+        @DisplayName("a key that is not covered by the equated columns and the match column does not exclude a tie")
+        void uncoveredKeyDeclines() {
+            String match = "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };";
+            assertThat(pushKeyed(TRADES_QUOTES + match, List.of(List.of("qsym", "qt", "bid"))))
+                    .as("the key holds a column the match does not decide").isEmpty();
+            assertThat(pushKeyed(TRADES_QUOTES + match, List.of(List.of("bid"))))
+                    .as("a key on another column").isEmpty();
+            assertThat(pushKeyed(TRADES_QUOTES + match, List.of(List.of())))
+                    .as("an empty key says nothing").isEmpty();
+            assertThat(pushKeyed(TRADES_QUOTES + match, List.of()))
+                    .as("no key").isEmpty();
+            assertThat(pushKeyed(TRADES_QUOTES
+                    + "query { Trades ASOF Trades.t >= Quotes.qt Quotes };",
+                    List.of(List.of("qsym", "qt"))))
+                    .as("a match on the time alone: two symbols can quote at one instant").isEmpty();
+        }
+
+        @Test
+        @DisplayName("any one of several keys is enough, in any case, and a key narrower than the match is")
+        void anyKeyWithinTheMatch() {
+            String match = "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };";
+            assertThat(pushKeyed(TRADES_QUOTES + match, List.of(List.of("bid"), List.of("QSYM", "QT"))))
+                    .isPresent();
+            assertThat(pushKeyed(TRADES_QUOTES + match, List.of(List.of("qt")))).isPresent();
+            assertThat(pushKeyed(TRADES_QUOTES
+                    + "query { Trades ASOF Quotes.qsym = Trades.sym ∧ Quotes.qt <= Trades.t Quotes };",
+                    List.of(List.of("qsym", "qt")))).as("either way round").isPresent();
+        }
+
+        @Test
+        @DisplayName("a condition holding anything but column equalities and the ordering inequality is not folded")
+        void otherConditionShapesDecline() {
+            assertThat(pushKeyed(TRADES_QUOTES
+                    + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt "
+                    + "∧ Quotes.bid = 1 Quotes };", List.of(List.of("qsym", "qt")))).isEmpty();
+            assertThat(pushKeyed(TRADES_QUOTES
+                    + "query { Trades ASOF Trades.sym ≠ Quotes.qsym ∧ Trades.t >= Quotes.qt Quotes };",
+                    List.of(List.of("qsym", "qt")))).isEmpty();
+            assertThat(pushKeyed(TRADES_QUOTES
+                    + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt "
+                    + "∧ 1 = Quotes.bid Quotes };", List.of(List.of("qsym", "qt")))).isEmpty();
+            assertThat(pushKeyed(TRADES_QUOTES
+                    + "query { Trades ASOF Trades.sym = Quotes.qsym ∧ Trades.t >= Quotes.qt "
+                    + "∧ Trades.sym = Trades.px Quotes };", List.of(List.of("qsym", "qt")))).isEmpty();
         }
 
         @Test

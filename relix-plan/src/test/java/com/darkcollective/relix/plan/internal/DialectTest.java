@@ -537,6 +537,33 @@ final class DialectTest {
     }
 
     @Nested
+    @DisplayName("exact number arithmetic")
+    class ExactNumbers {
+
+        @Test
+        @DisplayName("PostgreSQL casts through text to an unconstrained NUMERIC, literals directly")
+        void postgres() {
+            assertThat(Dialect.POSTGRES.exactNumber("\"x\""))
+                    .contains("CAST(CAST(\"x\" AS TEXT) AS NUMERIC)");
+            assertThat(Dialect.POSTGRES.exactNumberLiteral("0.5")).contains("CAST(0.5 AS NUMERIC)");
+            assertThat(Dialect.POSTGRES.addsExactly()).isTrue();
+        }
+
+        @Test
+        @DisplayName("every other dialect has no type exact for a column of any numeric type, and declines")
+        void othersDecline() {
+            for (Dialect d : Dialect.values()) {
+                if (d == Dialect.POSTGRES) {
+                    continue;
+                }
+                assertThat(d.exactNumber("x")).as("%s column", d).isEmpty();
+                assertThat(d.exactNumberLiteral("1")).as("%s literal", d).isEmpty();
+                assertThat(d.addsExactly()).as("%s", d).isFalse();
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("Temporal literals (ADR-0013)")
     class TemporalLiterals {
 
