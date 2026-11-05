@@ -368,6 +368,44 @@ public final class RelAlgebraParser {
     private int depth;
 
     /**
+     * How many operators one flat chain may hold: {@code a ∧ b ∧ c …}, {@code R ∪ S ∪ T …},
+     * {@code a + b + c …}. A chain is read by a loop, so it costs the parser no stack, but
+     * it builds a left-deep tree, and every later phase (analysis, planning, execution,
+     * printing) recurses down that tree, one frame per operator. The cap keeps the tree
+     * shallow enough for those phases on the smallest stack in ordinary use.
+     */
+    private static final int MAX_CHAIN_LENGTH = 500;
+
+    /**
+     * The same cap for a chain of relational operators, {@code R ∪ S ∪ T …}, lower because
+     * planning and optimising a left-deep relational tree costs several frames an operator:
+     * measured, a 1 MB stack plans 250 and no more than a few hundred beyond it. It is also
+     * the nesting cap, so a chain printed with a parenthesis per operator, as the plan
+     * display does, nests no deeper than the parser would have accepted.
+     */
+    private static final int MAX_RELATION_CHAIN_LENGTH = MAX_NESTING_DEPTH;
+
+    /** Opens one more level of nesting, refusing the one past {@link #MAX_NESTING_DEPTH}. */
+    private void enterNesting() {
+        if (++depth > MAX_NESTING_DEPTH) {
+            throw error(current, "expression nests more than " + MAX_NESTING_DEPTH
+                    + " levels deep");
+        }
+    }
+
+    /** Refuses the operator that makes a chain longer than {@link #MAX_CHAIN_LENGTH}. */
+    private void checkChain(int operators, Token at) {
+        checkChain(operators, at, MAX_CHAIN_LENGTH);
+    }
+
+    private void checkChain(int operators, Token at, int limit) {
+        if (operators > limit) {
+            throw error(at, "expression chains more than " + limit
+                    + " operators; split it into views");
+        }
+    }
+
+    /**
      * The {@code SELECT}/{@code σ} whose condition is being parsed, or {@code null}
      * outside one. Parsing a relation clears it, so a join's condition, or one in a
      * relation nested anywhere below, is never read as the selection's.
@@ -401,10 +439,7 @@ public final class RelAlgebraParser {
     private Token groupStar;
 
     private RelNode parseExpression(int minPrecedence) {
-        if (++depth > MAX_NESTING_DEPTH) {
-            throw error(current, "expression nests more than " + MAX_NESTING_DEPTH
-                    + " levels deep");
-        }
+        enterNesting();
         Token enclosing = selection;
         boolean enclosingDefer = deferAggregateStar;
         int enclosingGroup = groupAt;
@@ -426,8 +461,10 @@ public final class RelAlgebraParser {
         RelNode left = parsePrefix();
         left = parseKleenePostfix(left);
 
+        int operators = 0;
         while ((isBinaryRelOperator(current.type()) || startsOuterLateral())
                 && precedence(startsOuterLateral() ? TokenType.LATERAL : current.type()) >= minPrecedence) {
+            checkChain(++operators, current, MAX_RELATION_CHAIN_LENGTH);
             boolean outerLateral = startsOuterLateral();
             if (outerLateral) {
                 advance(); // OUTER
@@ -4559,11 +4596,22 @@ public final class RelAlgebraParser {
      * parsed normally.
      */
     private Predicate parseOrPredicate(Operand seed) {
+        enterNesting();
+        try {
+            return parseOrAtDepth(seed);
+        } finally {
+            depth--;
+        }
+    }
+
+    private Predicate parseOrAtDepth(Operand seed) {
         Predicate left = parseAndPredicate(seed);
 
+        int operators = 0;
         while (true) {
             if (current.type() != TokenType.OR) break;
             Token opTok = current;
+            checkChain(++operators, opTok);
             advance();
             Predicate right = parseAndPredicate(null);
             left = new OrPredicate(left, right, loc(opTok));
@@ -4575,9 +4623,11 @@ public final class RelAlgebraParser {
     private Predicate parseAndPredicate(Operand seed) {
         Predicate left = parseNotPredicate(seed);
 
+        int operators = 0;
         while (true) {
             if (current.type() != TokenType.AND) break;
             Token opTok = current;
+            checkChain(++operators, opTok);
             advance();
             Predicate right = parseNotPredicate(null);
             left = new AndPredicate(left, right, loc(opTok));
@@ -4590,7 +4640,12 @@ public final class RelAlgebraParser {
         if (seed == null && current.type() == TokenType.NOT) {
             Token notTok = current;
             advance();
-            return new NotPredicate(parseNotPredicate(null), loc(notTok));
+            enterNesting();
+            try {
+                return new NotPredicate(parseNotPredicate(null), loc(notTok));
+            } finally {
+                depth--;
+            }
         }
 
         return parsePrimaryPredicate(seed);
@@ -6002,10 +6057,21 @@ public final class RelAlgebraParser {
     }
 
     private Operand parseArithmeticExpression(int minPrecedence) {
+        enterNesting();
+        try {
+            return parseArithmeticAtDepth(minPrecedence);
+        } finally {
+            depth--;
+        }
+    }
+
+    private Operand parseArithmeticAtDepth(int minPrecedence) {
         Operand left = parseCollate(parseAtTimeZone(parsePrimaryOperand()));
 
+        int operators = 0;
         while (isArithmeticOperator(current.type()) && arithmeticPrecedence(current.type()) >= minPrecedence) {
             Token operator = current;
+            checkChain(++operators, operator);
             int precedence = arithmeticPrecedence(operator.type());
             advance();
 
@@ -6166,7 +6232,12 @@ public final class RelAlgebraParser {
         if (current.type() == TokenType.MINUS) {
             Token minusTok = current;
             advance();
-            return new UnaryOperand(parsePrimaryOperand(), loc(minusTok));
+            enterNesting();
+            try {
+                return new UnaryOperand(parsePrimaryOperand(), loc(minusTok));
+            } finally {
+                depth--;
+            }
         }
 
         if (startsIntervalLiteral()) {
