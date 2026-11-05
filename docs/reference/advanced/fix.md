@@ -132,7 +132,7 @@ through *unchanged* from the recursive reference to its output, round after roun
 the optimizer pushes that filter **into** the recursion: it seeds the base with it
 *and* re-applies it to the recursive reference, so the fixpoint only ever derives
 rows relevant to the bound. This is general *magic-sets / sideways-information-passing*,
-recorded as `FIX-001` on the `relix-events` feed (visible via `--trace`):
+recorded as `FIX-001` on the `relix-events` feed (visible via `relix trace`):
 
 ```relix
 -- After view inlining the σ sits directly above the FIX. `assembly` is frozen

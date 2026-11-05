@@ -55,7 +55,7 @@ import java.util.stream.Stream;
  * {@link ProvenanceEvaluator} over the polynomial-lineage semiring {@code ℕ[X]}
  * (threading the semiring through the positive operators, inlining views, reading
  * non-positive operators — including a nested {@code WHY} — as opaque lifted bases),
- * exactly as the {@code --provenance --semiring lineage} side-channel does. Each
+ * exactly as the {@code relix provenance --semiring lineage} side-channel does. Each
  * base-tuple occurrence becomes a distinct variable carrying its {@link SourceRef}
  * (producing relation, occurrence ordinal, captured columns).
  *

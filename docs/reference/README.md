@@ -41,6 +41,10 @@ The shape of a `.relix` file — declaring data, naming results, and reusing cod
 | [source](language/source.md) | Declare an external data source (CSV, database, …) |
 | [http source](language/http-source.md) | Read JSON from an HTTP/REST API (headers, auth, body) |
 | [connection](language/connection.md) | Share one database connection across many sources |
+| [mongodb source](language/mongodb-source.md) | Read a MongoDB collection as a relation |
+| [json source](language/json-source.md) | Read a JSON file as a relation, with no declared columns |
+| [generator source](language/generator-source.md) | A generated series of rows: `Range`, `Naturals`, `Primes` |
+| [env](language/env.md) | Name the environment file and profile a script's placeholders come from |
 | [gedcom source](language/gedcom-source.md) | Read a GEDCOM genealogy file as individuals and families |
 | [log source](language/log-source.md) | Read a web server access log as a typed relation |
 | [relate](language/relate.md) | Declare named, bounded relationships between relations (schema graph) |
@@ -56,6 +60,9 @@ The shape of a `.relix` file — declaring data, naming results, and reusing cod
 | [def](language/def.md) | Define a scalar (per-value) function |
 | [def … : RELATION](language/def-relation.md) | Define a table-valued (relation-returning) function |
 | [relation catalog](language/introspection-relations.md) | `relix.relations` — every relation the script can name, with its kind, size and whether it ends |
+| [column catalog](language/introspection-columns.md) | `relix.columns` — every column of every relation, with its type and distinct and NULL counts |
+| [logical plan catalog](language/introspection-plan.md) | `relix.plan` / `relix.dependencies` — every view's expression tree, and which view reads which relation, as rows |
+| [connection catalog](language/introspection-connections.md) | `relix.connections` — the declared connections, by name and dialect |
 | [introspection stdlib](language/introspection-stdlib.md) | `relix.unused` / `relix.deps` / `relix.impact` / `relix.find` / `relix.schema` / `relix.cycles` / `relix.funcs` — the engine's own introspection, shipped as Relix |
 | [observability feed](language/introspection-events.md) | `relix.events` / `relix.rules` — the previous run's engine decisions, as queryable rows |
 | [component inventory](language/introspection-version.md) | `relix.version` — the engine, the facade and every discovered provider, as queryable rows |
@@ -113,6 +120,7 @@ semi/anti joins filter the left relation by the existence of a match.
 | [Full outer join](joins/full-outer-join.md) | `⟗` / `\|><\|` / `FJOIN` | Keep all rows from both sides |
 | [Semi join](joins/semi-join.md) | `⋉` / `SEMI` | Left rows that *have* a match |
 | [Anti join](joins/anti-join.md) | `▷` / `ANTI` | Left rows that have *no* match |
+| [Universal semi join](joins/universal-semi-join.md) | `USEMI` | Left rows that match *every* right row |
 | [AS-OF join](joins/asof-join.md) | `ASOF` | Match each row to the nearest-in-time row |
 | [Interval join](joins/interval-join.md) | `IJOIN` | Match intervals by an Allen relation (OVERLAPS, DURING, …) |
 | [Lateral join](joins/lateral-join.md) | `LATERAL`, `OUTER LATERAL` | Evaluate a TVF call or a relation per left row, reading that row's columns |
@@ -377,4 +385,4 @@ includes a fully worked example.
 | [Sessionization](advanced/sessionize.md) | `SESSIONIZE ts GAP DURATION 'PT30M' PER … AS` — split an ordered stream into sessions by an idle gap |
 | [Why (lineage provenance)](operators/why.md) | `ω` / `WHY` — reify a tuple's lineage (which source rows produced it) as a queryable nested column |
 | [Query optimizer](advanced/optimizer.md) | The logical rewrite rules (`SEL-…`, `LIM-…`) and how to see which fired |
-| [Pushdown](advanced/pushdown.md) | What the backend computes and what the engine does — the boundary `--explain` draws |
+| [Pushdown](advanced/pushdown.md) | What the backend computes and what the engine does — the boundary `relix explain` draws |

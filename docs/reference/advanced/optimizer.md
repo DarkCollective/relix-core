@@ -1,8 +1,8 @@
 # Name: Query optimizer (rewrite rules)
 
 # Syntax:
-relix --optimize script.relix     -- print which rules fired, and the before/after trees
-relix --trace script.relix        -- a live feed of optimizer, planner and execution decisions
+relix optimize --report script.relix  -- print which rules fired, and the before/after trees
+relix trace script.relix              -- a live feed of optimizer, planner and execution decisions
 
 -- in the REPL
 :opt <query>                      -- the optimization report for one query
@@ -15,7 +15,7 @@ relation**, chosen because it does less work. Nothing here changes an answer; a
 rule that cannot prove itself safe simply does not fire.
 
 Each firing is recorded under a stable **rule code** (`SEL-007`, `LIM-003`, …) so
-`--optimize` and `:opt` can show exactly what happened and why a plan looks the
+`relix optimize --report` and `:opt` can show exactly what happened and why a plan looks the
 way it does. The code is the contract: it is stable across releases, greppable in
 logs, and is what to quote in a bug report.
 
@@ -819,7 +819,7 @@ rows where the amount is missing — the rows `σ amount > 100` silently dropped
 `σ ¬(amount > 100)` does not give back.
 
 The optimizer writes this form itself; you rarely need to. It is documented because
-it is what `:opt` and `--explain` will show you for these rules, and because reading
+it is what `:opt` and `relix explain` will show you for these rules, and because reading
 `(p) = ⊥` as "p was UNKNOWN" is not obvious the first time.
 
 ### Volatility
@@ -923,6 +923,93 @@ Three identities that look safe are **not**, and are left out:
     ∅
 
 Neither table is read, and `:explain` shows a single `Empty` node.
+
+## Nested-data rules (`NEST-nnn`)
+
+| Code | Rewrite |
+|------|---------|
+| `NEST-001` | `μ g (γ keys, COLLECT(x) → g (R))` → `π keys, x → g (R)`: a nest immediately undone by an unnest is a projection |
+| `NEST-002` | `σ p (μ c (R))` → `μ c (σ p (R))` when `p` reads neither the unnested column nor the ordinality column |
+| `NEST-003` | `π cols (μ c (R))` → `μ c (π cols (R))` when every projected item is a bare column and `c` is among them |
+
+`NEST-001` is the round trip `μ ∘ COLLECT = id`: grouping rows into an array and then
+exploding the array reproduces the rows that went in, so the blocking `γ` and the `μ`
+both go. It does not fire when the `μ` carries a `WITH ORDINALITY` column (a position
+within the group is not reproduced by a projection), when the `COLLECT` is `DISTINCT`
+(unnesting does not give back what `DISTINCT` removed), when the aggregation does
+anything beside the one `COLLECT`, or when an *outer* `μ` sits over a `COLLECT` with no
+grouping key (a scalar `COLLECT` over no input still emits one empty array, whose
+outer-unnest `NULL` row the projection would not reproduce).
+
+`NEST-002` and `NEST-003` move work below the explode so it runs before each row is
+multiplied by the length of its array, rather than after. Neither fires when a `WITH
+ORDINALITY` column is present. A dotted name such as `skills.years` is a path into the
+column `skills`, so it counts as reading the unnested column and keeps the selection
+above the `μ`. `NEST-003` leaves a projection that computes or renames anything where it
+is.
+
+## Aggregation, ordering and product-identity rules
+
+| Code | Rewrite |
+|------|---------|
+| `AGG-001` | `γ cols [] (γ keys, aggs (R))` → `γ keys, aggs (R)`: a re-grouping that adds nothing is dropped |
+| `SORT-001` | `τ keys (R)` → `R` when the order `R` already delivers has `keys` as a prefix |
+| `PROD-001` | `R × UNIT` and `UNIT × R` → `R` |
+
+`AGG-001` fires when the outer aggregation has no aggregate function of its own and its
+grouping keys, as a set, are exactly the inner aggregation's output columns. The inner
+`γ` already emits one row for each combination of its keys, so grouping by all of its
+columns again changes nothing.
+
+`SORT-001` removes a sort whose work was already done. The order a relation delivers
+is derived from the operators beneath it: a `τ` delivers its keys; a `σ`, a `λ` and a
+relation-only `ρ` pass their input's order through; a `π` or a pair-form `ρ` keeps the
+longest prefix of it whose columns survive, under their new names. Every other operator
+is taken to deliver no order, which can only keep a sort that could have been removed,
+never remove one that is needed. So a `τ` over a compatible `τ`, or over a `σ` or `λ`
+above one, is redundant, while an order that merely happens to hold of the data is not
+used.
+
+`PROD-001` uses `UNIT` (also written `DEE`), the relation with no columns and exactly one
+row, which is the identity of `×`. The product reproduces `R`'s rows and column order
+exactly, which is why this rewrite is safe where swapping a product's operands is not.
+There is no matching rule for `EMPTY`: `R × EMPTY` is empty but keeps `R`'s columns, so it
+cannot become the zero-column `EMPTY`.
+
+## Constraints folded into a producer (`GEN-001`, `FIX-001`)
+
+| Code | Operator | What the selection does |
+|------|----------|-------------------------|
+| `GEN-001` | an unbounded generator (`Naturals`, `Primes`) | `σ n < k` becomes a stop on the generator, so the scan ends |
+| `FIX-001` | `FIX` | `σ p (FIX …)` seeds and restricts the recursion when `p` reads only frozen columns |
+
+`GEN-001` folds an upper bound (`n < k`, `n <= k` or `n = k`) on the generator's ascending
+value column into the generator itself, which then stops producing rows once the bound is
+passed. The `σ` stays above as a residual filter, so correctness does not rest on the
+stop; the generator becomes *bounded*, which is what lets a blocking operator over it be
+planned at all. `σ n < 100 (Naturals)` is shown by `:opt` as
+`σ n < 100 (Naturals ⟨produce while n < 100⟩)`. A bound that is not a literal comparison on
+the generator's own column is left alone.
+
+`FIX-001` is the general magic-sets rewrite for a `FIX` recursion, of which `CLOSURE-001`
+and `TRACE-001` are fixed-shape cases. A column is *frozen* when the recursive step carries
+it unchanged from the recursive reference to its output. A conjunct reading only frozen
+columns distributes over the fixpoint — `σ p (FIX r (base, step))` is
+`FIX r (σ p (base), step[r ↦ σ p (r)])` — so the recursion starts from, and stays inside,
+what `p` allows instead of computing the whole fixpoint and filtering it. The recursion
+must be linear and monotone, which analysis already enforces. Conjuncts that read a
+column that is not frozen stay above as a residual `σ`.
+
+## View inlining (`INLINE-001`)
+
+| Code | Rewrite |
+|------|---------|
+| `INLINE-001` | a reference to a view becomes the view's body |
+
+Inlining runs before the phases, in the per-query preamble, so that every later rule sees
+through the former view boundary: a selection written against a view can be pushed into
+the view's own inputs. A view referenced under `WHY` is not inlined (see
+[how the rules are ordered](#how-the-rules-are-ordered-phases)).
 
 ## Rename rules (`RENAME-nnn`)
 

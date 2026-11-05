@@ -32,7 +32,7 @@ import java.util.ServiceLoader;
  * {@link SemiringLibrary} offers, resolved by name.
  *
  * <p>Discovery happens once. Two independently-populated catalogs can disagree about what
- * a name means, and a name is what a {@code --provenance} request carries, so
+ * a name means, and a name is what a {@code relix provenance} request carries, so
  * {@link #installed()} memoises a single scan and everything else reads it.
  *
  * <h2>Clashes</h2>

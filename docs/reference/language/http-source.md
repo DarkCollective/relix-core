@@ -144,7 +144,7 @@ query { τ total DESC (OpenOrders) };
 
 # Live Examples:
 All four examples below are real, public, no-auth endpoints and run as-is with
-`relix --exec`.
+`relix run`.
 
 (1) OPEN source — no schema; navigate the JSON by path at query time.
 The endpoint returns a top-level array of user objects:
@@ -367,6 +367,6 @@ source needing them declares its own `body` and gives up the generated projectio
 [source](source.md), [connection](connection.md), [assignment & query](assignment.md)
 
 # Notes:
-Keep tokens and keys out of the script with `${VAR}` (see `relix help env` for the
-command line). They are resolved before the request is built, and their values are
+Keep tokens and keys out of the script with `${VAR}` (see [env](env.md) for where a value
+comes from). They are resolved before the request is built, and their values are
 never logged.

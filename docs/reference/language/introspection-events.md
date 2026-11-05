@@ -8,7 +8,7 @@ relix.rules     -- the optimizer's slice of that feed (seq, code, description, t
 # Description:
 Every other `relix.*` relation answers *what is* — which relations exist, their
 columns, the shape of each expression tree. `relix.events` answers *what
-happened*: it is the same feed of engine decisions that `--trace` prints, exposed
+happened*: it is the same feed of engine decisions that `relix trace` prints, exposed
 as rows so `σ`, `γ`, and `τ` can read it instead of your eyes.
 
 - **`relix.events`** — one row per observed decision, with columns:
@@ -40,7 +40,7 @@ What follows from that:
   run immediately before. Run a query, then ask what it did.
 - **In a one-shot script run**, the whole file is analysed once, before anything
   executes, so there is no earlier feed to carry in and `relix.events` is empty.
-  Use `--trace` there.
+  Use `relix trace` there.
 - Each observed run **replaces** the window rather than adding to it, so the
   relation describes one run, not a session total.
 
@@ -217,5 +217,5 @@ query { σ kind = "QR" (Touched ⋈ relix.relations) };
 # See also:
 - [introspection stdlib](introspection-stdlib.md) — `relix.unused` / `relix.deps` /
   `relix.impact` and friends, the structural half of the same idea.
-- `relix help catalog` — every `relix.*` relation and its columns.
+- `relix.catalog` — lists every `relix.*` relation.
 - [optimizer](../advanced/optimizer.md) — what the rule codes in `relix.rules` mean.

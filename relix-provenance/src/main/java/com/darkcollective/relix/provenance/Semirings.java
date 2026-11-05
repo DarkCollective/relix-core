@@ -20,7 +20,7 @@ import java.util.Optional;
 
 /**
  * Resolves a {@link Semiring} by name — the lookup the surfacing layer uses to turn a
- * {@code --provenance=<name>} request into a concrete semiring without the caller
+ * {@code relix provenance --semiring=<name>} request into a concrete semiring without the caller
  * hard-wiring the singletons.
  *
  * <p>It answers from {@link SemiringCatalog#installed()}, so the names it resolves are the

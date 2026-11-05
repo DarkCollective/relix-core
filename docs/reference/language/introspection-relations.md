@@ -164,4 +164,4 @@ the rest of its body alone.
   `relix.find(col)`, the column catalog read from either side.
 - [reserved namespace](introspection-catalog.md) — `relix.catalog`, this relation's
   counterpart for the `relix.*` names themselves.
-- `relix help catalog` — every `relix.*` relation and its columns.
+- `relix.catalog` — lists every `relix.*` relation.

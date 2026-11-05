@@ -44,8 +44,11 @@ connection shop from database { url: "${SHOP_DB}" };
 query { shop.customers ⋈ shop.orders };
 ```
 
-Mongo connection (registry dispatch by type token):
-  connection events from mongodb { url: "${MONGO_URL}" };
+Mongo connection (registry dispatch by type token), which takes a connection string
+and the database to read, both required (see [mongodb source](mongodb-source.md)):
+```relix
+connection events from mongodb { uri: "${MONGO_URI}", database: "telemetry" };
+```
 
 A file served over https, pinned to the content the query was written against:
 ```relix

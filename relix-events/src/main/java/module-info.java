@@ -21,7 +21,7 @@
  * {@link com.darkcollective.relix.events.QueryEventListener} seam.  Both the
  * optimizer (rule firings) and the planner (physical decisions) translate their
  * internal data into {@code QueryEvent}s and emit them to a listener, so a
- * consumer — the CLI's {@code --trace} output today, a UI later — sees one
+ * consumer — the CLI's {@code relix trace} output today, a UI later — sees one
  * chronological feed of the decisions that shaped how a query runs, without ever
  * touching the producers' internal types.
  *

@@ -43,7 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * downloadable JDBC driver, and {@code ConnectorProvisioner.DEFAULT_CATALOG_URL} names a
  * file served from this repository. Nothing in the repository can tell whether those URLs
  * still resolve: a coordinate that moves, a release asset that is deleted, an artifact
- * republished under the same name, and {@code relix drivers download} stops working for
+ * republished under the same name, and {@code relix drivers install} stops working for
  * every user while the whole suite stays green. The hash is the sharpest case — a mismatch
  * is not a broken download but a <em>refused</em> one, and the refusal looks identical to
  * tampering.

@@ -100,8 +100,8 @@ removes duplicates itself; SQL's `UNION ALL`, which keeps them, is `UALL` (⊎).
 [project](project.md), [group](group.md), [union](../set-operations/union.md), [sort](sort.md)
 
 # Notes:
-The optimizer often deletes a redundant δ entirely; check `--optimize` output for
+The optimizer often deletes a redundant δ entirely; check `relix optimize --report` output for
 a DIST-001 or DIST-002 record. When kept over a database source it becomes
-`SELECT DISTINCT` (visible in `--explain` as a `PushedScan`); when kept in the
+`SELECT DISTINCT` (visible in `relix explain` as a `PushedScan`); when kept in the
 engine, an ordered input turns it into a cheap streaming pass (`Distinct
 streaming`).

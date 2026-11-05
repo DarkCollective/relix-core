@@ -46,7 +46,7 @@ import java.util.function.Consumer;
  * }
  *
  * <p>fails with the whole plan, rendered by {@link PhysicalPlanPrinter} — the same
- * renderer {@code --explain} shows a user, so a failure and a bug report describe
+ * renderer {@code relix explain} shows a user, so a failure and a bug report describe
  * the plan identically.
  *
  * <p>Obtain one from {@link PlanAssertions#assertThat(PhysicalNode)}.

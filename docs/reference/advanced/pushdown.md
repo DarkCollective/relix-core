@@ -1,8 +1,8 @@
 # Name: Pushdown (what the backend computes)
 
 # Syntax:
-relix --explain script.relix       -- the physical plan, with any pushed-down query
-relix --trace script.relix         -- a live feed including the planner's decisions
+relix explain script.relix         -- the physical plan, with any pushed-down query
+relix trace script.relix           -- a live feed including the planner's decisions
 
 -- in the REPL
 :explain <query>                   -- the plan for one query
@@ -674,7 +674,7 @@ isolation.
 The engine's own buffering is the practical consequence. A γ, τ, δ or set
 operation that does not fold holds its input in this process's memory while it
 runs, so the operators that stop folding are the ones worth checking on a large
-table. `--explain` is how you check.
+table. `relix explain` is how you check.
 
 # Alternatives:
 When a query has to do work the fold cannot reach, define a **view in the
@@ -689,7 +689,7 @@ folds its own filters and limits on top of the result — see
 repl
 
 # Notes:
-`--explain` is the only authority on what a particular query folded. The tables
+`relix explain` is the only authority on what a particular query folded. The tables
 here describe the shapes the renderers accept, but whether *your* query matches
 one of them depends on the tree the optimizer produced, and reading the plan is
 faster than reasoning about it.

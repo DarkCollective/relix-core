@@ -92,7 +92,7 @@ Bk := { ρ (amount → bank) (bankfeed.statement) };
 
 The full outer join and the null tests are identical. What the planner does differ: each
 side's scan (and any σ/π above it) pushes down into its own database, and the join itself
-runs in the engine, because it spans two connections. `--explain` shows exactly which part
+runs in the engine, because it spans two connections. `relix explain` shows exactly which part
 ran where — the subject of [Part IV](../README.md#engineering-the-solution).
 
 ## What this shows

@@ -23,6 +23,22 @@ pushdown crosses former view boundaries. `query { expr }` registers a root query
 NamedQueryTarget. The SemanticModel's rootQueries drive execution, optimisation,
 and IR generation.
 
+**Two slips are read as what was meant, and reported as warnings.** A view and a query
+both put their expression in braces, and the statement ends with a `;` *after* the
+closing brace. Two mistakes are common and unambiguous enough not to refuse:
+
+- A `;` just before the closing brace of any statement's braces — a query, a view, a
+  function's body — as in `query { Orders; };`. The `;` is ignored.
+  The warning says the statement ends with `;` after its brace, as in `query { Orders };`.
+- A view written without its braces, as in `Big := σ amount > 100 (Orders);`. The text up
+  to the `;` is read as the view's expression. The warning says the expression goes in
+  braces, and shows the form to write: `Big := { σ amount > 100 (Orders) };`.
+
+In both cases the script parses and runs as if it had been written correctly. Analysis
+reports each slip among the script's other diagnostics, at the position of the slip, with
+the severity `warning`, so a caller that stops only on errors is not stopped. Anything
+else that does not parse is an error as usual.
+
 # Examples:
 Build in stages and query the last:
 ```relix

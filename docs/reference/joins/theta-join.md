@@ -228,7 +228,7 @@ expensive; the engine handles it but it is not pushed as efficiently.
 Concretely, a join whose condition contains no `left.col = right.col` conjunct is
 planned as a **nested loop**: every left row is compared against every right row,
 O(n×m). That is not a silent fallback — `:explain` shows the algorithm
-(`Join INNER/NESTED_LOOP`), and `--trace` reports it as a `PLAN/JOIN-NESTED-LOOP`
+(`Join INNER/NESTED_LOOP`), and `relix trace` reports it as a `PLAN/JOIN-NESTED-LOOP`
 event naming the reason. If a query is unexpectedly slow, that pair is the first
 thing to look at: adding one equality conjunct is what turns it into a hash (or,
 over sorted inputs, a merge) join.

@@ -179,5 +179,5 @@ matching group instead of every group:
 `TOP 2 amount DESC PER customer (σ customer = "Alice" (Orders))`. This is safe
 because top-k is computed independently per group. Only equalities on a PER key
 are pushed; a predicate on any other column (or on a computed rank) stays as a
-residual σ above the operator. Look for a `TOPK-001` record in `--optimize`
+residual σ above the operator. Look for a `TOPK-001` record in `relix optimize --report`
 output.

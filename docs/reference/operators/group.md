@@ -218,4 +218,4 @@ aggregate's alias: `... HAVING COUNT(*) > 2` is `SELECT n > 2 (GROUP k, COUNT(*)
 # Notes:
 When the planner can prove the input is already sorted on the grouping keys it
 chooses a streaming aggregate (no hash table, no full buffering) — visible in
-`--explain` as `Aggregate streaming`.
+`relix explain` as `Aggregate streaming`.

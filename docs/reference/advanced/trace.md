@@ -129,7 +129,7 @@ constant, the optimizer folds that equality **into** the operator as a
 source/target bound, turning the all-pairs relaxation into single-source,
 single-target, or single-pair search — the *magic-sets / sideways-information-passing*
 rewrite specialised to optimal paths. It is recorded as `TRACE-001` on
-the `relix-events` feed (visible via `--trace`):
+the `relix-events` feed (visible via `relix trace`):
 
 ```relix
 -- After view inlining the σ sits directly above the TRACE, so the bound folds in.
@@ -151,7 +151,7 @@ on the endpoint columns against **literals** are pushed; anything else — an
 inequality such as a `cost < 300` residual, a predicate on another column,
 `origin = dest` — stays as a `σ` above the now-bounded trace, so the optimization
 can never change the answer. The bound is shown in the physical plan, e.g.
-`Trace origin, dest via cost MINIMIZE AS route [origin="JFK"]` (use `--explain`).
+`Trace origin, dest via cost MINIMIZE AS route [origin="JFK"]` (use `relix explain`).
 
 When **both** endpoints are bound and the sense is `MINIMIZE`, the planner makes a
 second, *physical* decision: it switches the algorithm from the all-pairs

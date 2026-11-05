@@ -1126,7 +1126,7 @@ public final class CatalogBuilder {
      * session host collected while running the <em>previous</em> statement —
      * optimizer rule firings ({@code stage = "OPTIMIZE"}), the planner's physical
      * choices ({@code "PLAN"}), and decisions taken during execution
-     * ({@code "EXECUTE"}) — so what {@code --trace} prints becomes something
+     * ({@code "EXECUTE"}) — so what {@code relix trace} prints becomes something
      * {@code σ}/{@code γ} can read:
      *
      * <pre>query &#123; γ code, COUNT(*) → fired (σ stage = "OPTIMIZE" (relix.events)) &#125;;</pre>

@@ -163,7 +163,7 @@ final class TopKParserTest extends ParserTestSupport {
      *
      * <p>This is the form {@code LIM-003} produces when it fuses a {@code λ} over a
      * {@code τ}, and the form the printer emits for it, so a grammar that refused it made
-     * the optimizer's own output unparseable: {@code --optimize} printed a rewritten query
+     * the optimizer's own output unparseable: {@code relix optimize} printed a rewritten query
      * that could not be run or pasted back. Both node corpora hold a {@code TOP} with
      * grouping keys, so the round-trip guards had never been shown this shape.
      */

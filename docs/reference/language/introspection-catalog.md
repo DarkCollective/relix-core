@@ -106,4 +106,3 @@ callable function, and `relix.funcs(cat)` filters it by category.
 - [candidate keys](introspection-keys.md) — `relix.keys`.
 - [component inventory](introspection-version.md) — `relix.version`, which answers
   what is *installed* rather than what is reserved.
-- `relix help catalog` — the same surface as prose, with examples.
