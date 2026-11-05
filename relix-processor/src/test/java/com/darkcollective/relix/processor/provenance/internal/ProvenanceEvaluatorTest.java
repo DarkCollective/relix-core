@@ -25,6 +25,7 @@ import com.darkcollective.relix.provenance.CountingSemiring;
 import com.darkcollective.relix.provenance.PathCost;
 import com.darkcollective.relix.provenance.PathCostSemiring;
 import com.darkcollective.relix.provenance.Polynomial;
+import com.darkcollective.relix.provenance.PolynomialSemiring;
 import com.darkcollective.relix.provenance.Semiring;
 import com.darkcollective.relix.provenance.SourceRef;
 import com.darkcollective.relix.provenance.TropicalSemiring;
@@ -703,6 +704,25 @@ final class ProvenanceEvaluatorTest {
                     CountingSemiring.INSTANCE, null, 5))
                     .isInstanceOf(EvaluationException.class)
                     .hasMessageContaining("weighted CLOSURE exceeded");
+        }
+
+        @Test
+        @DisplayName("polynomial lineage over a cycle raises, whether a self-loop or a longer cycle")
+        void polynomialCycleRaisesUniformly() {
+            String selfLoop = "Edges := [| src | dst |\n| 1 | 1 |];\n";
+            String triangle = "Edges := [| src | dst |\n| 1 | 2 |\n| 2 | 3 |\n| 3 | 1 |];\n";
+            for (String graph : List.of(selfLoop, triangle)) {
+                assertThatThrownBy(() -> provWeighted(graph + "query { CLOSURE src, dst (Edges) };",
+                        PolynomialSemiring.INSTANCE, null, 1000))
+                        .isInstanceOf(EvaluationException.class)
+                        .hasMessageContaining("weighted CLOSURE");
+            }
+            assertThatThrownBy(() -> provWeighted(selfLoop + "query { CLOSURE src, dst (Edges) };",
+                    PolynomialSemiring.INSTANCE, null, 1000))
+                    .hasMessageContaining("256-term limit");
+            // an acyclic graph is unaffected
+            assertThat(annotations(provWeighted(CHAIN + "query { CLOSURE src, dst (Edges) };",
+                    PolynomialSemiring.INSTANCE, null, UNLIMITED))).hasSize(3);
         }
 
         @Test
