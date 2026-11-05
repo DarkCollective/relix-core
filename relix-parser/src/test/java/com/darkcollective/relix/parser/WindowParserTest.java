@@ -420,6 +420,10 @@ final class WindowParserTest extends ParserTestSupport {
     void rejectsMalformedFrames() {
         assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN 1 FOLLOWING AND 1 PRECEDING SORT t AS a (R)")
                 .hasMessageContaining("cannot end before it starts");
+        // durations are not compared, and a CURRENT ROW end has no offset to compare
+        parse("ROLLING SUM(x) OVER RANGE BETWEEN DURATION 'P2D' PRECEDING AND DURATION 'P1D' PRECEDING SORT t AS a (R)");
+        parse("ROLLING SUM(x) OVER RANGE BETWEEN DURATION 'P1D' PRECEDING AND 1 FOLLOWING SORT t AS a (R)");
+        parse("ROLLING SUM(x) OVER ROWS BETWEEN CURRENT ROW AND CURRENT ROW SORT t AS a (R)");
         assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN 1 FOLLOWING AND 0 FOLLOWING SORT t AS a (R)")
                 .hasMessageContaining("cannot end before it starts");
         assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN 1 PRECEDING AND 2 PRECEDING SORT t AS a (R)")

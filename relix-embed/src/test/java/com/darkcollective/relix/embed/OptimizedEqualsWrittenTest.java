@@ -145,4 +145,13 @@ final class OptimizedEqualsWrittenTest {
         assertThat(pairs.toString()).contains("0.3").doesNotContain("0.30000000000000004")
                 .contains("9007199254740993");
     }
+
+    @Test
+    @DisplayName("the single-pair TRACE search finds the shorter route when it meets one later")
+    void traceShorterRouteFoundLater() {
+        String edges = "E := [| s | d | w |\n| s | a | 1 |\n| s | b | 5 |\n| s | c | 2 |\n| a | b | 1 |\n| a | c | 4 |\n| b | t | 1 |];\n";
+        List<String> r = both(edges + "query { σ s = 's' ∧ d = 't' (TRACE s, d VIA w MINIMIZE AS p (E)) };");
+        assertThat(r).hasSize(1);
+        assertThat(r.get(0)).contains("3");
+    }
 }
