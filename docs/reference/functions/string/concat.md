@@ -15,7 +15,7 @@ A number or a date is written as it displays.
 CONCAT(value, …) → STRING. One or more arguments of any type; each non-NULL argument
 contributes its display text, and NULLs contribute nothing, so the result is never
 NULL. This is PostgreSQL's and SQL Server's CONCAT; MySQL's returns NULL when any
-argument is NULL. PURE, DETERMINISTIC.
+argument is NULL. A result longer than 100,000,000 characters is refused. PURE, DETERMINISTIC.
 
 # Examples:
 A label from a number and text:

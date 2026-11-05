@@ -13,7 +13,7 @@ bulk.
 # Technical Description:
 Replace(s, find, replacement) → STRING. Replaces all non-overlapping occurrences
 of the literal find within s with replacement (Java String.replace — literal, not
-regex). NULL string input returns NULL. PURE, DETERMINISTIC.
+regex). NULL string input returns NULL. A result longer than 100,000,000 characters is refused. PURE, DETERMINISTIC.
 
 # Examples:
 Strip dashes from phone numbers:

@@ -18,7 +18,7 @@ and all three are accepted: PostgreSQL's and SQL Server's `STRING_AGG`, MySQL's
 STRING_AGG(value, separator) → STRING. Each non-NULL value is written as it
 displays and joined to the one before by the separator; NULL values are skipped
 with their separator, and a group with no values is NULL. A NULL separator joins
-with nothing. `DISTINCT` keeps each value once.
+with nothing. A result longer than 100,000,000 characters is refused. `DISTINCT` keeps each value once.
 
 Without an `ORDER BY` the values come in the order the group's rows arrive, which
 a relation does not promise, so a result to be relied on names its order. The

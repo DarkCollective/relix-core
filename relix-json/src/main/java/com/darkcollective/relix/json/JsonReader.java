@@ -54,8 +54,17 @@ import java.util.Map;
  */
 public final class JsonReader {
 
+    /**
+     * The deepest nesting of arrays and objects a document may have. The reader and
+     * everything that walks its result are recursive, so a document nested far deeper
+     * than any real one would otherwise end in a {@link StackOverflowError} on whatever
+     * thread read it.
+     */
+    public static final int MAX_DEPTH = 512;
+
     private final String src;
     private int pos;
+    private int depth;
 
     private JsonReader(String src) {
         this.src = src;
@@ -66,7 +75,8 @@ public final class JsonReader {
      *
      * @param json the JSON text
      * @return the parsed value (Map / List / String / Boolean / null)
-     * @throws IllegalArgumentException if the text is not well-formed JSON
+     * @throws IllegalArgumentException if the text is not well-formed JSON, or nests
+     *         arrays and objects more than {@value #MAX_DEPTH} levels deep
      */
     public static Object parse(String json) {
         JsonReader parser = new JsonReader(json);
@@ -85,13 +95,26 @@ public final class JsonReader {
         }
         char c = src.charAt(pos);
         return switch (c) {
-            case '{' -> parseObject();
-            case '[' -> parseArray();
+            case '{' -> nested(this::parseObject);
+            case '[' -> nested(this::parseArray);
             case '"' -> parseString();
             case 't', 'f' -> parseBoolean();
             case 'n' -> parseNull();
             default -> parseNumber();
         };
+    }
+
+    /** Runs one array or object parse a level deeper, refusing past {@link #MAX_DEPTH}. */
+    private <T> T nested(java.util.function.Supplier<T> parse) {
+        if (++depth > MAX_DEPTH) {
+            throw new IllegalArgumentException("JSON nests more than " + MAX_DEPTH
+                    + " levels deep, at position " + pos);
+        }
+        try {
+            return parse.get();
+        } finally {
+            depth--;
+        }
     }
 
     private Map<String, Object> parseObject() {

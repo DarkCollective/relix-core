@@ -23,7 +23,7 @@ or `'false'`. Convert it with [CAST](../../language/cast.md) for arithmetic:
 
 The answer is NULL, as SQL's lax mode gives it, when `doc` is not JSON, when the path
 reaches nothing, and when it reaches an object, an array or JSON's `null`; read an
-object or array with [JSON_QUERY](json_query.md). A NULL argument gives NULL. A path
+object or array with [JSON_QUERY](json_query.md). A NULL argument gives NULL. A document nested more than 512 levels deep is refused, not read as NULL. A path
 that is not a path, `'customer.name'` without its `$`, is refused when the call runs.
 
 A key is matched exactly, case included. The path is followed as written: `.sku` on an
