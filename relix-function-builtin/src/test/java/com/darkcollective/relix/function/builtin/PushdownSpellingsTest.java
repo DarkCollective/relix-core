@@ -182,6 +182,10 @@ final class PushdownSpellingsTest {
                 assertThat(render("DATE_TRUNC", DB2, "'" + unit + "'", "at")).as(unit).isEmpty();
                 assertThat(render("DATE_TRUNC", MONGO, "\"" + unit + "\"", "\"$at\"")).as(unit).isEmpty();
             }
+            // A lone or half-open double quote is not a unit.
+            assertThat(render("DATE_TRUNC", MONGO, "\"", "\"$at\"")).isEmpty();
+            assertThat(render("DATE_TRUNC", MONGO, "\"day", "\"$at\"")).isEmpty();
+            assertThat(render("DATE_TRUNC", MONGO, "day\"", "\"$at\"")).isEmpty();
             assertThat(render("DATE_TRUNC", POSTGRES, "'YEAR'", "\"at\"")).isPresent();
             assertThat(render("DATE_TRUNC", POSTGRES, "\"unit\"", "\"at\"")).isEmpty();
         }
