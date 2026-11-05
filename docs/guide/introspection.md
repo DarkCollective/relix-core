@@ -284,6 +284,52 @@ relix.relation("""
 (name=WithVat, category=pricing, is_builtin=true)
 ```
 
+## How the views are built
+
+`relix.plan` has one row per operator of every view's expression tree, with the row of its
+parent, and `relix.dependencies` is the pair of columns people usually want from it: which
+view reads which relation. Chain `CLOSURE` over the second and a view's whole lineage is one
+query:
+
+```java
+relix.relation("""
+        τ depends_on (π depends_on
+          (σ dependent = "ByRegion" (CLOSURE dependent, depends_on (relix.dependencies))))
+        """).toList().forEach(System.out::println);
+```
+
+```
+(depends_on=Customers)
+(depends_on=Open)
+(depends_on=Orders)
+```
+
+```java
+relix.relation("""
+        τ node_id (π node_id, parent_id, op, label
+          (σ query = "ByRegion" (relix.plan)))
+        """).toList().forEach(System.out::println);
+```
+
+```
+(node_id=0, parent_id=NULL, op=Aggregation, label=γ [region] SUM(amount)→revenue)
+(node_id=1, parent_id=0, op=NaturalJoin, label=⋈)
+(node_id=2, parent_id=1, op=Relation, label=Open [QR])
+(node_id=3, parent_id=1, op=Relation, label=Customers [SRC])
+```
+
+`relix.connections` lists the connections the session was given, by name and `dialect`, and
+nothing else about them: no URL, user or password is a column. A session with no connection
+has none to list:
+
+```java
+System.out.println(relix.relation("relix.connections").count() + " connections");
+```
+
+```
+0 connections
+```
+
 ## What the last run did
 
 The other catalogs answer *what is*. `relix.events` answers *what happened* — the same feed

@@ -23,7 +23,8 @@ Columns of `relix.plan`:
 - `ordinal` (`NUMBER`) — the node's position among its parent's children, from 0.
 - `op` (`STRING`) — the kind of operator: `Projection`, `Selection`,
   `NaturalJoin`, `Relation` (a reference to a relation, always a leaf), and so on.
-- `label` (`STRING`) — the node as `:tree` writes it, such as `σ amount > 25`.
+- `label` (`STRING`) — the node as `:tree` writes it: `⋈` for a natural join, `π customer`
+  for a projection, `Big [QR]` for a reference to a view.
 - `relation` (`STRING`) — for a `Relation` node, the name of the relation it reads;
   NULL for every other node.
 - `schema_code` (`STRING`) — the node's output heading in the type codes
