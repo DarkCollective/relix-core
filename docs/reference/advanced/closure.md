@@ -165,6 +165,13 @@ CLOSURE works on exactly two columns (a binary relation). For multi-column or
 more general recursion use FIX. The result can be large on dense graphs; the
 `--max-fixpoint-rounds` guard aborts runaway iteration.
 
+Under a semiring that is not idempotent, a cycle has unboundedly many derivations, so
+the annotation has no limit: counting (ℕ) and polynomial lineage over a cyclic graph
+are errors, a self-loop included. (Polynomial lineage stops growing at 256 terms, but
+what is left is an arbitrary prefix of an endless series, so the closure raises
+instead of returning it.) Boolean and tropical weights are idempotent and converge on
+any graph.
+
 With `--semiring tropical`, the weight column is read as a double and path costs
 are summed with double arithmetic. That addition is exact for whole numbers below
 2^53 — hop counts, whole-unit costs, distances in metres — and inexact for values
