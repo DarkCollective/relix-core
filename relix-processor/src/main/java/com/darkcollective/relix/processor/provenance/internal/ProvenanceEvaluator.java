@@ -405,7 +405,7 @@ public final class ProvenanceEvaluator {
                 // and a polynomial "converges" there only because the cap on its terms cut
                 // the series short — a self-loop would otherwise return a 256-term
                 // prefix while a longer cycle raised. Both are the same fact, so both raise.
-                if (round > nodes.size() + 1 && semiring instanceof PolynomialSemiring) {
+                if (semiring instanceof PolynomialSemiring && round > nodes.size() + 1) {
                     throw new EvaluationException(
                             "weighted CLOSURE over a cyclic graph has unboundedly many derivations, "
                             + "so its polynomial annotation does not converge: it was cut at the "
