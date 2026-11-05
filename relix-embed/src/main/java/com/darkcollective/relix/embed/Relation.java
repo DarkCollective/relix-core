@@ -2200,6 +2200,30 @@ public final class Relation {
         if (!unresolved.isEmpty()) {
             throw new RelixException("cannot plan this relation; " + becauseOf(unresolved));
         }
+        List<String> functions = new ArrayList<>();
+        collectUnknownFunctions(node, functions);
+        if (!functions.isEmpty()) {
+            // A relation sees the declarations that existed when it was built, so a table
+            // function defined afterwards is a name this relation cannot plan; the planner's
+            // own words for that are "no schema annotation".
+            throw new RelixException("cannot plan this relation; it calls "
+                    + (functions.size() == 1 ? "a table function" : "table functions")
+                    + " it was not built with: " + String.join(", ", functions)
+                    + ". A relation sees the declarations that existed when it was built;"
+                    + " define the function first, then build the relation again");
+        }
+    }
+
+    /** The table functions a LATERAL in this expression calls that this relation's symbol table does not hold. */
+    private void collectUnknownFunctions(RelNode current, List<String> names) {
+        if (current instanceof com.darkcollective.relix.ast.LateralJoinNode lateral
+                && lateral.right() instanceof com.darkcollective.relix.ast.RelationFunctionCall call
+                && model.symbolTable().lookupFunction(call.functionName()).stream()
+                        .noneMatch(f -> f instanceof com.darkcollective.relix.symbol.function.RelationFunctionSymbol)
+                && !names.contains(call.functionName())) {
+            names.add(call.functionName());
+        }
+        current.children().forEach(child -> collectUnknownFunctions(child, names));
     }
 
     /** The relation names in this expression that this relation's symbol table does not resolve. */
