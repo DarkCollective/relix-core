@@ -420,6 +420,17 @@ final class WindowParserTest extends ParserTestSupport {
     void rejectsMalformedFrames() {
         assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN 1 FOLLOWING AND 1 PRECEDING SORT t AS a (R)")
                 .hasMessageContaining("cannot end before it starts");
+        assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN 1 FOLLOWING AND 0 FOLLOWING SORT t AS a (R)")
+                .hasMessageContaining("cannot end before it starts");
+        assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN 1 PRECEDING AND 2 PRECEDING SORT t AS a (R)")
+                .hasMessageContaining("cannot end before it starts");
+        assertParseError("ROLLING SUM(x) OVER RANGE BETWEEN 1.5 PRECEDING AND 2 PRECEDING SORT t AS a (R)")
+                .hasMessageContaining("cannot end before it starts");
+        // the same offset on both ends, and the ordered cases, are frames
+        parse("ROLLING SUM(x) OVER ROWS BETWEEN 1 FOLLOWING AND 1 FOLLOWING SORT t AS a (R)");
+        parse("ROLLING SUM(x) OVER ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING SORT t AS a (R)");
+        parse("ROLLING SUM(x) OVER ROWS BETWEEN 1 FOLLOWING AND 3 FOLLOWING SORT t AS a (R)");
+        parse("ROLLING SUM(x) OVER ROWS BETWEEN 2 PRECEDING AND 2 PRECEDING SORT t AS a (R)");
         assertParseError("ROLLING SUM(x) OVER ROWS BETWEEN UNBOUNDED FOLLOWING AND UNBOUNDED FOLLOWING SORT t AS a (R)")
                 .hasMessageContaining("cannot start at UNBOUNDED FOLLOWING");
         assertParseError("ROLLING SUM(x) OVER ROWS 1.5 PRECEDING SORT t AS a (R)").hasMessageContaining("whole number");

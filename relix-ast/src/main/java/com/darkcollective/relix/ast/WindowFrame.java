@@ -95,6 +95,18 @@ public sealed interface WindowFrame
                 throw new IllegalArgumentException("A frame cannot end before it starts: "
                         + start + " AND " + end);
             }
+            if (start.kind() == end.kind() && start.kind() != Bound.Kind.CURRENT_ROW
+                    && start.offset().orElseThrow() instanceof NumberOperand from
+                    && end.offset().orElseThrow() instanceof NumberOperand to) {
+                // Two PRECEDING ends: the start reaches back at least as far as the end;
+                // two FOLLOWING ends: the end reaches forward at least as far as the start.
+                int order = new java.math.BigDecimal(from.value()).compareTo(new java.math.BigDecimal(to.value()));
+                boolean reversed = start.kind() == Bound.Kind.PRECEDING ? order < 0 : order > 0;
+                if (reversed) {
+                    throw new IllegalArgumentException("A frame cannot end before it starts: "
+                            + start + " AND " + end);
+                }
+            }
         }
 
         /** Whether either end is an offset measured along the sort key. */

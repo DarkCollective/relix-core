@@ -97,6 +97,9 @@ with a NULL key sees only its NULL peers through an offset, and other rows reach
 the NULLs only by a bound that runs past every value toward them. A frame that
 holds no rows — `ROWS BETWEEN 2 FOLLOWING AND 3 FOLLOWING` at the partition's end
 — gives `COUNT` 0 and the others NULL. This is PostgreSQL's reading of each frame.
+A frame whose end lies before its start is refused when the query is read:
+`BETWEEN 1 FOLLOWING AND 0 FOLLOWING` and `BETWEEN 1 PRECEDING AND 2 PRECEDING` are errors,
+as `BETWEEN CURRENT ROW AND 1 PRECEDING` is.
 
 `SUM`/`AVG`/`MIN`/`MAX` ignore NULL values within the frame (matching `γ`);
 `COUNT` counts the rows in the frame. The output column type is the argument
