@@ -57,13 +57,15 @@ final class Arguments {
 
     /**
      * A {@code NUMBER} argument as an {@code int} — a length, an index, a character
-     * code. A number too large to be one, or with a fractional part that rounding
-     * cannot absorb, is rejected rather than silently truncated.
+     * code. A fraction is cut off toward zero, as SQL Server's and Oracle's integer
+     * arguments take one and as {@code DateAdd} takes its count, so {@code Left(s, 1.9)}
+     * is {@code Left(s, 1)} and every function with a whole-number argument agrees. A
+     * number too large to be an {@code int} is rejected.
      */
     static int integer(Value value, String function) {
         BigDecimal n = number(value, function);
         try {
-            return n.setScale(0, RoundingMode.HALF_UP).intValueExact();
+            return n.setScale(0, RoundingMode.DOWN).intValueExact();
         } catch (ArithmeticException e) {
             throw reject(function + ": expected integer argument, got " + n);
         }
