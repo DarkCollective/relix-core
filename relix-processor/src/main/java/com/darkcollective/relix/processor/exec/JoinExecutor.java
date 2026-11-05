@@ -833,6 +833,18 @@ final class JoinExecutor {
         List<Row> lefts  = nonNullEndpoints(dispatch.materialize(join.left(), ctx, join),  lStart, lEnd);
         List<Row> rights = nonNullEndpoints(dispatch.materialize(join.right(), ctx, join), rStart, rEnd);
 
+        // The band, sweep and merge below all assume every interval runs forwards (start
+        // not after end): the sweep pairs closed intervals that intersect, and an inverted
+        // one opens after it closes. A relation's predicate is defined on the endpoints
+        // alone, though, and some hold for an inverted interval (DURING, MEETS, ...), so
+        // when either side holds one every pair is tested against the predicate directly.
+        // That is the answer a pushed IJOIN gives, which is also the predicate and nothing
+        // else, and costs O(n*m) only for data that has an inverted interval.
+        if (hasInvertedInterval(lefts, lStart, lEnd) || hasInvertedInterval(rights, rStart, rEnd)) {
+            return nestedLoopIntervalJoin(rel, lefts, rights, lStart, lEnd, rStart, rEnd,
+                    outputSchema).stream();
+        }
+
         List<Row> out = switch (rel) {
             // The disjoint "before"/"after" relations have no overlap structure
             // to exploit; a sorted-endpoint band binary-searches the boundary and
@@ -861,6 +873,31 @@ final class JoinExecutor {
             }
         }
         return kept;
+    }
+
+    /** Whether any row's end is before its start. */
+    private static boolean hasInvertedInterval(List<Row> rows, int startIdx, int endIdx) {
+        for (Row r : rows) {
+            if (ValueComparator.compareNonNull(r.get(endIdx), r.get(startIdx)) < 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Every pair, tested by {@link #allenTest}; the reference the other strategies must equal. */
+    private static List<Row> nestedLoopIntervalJoin(AllenRelation rel, List<Row> lefts,
+                                                    List<Row> rights, int lStart, int lEnd,
+                                                    int rStart, int rEnd, Schema schema) {
+        List<Row> out = new ArrayList<>();
+        for (Row l : lefts) {
+            for (Row r : rights) {
+                if (allenTest(rel, l.get(lStart), l.get(lEnd), r.get(rStart), r.get(rEnd))) {
+                    out.add(concatRows(l, r, schema));
+                }
+            }
+        }
+        return out;
     }
 
     /** One interval occurrence; {@code seq} keeps duplicate-valued rows distinct. */
