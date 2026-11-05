@@ -7,7 +7,7 @@ changes what it costs.
 
 ## Reading a plan
 
-A query says *what*; the plan says *how*. `--explain` (or the `relix.plan` relation, the
+A query says *what*; the plan says *how*. `relix explain` (or the `relix.plan` relation, the
 same information as rows) prints the rewrites the optimiser applied and the physical plan
 it will run. Read it before assuming anything about cost.
 

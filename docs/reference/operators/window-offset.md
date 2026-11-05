@@ -264,4 +264,4 @@ the operator by the optimizer, so the offset is computed only for the matching
 partition: `WINDOW LAG(amount) … PER region (σ region = "WEST" (Sales))`. This is
 safe because an offset, and a frame, never reach across a partition boundary. Only equalities
 on a partition key are pushed; predicates on other columns stay as a residual σ
-above the operator. Look for a `WINDOW-001` record in `--optimize` output.
+above the operator. Look for a `WINDOW-001` record in `relix optimize --report` output.

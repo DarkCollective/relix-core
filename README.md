@@ -41,6 +41,13 @@ Two optional artifacts sit beside it, at the same version:
 | `relix-docs` | the language reference and the installed functions' pages, for a tool that shows them to its users |
 | `relix-all` | everything: the engine and both of the above |
 
+To run scripts from a shell instead of from Java, install the `relix` command, which
+is released separately from
+[DarkCollective/relix-cli](https://github.com/DarkCollective/relix-cli): `brew tap
+DarkCollective/relix && brew install relix`, `scoop bucket add relix
+https://github.com/DarkCollective/scoop-relix && scoop install relix`, or an archive
+from its releases page.
+
 With `relix-docs`, a tool can show the page for whatever its user typed, whether that is
 part of the language or a function an installed library offers:
 

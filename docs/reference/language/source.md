@@ -26,8 +26,9 @@ may also be **nested**: `{ field: TYPE, … }` declares a
 struct and `[TYPE]` an array, composing to any depth. A column or field whose name
 is not a plain identifier, such as `unit-price`, is written between backticks, as it
 is in a query; a doubled backtick stands for one. `${VAR}` placeholders in URLs
-and other string values are resolved from the active environment when a query runs. Other source kinds (json, http, generator) exist for
-their respective connectors. A relative path resolves against the directory of the
+and other string values are resolved from the active environment when a query runs. Other source kinds are
+[json](json-source.md), [http](http-source.md), [generator](generator-source.md),
+[gedcom](gedcom-source.md), [log](log-source.md) and [mongodb](mongodb-source.md). A relative path resolves against the directory of the
 script file that declares it, so a script read from another directory still finds the
 files beside it; a declaration that comes from no file resolves against the directory
 the program using Relix chooses.
@@ -165,6 +166,6 @@ credentials across many tables. Inline tables embed small reference data directl
 [http source](http-source.md), [connection](connection.md), [relate](relate.md), [inline-table](inline-table.md), [namespace](namespace.md), [import](import.md)
 
 # Notes:
-Use ${VAR} placeholders (see `relix help env`) to keep connection URLs and
+Use ${VAR} placeholders (see [env](env.md)) to keep connection URLs and
 credentials out of the script text. The script keeps the placeholder, so nothing that
 prints it shows the value.

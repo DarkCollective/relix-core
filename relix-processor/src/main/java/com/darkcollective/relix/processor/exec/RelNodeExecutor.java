@@ -121,7 +121,7 @@ public final class RelNodeExecutor {
 
     /**
      * Plans {@code node} into a {@link PhysicalNode} without executing it — the
-     * planning half of {@link #execute}, exposed for {@code --explain}.
+     * planning half of {@link #execute}, exposed for {@code relix explain}.
      *
      * @param node the logical relational algebra node to plan; must not be null
      * @param ctx  the shared execution context; must not be null
@@ -147,7 +147,7 @@ public final class RelNodeExecutor {
 
     /**
      * Plans {@code node} and returns the plan together with its cardinality estimates
-     * — the form {@code --explain} and the playground bundle need, since a plan node
+     * — the form {@code relix explain} and the playground bundle need, since a plan node
      * does not carry its own estimate.
      *
      * @param node     the logical node to plan; must not be null

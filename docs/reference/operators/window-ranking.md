@@ -217,4 +217,4 @@ matching partition and the others are never ranked:
 because the window frame never crosses a partition boundary. Only equalities on a
 partition key are pushed; a predicate on a non-partition column or on the computed
 window column (e.g. `rk ≤ 3`) stays as a residual σ above the operator. Look for a
-`WINDOW-001` record in `--optimize` output.
+`WINDOW-001` record in `relix optimize --report` output.

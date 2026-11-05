@@ -1319,7 +1319,7 @@ final class PushdownCorpus {
      * The shapes the SQL renderer declines. Every one of them is a real query a user can
      * write, so each reads the whole table and finishes the work in this process's heap
      * — which is what makes the boundary worth stating rather than leaving to be
-     * discovered from {@code --explain}.
+     * discovered from {@code relix explain}.
      */
     private static List<Case> declines() {
         return List.of(

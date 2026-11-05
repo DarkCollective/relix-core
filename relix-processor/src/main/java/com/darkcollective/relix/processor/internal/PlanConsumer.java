@@ -19,7 +19,7 @@ package com.darkcollective.relix.processor.internal;
  * Callback that receives one query's physical plan, rendered as text.
  *
  * <p>Used by {@link QueryExecutor#explain} to hand each {@code query} statement's
- * physical plan to the caller (e.g. the CLI's {@code --explain} output) without
+ * physical plan to the caller (e.g. the CLI's {@code relix explain} output) without
  * the caller needing to depend on the physical-plan types directly.
  */
 @FunctionalInterface

@@ -28,7 +28,7 @@ semantics via a semi-naïve least fixpoint. Cyclic graphs terminate because a
 derived pair is never re-added. Output schema is the two edge columns. A row with
 a null endpoint is not an edge and is skipped entirely, so neither end of it is a
 node — which is what decides whether RCLOSURE pairs that value with itself. It does
-not push down. Under `--provenance` it becomes a semiring-weighted closure
+not push down. Under `relix provenance` it becomes a semiring-weighted closure
 (reachability / path count / shortest path / cheapest-route).
 
 # Examples:
@@ -51,7 +51,7 @@ Postfix glyph form (identical result):
   Family⁺ OVER (parent, child)
 
 Shortest path with weighted closure (run via the CLI):
-  relix --provenance --semiring tropical --weight cost graph.relix
+  relix provenance --semiring tropical --weight cost graph.relix
 
 # Worked Example:
 A small airline publishes its direct flights as an edge list. Travel planning
@@ -134,7 +134,7 @@ an endpoint to a constant, the optimizer folds that equality **into** the operat
 as a source/target bound, turning all-pairs reachability into single-source,
 single-target, or single-pair traversal. This is the canonical *magic-sets /
 sideways-information-passing* rewrite, recorded as `CLOSURE-001` on the
-`relix-events` feed (visible via `--trace`):
+`relix-events` feed (visible via `relix trace`):
 
 ```relix
 -- All three of these read directly from the edge relation; after view inlining
@@ -158,7 +158,7 @@ dest`) stays as a `σ` above the now-bounded closure, so the optimization can ne
 change the answer. The bound selects the graph's own nodes, by the same equality the
 `σ` would have applied — so a literal of a type the nodes cannot be compared with
 selects none of them, exactly as the `σ` would have kept no rows. The bound is shown in the physical plan, e.g.
-`Closure origin→dest [origin="LHR"]` (use `--explain`).
+`Closure origin→dest [origin="LHR"]` (use `relix explain`).
 
 # Limitations:
 CLOSURE works on exactly two columns (a binary relation). For multi-column or
@@ -172,7 +172,7 @@ what is left is an arbitrary prefix of an endless series, so the closure raises
 instead of returning it.) Boolean and tropical weights are idempotent and converge on
 any graph.
 
-With `--semiring tropical`, the weight column is read as a double and path costs
+With `relix provenance --semiring tropical`, the weight column is read as a double and path costs
 are summed with double arithmetic. That addition is exact for whole numbers below
 2^53 — hop counts, whole-unit costs, distances in metres — and inexact for values
 binary floating point cannot represent, which includes most decimals. The

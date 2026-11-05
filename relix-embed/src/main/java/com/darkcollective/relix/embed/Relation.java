@@ -1595,7 +1595,7 @@ public final class Relation {
     }
 
     /**
-     * The physical plan, as {@code --explain} prints it: join algorithms and build sides,
+     * The physical plan, as {@code relix explain} prints it: join algorithms and build sides,
      * what was folded into a native query and pushed to its backend, and each node's
      * estimated row count.
      *

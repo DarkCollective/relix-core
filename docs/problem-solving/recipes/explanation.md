@@ -91,7 +91,7 @@ any nested column, which is the whole point of reifying lineage as data.
 
 ## Variations
 
-- **The side-channel** — `--provenance --semiring lineage` reports the same lineage as a
+- **The side-channel** — `relix provenance --semiring lineage` reports the same lineage as a
   one-shot dump rather than a queryable column, and also offers the cheap semirings
   (reachability, path count, shortest/cheapest path).
 - **`:why` in the REPL** is sugar for `query { WHY(…) }`.

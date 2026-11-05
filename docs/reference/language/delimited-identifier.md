@@ -9,7 +9,7 @@
 # Description:
 Relix reserves a fixed set of operator and keyword words — `SELECT`, `SORT`,
 `ORDER`, `GROUP`, `JOIN`, `UNION`, `IS`, `IN`, and so on (the full set is the
-lexer keyword table; `relix help lang operators` prints it). Written bare
+lexer keyword table; `relix doc grammar` shows it). Written bare
 in a relation position, such a word is read as the operator, so a relation or
 view that happens to be named after one cannot be referenced directly:
 

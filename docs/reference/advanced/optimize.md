@@ -151,7 +151,7 @@ group's MIP/LP and then keeping one is wasteful — and the solver search is the
 dominant cost. When a selection fixes a grouping key to a constant, the optimizer
 pushes that equality **below** the operator, so only the matching group is solved
 — the *partition-pruning* member of the magic-sets / SIP family. It is
-recorded as `OPTIMIZE-001` on the `relix-events` feed (visible via `--trace`):
+recorded as `OPTIMIZE-001` on the `relix-events` feed (visible via `relix trace`):
 
 ```relix
 -- After view inlining the σ sits directly above the OPTIMIZE, so the bound folds in.

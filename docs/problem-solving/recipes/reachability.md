@@ -137,7 +137,7 @@ query { τ origin, dest (TRACE origin, dest VIA cost MINIMIZE AS route (Flights)
 - **Undirected traversal** — union the reversed edges into the input first, or use the
   `↔` separator (`CLOSURE from ↔ to`, `PATH from ↔ to`), which reads each edge both
   ways.
-- **Weighted reachability without the route** — `--provenance --semiring tropical`
+- **Weighted reachability without the route** — `relix provenance --semiring tropical`
   gives shortest-path *costs* through `CLOSURE` without materialising the paths.
 - **A rule the two-column form cannot express** — extra columns, a filter or a join
   each round — is [general recursion](recursion.md) (`FIX`).
