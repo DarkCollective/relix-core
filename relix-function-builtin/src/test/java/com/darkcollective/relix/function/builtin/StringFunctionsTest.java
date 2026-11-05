@@ -211,9 +211,13 @@ final class StringFunctionsTest {
         }
 
         @Test
-        @DisplayName("a fractional length is rounded, not rejected")
+        @DisplayName("a fractional length is cut off toward zero, as every whole-number argument is")
         void fractionalLength() {
-            assertThat(text(call("Left", s("hello"), n("1.5")))).isEqualTo("he");
+            assertThat(text(call("Left", s("hello"), n("1.5")))).isEqualTo("h");
+            assertThat(text(call("Left", s("hello"), n("1.99")))).isEqualTo("h");
+            assertThat(text(call("Chr", n("65.9")))).isEqualTo("A");
+            assertThat(text(call("Substring", s("hello"), n("1.5"), n("2.9")))).isEqualTo("he");
+            assertThat(text(call("Repeat", s("ab"), n("2.9")))).isEqualTo("abab");
         }
 
         @Test
