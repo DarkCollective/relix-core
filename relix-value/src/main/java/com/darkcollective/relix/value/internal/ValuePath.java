@@ -32,7 +32,8 @@ import java.util.List;
  * be queried without crashing — matching Mongo / {@code jq} semantics.
  *
  * <p>The path syntax accepted by {@link #parse(String)} is dotted field names with
- * bracketed array indices: {@code "a.b[0].c"}, {@code "[2].name"}. This is the
+ * bracketed array indices: {@code "a.b[0].c"}, {@code "[2].name"}. A field whose name
+ * holds a dot is written in quoted brackets: {@code "['a.b']"}, {@code "x[\"a.b\"].y"}. This is the
  * utility's own syntax; the query language's surface syntax for paths is a
  * separate concern wired in later.
  */
@@ -106,6 +107,18 @@ public final class ValuePath {
                 i++;
             } else if (c == '[') {
                 flushField(name, steps);
+                char quote = i + 1 < n ? path.charAt(i + 1) : 0;
+                if (quote == '\'' || quote == '"') {
+                    // ['a.b'] / ["a.b"]: one field whose name may hold dots and brackets
+                    int end = path.indexOf(quote, i + 2);
+                    if (end < 0 || end + 1 >= n || path.charAt(end + 1) != ']') {
+                        throw new IllegalArgumentException(
+                                "Unterminated quoted key in path: '" + path + "'");
+                    }
+                    steps.add(new Step.Field(path.substring(i + 2, end)));
+                    i = end + 2;
+                    continue;
+                }
                 int close = path.indexOf(']', i);
                 if (close < 0) {
                     throw new IllegalArgumentException("Unterminated '[' in path: '" + path + "'");

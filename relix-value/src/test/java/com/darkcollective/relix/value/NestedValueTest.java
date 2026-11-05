@@ -128,6 +128,17 @@ final class NestedValueTest {
         }
 
         @Test
+        @DisplayName("a quoted bracket names a field that holds a dot or a bracket")
+        void quotedKeys() {
+            StructValue dotted = struct("a.b", num(1), "c", struct("x]y", num(2)));
+            assertThat(ValuePath.navigate(dotted, "['a.b']")).isEqualTo(num(1));
+            assertThat(ValuePath.navigate(dotted, "[\"a.b\"]")).isEqualTo(num(1));
+            assertThat(ValuePath.navigate(dotted, "c['x]y']")).isEqualTo(num(2));
+            assertThatThrownBy(() -> ValuePath.parse("['a.b"))
+                    .hasMessageContaining("Unterminated quoted key");
+        }
+
+        @Test
         @DisplayName("yields NULL on a missing field, bad index, or wrong shape")
         void nullPropagates() {
             assertThat(ValuePath.navigate(doc, "user.missing")).isEqualTo(NullValue.INSTANCE);

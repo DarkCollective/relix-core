@@ -188,6 +188,9 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
         }
         HttpRequestSpec request = buildRequest(relationName, http, schema, pushdown);
         HttpFetchResult result = send(request, relationName);
+        if (result.statusCode() == 204 || result.statusCode() == 205) {
+            return Stream.empty(); // success with no content: a response that says "no records"
+        }
         if (result.statusCode() < 200 || result.statusCode() >= 300) {
             throw new EvaluationException(
                     "HTTP source '" + relationName + "' returned status " + result.statusCode()
@@ -323,7 +326,7 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
         } catch (IOException e) {
             throw new EvaluationException(
                     "HTTP source '" + relationName + "' request to " + request.url()
-                    + " failed: " + e.getMessage());
+                    + " failed: " + describe(e));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new EvaluationException(
@@ -335,6 +338,25 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
             throw new EvaluationException(
                     "HTTP source '" + relationName + "' request could not be sent: " + e.getMessage());
         }
+    }
+
+    /**
+     * What an I/O failure says. A refused connection carries no message of its own, only
+     * a cause (or nothing at all), so the chain's messages are joined and an unexplained
+     * link is named by its type: {@code ConnectException: Connection refused}.
+     */
+    private static String describe(Throwable failure) {
+        List<String> parts = new ArrayList<>();
+        Throwable t = failure;
+        for (int depth = 0; t != null && depth < 5; depth++, t = t.getCause()) {
+            String part = t.getMessage() == null
+                    ? t.getClass().getSimpleName()
+                    : t.getClass().getSimpleName() + ": " + t.getMessage();
+            if (!parts.contains(part)) {
+                parts.add(part);
+            }
+        }
+        return String.join(", caused by ", parts);
     }
 
     private static String snippet(String body) {
@@ -363,7 +385,9 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
 
     private static Value parseJson(String relationName, String body) {
         try {
-            return JsonValues.parse(body);
+            // A byte order mark is the encoding's signature, not JSON, and some servers
+            // send one in front of a UTF-8 document.
+            return JsonValues.parse(body.startsWith("\uFEFF") ? body.substring(1) : body);
         } catch (JsonValues.JsonParseException e) {
             throw new EvaluationException(
                     "HTTP source '" + relationName + "': malformed JSON response: " + e.getMessage());
@@ -610,9 +634,51 @@ public final class HttpDataSourceConnector implements DataSourceConnector {
                     .map(b -> HttpRequest.BodyPublishers.ofString(b, StandardCharsets.UTF_8))
                     .orElse(HttpRequest.BodyPublishers.noBody());
             builder.method(request.method().name(), publisher);
-            HttpResponse<String> response = client.send(builder.build(),
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            return new HttpFetchResult(response.statusCode(), response.body());
+            HttpResponse<byte[]> response = client.send(builder.build(),
+                    HttpResponse.BodyHandlers.ofByteArray());
+            return new HttpFetchResult(response.statusCode(), decode(response));
         };
+    }
+
+    /**
+     * The response body as text: decompressed when {@code Content-Encoding} says it is
+     * (a server or CDN may compress unasked), then read in the charset {@code Content-Type}
+     * names, UTF-8 when it names none or one this runtime does not know.
+     */
+    static String decode(HttpResponse<byte[]> response) throws IOException {
+        byte[] bytes = response.body();
+        String encoding = response.headers().firstValue("Content-Encoding").orElse("")
+                .strip().toLowerCase(Locale.ROOT);
+        if (encoding.equals("gzip") || encoding.equals("x-gzip")) {
+            try (java.util.zip.GZIPInputStream in =
+                         new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(bytes))) {
+                bytes = in.readAllBytes();
+            }
+        } else if (encoding.equals("deflate")) {
+            try (java.util.zip.InflaterInputStream in =
+                         new java.util.zip.InflaterInputStream(new java.io.ByteArrayInputStream(bytes))) {
+                bytes = in.readAllBytes();
+            }
+        }
+        return new String(bytes, charsetOf(response.headers().firstValue("Content-Type").orElse("")));
+    }
+
+    /** The {@code charset} parameter of a {@code Content-Type} value, UTF-8 if absent or unknown. */
+    static java.nio.charset.Charset charsetOf(String contentType) {
+        for (String part : contentType.split(";")) {
+            String parameter = part.strip();
+            if (parameter.regionMatches(true, 0, "charset=", 0, 8)) {
+                String name = parameter.substring(8).strip();
+                if (name.length() >= 2 && name.startsWith("\"") && name.endsWith("\"")) {
+                    name = name.substring(1, name.length() - 1);
+                }
+                try {
+                    return java.nio.charset.Charset.forName(name);
+                } catch (IllegalArgumentException unknown) {
+                    return StandardCharsets.UTF_8;
+                }
+            }
+        }
+        return StandardCharsets.UTF_8;
     }
 }

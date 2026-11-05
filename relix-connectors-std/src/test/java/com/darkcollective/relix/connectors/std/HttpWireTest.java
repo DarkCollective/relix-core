@@ -69,7 +69,40 @@ final class HttpWireTest {
             exchange.sendResponseHeaders(Integer.parseInt(exchange.getRequestURI().getQuery()), -1);
             exchange.close();
         });
+        server.createContext("/latin1", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/json; charset=iso-8859-1");
+            sendBytes(exchange, 200, "[{\"name\": \"caf\u00e9\"}]".getBytes(StandardCharsets.ISO_8859_1));
+        });
+        server.createContext("/bom", exchange -> {
+            byte[] json = "[{\"name\": \"x\"}]".getBytes(StandardCharsets.UTF_8);
+            byte[] bytes = new byte[json.length + 3];
+            bytes[0] = (byte) 0xEF;
+            bytes[1] = (byte) 0xBB;
+            bytes[2] = (byte) 0xBF;
+            System.arraycopy(json, 0, bytes, 3, json.length);
+            sendBytes(exchange, 200, bytes);
+        });
+        server.createContext("/gzip", exchange -> {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            try (java.util.zip.GZIPOutputStream gz = new java.util.zip.GZIPOutputStream(out)) {
+                gz.write("[{\"name\": \"zipped\"}]".getBytes(StandardCharsets.UTF_8));
+            }
+            exchange.getResponseHeaders().add("Content-Encoding", "gzip");
+            sendBytes(exchange, 200, out.toByteArray());
+        });
+        server.createContext("/empty", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        });
+        server.createContext("/dotted", exchange -> reply(exchange, 200, "[{\"a.b\": 7}]"));
         server.start();
+    }
+
+    private static void sendBytes(HttpExchange exchange, int status, byte[] bytes) throws IOException {
+        exchange.sendResponseHeaders(status, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
     }
 
     @AfterEach
@@ -141,5 +174,57 @@ final class HttpWireTest {
                 .isInstanceOf(EvaluationException.class)
                 .hasMessageContaining("'api'")
                 .hasMessageContaining("header 'Host'");
+    }
+
+    private String open(String path) {
+        return "source S from http { url: \"%s\" }; query S;".formatted(url(path));
+    }
+
+    @Test
+    @DisplayName("the response's declared charset is honoured")
+    void charset() {
+        assertThat(exec(open("/latin1")).getFirst().get("name").asDisplayString()).isEqualTo("caf\u00e9");
+    }
+
+    @Test
+    @DisplayName("a byte order mark before the JSON is ignored")
+    void byteOrderMark() {
+        assertThat(exec(open("/bom"))).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a gzip body is decompressed when Content-Encoding says so")
+    void gzip() {
+        assertThat(exec(open("/gzip")).getFirst().get("name").asDisplayString()).isEqualTo("zipped");
+    }
+
+    @Test
+    @DisplayName("204 No Content is a source with no rows")
+    void noContent() {
+        assertThat(exec(open("/empty"))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a refused connection says why, and where")
+    void refused() throws IOException {
+        int port;
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0, 0,
+                java.net.InetAddress.getLoopbackAddress())) {
+            port = socket.getLocalPort();
+        }
+        String script = "source S from http { url: \"http://127.0.0.1:%d/x\" }; query S;".formatted(port);
+        assertThatThrownBy(() -> exec(script))
+                .hasMessageContaining("127.0.0.1:" + port)
+                .hasMessageContaining("failed: ")
+                .hasMessageContaining("ConnectException")
+                .hasMessageNotContaining("failed: null");
+    }
+
+    @Test
+    @DisplayName("a key containing a dot is addressed in quoted brackets")
+    void quotedKey() {
+        String script = "source S from http { url: \"%s\", schema: { v: NUMBER at \"$['a.b']\" } }; query S;"
+                .formatted(url("/dotted"));
+        assertThat(exec(script).getFirst().get("v").asDisplayString()).isEqualTo("7");
     }
 }
