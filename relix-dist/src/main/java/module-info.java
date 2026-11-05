@@ -76,5 +76,7 @@ module com.darkcollective.relix {
     provides com.darkcollective.relix.function.FunctionLibrary
             with com.darkcollective.relix.function.builtin.BuiltinFunctionLibrary;
     provides com.darkcollective.relix.processor.connector.RelixConnector
-            with com.darkcollective.relix.connectors.std.internal.CsvConnector;
+            with com.darkcollective.relix.connectors.std.internal.CsvConnector,
+                 com.darkcollective.relix.connectors.std.internal.GedcomConnector,
+                 com.darkcollective.relix.connectors.std.internal.LogConnector;
 }
