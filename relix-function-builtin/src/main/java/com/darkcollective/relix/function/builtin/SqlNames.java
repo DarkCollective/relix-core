@@ -257,6 +257,7 @@ final class SqlNames {
         for (Value value : args) {
             if (!value.isNull()) {
                 text.append(value.asDisplayString());
+                Arguments.checkLength("CONCAT", text.length());
             }
         }
         return new StringValue(text.toString());

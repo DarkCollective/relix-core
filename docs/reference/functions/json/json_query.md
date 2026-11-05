@@ -18,7 +18,7 @@ The path is JSON_VALUE's: `$` the document, `.name` a member, `[n]` an element.
 JSON_QUERY(doc: STRING, path: STRING) → a struct for a JSON object, an array for a
 JSON array. PURE, DETERMINISTIC. The answer is NULL when `doc` is not JSON, when the
 path reaches nothing, and when it reaches a string, number, boolean or `null`, which
-JSON_VALUE reads. A NULL argument gives NULL; a malformed path is refused.
+JSON_VALUE reads. A NULL argument gives NULL; a document nested more than 512 levels deep is refused; a malformed path is refused.
 
 # Examples:
 Each order's items, as an array:
